@@ -104,35 +104,42 @@ Use the available Codex skills and tools to improve the quality of the plan and 
 Preferred Codex skills/superpowers:
 
 ```text
-taste-skill
+design-taste-frontend
 impeccable
 design-motion-principles
 agent-browser
+ponytail
 ```
 
 Use these skills as follows:
 
-* `taste-skill` should help make product, UX, and design decisions feel refined, premium, and intentional.
+* `design-taste-frontend` (from Taste Skill) should help make product, UX, and design decisions feel refined, premium, and intentional.
 * `impeccable` should help enforce high standards for code quality, planning quality, consistency, correctness, and completeness.
 * `design-motion-principles` should guide subtle, useful, non-distracting motion and interaction design.
 * `agent-browser` should help inspect the actual running interface when needed, especially for UX review and debugging.
+* `ponytail` should enforce implementation restraint: understand the affected flow first, reuse existing code and platform features, avoid speculative abstractions and dependencies, and make the smallest safe change. It must not simplify away validation, security, accessibility, auditability, offline data integrity, or error handling that prevents data loss.
 
 Preferred MCP/tools:
 
 ```text
 Context7 MCP
 Playwright MCP
+shadcn MCP
 ```
 
 Use `Context7 MCP` when current library documentation is needed before implementing or planning around a specific framework, package, or API.
 
 Use `Playwright MCP` when inspecting, testing, or debugging the running app through browser interaction.
 
+Use `shadcn MCP` to search, inspect, and install components from the shadcn registry. Prefer existing project components before adding new ones, review generated code before keeping it, and adapt it to the FNB/LIS design tokens, accessibility requirements, and shared component conventions.
+
 Important rule:
 
 ```text
 MCPs and superpowers should support better decisions, not introduce unnecessary tools, libraries, or architecture.
 ```
+
+Select only the minimum relevant skills and tools for each task. Project requirements and this `AGENTS.md` override generic skill or registry recommendations.
 
 ## UI and Design System Rules
 
