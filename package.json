@@ -1,0 +1,14 @@
+{
+  "name": "fnb-lis",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.29.3",
+  "scripts": {
+    "dev": "pnpm --filter @fnb-lis/web dev",
+    "build": "pnpm --filter @fnb-lis/web build",
+    "typecheck": "pnpm --filter @fnb-lis/web typecheck",
+    "test": "pnpm --filter @fnb-lis/web test",
+    "test:e2e": "pnpm --filter @fnb-lis/web test:e2e",
+    "check": "pnpm typecheck && pnpm test && pnpm build"
+  }
+}
