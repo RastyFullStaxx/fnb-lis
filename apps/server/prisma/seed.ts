@@ -144,12 +144,131 @@ async function seedSettings() {
   }
 }
 
+// ── Seed v2: demo items + location catalogs ──
+// Tare weights are in oz to match the legacy oz-scale density factors (ml per oz).
+
+interface SeedVariant {
+  size: number;
+  unit: string;
+  contentTracked?: boolean;
+  tareWeight?: number;
+  densityFactor?: number;
+}
+
+const ITEMS: Array<{ name: string; category: string; variants: SeedVariant[] }> = [
+  {
+    name: "Absolut Vodka",
+    category: "Vodka",
+    variants: [
+      { size: 700, unit: "ml", contentTracked: true, tareWeight: 16.9 },
+      { size: 1000, unit: "ml", contentTracked: true, tareWeight: 19.4 },
+    ],
+  },
+  { name: "Jack Daniel's Old No. 7", category: "Whisky", variants: [{ size: 700, unit: "ml", contentTracked: true, tareWeight: 17.2 }] },
+  { name: "Bacardi Superior", category: "Rum", variants: [{ size: 750, unit: "ml", contentTracked: true, tareWeight: 16.5 }] },
+  { name: "Bombay Sapphire", category: "Gin", variants: [{ size: 750, unit: "ml", contentTracked: true, tareWeight: 21.2 }] },
+  { name: "Jose Cuervo Especial", category: "Tequila", variants: [{ size: 750, unit: "ml", contentTracked: true, tareWeight: 17.6 }] },
+  { name: "San Miguel Pale Pilsen", category: "Beer", variants: [{ size: 330, unit: "ml" }] },
+  { name: "Tonic Water", category: "Soda & Mixers", variants: [{ size: 200, unit: "ml" }] },
+  {
+    name: "Grenadine Syrup",
+    category: "Syrup",
+    // Item-level density override (no category default for Syrup).
+    variants: [{ size: 750, unit: "ml", contentTracked: true, tareWeight: 15.0, densityFactor: 25.0 }],
+  },
+  { name: "Chicken Breast", category: "Poultry", variants: [{ size: 1, unit: "kg" }] },
+  { name: "Cooking Oil", category: "Dry Goods", variants: [{ size: 1, unit: "L" }] },
+  // Universality proof: a Supplies item counted in packs.
+  { name: "Table Napkins", category: "Consumables", variants: [{ size: 1, unit: "pack" }] },
+];
+
+// [item name, size, unit, cost, retail] per location.
+const MAIN_BAR_PRICES: Array<[string, number, string, number, number]> = [
+  ["Absolut Vodka", 700, "ml", 620, 1650],
+  ["Absolut Vodka", 1000, "ml", 850, 2200],
+  ["Jack Daniel's Old No. 7", 700, "ml", 950, 2400],
+  ["Bacardi Superior", 750, "ml", 550, 1400],
+  ["Bombay Sapphire", 750, "ml", 1100, 2600],
+  ["Jose Cuervo Especial", 750, "ml", 890, 2200],
+  ["San Miguel Pale Pilsen", 330, "ml", 45, 120],
+  ["Tonic Water", 200, "ml", 30, 90],
+  ["Grenadine Syrup", 750, "ml", 180, 0], // deliberately unpriced retail → exercises the red badge
+  ["Table Napkins", 1, "pack", 85, 0],
+];
+
+const KITCHEN_PRICES: Array<[string, number, string, number, number]> = [
+  ["Chicken Breast", 1, "kg", 180, 320],
+  ["Cooking Oil", 1, "L", 95, 160],
+];
+
+async function seedItems() {
+  const admin = await prisma.user.findUnique({ where: { username: "admin" } });
+  for (const def of ITEMS) {
+    const category = await prisma.category.findUnique({ where: { name: def.category } });
+    if (!category) continue;
+    let item = await prisma.item.findFirst({ where: { name: def.name } });
+    if (!item) {
+      item = await prisma.item.create({
+        data: { name: def.name, categoryId: category.id, createdById: admin?.id },
+      });
+    }
+    for (const v of def.variants) {
+      const unit = await prisma.unit.findUnique({ where: { name: v.unit } });
+      if (!unit) continue;
+      await prisma.itemVariant.upsert({
+        where: { itemId_size_unitId: { itemId: item.id, size: v.size, unitId: unit.id } },
+        update: {},
+        create: {
+          itemId: item.id,
+          size: v.size,
+          unitId: unit.id,
+          contentTracked: v.contentTracked ?? false,
+          tareWeight: v.tareWeight ?? null,
+          tareWeightUnit: v.tareWeight ? "oz" : null,
+          densityFactor: v.densityFactor ?? null,
+        },
+      });
+    }
+  }
+}
+
+async function seedLocationCatalog(clientName: string, locationName: string, prices: Array<[string, number, string, number, number]>) {
+  const location = await prisma.location.findFirst({
+    where: { name: locationName, client: { name: clientName } },
+  });
+  if (!location) return;
+  for (const [itemName, size, unitName, cost, retail] of prices) {
+    const variant = await prisma.itemVariant.findFirst({
+      where: { size, item: { name: itemName }, unit: { name: unitName } },
+    });
+    if (!variant) continue;
+    await prisma.locationItem.upsert({
+      where: { locationId_itemVariantId: { locationId: location.id, itemVariantId: variant.id } },
+      update: {},
+      create: { locationId: location.id, itemVariantId: variant.id, cost, retail },
+    });
+  }
+}
+
+async function seedSuppliers() {
+  const prime = await prisma.client.findFirst({ where: { name: "Prime Hospitality Group" } });
+  if (!prime) return;
+  for (const name of ["Metro Beverage Distribution", "FreshFoods Corp"]) {
+    const exists = await prisma.supplier.findFirst({ where: { clientId: prime.id, name } });
+    if (!exists) await prisma.supplier.create({ data: { clientId: prime.id, name } });
+  }
+}
+
 async function main() {
   await seedUsers();
   await seedClients();
   await seedUnits();
   await seedCategories();
   await seedSettings();
+  await seedItems();
+  await seedLocationCatalog("Prime Hospitality Group", "Main Bar", MAIN_BAR_PRICES);
+  await seedLocationCatalog("Prime Hospitality Group", "Kitchen", KITCHEN_PRICES);
+  await seedSuppliers();
   console.log(`Seed complete. Logins: admin / manager / staff / accountant / readonly — password ${PASSWORD}`);
 }
 
