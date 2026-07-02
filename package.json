@@ -1,0 +1,25 @@
+{
+  "name": "fnb-lis",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c green,blue \"npm run dev -w @fnb/server\" \"npm run dev -w @fnb/web\"",
+    "build": "npm run build -w @fnb/web",
+    "db:migrate": "npm run db:migrate -w @fnb/server",
+    "db:generate": "npm run db:generate -w @fnb/server",
+    "db:seed": "npm run db:seed -w @fnb/server"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.3"
+  },
+  "allowScripts": {
+    "@prisma/engines@7.8.0": true,
+    "esbuild@0.28.1": true,
+    "prisma@7.8.0": true,
+    "better-sqlite3@12.11.1": true
+  }
+}

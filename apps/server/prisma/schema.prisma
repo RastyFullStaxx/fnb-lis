@@ -1,0 +1,492 @@
+// FNB/LIS — full domain schema (all models land day one; migrations stay additive).
+//
+// Portability rules (see docs/architecture.md §2 — do not violate):
+//  - No enums: "enum" fields are String, validated by zod in @fnb/core.
+//  - No Json scalar: JSON payloads are String (TEXT), parsed by zod at the boundary.
+//  - Float, not Decimal: legacy parity with PHP doubles; rounding via core phpRound only.
+//  - Business dates are String 'YYYY-MM-DD'; DateTime is for timestamps only.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ───────────────────────── Identity & tenancy ─────────────────────────
+
+model User {
+  id               String    @id @default(cuid())
+  username         String    @unique
+  passwordHash     String
+  firstName        String
+  lastName         String
+  email            String?
+  role             String // ADMIN | MANAGER | STAFF | ACCOUNTANT | READONLY
+  status           String    @default("ACTIVE") // ACTIVE | DISABLED
+  failedLoginCount Int       @default(0)
+  failedLoginAt    DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  sessions     AuthSession[]
+  clientAccess UserClientAccess[]
+}
+
+model AuthSession {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  ip        String?
+  userAgent String?
+
+  @@index([userId])
+}
+
+model Client {
+  id        String   @id @default(cuid())
+  name      String
+  status    String   @default("ACTIVE") // ACTIVE | ARCHIVED
+  createdAt DateTime @default(now())
+
+  locations Location[]
+  access    UserClientAccess[]
+  suppliers Supplier[]
+  aliases   ItemAlias[]
+}
+
+model Location {
+  id        String   @id @default(cuid())
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id])
+  name      String
+  status    String   @default("ACTIVE")
+  createdAt DateTime @default(now())
+
+  locationItems LocationItem[]
+  countSessions CountSession[]
+  purchases     Purchase[]
+  sales         SaleRecord[]
+  forfeits      Forfeit[]
+  menuItems     MenuItem[]
+  importBatches ImportBatch[]
+
+  @@index([clientId])
+}
+
+model UserClientAccess {
+  userId   String
+  clientId String
+  user     User   @relation(fields: [userId], references: [id])
+  client   Client @relation(fields: [clientId], references: [id])
+
+  @@id([userId, clientId])
+}
+
+// ───────────────────────── Master data (global) ─────────────────────────
+
+model Unit {
+  id           String  @id @default(cuid())
+  name         String  @unique
+  kind         String // VOLUME | MASS | COUNT (base: ml | g | 1)
+  factorToBase Float
+  isSystem     Boolean @default(false)
+
+  variants ItemVariant[]
+}
+
+model Category {
+  id                   String @id @default(cuid())
+  name                 String @unique
+  productType          String // data-driven list in Setting "productTypes"
+  defaultDensityFactor Float? // ml per weight-unit for weigh counts (e.g. Vodka 30.12/oz)
+  sortOrder            Int    @default(0)
+
+  items Item[]
+}
+
+model Item {
+  id          String   @id @default(cuid())
+  name        String
+  categoryId  String
+  category    Category @relation(fields: [categoryId], references: [id])
+  description String?
+  isActive    Boolean  @default(true)
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  variants ItemVariant[]
+
+  @@index([categoryId])
+}
+
+model ItemVariant {
+  id             String  @id @default(cuid())
+  itemId         String
+  item           Item    @relation(fields: [itemId], references: [id])
+  size           Float // e.g. 700 (ml), 1 (kg), 1 (pack)
+  unitId         String
+  unit           Unit    @relation(fields: [unitId], references: [id])
+  contentTracked Boolean @default(false) // true: open amounts divide by size (bottles); false: raw counts
+  tareWeight     Float?
+  tareWeightUnit String? // g | oz
+  densityFactor  Float? // per-item override of Category.defaultDensityFactor
+  barcode        String?
+  isActive       Boolean @default(true)
+
+  locationItems LocationItem[]
+
+  @@unique([itemId, size, unitId])
+}
+
+// ───────────────────────── Per-location catalog ─────────────────────────
+
+model LocationItem {
+  id            String      @id @default(cuid())
+  locationId    String
+  location      Location    @relation(fields: [locationId], references: [id])
+  itemVariantId String
+  itemVariant   ItemVariant @relation(fields: [itemVariantId], references: [id])
+  cost          Float       @default(0)
+  retail        Float       @default(0)
+  parLevel      Float?
+  isActive      Boolean     @default(true)
+  updatedById   String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  countLines    CountLine[]
+  purchaseLines PurchaseLine[]
+  sales         SaleRecord[]
+  forfeits      Forfeit[]
+  recipeLines   RecipeLine[]
+  aliases       ItemAlias[]
+
+  @@unique([locationId, itemVariantId])
+}
+
+model Supplier {
+  id          String  @id @default(cuid())
+  clientId    String
+  client      Client  @relation(fields: [clientId], references: [id])
+  name        String
+  contactInfo String?
+  isActive    Boolean @default(true)
+
+  purchases Purchase[]
+
+  @@index([clientId])
+}
+
+model ItemAlias {
+  id              String        @id @default(cuid())
+  clientId        String
+  client          Client        @relation(fields: [clientId], references: [id])
+  aliasNormalized String // lowercased, trimmed, single-spaced
+  locationItemId  String?
+  locationItem    LocationItem? @relation(fields: [locationItemId], references: [id])
+  menuItemId      String?
+  menuItem        MenuItem?     @relation(fields: [menuItemId], references: [id])
+  source          String        @default("MANUAL") // MANUAL | IMPORT
+
+  @@unique([clientId, aliasNormalized])
+}
+
+// ───────────────── Transactions (immutable once committed) ─────────────────
+// Committed records are never edited. Corrections: void (reason) + linked
+// replacement via correctionOfId. ActivityLog rows are written in the same
+// $transaction as every mutation.
+
+model CountSession {
+  id            String    @id @default(cuid())
+  locationId    String
+  location      Location  @relation(fields: [locationId], references: [id])
+  countDate     String // YYYY-MM-DD
+  name          String?
+  status        String    @default("OPEN") // OPEN | COMMITTED | VOID
+  note          String?
+  createdById   String
+  createdByName String
+  createdAt     DateTime  @default(now())
+  committedAt   DateTime?
+  committedById String?
+  voidedAt      DateTime?
+  voidedById    String?
+  voidReason    String?
+
+  lines CountLine[]
+
+  @@index([locationId, countDate])
+}
+
+model CountLine {
+  id               String       @id @default(cuid())
+  countSessionId   String
+  countSession     CountSession @relation(fields: [countSessionId], references: [id])
+  locationItemId   String
+  locationItem     LocationItem @relation(fields: [locationItemId], references: [id])
+  countType        String // FULL | WEIGH
+  qtyFull          Float        @default(0)
+  scaleWeight      Float?
+  scaleUnit        String? // g | oz
+  tareWeight       Float?
+  densityFactor    Float?
+  remainingContent Float        @default(0) // WEIGH: computed content (ml or raw units)
+  unitCost         Float        @default(0) // price snapshots at entry time
+  unitRetail       Float        @default(0)
+  status           String       @default("ACTIVE") // ACTIVE | VOID
+  voidedAt         DateTime?
+  voidedById       String?
+  voidReason       String?
+  correctionOfId   String?
+  correctionOf     CountLine?   @relation("CountLineCorrection", fields: [correctionOfId], references: [id])
+  corrections      CountLine[]  @relation("CountLineCorrection")
+  createdById      String
+  createdByName    String
+  createdAt        DateTime     @default(now())
+
+  @@index([countSessionId])
+  @@index([locationItemId])
+}
+
+model Purchase {
+  id            String    @id @default(cuid())
+  locationId    String
+  location      Location  @relation(fields: [locationId], references: [id])
+  supplierId    String?
+  supplier      Supplier? @relation(fields: [supplierId], references: [id])
+  refNo         String?
+  purchaseDate  String // YYYY-MM-DD
+  status        String    @default("DRAFT") // DRAFT | COMMITTED | VOID
+  note          String?
+  createdById   String
+  createdByName String
+  createdAt     DateTime  @default(now())
+  committedAt   DateTime?
+  committedById String?
+  voidedAt      DateTime?
+  voidedById    String?
+  voidReason    String?
+
+  lines PurchaseLine[]
+
+  @@index([locationId, purchaseDate])
+}
+
+model PurchaseLine {
+  id             String         @id @default(cuid())
+  purchaseId     String
+  purchase       Purchase       @relation(fields: [purchaseId], references: [id])
+  locationItemId String
+  locationItem   LocationItem   @relation(fields: [locationItemId], references: [id])
+  qty            Float
+  unitCost       Float
+  lineTotal      Float
+  status         String         @default("ACTIVE") // ACTIVE | VOID
+  voidedAt       DateTime?
+  voidedById     String?
+  voidReason     String?
+  correctionOfId String?
+  correctionOf   PurchaseLine?  @relation("PurchaseLineCorrection", fields: [correctionOfId], references: [id])
+  corrections    PurchaseLine[] @relation("PurchaseLineCorrection")
+  createdById    String
+  createdByName  String
+  createdAt      DateTime       @default(now())
+
+  @@index([purchaseId])
+  @@index([locationItemId])
+}
+
+model SaleRecord {
+  id              String         @id @default(cuid())
+  locationId      String
+  location        Location       @relation(fields: [locationId], references: [id])
+  saleDate        String // YYYY-MM-DD
+  kind            String // SALE | NON_REVENUE | PRODUCTION
+  locationItemId  String? // XOR menuItemId
+  locationItem    LocationItem?  @relation(fields: [locationItemId], references: [id])
+  menuItemId      String?
+  menuItem        MenuItem?      @relation(fields: [menuItemId], references: [id])
+  recipeVersionId String? // snapshot of the version active at commit
+  recipeVersion   RecipeVersion? @relation(fields: [recipeVersionId], references: [id])
+  qty             Float
+  unitPrice       Float          @default(0)
+  discountPct     Float          @default(0)
+  contentOverride Float? // legacy non_ml — NON_REVENUE only, per-unit content
+  reason          String? // non-revenue reason
+  note            String?
+  source          String         @default("MANUAL") // MANUAL | IMPORT
+  status          String         @default("ACTIVE") // ACTIVE | VOID
+  voidedAt        DateTime?
+  voidedById      String?
+  voidReason      String?
+  correctionOfId  String?
+  correctionOf    SaleRecord?    @relation("SaleCorrection", fields: [correctionOfId], references: [id])
+  corrections     SaleRecord[]   @relation("SaleCorrection")
+  createdById     String
+  createdByName   String
+  createdAt       DateTime       @default(now())
+
+  @@index([locationId, saleDate, kind])
+  @@index([locationItemId])
+}
+
+model Forfeit {
+  id               String       @id @default(cuid())
+  locationId       String
+  location         Location     @relation(fields: [locationId], references: [id])
+  forfeitDate      String // YYYY-MM-DD
+  locationItemId   String
+  locationItem     LocationItem @relation(fields: [locationItemId], references: [id])
+  scaleWeight      Float?
+  scaleUnit        String?
+  tareWeight       Float?
+  densityFactor    Float?
+  remainingContent Float        @default(0) // content re-entering stock (adds back into usage pool)
+  qty              Float        @default(0) // count-item path
+  note             String?
+  status           String       @default("ACTIVE") // ACTIVE | VOID
+  voidedAt         DateTime?
+  voidedById       String?
+  voidReason       String?
+  correctionOfId   String?
+  correctionOf     Forfeit?     @relation("ForfeitCorrection", fields: [correctionOfId], references: [id])
+  corrections      Forfeit[]    @relation("ForfeitCorrection")
+  createdById      String
+  createdByName    String
+  createdAt        DateTime     @default(now())
+
+  @@index([locationId, forfeitDate])
+}
+
+// ───────────────────────── Menus & versioned recipes ─────────────────────────
+
+model MenuItem {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  name       String
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  versions RecipeVersion[]
+  sales    SaleRecord[]
+  aliases  ItemAlias[]
+
+  @@index([locationId])
+}
+
+model RecipeVersion {
+  id            String   @id @default(cuid())
+  menuItemId    String
+  menuItem      MenuItem @relation(fields: [menuItemId], references: [id])
+  versionNo     Int
+  srp           Float
+  costAtPublish Float    @default(0)
+  publishedAt   DateTime @default(now())
+  publishedById String
+  note          String?
+
+  lines RecipeLine[]
+  sales SaleRecord[]
+
+  @@unique([menuItemId, versionNo])
+}
+
+model RecipeLine {
+  id              String        @id @default(cuid())
+  recipeVersionId String
+  recipeVersion   RecipeVersion @relation(fields: [recipeVersionId], references: [id])
+  locationItemId  String
+  locationItem    LocationItem  @relation(fields: [locationItemId], references: [id])
+  servingQty      Float // in the ingredient's content units (contentTracked) or raw units
+  sortOrder       Int           @default(0)
+
+  @@index([recipeVersionId])
+}
+
+// ───────────────────────── Imports ─────────────────────────
+
+model ImportBatch {
+  id             String    @id @default(cuid())
+  locationId     String
+  location       Location  @relation(fields: [locationId], references: [id])
+  kind           String // SALES | PURCHASES | NON_REVENUE | COUNTS
+  fileName       String
+  fileSha256     String
+  storedPath     String
+  sourceType     String // CSV | XLSX | PDF | IMAGE
+  extractor      String // DETERMINISTIC | AI
+  model          String? // AI model id when extractor = AI
+  rawExtractJson String? // raw extraction payload (TEXT)
+  status         String    @default("PROCESSING") // PROCESSING | NEEDS_REVIEW | COMMITTED | REVERSED | FAILED
+  businessDate   String?
+  createdById    String
+  createdByName  String
+  createdAt      DateTime  @default(now())
+  committedAt    DateTime?
+  committedById  String?
+  reversedAt     DateTime?
+  reversedById   String?
+
+  rows ImportRow[]
+
+  @@index([locationId])
+}
+
+model ImportRow {
+  id                    String      @id @default(cuid())
+  batchId               String
+  batch                 ImportBatch @relation(fields: [batchId], references: [id])
+  rowIndex              Int
+  rawJson               String // original row payload (TEXT)
+  itemText              String
+  qty                   Float?
+  unitCost              Float?
+  unitPrice             Float?
+  rowDate               String?
+  matchedLocationItemId String?
+  matchedMenuItemId     String?
+  matchMethod           String? // EXACT | ALIAS | FUZZY | MANUAL
+  confidence            Float?
+  warning               String?
+  status                String      @default("PENDING") // PENDING | APPROVED | REJECTED | COMMITTED
+  resultType            String? // SALE | PURCHASE_LINE — enables precise batch reversal
+  resultId              String?
+
+  @@index([batchId])
+}
+
+// ───────────────────────── System ─────────────────────────
+
+model ActivityLog {
+  id          String   @id @default(cuid())
+  ts          DateTime @default(now())
+  userId      String?
+  userName    String? // denormalized for display; audit records freeze the actor's name
+  clientId    String?
+  locationId  String?
+  action      String // e.g. auth.login, purchase.commit, locationItem.priceChange
+  entity      String
+  entityId    String?
+  summary     String
+  detailsJson String? // old/new values (TEXT)
+
+  @@index([ts])
+  @@index([entity, entityId])
+}
+
+model Setting {
+  id       String @id @default(cuid())
+  clientId String @default("") // "" = global
+  key      String
+  value    String // JSON text
+
+  @@unique([clientId, key])
+}
