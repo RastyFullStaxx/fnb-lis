@@ -1,6 +1,6 @@
 # AGENTS.md — FNB/LIS Modernization Planning Guide
 
-You are helping plan the modernization of the FNB/LIS legacy system into a modern, scalable, offline-capable inventory management system. We will name the system the same with the legacy.
+You are the world's best fullstack engineer, helping plan the modernization of the FNB/LIS legacy system into a modern, scalable, offline-capable inventory management system. We will name the system the same with the legacy.
 
 Do not start coding yet. First, study the available documentation, legacy codebase, and prototype reference. Then create a complete master implementation plan.
 
@@ -12,15 +12,23 @@ The new system should not simply copy the old FNB/LIS workflow. Use the legacy s
 
 The target system should be:
 
-* Universal, not limited to food and beverage
-* Customizable for different product types
+* work with your own skills, my added skills especially ponytail and work with agents and sub agents (it is advisable the you create the agents you need for this project). You are abosolutely free to use anything you deemed necessary for the best outputs such as additional skills
+* Design an entirely new modern UI but very clean and beautiful UI for pc and desktop screen
+* Now universal, not limited to inventory only food and beverage
+* Customizable for different product types, like but not limited to the computations for weight the legacy system is doing to its current products beverage
 * Very user-friendly and fast to use
 * Clean, modern, and low-clutter
 * Secure and audit-friendly
 * Capable of offline desktop use
 * Capable of producing reports
-* Capable of API-assisted file ingestion for POS, PDF, image, Excel, and CSV files
-* Supported by the Stocky chatbot concept from StockLedger
+* Incorportating all, but improved, and simplified functions from the legacy system. We can even approach and add things to however you see things fit
+* Capable of API-assisted file ingestion for POS, PDF, image, Excel, and CSV files to directly input them to the system so staffs can skip manual entering and would just review what the AI inputted, correcting things where it might went wrong. this significantly reduces work time.
+* Supported by the Stocky chatbot concept from StockLedger (the last feature we will build)
+* I don't have any idea for the database, so handle that part too
+
+these are all my vague descriptions. you are now in charge of how everything shall fall in
+write or update the MDs for all surrounding information for what you have planned for the system so I could understand what you are going to build. like the product.md and all
+write the MDs of the phases you are going to follow
 
 ## References to Read
 
@@ -101,14 +109,14 @@ Do not write production code yet unless specifically asked.
 
 Use the available Codex skills and tools to improve the quality of the plan and future implementation, but do not let them make the project unnecessarily complex.
 
-Preferred Codex skills/superpowers:
+Preferred Codex skills/superpowers I found on github:
 
 ```text
-design-taste-frontend
-impeccable
-design-motion-principles
-agent-browser
-ponytail
+design-taste-frontend - https://github.com/leonxlnx/taste-skill
+impeccable - https://github.com/pbakaus/impeccable
+design-motion-principles - https://github.com/kylezantos/design-motion-principles
+agent-browser - https://github.com/vercel-labs/agent-browser
+ponytail - https://github.com/DietrichGebert/ponytail
 ```
 
 Use these skills as follows:
@@ -146,7 +154,7 @@ Select only the minimum relevant skills and tools for each task. Project require
 Use the following as the main UI direction:
 
 ```text
-shadcn/ui
+shadcn/ui - but I know you are a model capable of producing better UIs
 Tailwind CSS
 Royal blue and white main palette
 Clean, modern, premium, low-clutter interface
@@ -207,3 +215,12 @@ The web system should be architected so that the future desktop app can reuse as
 Use all tools, skills, MCPs, and references to create a better system, but the final product must remain simple for the user.
 
 The system should feel dramatically faster, cleaner, and easier than the legacy FNB/LIS system, even if the architecture behind it is more powerful.
+
+Write the codebase efficiently like a senior software dev, basically using ponytail. we will not write any tests yet as we are focusing on building the system first
+
+Again, in order to build quick and save tokens, avoid running tests since we are working on the UI and its logic, not yet for functionalities
+
+## Priority
+
+1. System UI and core features
+2. Chatbot (that also ingests the inputs. this shall be the last)
