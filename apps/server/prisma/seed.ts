@@ -259,6 +259,146 @@ async function seedSuppliers() {
   }
 }
 
+// ── Seed v3: the GOLDEN CYCLE (2026-06-01 → 2026-06-08 at Main Bar) ──
+// Expected report numbers are hand-computed in docs/phases/phase-3-audit-cycle.md.
+// The Full Audit report MUST reproduce them exactly.
+
+async function seedGoldenCycle() {
+  const location = await prisma.location.findFirst({
+    where: { name: "Main Bar", client: { name: "Prime Hospitality Group" } },
+  });
+  const staff = await prisma.user.findUnique({ where: { username: "staff" } });
+  const manager = await prisma.user.findUnique({ where: { username: "manager" } });
+  if (!location || !staff || !manager) return;
+
+  // Idempotency: skip if the golden begin count already exists.
+  const existing = await prisma.countSession.findFirst({
+    where: { locationId: location.id, countDate: "2026-06-01" },
+  });
+  if (existing) return;
+
+  const li = async (itemName: string, size: number) => {
+    const row = await prisma.locationItem.findFirst({
+      where: { locationId: location.id, itemVariant: { size, item: { name: itemName } } },
+      include: { itemVariant: true },
+    });
+    if (!row) throw new Error(`Golden cycle: missing location item ${itemName} ${size}`);
+    return row;
+  };
+
+  const absolut = await li("Absolut Vodka", 700);
+  const jd = await li("Jack Daniel's Old No. 7", 700);
+  const beer = await li("San Miguel Pale Pilsen", 330);
+  const tonic = await li("Tonic Water", 200);
+  const supplier = await prisma.supplier.findFirst({ where: { name: "Metro Beverage Distribution" } });
+
+  const encoder = { createdById: staff.id, createdByName: "Paolo Reyes" };
+
+  // remaining = phpRound((scale − tare) × density) — oz scale, factors from categories.
+  const weigh = (scale: number, tare: number, density: number) => {
+    const scaled = Number(((scale - tare) * density).toPrecision(15));
+    return scaled >= 0 ? Math.floor(scaled + 0.5) : Math.ceil(scaled - 0.5);
+  };
+
+  const countSession = async (
+    countDate: string,
+    lines: Array<
+      | { item: typeof absolut; full: number }
+      | { item: typeof absolut; scale: number; tare: number; density: number }
+    >,
+  ) => {
+    const session = await prisma.countSession.create({
+      data: { locationId: location.id, countDate, status: "COMMITTED", committedAt: new Date(), committedById: manager.id, ...encoder },
+    });
+    for (const line of lines) {
+      if ("full" in line) {
+        await prisma.countLine.create({
+          data: {
+            countSessionId: session.id, locationItemId: line.item.id, countType: "FULL",
+            qtyFull: line.full, unitCost: line.item.cost, unitRetail: line.item.retail, ...encoder,
+          },
+        });
+      } else {
+        await prisma.countLine.create({
+          data: {
+            countSessionId: session.id, locationItemId: line.item.id, countType: "WEIGH",
+            scaleWeight: line.scale, scaleUnit: "oz", tareWeight: line.tare, densityFactor: line.density,
+            remainingContent: weigh(line.scale, line.tare, line.density),
+            unitCost: line.item.cost, unitRetail: line.item.retail, ...encoder,
+          },
+        });
+      }
+    }
+  };
+
+  // Beginning count — 2026-06-01
+  await countSession("2026-06-01", [
+    { item: absolut, full: 12 },
+    { item: absolut, scale: 28.7, tare: 16.9, density: 30.12 }, // → 355 ml
+    { item: jd, full: 8 },
+    { item: jd, scale: 25.0, tare: 17.2, density: 30.86 }, // → 241 ml
+    { item: beer, full: 48 },
+    { item: tonic, full: 24 },
+  ]);
+
+  // Purchase — 2026-06-03 (committed)
+  const purchase = await prisma.purchase.create({
+    data: {
+      locationId: location.id, purchaseDate: "2026-06-03", supplierId: supplier?.id ?? null,
+      refNo: "INV-8841", status: "COMMITTED", committedAt: new Date(), committedById: manager.id, ...encoder,
+    },
+  });
+  const pline = (item: typeof absolut, qty: number, unitCost: number) =>
+    prisma.purchaseLine.create({
+      data: { purchaseId: purchase.id, locationItemId: item.id, qty, unitCost, lineTotal: qty * unitCost, ...encoder },
+    });
+  await pline(absolut, 6, 615);
+  await pline(beer, 24, 44);
+  await pline(tonic, 12, 30);
+
+  // Sales / non-revenue / production
+  const sale = (
+    item: typeof absolut, saleDate: string, kind: string, qty: number, unitPrice: number,
+    extra: { contentOverride?: number; reason?: string } = {},
+  ) =>
+    prisma.saleRecord.create({
+      data: {
+        locationId: location.id, saleDate, kind, locationItemId: item.id, qty, unitPrice,
+        contentOverride: extra.contentOverride ?? null, reason: extra.reason ?? null, ...encoder,
+      },
+    });
+  await sale(absolut, "2026-06-02", "SALE", 2, 1650);
+  await sale(absolut, "2026-06-04", "SALE", 1, 1650);
+  await sale(beer, "2026-06-04", "SALE", 30, 120);
+  await sale(jd, "2026-06-05", "SALE", 2, 2400);
+  await sale(tonic, "2026-06-06", "SALE", 8, 90);
+  await sale(absolut, "2026-06-05", "NON_REVENUE", 1, 0, { contentOverride: 350, reason: "STAFF_USE" });
+  await sale(beer, "2026-06-06", "NON_REVENUE", 2, 0, { reason: "SPILLAGE" });
+  await sale(tonic, "2026-06-05", "PRODUCTION", 4, 0);
+
+  // Forfeit (returned bottle) — 2026-06-06: content re-enters stock.
+  await prisma.forfeit.create({
+    data: {
+      locationId: location.id, forfeitDate: "2026-06-06", locationItemId: absolut.id,
+      scaleWeight: 25.4, scaleUnit: "oz", tareWeight: 16.9, densityFactor: 30.12,
+      remainingContent: weigh(25.4, 16.9, 30.12), // → 256 ml
+      note: "Customer left unfinished bottle (table 7)", ...encoder,
+    },
+  });
+
+  // Ending count — 2026-06-08
+  await countSession("2026-06-08", [
+    { item: absolut, full: 14 },
+    { item: absolut, scale: 22.6, tare: 16.9, density: 30.12 }, // → 172 ml
+    { item: jd, full: 6 },
+    { item: jd, scale: 21.3, tare: 17.2, density: 30.86 }, // → 127 ml
+    { item: beer, full: 39 },
+    { item: tonic, full: 23 },
+  ]);
+
+  console.log("Golden cycle seeded (2026-06-01 → 2026-06-08 at Main Bar).");
+}
+
 async function main() {
   await seedUsers();
   await seedClients();
@@ -269,6 +409,7 @@ async function main() {
   await seedLocationCatalog("Prime Hospitality Group", "Main Bar", MAIN_BAR_PRICES);
   await seedLocationCatalog("Prime Hospitality Group", "Kitchen", KITCHEN_PRICES);
   await seedSuppliers();
+  await seedGoldenCycle();
   console.log(`Seed complete. Logins: admin / manager / staff / accountant / readonly — password ${PASSWORD}`);
 }
 

@@ -11,6 +11,10 @@ import { authRoutes } from "./routes/auth";
 import { adminRoutes } from "./routes/admin";
 import { masterRoutes } from "./routes/master";
 import { locationItemRoutes } from "./routes/location-items";
+import { countRoutes } from "./routes/counts";
+import { purchaseRoutes } from "./routes/purchases";
+import { saleRoutes } from "./routes/sales";
+import { reportRoutes } from "./routes/reports";
 
 export function createApp() {
   const app = new Hono<AppEnv>();
@@ -27,7 +31,11 @@ export function createApp() {
   // Location-scoped routes: auth + client access enforced once here.
   const locationScoped = new Hono<AppEnv>()
     .use(requireAuth, requireLocationAccess)
-    .route("/", locationItemRoutes);
+    .route("/", locationItemRoutes)
+    .route("/", countRoutes)
+    .route("/", purchaseRoutes)
+    .route("/", saleRoutes)
+    .route("/", reportRoutes);
   app.route("/api/locations/:locationId", locationScoped);
 
   app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
