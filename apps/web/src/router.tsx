@@ -7,6 +7,13 @@ import { ComingSoonPage } from "./pages/coming-soon";
 import { ItemsPage } from "./pages/items";
 import { StockPage } from "./pages/stock";
 import { SuppliersPage } from "./pages/suppliers";
+import { CountsPage } from "./pages/counts";
+import { CountSessionPage } from "./pages/counts/session";
+import { PurchasesPage } from "./pages/purchases";
+import { PurchaseEditorPage } from "./pages/purchases/editor";
+import { SalesPage } from "./pages/sales";
+import { ReportsPage } from "./pages/reports";
+import { FullAuditPage } from "./pages/reports/full-audit";
 
 export const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
@@ -18,12 +25,16 @@ export const router = createBrowserRouter([
       { index: true, element: <Navigate to="dashboard" replace /> },
       { path: "dashboard", element: <DashboardPage /> },
       { path: "stock", element: <StockPage /> },
-      { path: "counts/*", element: <ComingSoonPage title="Counts" phase={3} /> },
-      { path: "purchases/*", element: <ComingSoonPage title="Purchases" phase={3} /> },
-      { path: "sales/*", element: <ComingSoonPage title="Sales" phase={3} /> },
+      { path: "counts", element: <CountsPage /> },
+      { path: "counts/:sessionId", element: <CountSessionPage /> },
+      { path: "purchases", element: <PurchasesPage /> },
+      { path: "purchases/:purchaseId", element: <PurchaseEditorPage /> },
+      { path: "sales", element: <SalesPage /> },
       { path: "recipes/*", element: <ComingSoonPage title="Recipes" phase={4} /> },
       { path: "imports/*", element: <ComingSoonPage title="Imports" phase={6} /> },
-      { path: "reports/*", element: <ComingSoonPage title="Reports" phase={3} /> },
+      { path: "reports", element: <ReportsPage /> },
+      { path: "reports/full-audit", element: <FullAuditPage /> },
+      { path: "reports/*", element: <ComingSoonPage title="This report" phase={5} /> },
       { path: "items", element: <ItemsPage /> },
       { path: "suppliers", element: <SuppliersPage /> },
       { path: "settings", element: <ComingSoonPage title="Settings" phase={7} /> },

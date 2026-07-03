@@ -14,20 +14,33 @@
 - Seed v3 — **golden cycle**: begin counts 2026-06-01 (Absolut: 12 full + weigh 812 g/tare 478/density 30.12), purchase 06-03 (6× Absolut @615…), direct sales, non-rev with contentOverride 350, forfeit weigh 690 g, end counts 2026-06-08. **Hand-computed expected numbers below.**
 - Git commit
 
-## Golden numbers (hand-computed fixture — the report MUST reproduce these)
+## Golden fixture (hand-computed; VERIFIED against the engine 2026-07-03)
 
-To be finalized when seed v3 lands; the worked example for Absolut 700 ml:
+Seeded at Main Bar, period 2026-06-01 → 2026-06-08. Scale entries in **oz** with legacy oz→ml
+density factors. Weigh math: `remaining = phpRound((scale − tare) × density)`.
 
-```
-weigh begin: (812 − 478) × 30.12 = 10,060.08 → phpRound → 10,060 ml → wait: factor is per-oz…
-NOTE: scale entries for the golden cycle are entered in grams with a g→ml factor of 0.9478
-(1/1.0551 density) OR in oz with factor 30.12 — the seed uses oz to match legacy examples:
-begin weigh: scale 28.7 oz, tare 16.9 oz → (28.7 − 16.9) × 30.12 = 355.4 → 355 ml → 355/700 = 0.5071…
-```
+Seeded events:
+- Begin count 06-01: Absolut 12 full + weigh(28.7, 16.9, 30.12)→**355 ml**; JD 8 full + weigh(25.0, 17.2, 30.86)→**241 ml**; San Miguel 48; Tonic 24
+- Purchase 06-03 (INV-8841, Metro Beverage): Absolut ×6 @615, San Miguel ×24 @44, Tonic ×12 @30
+- Sales: Absolut ×2 + ×1 @1650; San Miguel ×30 @120; JD ×2 @2400; Tonic ×8 @90
+- Non-revenue: Absolut ×1 contentOverride **350** (STAFF_USE) → content path only (Nuance A/B); San Miguel ×2 (SPILLAGE)
+- Production: Tonic ×4
+- Forfeit 06-06: Absolut weigh(25.4, 16.9, 30.12)→**256 ml** re-entering stock (add-back)
+- End count 06-08: Absolut 14 full + weigh(22.6)→**172 ml**; JD 6 full + weigh(21.3)→**127 ml**; San Miguel 39; Tonic 23
 
-The exact seed values and every expected report cell (usage, open equivalents, forfeit add-back,
-variance, %, cost, retail — per item and per category) are written into this file as part of the
-seeding task, then verified against the rendered report **before** the phase is marked done.
+Expected report cells (exact fractions; engine output matched to 6 dp):
+
+| Item | Usage | Sold | Non-Rev | Prod | Variance | % | Var Cost | Var Retail |
+|---|---|---|---|---|---|---|---|---|
+| Absolut 700 (620/1650) | 4 + 439/700 = **4.627143** | 3 (rev 4950) | 350/700 = **0.5** | 0 | −789/700 = **−1.127143** | **−24.3594%** | **−698.8286** | **−1859.7857** |
+| JD 700 (950/2400) | 2 + 114/700 = **2.162857** | 2 (rev 4800) | 0 | 0 | −114/700 = **−0.162857** | **−7.5297%** | **−154.7143** | **−390.8571** |
+| San Miguel 330 (45/120) | 48+24−39 = **33** | 30 (rev 3600) | 2 | 0 | **−1** | **−3.0303%** | **−45** | **−120** |
+| Tonic 200 (30/90) | 24+12−23 = **13** | 8 (rev 720) | 0 | 4 | **−1** | **−7.6923%** | **−30** | **−90** |
+
+Open equivalents verified: Absolut begin 355/700 = 0.507143, forfeit 256/700 = 0.365714,
+end 172/700 = 0.245714; JD begin 241/700 = 0.344286, end 127/700 = 0.181429.
+
+**Re-verify this table after ANY change to packages/core reconciliation/weighing/pricing/rounding.**
 
 ## Done when
 

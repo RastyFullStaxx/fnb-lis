@@ -68,3 +68,103 @@ export interface Supplier {
 export function variantLabel(v: { size: number; unit: { name: string } }): string {
   return `${v.size} ${v.unit.name}`;
 }
+
+// ── Operational records ──
+
+interface AuditFields {
+  status: string;
+  voidedAt: string | null;
+  voidReason: string | null;
+  correctionOfId: string | null;
+  createdById: string;
+  createdByName: string;
+  createdAt: string;
+}
+
+export interface CountSession {
+  id: string;
+  locationId: string;
+  countDate: string;
+  name: string | null;
+  status: "OPEN" | "COMMITTED" | "VOID";
+  note: string | null;
+  createdByName: string;
+  createdAt: string;
+  committedAt: string | null;
+  voidReason: string | null;
+  _count?: { lines: number };
+}
+
+export interface CountLine extends AuditFields {
+  id: string;
+  countSessionId: string;
+  locationItemId: string;
+  countType: "FULL" | "WEIGH";
+  qtyFull: number;
+  scaleWeight: number | null;
+  scaleUnit: string | null;
+  tareWeight: number | null;
+  densityFactor: number | null;
+  remainingContent: number;
+  unitCost: number;
+  unitRetail: number;
+  locationItem: LocationItem;
+}
+
+export interface Purchase {
+  id: string;
+  locationId: string;
+  supplierId: string | null;
+  supplier: Supplier | null;
+  refNo: string | null;
+  purchaseDate: string;
+  status: "DRAFT" | "COMMITTED" | "VOID";
+  note: string | null;
+  createdByName: string;
+  createdAt: string;
+  voidReason: string | null;
+  lineCount?: number;
+  total?: number;
+}
+
+export interface PurchaseLine extends AuditFields {
+  id: string;
+  purchaseId: string;
+  locationItemId: string;
+  qty: number;
+  unitCost: number;
+  lineTotal: number;
+  locationItem: LocationItem;
+}
+
+export interface SaleRecord extends AuditFields {
+  id: string;
+  locationId: string;
+  saleDate: string;
+  kind: "SALE" | "NON_REVENUE" | "PRODUCTION";
+  locationItemId: string | null;
+  menuItemId: string | null;
+  qty: number;
+  unitPrice: number;
+  discountPct: number;
+  contentOverride: number | null;
+  reason: string | null;
+  note: string | null;
+  locationItem: LocationItem | null;
+  menuItem: { id: string; name: string } | null;
+}
+
+export interface Forfeit extends AuditFields {
+  id: string;
+  locationId: string;
+  forfeitDate: string;
+  locationItemId: string;
+  scaleWeight: number | null;
+  scaleUnit: string | null;
+  tareWeight: number | null;
+  densityFactor: number | null;
+  remainingContent: number;
+  qty: number;
+  note: string | null;
+  locationItem: LocationItem;
+}

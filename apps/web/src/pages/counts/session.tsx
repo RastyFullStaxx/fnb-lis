@@ -1,0 +1,344 @@
+import { useRef, useState } from "react";
+import { Link, useParams } from "react-router";
+import { ArrowLeft, Check, Trash2 } from "lucide-react";
+import { toast } from "sonner";
+import { can, type Role } from "@fnb/core";
+import { useMe } from "@/api/auth";
+import { useLocationId } from "@/api/location";
+import { useCountMutations, useCountSession } from "@/api/ops";
+import { variantLabel, type CountLine, type LocationItem } from "@/api/types";
+import { ApiError } from "@/api/http";
+import { ItemCombobox } from "@/components/item-combobox";
+import { VoidDialog } from "@/components/void-dialog";
+import { useWeighPreview, WeighPreviewStrip } from "@/components/weigh-calculator";
+import { FullPageSpinner } from "@/components/full-page-spinner";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
+
+export function CountSessionPage() {
+  const { sessionId } = useParams();
+  const session = useCountSession(sessionId!);
+
+  if (session.isPending) return <FullPageSpinner />;
+  if (session.isError) return <FullPageSpinner error="Count session not found." />;
+
+  const s = session.data;
+  return s.status === "OPEN" ? <OpenSession session={s} /> : <ReadOnlySession session={s} />;
+}
+
+type SessionWithLines = NonNullable<ReturnType<typeof useCountSession>["data"]>;
+
+function SessionHeader({ session }: { session: SessionWithLines }) {
+  const locationId = useLocationId();
+  return (
+    <div className="mb-4 flex items-center gap-3">
+      <Button asChild variant="ghost" size="icon" aria-label="Back to counts">
+        <Link to={`/l/${locationId}/counts`}>
+          <ArrowLeft className="size-4" />
+        </Link>
+      </Button>
+      <div>
+        <h2 className="text-lg font-semibold tracking-tight tnum">Count · {session.countDate}</h2>
+        <p className="text-sm text-muted-foreground">
+          {session.status === "OPEN"
+            ? "Counting in progress — every saved line lands below."
+            : session.status === "COMMITTED"
+              ? "Committed. Lines are frozen; use void or correct for fixes."
+              : `Voided: ${session.voidReason}`}
+        </p>
+      </div>
+      <Badge className="ml-auto" variant={session.status === "OPEN" ? "default" : "secondary"}>
+        {session.status === "OPEN" ? "Counting" : session.status === "COMMITTED" ? "Committed" : "Void"}
+      </Badge>
+    </div>
+  );
+}
+
+// ── OPEN: the rapid-entry screen ──
+
+function OpenSession({ session }: { session: SessionWithLines }) {
+  const mutations = useCountMutations(session.id);
+  const [item, setItem] = useState<LocationItem | null>(null);
+  const [mode, setMode] = useState<"FULL" | "WEIGH">("FULL");
+  const [qty, setQty] = useState("");
+  const [scale, setScale] = useState("");
+  const comboRef = useRef<HTMLButtonElement>(null);
+
+  const weighable = item?.itemVariant.contentTracked ?? false;
+  const activeMode = weighable ? mode : "FULL";
+  const preview = useWeighPreview(item, scale);
+
+  const save = async () => {
+    if (!item) return;
+    try {
+      if (activeMode === "FULL") {
+        const n = Number(qty);
+        if (qty === "" || !Number.isFinite(n) || n < 0) return toast.error("Enter the counted quantity");
+        await mutations.addLine.mutateAsync({ locationItemId: item.id, countType: "FULL", qtyFull: n });
+      } else {
+        if (!preview || !preview.ready || !preview.entered || preview.blocking) {
+          return toast.error("Fix the scale reading first");
+        }
+        await mutations.addLine.mutateAsync({
+          locationItemId: item.id,
+          countType: "WEIGH",
+          scaleWeight: preview.scale,
+          scaleUnit: preview.unit as "g" | "oz",
+          tareWeight: preview.tare,
+          densityFactor: preview.density,
+        });
+      }
+      // Enter → saved → refocus the item picker: the counting rhythm.
+      setQty("");
+      setScale("");
+      setItem(null);
+      comboRef.current?.focus();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not save the line");
+    }
+  };
+
+  const commit = async () => {
+    try {
+      await mutations.commit.mutateAsync();
+      toast.success(`Count for ${session.countDate} committed`);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not commit");
+    }
+  };
+
+  const activeLines = session.lines.filter((l) => l.status === "ACTIVE");
+
+  return (
+    <div className="mx-auto max-w-6xl">
+      <SessionHeader session={session} />
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
+        {/* Entry pane */}
+        <div className="space-y-4 rounded-lg border p-4">
+          <div className="space-y-2">
+            <Label>Item</Label>
+            <ItemCombobox ref={comboRef} value={item} onSelect={setItem} autoFocus />
+          </div>
+
+          {weighable && (
+            <Tabs value={activeMode} onValueChange={(v) => setMode(v as "FULL" | "WEIGH")}>
+              <TabsList className="w-full">
+                <TabsTrigger value="FULL" className="flex-1">
+                  Full units
+                </TabsTrigger>
+                <TabsTrigger value="WEIGH" className="flex-1">
+                  Weigh open
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+          )}
+
+          {activeMode === "FULL" ? (
+            <div className="space-y-2">
+              <Label htmlFor="count-qty">Counted quantity</Label>
+              <Input
+                id="count-qty"
+                type="number"
+                step="any"
+                min="0"
+                className="tnum h-11 text-lg"
+                placeholder="0"
+                value={qty}
+                onChange={(e) => setQty(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && save()}
+              />
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Label htmlFor="count-scale">Scale reading{preview?.ready ? ` (${preview.unit})` : ""}</Label>
+              <Input
+                id="count-scale"
+                type="number"
+                step="any"
+                min="0"
+                className="tnum h-11 text-lg"
+                placeholder="put the bottle on the scale"
+                value={scale}
+                onChange={(e) => setScale(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && save()}
+              />
+              <WeighPreviewStrip
+                preview={preview}
+                size={item?.itemVariant.size ?? 0}
+                contentUnit={item?.itemVariant.unit.name ?? "ml"}
+              />
+            </div>
+          )}
+
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-muted-foreground">Enter saves and jumps back to the item picker.</p>
+            <Button onClick={save} disabled={!item || mutations.addLine.isPending}>
+              {mutations.addLine.isPending ? "Saving…" : "Save line"}
+            </Button>
+          </div>
+
+          <Separator />
+
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="secondary" className="w-full" disabled={activeLines.length === 0}>
+                <Check className="size-4" /> Review & commit ({activeLines.length} line
+                {activeLines.length === 1 ? "" : "s"})
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Commit this count?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {activeLines.length} line{activeLines.length === 1 ? "" : "s"} for {session.countDate}.
+                  Once committed, lines freeze — fixes go through void &amp; correct, and the date becomes
+                  available as a report boundary.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Keep counting</AlertDialogCancel>
+                <AlertDialogAction onClick={commit}>Commit count</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+
+        {/* Recent entries pane (modernized legacy live preview) */}
+        <div className="rounded-lg border">
+          <div className="border-b bg-muted px-4 py-2 text-sm font-medium">
+            Entered lines
+            <span className="ml-2 tnum text-muted-foreground">{activeLines.length}</span>
+          </div>
+          <div aria-live="polite" className="max-h-[28rem] divide-y overflow-y-auto">
+            {activeLines.length === 0 ? (
+              <p className="p-4 text-sm text-muted-foreground">Nothing counted yet.</p>
+            ) : (
+              activeLines.map((line) => (
+                <LineRow
+                  key={line.id}
+                  line={line}
+                  removable
+                  onRemove={() =>
+                    mutations.removeLine
+                      .mutateAsync(line.id)
+                      .catch((err) =>
+                        toast.error(err instanceof ApiError ? err.message : "Could not remove"),
+                      )
+                  }
+                />
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── COMMITTED / VOID: read-only + void/correct on lines ──
+
+function ReadOnlySession({ session }: { session: SessionWithLines }) {
+  const me = useMe();
+  const mutations = useCountMutations(session.id);
+  const [voiding, setVoiding] = useState<CountLine | null>(null);
+  const role = (me.data?.user.role ?? "READONLY") as Role;
+  const canVoid = can(role, "entries.void") && session.status === "COMMITTED";
+
+  return (
+    <div className="mx-auto max-w-4xl">
+      <SessionHeader session={session} />
+      <div className="rounded-lg border">
+        <div className="divide-y">
+          {session.lines.map((line) => (
+            <LineRow
+              key={line.id}
+              line={line}
+              onVoid={canVoid && line.status === "ACTIVE" ? () => setVoiding(line) : undefined}
+            />
+          ))}
+        </div>
+      </div>
+
+      <VoidDialog
+        open={voiding !== null}
+        onOpenChange={(open) => !open && setVoiding(null)}
+        title="Void this count line?"
+        pending={mutations.voidLine.isPending}
+        onConfirm={async (reason) => {
+          try {
+            await mutations.voidLine.mutateAsync({ lineId: voiding!.id, reason });
+            toast.success("Line voided — reports updated");
+            setVoiding(null);
+          } catch (err) {
+            toast.error(err instanceof ApiError ? err.message : "Could not void");
+          }
+        }}
+      />
+    </div>
+  );
+}
+
+function LineRow({
+  line,
+  removable,
+  onRemove,
+  onVoid,
+}: {
+  line: CountLine;
+  removable?: boolean;
+  onRemove?: () => void;
+  onVoid?: () => void;
+}) {
+  const variant = line.locationItem.itemVariant;
+  const voided = line.status === "VOID";
+  return (
+    <div className={cn("flex items-center gap-3 px-4 py-2.5", voided && "opacity-50")}>
+      <div className="min-w-0 flex-1">
+        <p className={cn("truncate text-sm font-medium", voided && "line-through")}>
+          {variant.item.name}
+          <span className="ml-1.5 font-normal text-muted-foreground">{variantLabel(variant)}</span>
+        </p>
+        <p className="tnum text-xs text-muted-foreground">
+          {line.countType === "FULL"
+            ? `${line.qtyFull} full`
+            : `scale ${line.scaleWeight} ${line.scaleUnit} → ${line.remainingContent} ${variant.unit.name}`}
+          {line.correctionOfId && " · correction"}
+          {voided && line.voidReason && ` · void: ${line.voidReason}`}
+          {" · "}
+          {line.createdByName}
+        </p>
+      </div>
+      {line.countType === "WEIGH" && !voided && (
+        <Badge variant="outline" className="tnum shrink-0">
+          {(line.remainingContent / (variant.size || 1)).toFixed(2)} of {variantLabel(variant)}
+        </Badge>
+      )}
+      {removable && onRemove && (
+        <Button variant="ghost" size="icon" aria-label="Remove line" onClick={onRemove}>
+          <Trash2 className="size-4" />
+        </Button>
+      )}
+      {onVoid && (
+        <Button variant="ghost" size="sm" onClick={onVoid}>
+          Void
+        </Button>
+      )}
+    </div>
+  );
+}
