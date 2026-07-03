@@ -15,6 +15,7 @@ import { countRoutes } from "./routes/counts";
 import { purchaseRoutes } from "./routes/purchases";
 import { saleRoutes } from "./routes/sales";
 import { menuRoutes } from "./routes/menus";
+import { importRoutes } from "./routes/imports";
 import { reportRoutes } from "./routes/reports";
 
 export function createApp() {
@@ -37,6 +38,7 @@ export function createApp() {
     .route("/", purchaseRoutes)
     .route("/", saleRoutes)
     .route("/", menuRoutes)
+    .route("/", importRoutes)
     .route("/", reportRoutes);
   app.route("/api/locations/:locationId", locationScoped);
 

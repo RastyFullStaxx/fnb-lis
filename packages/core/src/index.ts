@@ -4,5 +4,6 @@ export * from "./weighing";
 export * from "./pricing";
 export * from "./reconciliation";
 export * from "./csv";
+export * from "./matching";
 export * from "./constants";
 export * from "./schemas/index";
