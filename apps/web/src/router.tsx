@@ -19,6 +19,8 @@ import { PurchaseReportPage } from "./pages/reports/purchases";
 import { NonRevenueReportPage } from "./pages/reports/non-revenue";
 import { OnHandReportPage } from "./pages/reports/on-hand";
 import { RecipesPage } from "./pages/recipes";
+import { ImportsPage } from "./pages/imports";
+import { ImportReviewPage } from "./pages/imports/review";
 
 export const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
@@ -36,7 +38,8 @@ export const router = createBrowserRouter([
       { path: "purchases/:purchaseId", element: <PurchaseEditorPage /> },
       { path: "sales", element: <SalesPage /> },
       { path: "recipes", element: <RecipesPage /> },
-      { path: "imports/*", element: <ComingSoonPage title="Imports" phase={6} /> },
+      { path: "imports", element: <ImportsPage /> },
+      { path: "imports/:batchId", element: <ImportReviewPage /> },
       { path: "reports", element: <ReportsPage /> },
       { path: "reports/full-audit", element: <FullAuditPage /> },
       { path: "reports/sales", element: <SalesReportPage /> },

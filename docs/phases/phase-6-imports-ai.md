@@ -19,3 +19,11 @@
 - Re-importing the same vendor's file auto-matches via saved aliases
 - Reversal restores the prior report numbers exactly
 - Without an API key: CSV path fully works; PDF/image path shows the setup notice (no crash)
+
+## Verified (2026-07-03)
+
+- **Parsers**: `import-parse.ts` — papaparse CSV + exceljs XLSX with header heuristics (name/qty/price/cost/date), currency/number cleanup, date normalization. `import-extract.ts` — env-gated Anthropic `claude-sonnet-5` via `messages.parse` + `zodOutputFormat(importExtractionResult)`, PDF `document` / image blocks; built but not live-tested (no key in this env — AI path is exercised only through the env guard).
+- **Matching**: `import-match.ts` alias → exact (full label + plain item name, normalized) → fuzzy (`@fnb/core` Levenshtein, threshold 0.6); menus included for SALES. EXACT/ALIAS auto-approved, FUZZY/miss left PENDING.
+- **Routes**: upload (multipart, 20 MB cap, sha256 store under `data/uploads/`), list, detail, row update (manual match → MANUAL + exclusive item/menu), commit (SALES/NON_REVENUE → SaleRecord per row; PURCHASES → Purchase-per-date + lines; `resultType`/`resultId` backlinks; **alias write-back for non-EXACT rows**), reverse (voids exactly the created records → batch REVERSED). COUNTS parked from the picker (needs count-session semantics).
+- **Gates verified end-to-end (server + UI)**: messy `pos-export.csv` → 2 EXACT auto-approved (incl. case-insensitive "absolut vodka"), 1 unmatched; manual-matched "Jack Daniels" → committed 3 rows → Full Audit reflected (SanMig 30→35, JD 2→3, Absolut 3→4); **re-import auto-matched "Jack Daniels" as ALIAS**; **reverse voided 3 records and restored the report byte-for-byte** (variance arrays identical to baseline). No-key PDF upload → 400 friendly setup notice; `aiEnabled=false`; staff (no `imports.upload`) → 403.
+- **Web**: Imports page (kind selector, drag/drop dropzone, AI-gated `accept` + setup notice) and review grid (match combobox with EXACT/ALIAS/FUZZY%/MANUAL badges, warnings, per-row approve/reject, bulk approve-matched/reject-unmatched, commit with confirm, reverse with confirm).
