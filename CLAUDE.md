@@ -12,6 +12,7 @@ Ground-up rebuild of a legacy bar/kitchen inventory-audit system. Web first, Ele
 
 ## Hard rules
 
+- Never commit. I will do the commiting when you're done between each sessions
 - **Never alter reconciliation math** (`packages/core/src/reconciliation.ts`, `weighing.ts`, `pricing.ts`, `rounding.ts`) without re-verifying the golden fixture in docs/phases/phase-3-audit-cycle.md
 - SQLite portability: no Prisma enums, no `Json` scalar, `Float` not Decimal, business dates as TEXT `YYYY-MM-DD` (never `new Date()` on them in core)
 - Committed records are immutable — corrections are void + `correctionOfId` chains; every mutation writes ActivityLog **in the same `$transaction`**
