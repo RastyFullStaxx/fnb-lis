@@ -13,10 +13,10 @@ const REPORTS = [
     description: "The reconciliation: beginning count + purchases + returns − ending count vs. what was sold and used.",
     ready: true,
   },
-  { path: "sales", icon: Receipt, title: "Sales", description: "Revenue and quantities by day, item, and kind.", ready: false },
-  { path: "purchases", icon: ShoppingCart, title: "Purchases", description: "Deliveries by supplier and date with cost totals.", ready: false },
-  { path: "non-revenue", icon: Wine, title: "Non-revenue", description: "Comps, spillage, staff use — grouped by reason.", ready: false },
-  { path: "on-hand", icon: Boxes, title: "Inventory on hand", description: "Computed current stock with cost and retail valuation.", ready: false },
+  { path: "sales", icon: Receipt, title: "Sales", description: "Revenue and quantities by day, item, and menu.", ready: true },
+  { path: "purchases", icon: ShoppingCart, title: "Purchases", description: "Deliveries by supplier and date with cost totals.", ready: true },
+  { path: "non-revenue", icon: Wine, title: "Non-revenue", description: "Comps, spillage, staff use — grouped by reason.", ready: true },
+  { path: "on-hand", icon: Boxes, title: "Inventory on hand", description: "Computed current stock with cost and retail valuation.", ready: true },
 ];
 
 export function ReportsPage() {

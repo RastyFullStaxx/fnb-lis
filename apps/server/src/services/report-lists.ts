@@ -1,0 +1,356 @@
+import { buildFullAudit, committedCountDates } from "./report-assembly";
+import { prisma } from "../db";
+
+/**
+ * Business-listing reports (sales, purchases, non-revenue, on-hand).
+ * These use INCLUSIVE date ranges [from, to] — the natural expectation for
+ * "sales from Jun 1 to Jun 8". Only the Full Audit reconciliation uses the
+ * half-open audit window; see report-assembly.ts / architecture.md §6.
+ */
+
+const LI_INCLUDE = {
+  itemVariant: { include: { unit: true, item: { include: { category: true } } } },
+} as const;
+
+function itemLabel(li: { itemVariant: { size: number; unit: { name: string }; item: { name: string } } }): string {
+  return `${li.itemVariant.item.name} ${li.itemVariant.size} ${li.itemVariant.unit.name}`;
+}
+
+// ── Sales report (transaction-level, kind = SALE) ──
+
+export interface SalesReportRow {
+  saleDate: string;
+  name: string;
+  kind: "item" | "menu";
+  category: string | null;
+  qty: number;
+  unitPrice: number;
+  discountPct: number;
+  gross: number; // unitPrice × qty (legacy getSales basis)
+  net: number; // gross × (1 − discount/100)
+}
+export interface SalesReport {
+  from: string;
+  to: string;
+  rows: SalesReportRow[];
+  totals: { qty: number; gross: number; net: number };
+}
+
+export async function salesReport(locationId: string, from: string, to: string): Promise<SalesReport> {
+  const sales = await prisma.saleRecord.findMany({
+    where: { locationId, status: "ACTIVE", kind: "SALE", saleDate: { gte: from, lte: to } },
+    include: { locationItem: { include: LI_INCLUDE }, menuItem: true },
+    orderBy: [{ saleDate: "asc" }, { createdAt: "asc" }],
+  });
+
+  const rows: SalesReportRow[] = sales.map((s) => {
+    const gross = s.unitPrice * s.qty;
+    const net = gross * (1 - s.discountPct / 100);
+    return {
+      saleDate: s.saleDate,
+      name: s.locationItem ? itemLabel(s.locationItem) : (s.menuItem?.name ?? "—"),
+      kind: s.locationItem ? "item" : "menu",
+      category: s.locationItem?.itemVariant.item.category.name ?? null,
+      qty: s.qty,
+      unitPrice: s.unitPrice,
+      discountPct: s.discountPct,
+      gross,
+      net,
+    };
+  });
+
+  const totals = rows.reduce(
+    (acc, r) => ({ qty: acc.qty + r.qty, gross: acc.gross + r.gross, net: acc.net + r.net }),
+    { qty: 0, gross: 0, net: 0 },
+  );
+  return { from, to, rows, totals };
+}
+
+// ── Purchase report (committed lines, with supplier rollup) ──
+
+export interface PurchaseReportRow {
+  purchaseDate: string;
+  supplier: string;
+  refNo: string | null;
+  name: string;
+  category: string | null;
+  qty: number;
+  unitCost: number;
+  lineTotal: number;
+}
+export interface PurchaseReport {
+  from: string;
+  to: string;
+  rows: PurchaseReportRow[];
+  bySupplier: Array<{ supplier: string; qty: number; cost: number }>;
+  totals: { qty: number; cost: number };
+}
+
+export async function purchaseReport(locationId: string, from: string, to: string): Promise<PurchaseReport> {
+  const lines = await prisma.purchaseLine.findMany({
+    where: {
+      status: "ACTIVE",
+      purchase: { locationId, status: "COMMITTED", purchaseDate: { gte: from, lte: to } },
+    },
+    include: { locationItem: { include: LI_INCLUDE }, purchase: { include: { supplier: true } } },
+    orderBy: { purchase: { purchaseDate: "asc" } },
+  });
+
+  const rows: PurchaseReportRow[] = lines.map((l) => ({
+    purchaseDate: l.purchase.purchaseDate,
+    supplier: l.purchase.supplier?.name ?? "—",
+    refNo: l.purchase.refNo,
+    name: itemLabel(l.locationItem),
+    category: l.locationItem.itemVariant.item.category.name,
+    qty: l.qty,
+    unitCost: l.unitCost,
+    lineTotal: l.lineTotal,
+  }));
+
+  const supplierMap = new Map<string, { qty: number; cost: number }>();
+  for (const r of rows) {
+    const agg = supplierMap.get(r.supplier) ?? { qty: 0, cost: 0 };
+    agg.qty += r.qty;
+    agg.cost += r.lineTotal;
+    supplierMap.set(r.supplier, agg);
+  }
+  const bySupplier = [...supplierMap.entries()]
+    .map(([supplier, v]) => ({ supplier, ...v }))
+    .sort((a, b) => b.cost - a.cost);
+
+  const totals = rows.reduce(
+    (acc, r) => ({ qty: acc.qty + r.qty, cost: acc.cost + r.lineTotal }),
+    { qty: 0, cost: 0 },
+  );
+  return { from, to, rows, bySupplier, totals };
+}
+
+// ── Non-revenue report (grouped by reason) ──
+
+const REASON_LABELS: Record<string, string> = {
+  COMPLIMENTARY: "Complimentary",
+  SPILLAGE: "Spillage",
+  STAFF_USE: "Staff use",
+  SPOILAGE: "Spoilage",
+  BREAKAGE: "Breakage",
+  TASTING: "Tasting",
+  INTERNAL_USE: "Internal use",
+  OTHER: "Other",
+};
+
+export interface NonRevenueRow {
+  saleDate: string;
+  name: string;
+  reason: string;
+  qty: number;
+  contentOverride: number | null;
+  estimatedCost: number | null; // qty × current cost for direct item entries
+}
+export interface NonRevenueReport {
+  from: string;
+  to: string;
+  rows: NonRevenueRow[];
+  byReason: Array<{ reason: string; count: number; qty: number; cost: number }>;
+  totals: { count: number; qty: number; cost: number };
+}
+
+export async function nonRevenueReport(locationId: string, from: string, to: string): Promise<NonRevenueReport> {
+  const records = await prisma.saleRecord.findMany({
+    where: { locationId, status: "ACTIVE", kind: "NON_REVENUE", saleDate: { gte: from, lte: to } },
+    include: { locationItem: { include: LI_INCLUDE }, menuItem: true },
+    orderBy: [{ saleDate: "asc" }, { createdAt: "asc" }],
+  });
+
+  const rows: NonRevenueRow[] = records.map((r) => {
+    const estimatedCost = r.locationItem ? r.qty * r.locationItem.cost : null;
+    return {
+      saleDate: r.saleDate,
+      name: r.locationItem ? itemLabel(r.locationItem) : (r.menuItem?.name ?? "—"),
+      reason: REASON_LABELS[r.reason ?? "OTHER"] ?? r.reason ?? "Other",
+      qty: r.qty,
+      contentOverride: r.contentOverride,
+      estimatedCost,
+    };
+  });
+
+  const reasonMap = new Map<string, { count: number; qty: number; cost: number }>();
+  for (const r of rows) {
+    const agg = reasonMap.get(r.reason) ?? { count: 0, qty: 0, cost: 0 };
+    agg.count += 1;
+    agg.qty += r.qty;
+    agg.cost += r.estimatedCost ?? 0;
+    reasonMap.set(r.reason, agg);
+  }
+  const byReason = [...reasonMap.entries()]
+    .map(([reason, v]) => ({ reason, ...v }))
+    .sort((a, b) => b.qty - a.qty);
+
+  const totals = rows.reduce(
+    (acc, r) => ({ count: acc.count + 1, qty: acc.qty + r.qty, cost: acc.cost + (r.estimatedCost ?? 0) }),
+    { count: 0, qty: 0, cost: 0 },
+  );
+  return { from, to, rows, byReason, totals };
+}
+
+// ── Inventory on hand (computed stock + valuation) ──
+
+export interface OnHandRow {
+  locationItemId: string;
+  name: string;
+  category: string;
+  productType: string;
+  onHand: number;
+  cost: number;
+  retail: number;
+  costValue: number;
+  retailValue: number;
+  belowPar: boolean;
+}
+export interface OnHandReport {
+  lastCountDate: string | null;
+  rows: OnHandRow[];
+  totals: { costValue: number; retailValue: number };
+}
+
+export async function onHandReport(locationId: string): Promise<OnHandReport> {
+  const dates = await committedCountDates(locationId);
+  const lastDate = dates.at(-1) ?? null;
+  if (!lastDate) return { lastCountDate: null, rows: [], totals: { costValue: 0, retailValue: 0 } };
+
+  // On-hand = last count + everything committed since (report end date = far future).
+  const report = await buildFullAudit(locationId, lastDate, "9999-12-31");
+
+  const priceRows = await prisma.locationItem.findMany({
+    where: { id: { in: report.rows.map((r) => r.locationItemId) } },
+    select: { id: true, cost: true, retail: true, parLevel: true },
+  });
+  const priceMap = new Map(priceRows.map((p) => [p.id, p]));
+
+  const rows: OnHandRow[] = report.rows.map((row) => {
+    const price = priceMap.get(row.locationItemId);
+    const onHand =
+      row.beginFull + row.beginOpenEquiv + row.purchased + row.forfeited -
+      (row.soldDirect + row.soldPortion + row.nonRevenue + row.production);
+    const cost = price?.cost ?? row.costBasis;
+    const retail = price?.retail ?? 0;
+    return {
+      locationItemId: row.locationItemId,
+      name: row.itemName,
+      category: row.categoryName,
+      productType: row.productType,
+      onHand,
+      cost,
+      retail,
+      costValue: onHand * cost,
+      retailValue: onHand * retail,
+      belowPar: price?.parLevel != null && onHand < price.parLevel,
+    };
+  });
+
+  const totals = rows.reduce(
+    (acc, r) => ({ costValue: acc.costValue + r.costValue, retailValue: acc.retailValue + r.retailValue }),
+    { costValue: 0, retailValue: 0 },
+  );
+  return { lastCountDate: lastDate, rows, totals };
+}
+
+// ── Full Audit drill-down: the source records behind one item's row ──
+
+export interface DrillRecord {
+  kind: "COUNT" | "PURCHASE" | "SALE" | "NON_REVENUE" | "PRODUCTION" | "FORFEIT";
+  date: string;
+  detail: string;
+  qty: number | null;
+  amount: number | null;
+}
+
+export async function fullAuditDrill(
+  locationId: string,
+  locationItemId: string,
+  begin: string,
+  end: string,
+): Promise<DrillRecord[]> {
+  const [counts, purchaseLines, forfeits, directSales, menuSales] = await Promise.all([
+    prisma.countLine.findMany({
+      where: {
+        status: "ACTIVE",
+        locationItemId,
+        countSession: { locationId, status: "COMMITTED", countDate: { in: [begin, end] } },
+      },
+      include: { countSession: true },
+    }),
+    prisma.purchaseLine.findMany({
+      where: {
+        status: "ACTIVE",
+        locationItemId,
+        purchase: { locationId, status: "COMMITTED", purchaseDate: { gte: begin, lt: end } },
+      },
+      include: { purchase: true },
+    }),
+    prisma.forfeit.findMany({
+      where: { locationId, locationItemId, status: "ACTIVE", forfeitDate: { gte: begin, lt: end } },
+    }),
+    prisma.saleRecord.findMany({
+      where: { locationId, locationItemId, status: "ACTIVE", saleDate: { gte: begin, lt: end } },
+    }),
+    // Menu sales that expand into this item via their snapshotted recipe version.
+    prisma.saleRecord.findMany({
+      where: {
+        locationId,
+        status: "ACTIVE",
+        menuItemId: { not: null },
+        saleDate: { gte: begin, lt: end },
+        recipeVersion: { lines: { some: { locationItemId } } },
+      },
+      include: { menuItem: true, recipeVersion: { include: { lines: true } } },
+    }),
+  ]);
+
+  const records: DrillRecord[] = [];
+
+  for (const c of counts) {
+    records.push({
+      kind: "COUNT",
+      date: c.countSession.countDate,
+      detail:
+        c.countType === "FULL"
+          ? `${c.countSession.countDate === begin ? "Beginning" : "Ending"} count · ${c.qtyFull} full`
+          : `${c.countSession.countDate === begin ? "Beginning" : "Ending"} count · weigh ${c.scaleWeight} ${c.scaleUnit} → ${c.remainingContent}`,
+      qty: c.countType === "FULL" ? c.qtyFull : c.remainingContent,
+      amount: null,
+    });
+  }
+  for (const p of purchaseLines) {
+    records.push({ kind: "PURCHASE", date: p.purchase.purchaseDate, detail: `Purchase ×${p.qty} @ ${p.unitCost}`, qty: p.qty, amount: p.lineTotal });
+  }
+  for (const f of forfeits) {
+    records.push({ kind: "FORFEIT", date: f.forfeitDate, detail: f.remainingContent > 0 ? `Returned ${f.remainingContent} content` : `Returned ×${f.qty}`, qty: f.remainingContent > 0 ? f.remainingContent : f.qty, amount: null });
+  }
+  for (const s of directSales) {
+    const kind = s.kind as DrillRecord["kind"];
+    records.push({
+      kind,
+      date: s.saleDate,
+      detail:
+        s.kind === "SALE"
+          ? `Sale ×${s.qty} @ ${s.unitPrice}${s.discountPct ? ` (−${s.discountPct}%)` : ""}`
+          : s.kind === "NON_REVENUE"
+            ? `Non-revenue ×${s.qty}${s.contentOverride ? ` · ${s.contentOverride}/unit` : ""} (${s.reason ?? "—"})`
+            : `Production ×${s.qty}`,
+      qty: s.qty,
+      amount: s.kind === "SALE" ? s.unitPrice * s.qty : null,
+    });
+  }
+  for (const m of menuSales) {
+    const line = m.recipeVersion?.lines.find((l) => l.locationItemId === locationItemId);
+    records.push({
+      kind: m.kind as DrillRecord["kind"],
+      date: m.saleDate,
+      detail: `${m.menuItem?.name ?? "Menu"} ×${m.qty} · ${line?.servingQty ?? "?"}/serving`,
+      qty: m.qty,
+      amount: m.kind === "SALE" ? m.unitPrice * m.qty : null,
+    });
+  }
+
+  return records.sort((a, b) => a.date.localeCompare(b.date));
+}

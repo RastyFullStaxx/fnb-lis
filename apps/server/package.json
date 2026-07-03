@@ -19,6 +19,7 @@
     "@hono/zod-validator": "^0.8.0",
     "@prisma/adapter-better-sqlite3": "^7.8.0",
     "@prisma/client": "^7.8.0",
+    "exceljs": "^4.4.0",
     "hono": "^4.12.27",
     "zod": "^4.4.3"
   },

@@ -35,3 +35,29 @@ export const post = <T>(path: string, body?: unknown) =>
 
 export const put = <T>(path: string, body?: unknown) =>
   api<T>(path, { method: "PUT", body: body === undefined ? undefined : JSON.stringify(body) });
+
+/** Streams a file download, honoring the server's content-disposition filename. */
+export async function downloadFile(path: string): Promise<void> {
+  const res = await fetch(path, { credentials: "same-origin" });
+  if (!res.ok) {
+    let message = res.statusText;
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body.error) message = body.error;
+    } catch {
+      // non-JSON error
+    }
+    throw new ApiError(res.status, message);
+  }
+  const blob = await res.blob();
+  const disposition = res.headers.get("content-disposition") ?? "";
+  const filename = /filename="(.+?)"/.exec(disposition)?.[1] ?? "report";
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}

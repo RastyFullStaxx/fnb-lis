@@ -122,3 +122,37 @@
   --sidebar-border: hsl(240 3.7% 15.9%);
   --sidebar-ring: hsl(217.2 91.2% 59.8%);
 }
+
+/* Print: strip the app chrome, land reports on A4 landscape with a repeating
+   table header. Use `print:hidden` on controls and `hidden print:block` on the
+   print-only report header. */
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 12mm;
+  }
+  [data-slot="sidebar"],
+  [data-slot="sidebar-rail"],
+  header {
+    display: none !important;
+  }
+  [data-slot="sidebar-inset"] {
+    margin: 0 !important;
+    box-shadow: none !important;
+  }
+  main {
+    padding: 0 !important;
+  }
+  body {
+    background: white;
+  }
+  table {
+    font-size: 10px;
+  }
+  thead {
+    display: table-header-group;
+  }
+  tr {
+    break-inside: avoid;
+  }
+}

@@ -14,6 +14,10 @@ import { PurchaseEditorPage } from "./pages/purchases/editor";
 import { SalesPage } from "./pages/sales";
 import { ReportsPage } from "./pages/reports";
 import { FullAuditPage } from "./pages/reports/full-audit";
+import { SalesReportPage } from "./pages/reports/sales";
+import { PurchaseReportPage } from "./pages/reports/purchases";
+import { NonRevenueReportPage } from "./pages/reports/non-revenue";
+import { OnHandReportPage } from "./pages/reports/on-hand";
 import { RecipesPage } from "./pages/recipes";
 
 export const router = createBrowserRouter([
@@ -35,6 +39,10 @@ export const router = createBrowserRouter([
       { path: "imports/*", element: <ComingSoonPage title="Imports" phase={6} /> },
       { path: "reports", element: <ReportsPage /> },
       { path: "reports/full-audit", element: <FullAuditPage /> },
+      { path: "reports/sales", element: <SalesReportPage /> },
+      { path: "reports/purchases", element: <PurchaseReportPage /> },
+      { path: "reports/non-revenue", element: <NonRevenueReportPage /> },
+      { path: "reports/on-hand", element: <OnHandReportPage /> },
       { path: "reports/*", element: <ComingSoonPage title="This report" phase={5} /> },
       { path: "items", element: <ItemsPage /> },
       { path: "suppliers", element: <SuppliersPage /> },

@@ -1,12 +1,23 @@
 import { useMemo, useState } from "react";
 import { BarChart3, Info } from "lucide-react";
 import { round2 } from "@fnb/core";
+import { useMe } from "@/api/auth";
 import { useCountDates, useFullAudit } from "@/api/ops";
+import { useLocationId } from "@/api/location";
 import { useProductTypes } from "@/api/master";
+import { exportUrl, useFullAuditDrill } from "@/api/reports";
 import { formatMoney } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
+import { ExportButtons } from "@/components/report-toolbar";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -30,27 +41,24 @@ const ALL = "__all__";
 const n2 = (v: number) => round2(v).toLocaleString("en-US", { maximumFractionDigits: 2 });
 
 export function FullAuditPage() {
+  const me = useMe();
+  const locationId = useLocationId();
   const countDates = useCountDates();
   const productTypes = useProductTypes();
   const [begin, setBegin] = useState<string>();
   const [end, setEnd] = useState<string>();
   const [productType, setProductType] = useState(ALL);
+  const [drill, setDrill] = useState<{ id: string; name: string } | null>(null);
+
+  const location = me.data?.clients.flatMap((c) => c.locations.map((l) => ({ ...l, clientName: c.name }))).find((l) => l.id === locationId);
 
   const dates = countDates.data?.dates ?? [];
-  // Default to the most recent complete period.
   const effectiveBegin = begin ?? (dates.length >= 2 ? dates[dates.length - 2] : undefined);
   const effectiveEnd = end ?? (dates.length >= 2 ? dates[dates.length - 1] : undefined);
 
-  const report = useFullAudit(
-    effectiveBegin,
-    effectiveEnd,
-    productType === ALL ? undefined : productType,
-  );
+  const report = useFullAudit(effectiveBegin, effectiveEnd, productType === ALL ? undefined : productType);
 
-  const endOptions = useMemo(
-    () => dates.filter((d) => !effectiveBegin || d > effectiveBegin),
-    [dates, effectiveBegin],
-  );
+  const endOptions = useMemo(() => dates.filter((d) => !effectiveBegin || d > effectiveBegin), [dates, effectiveBegin]);
 
   if (countDates.isPending) return <Skeleton className="h-96 w-full" />;
 
@@ -67,12 +75,32 @@ export function FullAuditPage() {
     );
   }
 
+  const exportParams = { begin: effectiveBegin ?? "", end: effectiveEnd ?? "", ...(productType !== ALL ? { productType } : {}) };
+
   return (
     <div className="mx-auto max-w-full print:max-w-none">
       <PageHeader
         title="Full Audit"
         description="Beginning count + purchases + returns − ending count = usage; compared against what was sold, used, and produced."
+        actions={
+          <ExportButtons
+            xlsxUrl={exportUrl(locationId, "full-audit", "xlsx", exportParams)}
+            csvUrl={exportUrl(locationId, "full-audit", "csv", exportParams)}
+            onPrint={() => window.print()}
+            disabled={!report.data?.rows.length}
+          />
+        }
       />
+
+      {/* Print-only header */}
+      {location && effectiveBegin && effectiveEnd && (
+        <div className="mb-4 hidden print:block">
+          <h1 className="text-lg font-bold text-primary">Full Audit Report</h1>
+          <p className="text-sm">
+            {location.clientName} · {location.name} · {effectiveBegin} → {effectiveEnd}
+          </p>
+        </div>
+      )}
 
       <div className="mb-3 flex flex-wrap items-end gap-2 print:hidden">
         <div className="space-y-1">
@@ -141,7 +169,7 @@ export function FullAuditPage() {
             description="Pick different boundary dates, or check that the counts were committed."
           />
         ) : (
-          <div className="overflow-x-auto rounded-lg border">
+          <div className="overflow-x-auto rounded-lg border print:overflow-visible print:border-0">
             <Table className="min-w-[72rem]">
               <TableHeader className="sticky top-0 z-10">
                 <TableRow className="bg-muted hover:bg-muted">
@@ -163,7 +191,7 @@ export function FullAuditPage() {
               </TableHeader>
               <TableBody>
                 {report.data.categories.map((group) => (
-                  <CategoryRows key={group.categoryName} group={group} />
+                  <CategoryRows key={group.categoryName} group={group} onDrill={setDrill} />
                 ))}
                 <TableRow className="border-t-2 bg-muted/60 font-semibold hover:bg-muted/60">
                   <TableCell>Grand total</TableCell>
@@ -182,13 +210,15 @@ export function FullAuditPage() {
           </div>
         )
       ) : null}
+
+      <DrillDialog item={drill} begin={effectiveBegin} end={effectiveEnd} onClose={() => setDrill(null)} />
     </div>
   );
 }
 
 type Group = NonNullable<ReturnType<typeof useFullAudit>["data"]>["categories"][number];
 
-function CategoryRows({ group }: { group: Group }) {
+function CategoryRows({ group, onDrill }: { group: Group; onDrill: (item: { id: string; name: string }) => void }) {
   return (
     <>
       <TableRow className="bg-secondary/60 hover:bg-secondary/60">
@@ -199,12 +229,13 @@ function CategoryRows({ group }: { group: Group }) {
       {group.rows.map((row) => (
         <TableRow
           key={row.locationItemId}
-          className={cn(row.flags.short && "bg-destructive/5 hover:bg-destructive/10")}
+          className={cn("cursor-pointer", row.flags.short ? "bg-destructive/5 hover:bg-destructive/10" : "hover:bg-muted/40")}
+          onClick={() => onDrill({ id: row.locationItemId, name: row.itemName })}
         >
           <TableCell>
             <span className="font-medium">{row.itemName}</span>
             {row.flags.missingPrice && (
-              <Badge variant="destructive" className="ml-2">
+              <Badge variant="destructive" className="ml-2 print:hidden">
                 no price
               </Badge>
             )}
@@ -224,9 +255,7 @@ function CategoryRows({ group }: { group: Group }) {
             {row.soldDirect + row.soldPortion > 0 ? (
               <>
                 {n2(row.soldDirect)}
-                {row.soldPortion > 0 && (
-                  <span className="text-muted-foreground"> + {n2(row.soldPortion)}</span>
-                )}
+                {row.soldPortion > 0 && <span className="text-muted-foreground"> + {n2(row.soldPortion)}</span>}
               </>
             ) : (
               "—"
@@ -250,5 +279,61 @@ function CategoryRows({ group }: { group: Group }) {
         </TableRow>
       ))}
     </>
+  );
+}
+
+const DRILL_LABELS: Record<string, string> = {
+  COUNT: "Count",
+  PURCHASE: "Purchase",
+  SALE: "Sale",
+  NON_REVENUE: "Non-revenue",
+  PRODUCTION: "Production",
+  FORFEIT: "Return",
+};
+
+function DrillDialog({
+  item,
+  begin,
+  end,
+  onClose,
+}: {
+  item: { id: string; name: string } | null;
+  begin?: string;
+  end?: string;
+  onClose: () => void;
+}) {
+  const drill = useFullAuditDrill(begin ?? "", end ?? "", item?.id ?? null);
+
+  return (
+    <Dialog open={item !== null} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{item?.name}</DialogTitle>
+          <DialogDescription>
+            The source records behind this row, {begin} → {end}.
+          </DialogDescription>
+        </DialogHeader>
+        {drill.isPending ? (
+          <Skeleton className="h-40 w-full" />
+        ) : (drill.data?.records.length ?? 0) === 0 ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">No source records in this period.</p>
+        ) : (
+          <div className="divide-y rounded-lg border">
+            {drill.data!.records.map((r, i) => (
+              <div key={i} className="flex items-center gap-3 px-3 py-2">
+                <Badge variant="outline" className="shrink-0">
+                  {DRILL_LABELS[r.kind] ?? r.kind}
+                </Badge>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm">{r.detail}</p>
+                  <p className="tnum text-xs text-muted-foreground">{r.date}</p>
+                </div>
+                {r.amount !== null && <span className="tnum text-sm">{formatMoney(r.amount)}</span>}
+              </div>
+            ))}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
