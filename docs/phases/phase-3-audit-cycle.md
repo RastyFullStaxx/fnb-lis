@@ -28,17 +28,30 @@ Seeded events:
 - Forfeit 06-06: Absolut weigh(25.4, 16.9, 30.12)→**256 ml** re-entering stock (add-back)
 - End count 06-08: Absolut 14 full + weigh(22.6)→**172 ml**; JD 6 full + weigh(21.3)→**127 ml**; San Miguel 39; Tonic 23
 
-Expected report cells (exact fractions; engine output matched to 6 dp):
+**Phase 4 extension (2026-07-03):** menu "Vodka Tonic" v1 = 45 ml Absolut 700 + 1 × Tonic 200,
+SRP 250, costAtPublish = (45/700)×620 + 30 = 69.857143. Menu sales: ×12 @250, ×2 @250 at 10% off,
+1 × NON_REVENUE (STAFF_USE, serving fallback). Tonic end count is 8 (physically consistent with
+15 menu bottles consumed). menuTotalServing (mtotal) = 45 + 1 = 46 — legacy sums servings across
+lines regardless of unit; reproduced faithfully.
 
-| Item | Usage | Sold | Non-Rev | Prod | Variance | % | Var Cost | Var Retail |
-|---|---|---|---|---|---|---|---|---|
-| Absolut 700 (620/1650) | 4 + 439/700 = **4.627143** | 3 (rev 4950) | 350/700 = **0.5** | 0 | −789/700 = **−1.127143** | **−24.3594%** | **−698.8286** | **−1859.7857** |
-| JD 700 (950/2400) | 2 + 114/700 = **2.162857** | 2 (rev 4800) | 0 | 0 | −114/700 = **−0.162857** | **−7.5297%** | **−154.7143** | **−390.8571** |
-| San Miguel 330 (45/120) | 48+24−39 = **33** | 30 (rev 3600) | 2 | 0 | **−1** | **−3.0303%** | **−45** | **−120** |
-| Tonic 200 (30/90) | 24+12−23 = **13** | 8 (rev 720) | 0 | 4 | **−1** | **−7.6923%** | **−30** | **−90** |
+Combined expected report cells (exact; engine matched to 6 dp on 2026-07-03):
 
+| Item | Usage | Sold direct + portion | Revenue | Non-Rev | Prod | Variance | % | Var Cost | Var Retail |
+|---|---|---|---|---|---|---|---|---|---|
+| Absolut 700 (620/1650) | 4 + 439/700 = **4.627143** | 3 + (45×14)/700 = **0.9** | 4950 + ((45/46)·250·14 − 25) = **8348.913043** | 0.5 + 45/700 = **0.564286** | 0 | **−0.162857** | **−3.5196%** | **−100.9714** | **−268.7143** |
+| JD 700 (950/2400) | 2 + 114/700 = **2.162857** | 2 + 0 | **4800** | 0 | 0 | **−0.162857** | **−7.5297%** | **−154.7143** | **−390.8571** |
+| San Miguel 330 (45/120) | 48+24−39 = **33** | 30 + 0 | **3600** | 2 | 0 | **−1** | **−3.0303%** | **−45** | **−120** |
+| Tonic 200 (30/90) | 24+12−8 = **28** | 8 + **14** | 720 + ((1/46)·250·14 − 25) = **771.086957** | 1 (menu serving) | 4 | **−1** | **−3.5714%** | **−30** | **−90** |
+
+Discount deduction verified: only the ×2 @10% record deducts ((250×0.10)/2)×2 = 25 per ingredient row.
 Open equivalents verified: Absolut begin 355/700 = 0.507143, forfeit 256/700 = 0.365714,
 end 172/700 = 0.245714; JD begin 241/700 = 0.344286, end 127/700 = 0.181429.
+Version immunity verified: publishing Vodka Tonic v2 (different recipe/SRP) leaves this report
+byte-identical — sales snapshot their recipeVersionId.
+
+Narrative note: Absolut's raw shortage was −1.127143 before menu sales were recorded (Phase 3
+table, superseded); recording the cocktail sales *explained* 0.9 + 0.064286 of it, shrinking the
+unexplained variance to −0.162857. That is the product's pitch in one row.
 
 **Re-verify this table after ANY change to packages/core reconciliation/weighing/pricing/rounding.**
 

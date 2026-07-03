@@ -386,14 +386,47 @@ async function seedGoldenCycle() {
     },
   });
 
-  // Ending count — 2026-06-08
+  // Menu: Vodka Tonic v1 = 45 ml Absolut + 1 × Tonic 200 ml bottle, SRP 250.
+  // costAtPublish = (45/700)×620 + 1×30 = 69.857142857…
+  const vodkaTonic = await prisma.menuItem.create({
+    data: { locationId: location.id, name: "Vodka Tonic" },
+  });
+  const vtV1 = await prisma.recipeVersion.create({
+    data: {
+      menuItemId: vodkaTonic.id,
+      versionNo: 1,
+      srp: 250,
+      costAtPublish: (45 / 700) * absolut.cost + 1 * tonic.cost,
+      publishedById: manager.id,
+      lines: {
+        create: [
+          { locationItemId: absolut.id, servingQty: 45, sortOrder: 0 },
+          { locationItemId: tonic.id, servingQty: 1, sortOrder: 1 },
+        ],
+      },
+    },
+  });
+
+  // Menu sales (recipe version snapshotted): ×12 clean, ×2 at 10% off, 1 staff non-rev.
+  const menuSale = (saleDate: string, kind: string, qty: number, unitPrice: number, discountPct = 0, reason?: string) =>
+    prisma.saleRecord.create({
+      data: {
+        locationId: location.id, saleDate, kind, menuItemId: vodkaTonic.id, recipeVersionId: vtV1.id,
+        qty, unitPrice, discountPct, reason: reason ?? null, ...encoder,
+      },
+    });
+  await menuSale("2026-06-04", "SALE", 12, 250);
+  await menuSale("2026-06-05", "SALE", 2, 250, 10);
+  await menuSale("2026-06-06", "NON_REVENUE", 1, 0, 0, "STAFF_USE");
+
+  // Ending count — 2026-06-08 (tonic reflects the 15 bottles consumed via menus)
   await countSession("2026-06-08", [
     { item: absolut, full: 14 },
     { item: absolut, scale: 22.6, tare: 16.9, density: 30.12 }, // → 172 ml
     { item: jd, full: 6 },
     { item: jd, scale: 21.3, tare: 17.2, density: 30.86 }, // → 127 ml
     { item: beer, full: 39 },
-    { item: tonic, full: 23 },
+    { item: tonic, full: 8 },
   ]);
 
   console.log("Golden cycle seeded (2026-06-01 → 2026-06-08 at Main Bar).");

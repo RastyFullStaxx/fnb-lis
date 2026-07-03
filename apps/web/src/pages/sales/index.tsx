@@ -1,15 +1,25 @@
-import { useRef, useState } from "react";
-import { Receipt } from "lucide-react";
+import { forwardRef, useRef, useState } from "react";
+import { ChevronsUpDown, Martini, Receipt } from "lucide-react";
 import { toast } from "sonner";
 import { can, NON_REVENUE_REASONS, type Role, type SaleKind } from "@fnb/core";
 import { useMe } from "@/api/auth";
+import { useLocationItems } from "@/api/location";
+import { useMenus, type MenuSummary } from "@/api/menus";
 import { useSaleMutations, useSales } from "@/api/ops";
 import { variantLabel, type LocationItem, type SaleRecord } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { formatMoney } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
-import { ItemCombobox } from "@/components/item-combobox";
 import { VoidDialog } from "@/components/void-dialog";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -149,9 +159,11 @@ export function SalesPage() {
   );
 }
 
+type SaleTarget = { type: "item"; item: LocationItem } | { type: "menu"; menu: MenuSummary };
+
 function QuickEntry({ kind }: { kind: SaleKind }) {
   const mutations = useSaleMutations();
-  const [item, setItem] = useState<LocationItem | null>(null);
+  const [target, setTarget] = useState<SaleTarget | null>(null);
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [qty, setQty] = useState("1");
   const [price, setPrice] = useState("");
@@ -161,28 +173,34 @@ function QuickEntry({ kind }: { kind: SaleKind }) {
   const comboRef = useRef<HTMLButtonElement>(null);
   const copy = KIND_COPY[kind];
 
-  const pickItem = (li: LocationItem) => {
-    setItem(li);
-    if (kind === "SALE") setPrice(String(li.retail || ""));
+  const item = target?.type === "item" ? target.item : null;
+
+  const pickTarget = (t: SaleTarget) => {
+    setTarget(t);
+    if (kind === "SALE") {
+      setPrice(t.type === "item" ? String(t.item.retail || "") : String(t.menu.current?.srp || ""));
+    }
   };
 
   const save = async () => {
-    if (!item) return;
+    if (!target) return;
     const q = Number(qty);
     if (!q || q <= 0) return toast.error("Enter a quantity");
     try {
       await mutations.create.mutateAsync({
         saleDate: date,
         kind,
-        locationItemId: item.id,
+        locationItemId: target.type === "item" ? target.item.id : undefined,
+        menuItemId: target.type === "menu" ? target.menu.id : undefined,
         qty: q,
         unitPrice: kind === "SALE" ? Number(price) || 0 : 0,
         discountPct: kind === "SALE" ? Number(discount) || 0 : 0,
-        contentOverride: kind === "NON_REVENUE" && content !== "" ? Number(content) : undefined,
+        contentOverride:
+          kind === "NON_REVENUE" && target.type === "item" && content !== "" ? Number(content) : undefined,
         reason: kind === "NON_REVENUE" ? (reason as (typeof NON_REVENUE_REASONS)[number]) : undefined,
       });
       toast.success("Saved");
-      setItem(null);
+      setTarget(null);
       setQty("1");
       setPrice("");
       setDiscount("");
@@ -202,8 +220,8 @@ function QuickEntry({ kind }: { kind: SaleKind }) {
 
       <div className="grid grid-cols-[1fr_auto] gap-2">
         <div className="space-y-2">
-          <Label>Item</Label>
-          <ItemCombobox ref={comboRef} value={item} onSelect={pickItem} autoFocus />
+          <Label>Item or menu</Label>
+          <SaleTargetCombobox ref={comboRef} value={target} onSelect={pickTarget} />
         </div>
         <div className="space-y-2">
           <Label htmlFor="s-date">Date</Label>
@@ -274,20 +292,22 @@ function QuickEntry({ kind }: { kind: SaleKind }) {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="s-content">Content per unit</Label>
-              <Input
-                id="s-content"
-                type="number"
-                step="any"
-                min="0"
-                className="tnum"
-                placeholder={item?.itemVariant.contentTracked ? `e.g. 350 ${item.itemVariant.unit.name}` : "whole units"}
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && save()}
-              />
-            </div>
+            {target?.type !== "menu" && (
+              <div className="space-y-2">
+                <Label htmlFor="s-content">Content per unit</Label>
+                <Input
+                  id="s-content"
+                  type="number"
+                  step="any"
+                  min="0"
+                  className="tnum"
+                  placeholder={item?.itemVariant.contentTracked ? `e.g. 350 ${item.itemVariant.unit.name}` : "whole units"}
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && save()}
+                />
+              </div>
+            )}
           </>
         )}
       </div>
@@ -307,3 +327,82 @@ function QuickEntry({ kind }: { kind: SaleKind }) {
     </div>
   );
 }
+
+const SaleTargetCombobox = forwardRef<
+  HTMLButtonElement,
+  { value: SaleTarget | null; onSelect: (target: SaleTarget) => void }
+>(function SaleTargetCombobox({ value, onSelect }, ref) {
+  const [open, setOpen] = useState(false);
+  const items = useLocationItems();
+  const menus = useMenus();
+  const readyMenus = (menus.data ?? []).filter((m) => m.isActive && m.current);
+
+  const label =
+    value?.type === "item"
+      ? `${value.item.itemVariant.item.name} ${variantLabel(value.item.itemVariant)}`
+      : value?.type === "menu"
+        ? value.menu.name
+        : null;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button ref={ref} variant="outline" role="combobox" aria-expanded={open} className="w-full justify-between font-normal">
+          {label ? (
+            <span className="truncate">
+              {value?.type === "menu" && <Martini className="mr-1.5 inline size-3.5 text-primary" />}
+              {label}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">Pick an item or menu…</span>
+          )}
+          <ChevronsUpDown className="size-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[--radix-popover-trigger-width] min-w-72 p-0" align="start">
+        <Command>
+          <CommandInput placeholder="Type to search…" autoFocus />
+          <CommandList>
+            <CommandEmpty>{items.isPending ? "Loading…" : "Nothing matches."}</CommandEmpty>
+            {readyMenus.length > 0 && (
+              <CommandGroup heading="Menus">
+                {readyMenus.map((menu) => (
+                  <CommandItem
+                    key={menu.id}
+                    value={`menu ${menu.name}`}
+                    onSelect={() => {
+                      onSelect({ type: "menu", menu });
+                      setOpen(false);
+                    }}
+                  >
+                    <Martini className="size-4 text-primary" />
+                    <span className="flex-1 truncate">{menu.name}</span>
+                    <span className="tnum text-xs text-muted-foreground">v{menu.current!.versionNo}</span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+            <CommandGroup heading="Items">
+              {(items.data ?? []).map((li) => (
+                <CommandItem
+                  key={li.id}
+                  value={`item ${li.itemVariant.item.name} ${variantLabel(li.itemVariant)}`}
+                  onSelect={() => {
+                    onSelect({ type: "item", item: li });
+                    setOpen(false);
+                  }}
+                >
+                  <span className="flex-1 truncate">
+                    {li.itemVariant.item.name}
+                    <span className="ml-1.5 text-muted-foreground">{variantLabel(li.itemVariant)}</span>
+                  </span>
+                  <span className="text-xs text-muted-foreground">{li.itemVariant.item.category.name}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+});

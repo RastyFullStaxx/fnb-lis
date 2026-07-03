@@ -14,6 +14,7 @@ import { PurchaseEditorPage } from "./pages/purchases/editor";
 import { SalesPage } from "./pages/sales";
 import { ReportsPage } from "./pages/reports";
 import { FullAuditPage } from "./pages/reports/full-audit";
+import { RecipesPage } from "./pages/recipes";
 
 export const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
@@ -30,7 +31,7 @@ export const router = createBrowserRouter([
       { path: "purchases", element: <PurchasesPage /> },
       { path: "purchases/:purchaseId", element: <PurchaseEditorPage /> },
       { path: "sales", element: <SalesPage /> },
-      { path: "recipes/*", element: <ComingSoonPage title="Recipes" phase={4} /> },
+      { path: "recipes", element: <RecipesPage /> },
       { path: "imports/*", element: <ComingSoonPage title="Imports" phase={6} /> },
       { path: "reports", element: <ReportsPage /> },
       { path: "reports/full-audit", element: <FullAuditPage /> },

@@ -151,7 +151,7 @@ export function FullAuditPage() {
                   <TableHead className="text-right">Returns</TableHead>
                   <TableHead className="text-right">End (full + open)</TableHead>
                   <TableHead className="text-right font-semibold">Usage</TableHead>
-                  <TableHead className="text-right">Sold</TableHead>
+                  <TableHead className="text-right">Sold (direct + recipe)</TableHead>
                   <TableHead className="text-right">Non-rev</TableHead>
                   <TableHead className="text-right">Prod</TableHead>
                   <TableHead className="text-right">Revenue</TableHead>
@@ -220,7 +220,18 @@ function CategoryRows({ group }: { group: Group }) {
             {row.endOpenEquiv > 0 && <span className="text-muted-foreground"> + {n2(row.endOpenEquiv)}</span>}
           </TableCell>
           <TableCell className="tnum text-right font-medium">{n2(row.usage)}</TableCell>
-          <TableCell className="tnum text-right">{row.soldDirect + row.soldPortion > 0 ? n2(row.soldDirect + row.soldPortion) : "—"}</TableCell>
+          <TableCell className="tnum text-right">
+            {row.soldDirect + row.soldPortion > 0 ? (
+              <>
+                {n2(row.soldDirect)}
+                {row.soldPortion > 0 && (
+                  <span className="text-muted-foreground"> + {n2(row.soldPortion)}</span>
+                )}
+              </>
+            ) : (
+              "—"
+            )}
+          </TableCell>
           <TableCell className="tnum text-right">{row.nonRevenue > 0 ? n2(row.nonRevenue) : "—"}</TableCell>
           <TableCell className="tnum text-right">{row.production > 0 ? n2(row.production) : "—"}</TableCell>
           <TableCell className="tnum text-right">{row.revenue > 0 ? formatMoney(round2(row.revenue)) : "—"}</TableCell>
