@@ -41,7 +41,7 @@ export function CountsPage() {
   const [createOpen, setCreateOpen] = useState(false);
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div>
       <PageHeader
         title="Counts"
         description="Physical stock counts anchor every audit period — count, commit, and the date becomes a report boundary."

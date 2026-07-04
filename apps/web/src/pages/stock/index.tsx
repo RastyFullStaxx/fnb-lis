@@ -54,7 +54,7 @@ export function StockPage() {
   const missingCount = rows.data?.filter((r) => r.cost === 0 || r.retail === 0).length ?? 0;
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <div>
       <PageHeader
         title="Stock"
         description="This location's operating catalog — every countable, purchasable, sellable item with its prices."

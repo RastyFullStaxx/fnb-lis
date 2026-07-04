@@ -117,7 +117,7 @@ export function ImportReviewPage() {
   };
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div>
       <div className="mb-4 flex items-center gap-3">
         <Button asChild variant="ghost" size="icon" aria-label="Back to imports">
           <Link to={`/l/${locationId}/imports`}>

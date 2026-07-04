@@ -126,7 +126,7 @@ function OpenSession({ session }: { session: SessionWithLines }) {
   const activeLines = session.lines.filter((l) => l.status === "ACTIVE");
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <div>
       <SessionHeader session={session} />
       <div className="grid gap-6 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
         {/* Entry pane */}
@@ -261,7 +261,7 @@ function ReadOnlySession({ session }: { session: SessionWithLines }) {
   const canVoid = can(role, "entries.void") && session.status === "COMMITTED";
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div>
       <SessionHeader session={session} />
       <div className="rounded-lg border">
         <div className="divide-y">

@@ -24,7 +24,7 @@ export function RecipesPage() {
   const [viewing, setViewing] = useState<MenuSummary | null>(null);
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div>
       <PageHeader
         title="Recipes"
         description="Menus expand into ingredient consumption when sold. Publishing changes creates a new version — past sales keep the recipe they were sold under."

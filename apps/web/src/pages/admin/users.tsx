@@ -65,7 +65,7 @@ export function AdminUsersPage() {
   const [editing, setEditing] = useState<AdminUser | null>(null);
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div>
       <PageHeader
         title="Users"
         description="Create accounts, assign roles and client access, reset passwords, and disable accounts. Records are never deleted."

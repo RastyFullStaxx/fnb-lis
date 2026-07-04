@@ -75,7 +75,7 @@ export function SalesPage() {
   const canVoid = can(role, "entries.void");
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div>
       <PageHeader
         title="Sales"
         description="What left the shelves — sales, non-revenue use, and production. Every entry commits immediately; fixes are void + re-entry."

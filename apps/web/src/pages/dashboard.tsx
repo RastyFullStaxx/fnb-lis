@@ -45,7 +45,7 @@ export function DashboardPage() {
   const to = (path: string) => `/l/${locationId}/${path}`;
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
+    <div className="space-y-6">
       <div>
         <h2 className="text-xl font-semibold tracking-tight">
           {greeting()}, {firstName}

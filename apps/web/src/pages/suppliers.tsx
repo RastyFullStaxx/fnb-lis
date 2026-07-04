@@ -38,7 +38,7 @@ export function SuppliersPage() {
   const [creating, setCreating] = useState(false);
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div>
       <PageHeader
         title="Suppliers"
         description="Shared across this client's locations — attach them to purchases for supplier reports."

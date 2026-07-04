@@ -26,7 +26,7 @@ export function OnHandReportPage() {
   const report = useOnHandReport();
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div>
       <PageHeader
         title="Inventory on Hand"
         description="Computed stock as of the last committed count plus everything recorded since, valued at cost and retail."

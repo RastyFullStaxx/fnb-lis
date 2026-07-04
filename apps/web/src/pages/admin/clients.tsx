@@ -33,7 +33,7 @@ export function AdminClientsPage() {
   const [renaming, setRenaming] = useState<AdminClient | null>(null);
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div>
       <PageHeader
         title="Clients & locations"
         description="Each client owns its own catalog, suppliers, and locations. Add a client, then give it locations."

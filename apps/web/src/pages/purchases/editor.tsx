@@ -93,7 +93,7 @@ export function PurchaseEditorPage() {
   };
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div>
       <div className="mb-4 flex items-center gap-3">
         <Button asChild variant="ghost" size="icon" aria-label="Back to purchases">
           <Link to={`/l/${locationId}/purchases`}>

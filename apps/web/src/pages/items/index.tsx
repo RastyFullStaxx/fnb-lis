@@ -6,7 +6,7 @@ import { UnitsTab } from "./units-tab";
 
 export function ItemsPage() {
   return (
-    <div className="mx-auto max-w-6xl">
+    <div>
       <PageHeader
         title="Items"
         description="The master catalog shared by every client — items, categories, and units of measure."

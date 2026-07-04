@@ -30,7 +30,7 @@ export function NonRevenueReportPage() {
   const report = useNonRevenueReport(from, to);
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div>
       <PageHeader
         title="Non-Revenue Report"
         description="Comps, spillage, staff use and other non-sold consumption, grouped by reason. Inclusive date range."

@@ -29,7 +29,7 @@ export function PurchaseReportPage() {
   const report = usePurchaseReport(from, to);
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div>
       <PageHeader
         title="Purchase Report"
         description="Committed deliveries in the period, with a supplier rollup. Inclusive date range."

@@ -36,7 +36,7 @@ export function AdminActivityPage() {
     });
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div>
       <PageHeader
         title="Activity"
         description={`Every mutation is logged the moment it happens${client ? ` — showing ${client.name}` : ""}. Committed records are immutable; corrections and voids appear here.`}

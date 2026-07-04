@@ -73,7 +73,7 @@ export function FullAuditPage() {
 
   if (dates.length < 2) {
     return (
-      <div className="mx-auto max-w-5xl">
+      <div>
         <PageHeader title="Full Audit" />
         <EmptyState
           icon={BarChart3}

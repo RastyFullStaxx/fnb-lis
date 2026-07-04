@@ -49,7 +49,7 @@ const NONE = "__none__";
 
 export function PurchasesPage() {
   return (
-    <div className="mx-auto max-w-5xl">
+    <div>
       <PageHeader
         title="Purchases"
         description="Deliveries into stock — drafted, reviewed, committed. Returned bottles live here too: their content re-enters the pool."

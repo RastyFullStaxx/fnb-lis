@@ -30,7 +30,7 @@ export function SalesReportPage() {
   const report = useSalesReport(from, to);
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div>
       <PageHeader
         title="Sales Report"
         description="Revenue transactions in the period — items and menus, with discounts. Inclusive date range."
