@@ -1,6 +1,7 @@
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
+import { reportError } from "./telemetry";
 
 export class AppError extends Error {
   constructor(
@@ -21,5 +22,6 @@ export function errorHandler(err: Error, c: Context): Response {
     return err.getResponse();
   }
   console.error(err);
+  reportError(err);
   return c.json({ error: "Internal server error" }, 500);
 }

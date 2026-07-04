@@ -17,6 +17,9 @@ import { saleRoutes } from "./routes/sales";
 import { menuRoutes } from "./routes/menus";
 import { importRoutes } from "./routes/imports";
 import { reportRoutes } from "./routes/reports";
+import { dashboardRoutes } from "./routes/dashboard";
+import { activityRoutes } from "./routes/activity";
+import { settingsRoutes } from "./routes/settings";
 
 export function createApp() {
   const app = new Hono<AppEnv>();
@@ -29,6 +32,8 @@ export function createApp() {
   app.route("/api/auth", authRoutes);
   app.route("/api/admin", adminRoutes);
   app.route("/api/master", masterRoutes);
+  app.route("/api/activity", activityRoutes);
+  app.route("/api/settings", settingsRoutes);
 
   // Location-scoped routes: auth + client access enforced once here.
   const locationScoped = new Hono<AppEnv>()
@@ -39,7 +44,8 @@ export function createApp() {
     .route("/", saleRoutes)
     .route("/", menuRoutes)
     .route("/", importRoutes)
-    .route("/", reportRoutes);
+    .route("/", reportRoutes)
+    .route("/", dashboardRoutes);
   app.route("/api/locations/:locationId", locationScoped);
 
   app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));

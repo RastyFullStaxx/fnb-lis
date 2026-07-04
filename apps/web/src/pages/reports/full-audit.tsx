@@ -5,6 +5,7 @@ import { useMe } from "@/api/auth";
 import { useCountDates, useFullAudit } from "@/api/ops";
 import { useLocationId } from "@/api/location";
 import { useProductTypes } from "@/api/master";
+import { useCompanyInfo } from "@/api/settings";
 import { exportUrl, useFullAuditDrill } from "@/api/reports";
 import { formatMoney } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
@@ -51,6 +52,7 @@ export function FullAuditPage() {
   const [drill, setDrill] = useState<{ id: string; name: string } | null>(null);
 
   const location = me.data?.clients.flatMap((c) => c.locations.map((l) => ({ ...l, clientName: c.name }))).find((l) => l.id === locationId);
+  const company = useCompanyInfo(location?.clientId ?? "");
 
   const dates = countDates.data?.dates ?? [];
   const effectiveBegin = begin ?? (dates.length >= 2 ? dates[dates.length - 2] : undefined);
@@ -95,10 +97,18 @@ export function FullAuditPage() {
       {/* Print-only header */}
       {location && effectiveBegin && effectiveEnd && (
         <div className="mb-4 hidden print:block">
+          {(company.data?.legalName || company.data?.address) && (
+            <p className="text-xs text-muted-foreground">
+              {[company.data.legalName, company.data.address].filter(Boolean).join(" · ")}
+            </p>
+          )}
           <h1 className="text-lg font-bold text-primary">Full Audit Report</h1>
           <p className="text-sm">
             {location.clientName} · {location.name} · {effectiveBegin} → {effectiveEnd}
           </p>
+          {company.data?.reportFooter && (
+            <p className="mt-1 text-xs italic text-muted-foreground">{company.data.reportFooter}</p>
+          )}
         </div>
       )}
 

@@ -1,13 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "react-router";
-import type { LocationItemAttach, LocationItemUpdate, SupplierUpsert } from "@fnb/core";
+import type { LocationItemAttach, LocationItemUpdate, MeClient, SupplierUpsert } from "@fnb/core";
 import { api, post, put } from "./http";
+import { useMe } from "./auth";
 import type { AvailableVariant, LocationItem, Supplier } from "./types";
 
 /** The active location id from the /l/:locationId/* route. */
 export function useLocationId(): string {
   const { locationId } = useParams();
   return locationId!;
+}
+
+/** The client that owns the active location (from the cached /me payload). */
+export function useCurrentClient(): (MeClient & { locationName?: string }) | undefined {
+  const me = useMe();
+  const locationId = useLocationId();
+  return me.data?.clients.find((c) => c.locations.some((l) => l.id === locationId));
 }
 
 const base = (locationId: string) => `/api/locations/${locationId}`;

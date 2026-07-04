@@ -20,3 +20,14 @@
 - A brand-new client + location + user can be onboarded entirely through the UI
 - Entry screens operable mouse-free end-to-end
 - Design pass findings addressed (documented in the commit message)
+
+## Verified (2026-07-04)
+
+- **Dashboard** (`services/dashboard.ts` → `/dashboard`, `pages/dashboard.tsx`): period status (days since last count, count-date count, canAudit), attention cards (missing prices / unmatched import rows / draft purchases / open counts, each a deep link and role-gated), Recharts variance leaders (top |varianceCost|, red for shortages), recent-activity feed, permission-filtered quick actions. On Prime/Main Bar the golden cycle populates it exactly: last count 2026-06-08 (26d), 2 count dates, canAudit true, 2 missing prices, leaders JD −154.71 · Absolut −100.97 · SanMig −45. Empty state for a location with no counts (Casa Verde) renders cleanly.
+- **Admin surface** (server `routes/activity.ts` + web `pages/admin/{clients,users,activity}.tsx`): Clients & locations CRUD (create client → auto "Main", add location, rename); Users (create with generated password + username suggestion, role + client-access checkboxes, reset password, enable/disable — no deletes); Activity viewer with search + date range, client-scoped for non-admins. Verified all 5 seed users list with role/access/status; clients list shows Casa Verde + Prime (Main Bar, Kitchen).
+- **Settings** (`routes/settings.ts` + `pages/settings.tsx`): per-client company info (feeds report branding) + global product-types editor (admin-gated). Company-info PUT/GET round-trips; product-types chips (Beverage/Food/Supplies) editable.
+- **Command palette** (`components/command-palette.tsx`): Navigate + Reports groups always; Items / Menus / Suppliers groups fetched only while open. Verified real entities surface (Absolut Vodka 700 ml, Vodka Tonic menu, FreshFoods Corp).
+- **Report branding**: `ReportMeta` carries legalName/address/footer; Excel exports set a print `oddFooter` (company left · note right) with no on-sheet layout shift; Full Audit print header shows company line + footer. Confirmed the downloaded xlsx embeds `<oddFooter>…Prime Hospitality Group, Inc. · 12 Ayala Ave, Makati…Confidential — internal audit use only.</oddFooter>`.
+- **Analytics/telemetry, env-gated**: web `lib/analytics.ts` (PostHog + Sentry) and server `lib/telemetry.ts` (Sentry) — no keys → fully no-op, SDKs loaded lazily via indirect specifier so the default build carries no dependency; never sends inventory values or PII.
+- **Role gates** (curl): accountant → `/api/activity` 403, `/api/admin/users` 403; staff → dashboard 200, `/api/settings/company` 403.
+- **Sacred math untouched**: Full Audit grand total still −330.69 cost / −869.57 retail (branding is presentation-only). Both apps typecheck clean; DB reset to pristine golden seed after verification.

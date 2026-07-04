@@ -13,9 +13,20 @@ const QTY = "#,##0.######";
 export interface ReportMeta {
   clientName: string;
   locationName: string;
+  legalName?: string;
+  address?: string;
+  footer?: string;
 }
 
 type Cell = ExcelJS.Cell;
+
+/** Branded print footer — company on the left, generated note on the right.
+ *  Set on the sheet's headerFooter so it never disturbs the on-sheet layout. */
+function brandFooter(ws: ExcelJS.Worksheet, meta: ReportMeta) {
+  const left = [meta.legalName || meta.clientName, meta.address].filter(Boolean).join(" · ");
+  const right = meta.footer || "Prepared with Liquor Inventory Solution";
+  ws.headerFooter.oddFooter = `&L&8${left}&R&8${right}`;
+}
 
 function styleHeaderRow(row: ExcelJS.Row) {
   row.font = { bold: true, color: { argb: WHITE } };
@@ -25,7 +36,7 @@ function styleHeaderRow(row: ExcelJS.Row) {
   });
 }
 
-function titleBlock(ws: ExcelJS.Worksheet, title: string, subtitle: string, colCount: number) {
+function titleBlock(ws: ExcelJS.Worksheet, title: string, subtitle: string, colCount: number, meta: ReportMeta) {
   const last = String.fromCharCode(64 + colCount);
   ws.mergeCells(`A1:${last}1`);
   ws.getCell("A1").value = title;
@@ -34,6 +45,7 @@ function titleBlock(ws: ExcelJS.Worksheet, title: string, subtitle: string, colC
   ws.getCell("A2").value = subtitle;
   ws.getCell("A2").font = { size: 10, color: { argb: "FF6B7280" } };
   ws.addRow([]);
+  brandFooter(ws, meta);
 }
 
 function moneyCell(cell: Cell, value: number, negativeRed = true) {
@@ -76,6 +88,7 @@ export async function fullAuditWorkbook(report: ReconReport, meta: ReportMeta): 
     "Full Audit Report",
     `${meta.clientName} · ${meta.locationName} · ${report.period.beginDate} → ${report.period.endDate} (activity up to, not including, the ending date)`,
     FULL_AUDIT_HEADERS.length,
+    meta,
   );
   styleHeaderRow(ws.addRow(FULL_AUDIT_HEADERS));
 
@@ -151,7 +164,7 @@ const SALES_HEADERS = ["Date", "Item / Menu", "Type", "Category", "Qty", "Unit p
 export async function salesWorkbook(report: SalesReport, meta: ReportMeta): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("Sales", { views: [{ state: "frozen", ySplit: 4 }] });
-  titleBlock(ws, "Sales Report", `${meta.clientName} · ${meta.locationName} · ${report.from} → ${report.to}`, SALES_HEADERS.length);
+  titleBlock(ws, "Sales Report", `${meta.clientName} · ${meta.locationName} · ${report.from} → ${report.to}`, SALES_HEADERS.length, meta);
   styleHeaderRow(ws.addRow(SALES_HEADERS));
   for (const row of report.rows) {
     const r = ws.addRow([row.saleDate, row.name, row.kind === "menu" ? "Menu" : "Item", row.category ?? ""]);
@@ -189,7 +202,7 @@ const PURCHASE_HEADERS = ["Date", "Supplier", "Ref", "Item", "Category", "Qty", 
 export async function purchaseWorkbook(report: PurchaseReport, meta: ReportMeta): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("Purchases", { views: [{ state: "frozen", ySplit: 4 }] });
-  titleBlock(ws, "Purchase Report", `${meta.clientName} · ${meta.locationName} · ${report.from} → ${report.to}`, PURCHASE_HEADERS.length);
+  titleBlock(ws, "Purchase Report", `${meta.clientName} · ${meta.locationName} · ${report.from} → ${report.to}`, PURCHASE_HEADERS.length, meta);
   styleHeaderRow(ws.addRow(PURCHASE_HEADERS));
   for (const row of report.rows) {
     const r = ws.addRow([row.purchaseDate, row.supplier, row.refNo ?? "", row.name, row.category ?? ""]);
@@ -234,7 +247,7 @@ const NONREV_HEADERS = ["Date", "Item / Menu", "Reason", "Qty", "Content/unit", 
 export async function nonRevenueWorkbook(report: NonRevenueReport, meta: ReportMeta): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("Non-revenue", { views: [{ state: "frozen", ySplit: 4 }] });
-  titleBlock(ws, "Non-Revenue Report", `${meta.clientName} · ${meta.locationName} · ${report.from} → ${report.to}`, NONREV_HEADERS.length);
+  titleBlock(ws, "Non-Revenue Report", `${meta.clientName} · ${meta.locationName} · ${report.from} → ${report.to}`, NONREV_HEADERS.length, meta);
   styleHeaderRow(ws.addRow(NONREV_HEADERS));
   for (const row of report.rows) {
     const r = ws.addRow([row.saleDate, row.name, row.reason]);
@@ -278,7 +291,7 @@ const ONHAND_HEADERS = ["Item", "Category", "Type", "On hand", "Cost", "Retail",
 export async function onHandWorkbook(report: OnHandReport, meta: ReportMeta): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("On hand", { views: [{ state: "frozen", ySplit: 4 }] });
-  titleBlock(ws, "Inventory on Hand", `${meta.clientName} · ${meta.locationName} · as of last count ${report.lastCountDate ?? "—"}`, ONHAND_HEADERS.length);
+  titleBlock(ws, "Inventory on Hand", `${meta.clientName} · ${meta.locationName} · as of last count ${report.lastCountDate ?? "—"}`, ONHAND_HEADERS.length, meta);
   styleHeaderRow(ws.addRow(ONHAND_HEADERS));
   for (const row of report.rows) {
     const r = ws.addRow([row.name, row.category, row.productType]);

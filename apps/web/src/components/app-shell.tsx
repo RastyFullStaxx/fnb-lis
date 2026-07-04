@@ -1,4 +1,3 @@
-import { useEffect, useMemo, useState } from "react";
 import {
   Link,
   Navigate,
@@ -7,7 +6,7 @@ import {
   useNavigate,
   useParams,
 } from "react-router";
-import { Check, ChevronsUpDown, LogOut, Search } from "lucide-react";
+import { Check, ChevronsUpDown, LogOut } from "lucide-react";
 import type { MeResponse } from "@fnb/core";
 import { useLogout, useMe } from "@/api/auth";
 import { ApiError } from "@/api/http";
@@ -37,15 +36,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  CommandDialog,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import { Button } from "@/components/ui/button";
+import { CommandPalette } from "@/components/command-palette";
 import { Separator } from "@/components/ui/separator";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -272,57 +263,3 @@ function Topbar({ current, navItems }: { current: CurrentLocation; navItems: Nav
   );
 }
 
-function CommandPalette({ current, navItems }: { current: CurrentLocation; navItems: NavItem[] }) {
-  const [open, setOpen] = useState(false);
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "k" && (e.ctrlKey || e.metaKey)) {
-        e.preventDefault();
-        setOpen((v) => !v);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
-  const items = useMemo(() => navItems, [navItems]);
-
-  return (
-    <>
-      <Button
-        variant="outline"
-        size="sm"
-        className="gap-2 text-muted-foreground"
-        onClick={() => setOpen(true)}
-      >
-        <Search className="size-3.5" />
-        <span className="hidden sm:inline">Search</span>
-        <kbd className="pointer-events-none rounded border bg-muted px-1.5 font-mono text-[10px]">
-          Ctrl K
-        </kbd>
-      </Button>
-      <CommandDialog open={open} onOpenChange={setOpen}>
-        <CommandInput placeholder="Go to…" />
-        <CommandList>
-          <CommandEmpty>Nothing found.</CommandEmpty>
-          <CommandGroup heading="Navigate">
-            {items.map((item) => (
-              <CommandItem
-                key={item.path}
-                onSelect={() => {
-                  setOpen(false);
-                  navigate(`/l/${current.id}/${item.path}`);
-                }}
-              >
-                <item.icon className="size-4" />
-                {item.title}
-              </CommandItem>
-            ))}
-          </CommandGroup>
-        </CommandList>
-      </CommandDialog>
-    </>
-  );
-}

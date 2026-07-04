@@ -21,6 +21,10 @@ import { OnHandReportPage } from "./pages/reports/on-hand";
 import { RecipesPage } from "./pages/recipes";
 import { ImportsPage } from "./pages/imports";
 import { ImportReviewPage } from "./pages/imports/review";
+import { SettingsPage } from "./pages/settings";
+import { AdminClientsPage } from "./pages/admin/clients";
+import { AdminUsersPage } from "./pages/admin/users";
+import { AdminActivityPage } from "./pages/admin/activity";
 
 export const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
@@ -49,7 +53,10 @@ export const router = createBrowserRouter([
       { path: "reports/*", element: <ComingSoonPage title="This report" phase={5} /> },
       { path: "items", element: <ItemsPage /> },
       { path: "suppliers", element: <SuppliersPage /> },
-      { path: "settings", element: <ComingSoonPage title="Settings" phase={7} /> },
+      { path: "settings", element: <SettingsPage /> },
+      { path: "admin/clients", element: <AdminClientsPage /> },
+      { path: "admin/users", element: <AdminUsersPage /> },
+      { path: "admin/activity", element: <AdminActivityPage /> },
       { path: "admin/*", element: <ComingSoonPage title="Administration" phase={7} /> },
     ],
   },
