@@ -20,6 +20,7 @@ import { reportRoutes } from "./routes/reports";
 import { dashboardRoutes } from "./routes/dashboard";
 import { activityRoutes } from "./routes/activity";
 import { settingsRoutes } from "./routes/settings";
+import { stockyRoutes } from "./routes/stocky";
 
 export function createApp() {
   const app = new Hono<AppEnv>();
@@ -45,7 +46,8 @@ export function createApp() {
     .route("/", menuRoutes)
     .route("/", importRoutes)
     .route("/", reportRoutes)
-    .route("/", dashboardRoutes);
+    .route("/", dashboardRoutes)
+    .route("/", stockyRoutes);
   app.route("/api/locations/:locationId", locationScoped);
 
   app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));

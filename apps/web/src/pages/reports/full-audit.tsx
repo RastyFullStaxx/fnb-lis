@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useSearchParams } from "react-router";
 import { BarChart3, Info } from "lucide-react";
 import { round2 } from "@fnb/core";
 import { useMe } from "@/api/auth";
@@ -41,14 +42,20 @@ const ALL = "__all__";
 
 const n2 = (v: number) => round2(v).toLocaleString("en-US", { maximumFractionDigits: 2 });
 
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 export function FullAuditPage() {
   const me = useMe();
   const locationId = useLocationId();
   const countDates = useCountDates();
   const productTypes = useProductTypes();
-  const [begin, setBegin] = useState<string>();
-  const [end, setEnd] = useState<string>();
-  const [productType, setProductType] = useState(ALL);
+  // Deep links (e.g. Stocky citations) seed the period via ?begin=&end=.
+  const [params] = useSearchParams();
+  const urlBegin = params.get("begin");
+  const urlEnd = params.get("end");
+  const [begin, setBegin] = useState<string | undefined>(urlBegin && DATE_RE.test(urlBegin) ? urlBegin : undefined);
+  const [end, setEnd] = useState<string | undefined>(urlEnd && DATE_RE.test(urlEnd) ? urlEnd : undefined);
+  const [productType, setProductType] = useState(params.get("productType") || ALL);
   const [drill, setDrill] = useState<{ id: string; name: string } | null>(null);
 
   const location = me.data?.clients.flatMap((c) => c.locations.map((l) => ({ ...l, clientName: c.name }))).find((l) => l.id === locationId);

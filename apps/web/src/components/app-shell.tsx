@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Link,
   Navigate,
@@ -6,7 +7,7 @@ import {
   useNavigate,
   useParams,
 } from "react-router";
-import { Check, ChevronsUpDown, LogOut } from "lucide-react";
+import { Check, ChevronsUpDown, LogOut, Sparkles } from "lucide-react";
 import type { MeResponse } from "@fnb/core";
 import { useLogout, useMe } from "@/api/auth";
 import { ApiError } from "@/api/http";
@@ -37,6 +38,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { CommandPalette } from "@/components/command-palette";
+import { StockySheet } from "@/components/stocky/stocky-sheet";
+import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -250,6 +253,7 @@ function Topbar({ current, navItems }: { current: CurrentLocation; navItems: Nav
   const { pathname } = useLocation();
   const segment = pathname.split("/")[3] ?? "dashboard";
   const title = PAGE_TITLES[segment] ?? "";
+  const [stockyOpen, setStockyOpen] = useState(false);
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
@@ -257,8 +261,19 @@ function Topbar({ current, navItems }: { current: CurrentLocation; navItems: Nav
       <Separator orientation="vertical" className="mr-1 !h-5" />
       <h1 className="text-sm font-medium">{title}</h1>
       <div className="ml-auto flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-2 text-muted-foreground"
+          onClick={() => setStockyOpen(true)}
+          aria-label="Ask Stocky"
+        >
+          <Sparkles className="size-3.5 text-primary" />
+          <span className="hidden sm:inline">Stocky</span>
+        </Button>
         <CommandPalette current={current} navItems={navItems} />
       </div>
+      <StockySheet open={stockyOpen} onOpenChange={setStockyOpen} />
     </header>
   );
 }
