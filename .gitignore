@@ -8,3 +8,5 @@ apps/server/src/generated/
 .DS_Store
 .claude
 .agents
+CLAUDE.md
+AGENTS.md
