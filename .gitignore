@@ -7,3 +7,4 @@ apps/server/src/generated/
 *.log
 .DS_Store
 .claude
+.agents
