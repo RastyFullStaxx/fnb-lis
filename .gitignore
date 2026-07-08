@@ -10,3 +10,4 @@ apps/server/src/generated/
 .agents
 CLAUDE.md
 AGENTS.md
+DESIGN.md
