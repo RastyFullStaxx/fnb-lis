@@ -6,3 +6,4 @@ apps/server/src/generated/
 .env.local
 *.log
 .DS_Store
+.claude
