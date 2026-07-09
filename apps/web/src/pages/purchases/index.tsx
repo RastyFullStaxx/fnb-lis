@@ -48,19 +48,29 @@ import { cn } from "@/lib/utils";
 const NONE = "__none__";
 
 export function PurchasesPage() {
+  const [tab, setTab] = useState("purchases");
+  const [createOpen, setCreateOpen] = useState(false);
+
   return (
     <div>
       <PageHeader
         title="Purchases"
         description="Deliveries into stock — drafted, reviewed, committed. Returned bottles live here too: their content re-enters the pool."
       />
-      <Tabs defaultValue="purchases">
-        <TabsList>
-          <TabsTrigger value="purchases">Deliveries</TabsTrigger>
-          <TabsTrigger value="forfeits">Returned bottles</TabsTrigger>
-        </TabsList>
+      <Tabs value={tab} onValueChange={setTab}>
+        <div className="flex items-center justify-between gap-2">
+          <TabsList>
+            <TabsTrigger value="purchases">Deliveries</TabsTrigger>
+            <TabsTrigger value="forfeits">Returned bottles</TabsTrigger>
+          </TabsList>
+          {tab === "purchases" && (
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus className="size-4" /> Receive delivery
+            </Button>
+          )}
+        </div>
         <TabsContent value="purchases" className="mt-4">
-          <PurchasesTab />
+          <PurchasesTab createOpen={createOpen} setCreateOpen={setCreateOpen} />
         </TabsContent>
         <TabsContent value="forfeits" className="mt-4">
           <ForfeitsTab />
@@ -70,19 +80,18 @@ export function PurchasesPage() {
   );
 }
 
-function PurchasesTab() {
+function PurchasesTab({
+  createOpen,
+  setCreateOpen,
+}: {
+  createOpen: boolean;
+  setCreateOpen: (open: boolean) => void;
+}) {
   const purchases = usePurchases();
   const locationId = useLocationId();
-  const [createOpen, setCreateOpen] = useState(false);
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <Button onClick={() => setCreateOpen(true)}>
-          <Plus className="size-4" /> Receive delivery
-        </Button>
-      </div>
-
       {purchases.isPending ? (
         <Skeleton className="h-64 w-full" />
       ) : (purchases.data ?? []).length === 0 ? (

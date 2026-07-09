@@ -42,6 +42,7 @@ import { StockySheet } from "@/components/stocky/stocky-sheet";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Toaster } from "@/components/ui/sonner";
+import lisLogo from "@/assets/lis-logo.png";
 
 export function AppShell() {
   const me = useMe();
@@ -105,7 +106,7 @@ function ShellLayout({ me, current }: { me: MeResponse; current: CurrentLocation
           <Outlet />
         </main>
       </SidebarInset>
-      <Toaster position="top-right" />
+      <Toaster position="top-center" />
     </SidebarProvider>
   );
 }
@@ -160,9 +161,12 @@ function LocationSwitcher({ me, current }: { me: MeResponse; current: CurrentLoc
       <SidebarMenuItem>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <SidebarMenuButton size="lg" className="data-[state=open]:bg-sidebar-accent">
-              <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-sidebar-primary text-sm font-semibold text-sidebar-primary-foreground">
-                L
+            <SidebarMenuButton
+              size="lg"
+              className="group/icon-hover data-[state=open]:bg-sidebar-accent group-data-[collapsible=icon]:hover:bg-transparent! group-data-[collapsible=icon]:data-[state=open]:bg-transparent! group-data-[collapsible=icon]:h-12! pl-[5px]"
+            >
+              <div className="flex size-8 shrink-0 items-center justify-center rounded-md transition-opacity group-data-[collapsible=icon]:group-hover/icon-hover:opacity-80 group-data-[collapsible=icon]:group-data-[state=open]/icon-hover:opacity-80">
+                <img src={lisLogo} alt="LIS" className="size-8 object-contain" />
               </div>
               <div className="grid flex-1 text-left leading-tight">
                 <span className="truncate text-sm font-medium">{current.clientName}</span>
@@ -206,8 +210,11 @@ function UserMenu({ me }: { me: MeResponse }) {
       <SidebarMenuItem>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <SidebarMenuButton size="lg">
-              <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-sidebar-accent text-xs font-medium">
+            <SidebarMenuButton
+              size="lg"
+              className="group/icon-hover group-data-[collapsible=icon]:hover:bg-transparent! group-data-[collapsible=icon]:data-[state=open]:bg-transparent! data-[state=open]:bg-sidebar-accent group-data-[collapsible=icon]:h-12!"
+            >
+              <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-sidebar-accent text-xs font-medium transition-opacity group-data-[collapsible=icon]:group-hover/icon-hover:opacity-80 group-data-[collapsible=icon]:group-data-[state=open]/icon-hover:opacity-80">
                 {initials.toUpperCase()}
               </div>
               <div className="grid flex-1 text-left leading-tight">

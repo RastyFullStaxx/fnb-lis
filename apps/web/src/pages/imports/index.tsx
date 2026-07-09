@@ -167,7 +167,7 @@ function UploadCard() {
         }}
         className={cn(
           "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed py-10 text-center transition-colors",
-          dragOver ? "border-primary bg-primary/5" : "hover:border-primary/40",
+          dragOver ? "border-primary bg-primary/5" : "border-muted-foreground/25 hover:border-primary/40",
         )}
       >
         <Upload className="size-6 text-muted-foreground" />
