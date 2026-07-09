@@ -1,17 +1,8 @@
-import { useState } from "react";
-import { Package, Plus, Search } from "lucide-react";
-import { useItems, useProductTypes } from "@/api/master";
+import { Package, Plus } from "lucide-react";
+import { useItems } from "@/api/master";
 import { variantLabel } from "@/api/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -26,43 +17,21 @@ import { ItemFormSheet } from "./item-form";
 
 const ALL = "__all__";
 
-export function ItemsTab() {
-  const [search, setSearch] = useState("");
-  const [productType, setProductType] = useState(ALL);
-  const [formOpen, setFormOpen] = useState(false);
-  const productTypes = useProductTypes();
+export function ItemsTab({
+  search,
+  productType,
+  formOpen,
+  setFormOpen,
+}: {
+  search: string;
+  productType: string;
+  formOpen: boolean;
+  setFormOpen: (open: boolean) => void;
+}) {
   const items = useItems({ search: search || undefined, productType: productType === ALL ? undefined : productType });
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative w-64">
-          <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search items…"
-            className="pl-8"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-        <Select value={productType} onValueChange={setProductType}>
-          <SelectTrigger className="w-40">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>All types</SelectItem>
-            {(productTypes.data?.productTypes ?? []).map((t) => (
-              <SelectItem key={t} value={t}>
-                {t}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Button className="ml-auto" onClick={() => setFormOpen(true)}>
-          <Plus className="size-4" /> New item
-        </Button>
-      </div>
-
       {items.isPending ? (
         <div className="space-y-2">
           {Array.from({ length: 6 }).map((_, i) => (

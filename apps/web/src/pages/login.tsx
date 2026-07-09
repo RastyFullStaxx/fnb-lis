@@ -8,6 +8,7 @@ import { ApiError } from "@/api/http";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import lisLogo from "@/assets/lis-logo.png";
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -34,9 +35,7 @@ export function LoginPage() {
     <div className="flex min-h-dvh items-center justify-center bg-muted p-6">
       <div className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center gap-2">
-          <div className="flex size-11 items-center justify-center rounded-lg bg-primary text-lg font-semibold text-primary-foreground">
-            L
-          </div>
+          <img src={lisLogo} alt="LIS" className="size-16" />
           <h1 className="text-xl font-semibold tracking-tight">LIS</h1>
           <p className="text-sm text-muted-foreground">Inventory Solution</p>
         </div>
