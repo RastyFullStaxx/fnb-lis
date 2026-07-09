@@ -21,7 +21,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
       toastOptions={{
         classNames: {
           closeButton:
-            "!left-auto !right-0 !top-0 !size-6 !translate-x-1/3 !-translate-y-1/3 !border-border !bg-background",
+            "!top-2 !right-2 !size-5 !border-none !bg-transparent !text-muted-foreground hover:!text-foreground hover:!bg-accent",
         },
       }}
       icons={{
@@ -37,6 +37,9 @@ const Toaster = ({ ...props }: ToasterProps) => {
           "--normal-text": "var(--popover-foreground)",
           "--normal-border": "var(--border)",
           "--border-radius": "var(--radius)",
+          "--toast-close-button-start": "unset",
+          "--toast-close-button-end": "0",
+          "--toast-close-button-transform": "none",
         } as React.CSSProperties
       }
       {...props}

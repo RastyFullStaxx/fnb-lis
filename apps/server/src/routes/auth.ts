@@ -19,7 +19,7 @@ const isProd = process.env.NODE_ENV === "production";
 
 export const authRoutes = new Hono<AppEnv>()
   .post("/login", zValidator("json", loginRequest), async (c) => {
-    const { username, password } = c.req.valid("json");
+    const { username, password, rememberMe } = c.req.valid("json");
 
     const user = await prisma.user.findUnique({ where: { username: username.toLowerCase() } });
     const failMessage = "Incorrect username or password";
@@ -57,7 +57,9 @@ export const authRoutes = new Hono<AppEnv>()
       sameSite: "Lax",
       secure: isProd,
       path: "/",
-      expires: expiresAt,
+      // ponytail: rememberMe=false → no expires, browser drops cookie on close.
+      // Server-side session (and its 7-day sliding expiry) is unchanged either way.
+      ...(rememberMe === false ? {} : { expires: expiresAt }),
     });
 
     const sessionUser = {
