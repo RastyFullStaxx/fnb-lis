@@ -1,39 +1,58 @@
 import { Link, useParams } from "react-router";
 import {
-  Bar,
-  BarChart,
-  Cell,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-import {
   Activity,
   AlertTriangle,
-  CalendarClock,
+  ArrowRight,
+  Check,
+  Circle,
   ClipboardList,
   FileInput,
+  Package,
   Receipt,
+  RefreshCw,
   ShoppingCart,
   Tags,
   TrendingDown,
+  type LucideIcon,
 } from "lucide-react";
-import { round2, type Role, can } from "@fnb/core";
+import { can, type Permission, type Role } from "@fnb/core";
 import { useMe } from "@/api/auth";
-import { useLocationId } from "@/api/location";
 import { useDashboard, type DashboardData } from "@/api/dashboard";
 import { formatMoney } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
-const QUICK_ACTIONS = [
-  { title: "Start a count", path: "counts", icon: ClipboardList, permission: "entries.create" as const },
-  { title: "Receive purchase", path: "purchases", icon: ShoppingCart, permission: "entries.create" as const },
-  { title: "Record sale", path: "sales", icon: Receipt, permission: "entries.create" as const },
-  { title: "Import a file", path: "imports", icon: FileInput, permission: "imports.upload" as const },
+type ActionKind = "count" | "import" | "purchase" | "items" | "prices" | "audit" | "sale" | "stock";
+
+interface DashboardAction {
+  kind: ActionKind;
+  title: string;
+  description: string;
+  buttonLabel: string;
+  path: string;
+  icon: LucideIcon;
+}
+
+interface SecondaryAction {
+  kind: ActionKind;
+  title: string;
+  path: string;
+  icon: LucideIcon;
+  permission: Permission;
+}
+
+const SECONDARY_ACTIONS: SecondaryAction[] = [
+  { kind: "purchase", title: "Receive delivery", path: "purchases", icon: ShoppingCart, permission: "entries.create" },
+  { kind: "sale", title: "Record sale", path: "sales", icon: Receipt, permission: "entries.create" },
+  { kind: "import", title: "Import file", path: "imports", icon: FileInput, permission: "imports.upload" },
 ];
+
+const DATE = new Intl.DateTimeFormat("en-PH", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+});
 
 export function DashboardPage() {
   const me = useMe();
@@ -41,279 +60,567 @@ export function DashboardPage() {
   const dash = useDashboard();
   const role = (me.data?.user.role ?? "READONLY") as Role;
   const firstName = me.data?.user.firstName ?? "";
-  const actions = QUICK_ACTIONS.filter((a) => can(role, a.permission));
   const to = (path: string) => `/l/${locationId}/${path}`;
 
   return (
-    <div className="space-y-6">
-      <div>
+    <div className="mx-auto w-full max-w-[1440px] space-y-6">
+      <header className="max-w-2xl">
         <h2 className="text-xl font-semibold tracking-tight">
           {greeting()}, {firstName}
         </h2>
-        <p className="text-sm text-muted-foreground">
-          Where this location stands — period status, attention items, and variance leaders.
+        <p className="mt-1 text-sm text-muted-foreground">
+          See the current audit period, unresolved work, and the next action for this location.
         </p>
-      </div>
-
-      {actions.length > 0 && (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {actions.map((action) => (
-            <Button
-              key={action.path}
-              asChild
-              variant="outline"
-              className="h-auto justify-start gap-3 px-4 py-3"
-            >
-              <Link to={to(action.path)}>
-                <action.icon className="size-5 text-primary" />
-                <span className="font-medium">{action.title}</span>
-              </Link>
-            </Button>
-          ))}
-        </div>
-      )}
+      </header>
 
       {dash.isPending ? (
-        <div className="grid gap-4 lg:grid-cols-3">
-          <Skeleton className="h-40 lg:col-span-1" />
-          <Skeleton className="h-40 lg:col-span-2" />
-        </div>
+        <DashboardSkeleton />
       ) : dash.isError ? (
         <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Couldn't load the dashboard</CardTitle>
-            <CardDescription>Refresh the page — if it persists, check that the API is running.</CardDescription>
-          </CardHeader>
+          <CardContent className="flex flex-col items-start gap-3">
+            <div>
+              <h2 className="text-base font-semibold">Could not load the dashboard</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                We could not reach the inventory service. Check your connection and try again.
+              </p>
+            </div>
+            <Button size="sm" variant="outline" onClick={() => void dash.refetch()}>
+              <RefreshCw className="size-4" />
+              Try again
+            </Button>
+          </CardContent>
         </Card>
       ) : dash.data ? (
-        <div className="grid gap-4 lg:grid-cols-3">
-          <div className="space-y-4 lg:col-span-1">
-            <PeriodCard data={dash.data} to={to} />
-            <AttentionCard data={dash.data} to={to} role={role} />
-          </div>
-          <div className="space-y-4 lg:col-span-2">
-            <VarianceLeaders data={dash.data} to={to} />
-            <RecentActivity data={dash.data} />
-          </div>
-        </div>
+        <DashboardContent data={dash.data} role={role} to={to} />
       ) : null}
     </div>
   );
 }
 
-function PeriodCard({ data, to }: { data: DashboardData; to: (p: string) => string }) {
-  const { lastCountDate, daysSinceLastCount, countDates, canAudit } = data.period;
-  return (
-    <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-center gap-2">
-          <CalendarClock className="size-4 text-primary" />
-          <CardTitle className="text-base">Audit period</CardTitle>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {lastCountDate ? (
-          <>
-            <div>
-              <p className="tnum text-2xl font-semibold tracking-tight">
-                {daysSinceLastCount === 0 ? "Today" : `${daysSinceLastCount}d`}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                since the last committed count ({lastCountDate})
-              </p>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              {countDates} committed count {countDates === 1 ? "date" : "dates"} on record.
-            </p>
-            {canAudit ? (
-              <Button asChild size="sm" variant="secondary">
-                <Link to={to("reports/full-audit")}>Open Full Audit</Link>
-              </Button>
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                Commit one more count to unlock the Full Audit.
-              </p>
-            )}
-          </>
-        ) : (
-          <CardDescription>
-            No committed counts yet. Start with a beginning count, record the period's activity, then
-            count again to generate your first Full Audit.
-          </CardDescription>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function AttentionCard({
+function DashboardContent({
   data,
-  to,
   role,
+  to,
 }: {
   data: DashboardData;
-  to: (p: string) => string;
   role: Role;
+  to: (path: string) => string;
 }) {
-  const { missingPrices, unmatchedRows, draftPurchases, openCounts } = data.attention;
-  const items = [
-    {
-      show: missingPrices > 0 && can(role, "prices.edit"),
-      count: missingPrices,
-      label: `item${missingPrices === 1 ? "" : "s"} missing a price`,
-      path: "stock",
-      icon: Tags,
-    },
-    {
-      show: unmatchedRows > 0,
-      count: unmatchedRows,
-      label: `import row${unmatchedRows === 1 ? "" : "s"} awaiting review`,
+  const stage = getStage(data);
+  const unresolved = unresolvedCount(data);
+  const primary = getPrimaryAction(data, role);
+  const secondary = SECONDARY_ACTIONS.filter(
+    (action) => can(role, action.permission) && action.kind !== primary.kind,
+  );
+
+  return (
+    <>
+      <OperationalStatus data={data} stage={stage} unresolved={unresolved} />
+
+      <Card>
+        <CardContent className="grid gap-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.85fr)]">
+          <NextAction action={primary} secondary={secondary} data={data} to={to} />
+          <AttentionQueue data={data} role={role} to={to} />
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.75fr)]">
+        {stage === "SETUP" ? (
+          <SetupChecklist data={data} role={role} to={to} />
+        ) : (
+          <VarianceLeaders data={data} to={to} />
+        )}
+        <RecentActivity data={data} role={role} to={to} />
+      </div>
+    </>
+  );
+}
+
+type DashboardStage = "SETUP" | "COUNTING" | "ACTIVE" | "RECONCILIATION";
+
+function getStage(data: DashboardData): DashboardStage {
+  if (data.openWork.latestCount) return "COUNTING";
+  if (data.readiness.activeItems === 0 || data.period.countDates === 0) return "SETUP";
+  if (data.period.canAudit) return "RECONCILIATION";
+  return "ACTIVE";
+}
+
+function getPrimaryAction(data: DashboardData, role: Role): DashboardAction {
+  const openCount = data.openWork.latestCount;
+  if (openCount && can(role, "entries.create")) {
+    return {
+      kind: "count",
+      title: "Continue the open count",
+      description: `${formatDate(openCount.date)} has ${openCount.lineCount} ${openCount.lineCount === 1 ? "entry" : "entries"} saved. Resume where the team left off.`,
+      buttonLabel: "Continue count",
+      path: `counts/${openCount.id}`,
+      icon: ClipboardList,
+    };
+  }
+  if (data.attention.unmatchedRows > 0 && can(role, "imports.upload")) {
+    return {
+      kind: "import",
+      title: "Review imported rows",
+      description: `${data.attention.unmatchedRows} ${data.attention.unmatchedRows === 1 ? "row needs" : "rows need"} a match before the import can be committed.`,
+      buttonLabel: "Review import",
       path: "imports",
       icon: FileInput,
-    },
-    {
-      show: draftPurchases > 0,
-      count: draftPurchases,
-      label: `purchase draft${draftPurchases === 1 ? "" : "s"} to commit`,
-      path: "purchases",
+    };
+  }
+  const purchase = data.openWork.latestPurchase;
+  if (purchase && can(role, "entries.create")) {
+    const reference = purchase.invoiceRef ? `Invoice ${purchase.invoiceRef}` : "The latest delivery draft";
+    return {
+      kind: "purchase",
+      title: "Continue the delivery draft",
+      description: `${reference}${purchase.supplierName ? ` from ${purchase.supplierName}` : ""} is waiting to be committed.`,
+      buttonLabel: "Continue delivery",
+      path: `purchases/${purchase.id}`,
       icon: ShoppingCart,
-    },
-    {
-      show: openCounts > 0,
-      count: openCounts,
-      label: `count${openCounts === 1 ? "" : "s"} still open`,
+    };
+  }
+  if (data.readiness.activeItems === 0 && can(role, "master.write")) {
+    return {
+      kind: "items",
+      title: "Add the first inventory item",
+      description: "Build the location catalog before recording counts, deliveries, or sales.",
+      buttonLabel: "Add inventory items",
+      path: "items",
+      icon: Package,
+    };
+  }
+  if (data.period.countDates === 0 && can(role, "entries.create")) {
+    return {
+      kind: "count",
+      title: "Start the beginning count",
+      description: "Commit the location's opening quantities to establish the first audit period.",
+      buttonLabel: "Start beginning count",
       path: "counts",
       icon: ClipboardList,
+    };
+  }
+  if (data.attention.missingPrices > 0 && can(role, "prices.edit")) {
+    return {
+      kind: "prices",
+      title: "Complete missing prices",
+      description: `${data.attention.missingPrices} ${data.attention.missingPrices === 1 ? "item needs" : "items need"} cost or retail pricing before reports are complete.`,
+      buttonLabel: "Complete pricing",
+      path: "stock",
+      icon: Tags,
+    };
+  }
+  if (data.period.canAudit && can(role, "reports.view")) {
+    return {
+      kind: "audit",
+      title: "Review the latest reconciliation",
+      description: data.period.latest
+        ? `${formatDate(data.period.latest.begin)} to ${formatDate(data.period.latest.end)} is ready for variance review.`
+        : "The latest count pair is ready for variance review.",
+      buttonLabel: "Open Full Audit",
+      path: "reports/full-audit",
+      icon: TrendingDown,
+    };
+  }
+  if (can(role, "entries.create")) {
+    return {
+      kind: "count",
+      title: "Start the next count",
+      description: "Record the next physical count to close the current activity period.",
+      buttonLabel: "Start a count",
+      path: "counts",
+      icon: ClipboardList,
+    };
+  }
+  if (can(role, "reports.view")) {
+    return {
+      kind: "audit",
+      title: "Review inventory reports",
+      description: "Open the report library to review stock, purchases, sales, and audit history.",
+      buttonLabel: "View reports",
+      path: "reports",
+      icon: TrendingDown,
+    };
+  }
+  return {
+    kind: "stock",
+    title: "Review current stock",
+    description: "Open the stock list to review the active catalog for this location.",
+    buttonLabel: "View stock",
+    path: "stock",
+    icon: Package,
+  };
+}
+
+function OperationalStatus({
+  data,
+  stage,
+  unresolved,
+}: {
+  data: DashboardData;
+  stage: DashboardStage;
+  unresolved: number;
+}) {
+  const stageCopy: Record<DashboardStage, { label: string; detail: string }> = {
+    SETUP: { label: "Setup", detail: "Prepare the first audit period" },
+    COUNTING: { label: "Counting", detail: "A physical count is in progress" },
+    ACTIVE: { label: "Active period", detail: "Record activity before the next count" },
+    RECONCILIATION: { label: "Reconciliation ready", detail: "A count pair is ready to review" },
+  };
+
+  return (
+    <section aria-label="Operational status" className="border-y bg-muted/35 px-4 py-4 sm:px-5">
+      <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+        <StatusItem label="Audit stage" value={stageCopy[stage].label} detail={stageCopy[stage].detail} />
+        <StatusItem
+          label="Latest committed count"
+          value={data.period.lastCountDate ? formatDate(data.period.lastCountDate) : "Not started"}
+          detail={
+            data.period.daysSinceLastCount === null
+              ? "No committed count yet"
+              : data.period.daysSinceLastCount === 0
+                ? "Committed today"
+                : `${data.period.daysSinceLastCount} days ago`
+          }
+        />
+        <StatusItem
+          label="Latest auditable period"
+          value={
+            data.period.latest
+              ? `${formatDate(data.period.latest.begin)} to ${formatDate(data.period.latest.end)}`
+              : "Not available"
+          }
+          detail={data.period.canAudit ? "Full Audit available" : "Two committed dates required"}
+        />
+        <StatusItem
+          label="Unresolved work"
+          value={`${unresolved} ${unresolved === 1 ? "item" : "items"}`}
+          detail={`Updated ${relativeTime(data.generatedAt)}`}
+        />
+      </div>
+    </section>
+  );
+}
+
+function StatusItem({ label, value, detail }: { label: string; value: string; detail: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-xs font-medium text-muted-foreground">{label}</p>
+      <p className="mt-1 truncate text-sm font-semibold tnum" title={value}>{value}</p>
+      <p className="mt-0.5 text-xs text-muted-foreground">{detail}</p>
+    </div>
+  );
+}
+
+function NextAction({
+  action,
+  secondary,
+  data,
+  to,
+}: {
+  action: DashboardAction;
+  secondary: SecondaryAction[];
+  data: DashboardData;
+  to: (path: string) => string;
+}) {
+  return (
+    <section aria-labelledby="next-action-heading">
+      <div className="flex items-center gap-2 text-primary">
+        <action.icon className="size-4" />
+        <h2 id="next-action-heading" className="text-sm font-semibold text-foreground">Next action</h2>
+      </div>
+      <h3 className="mt-4 text-lg font-semibold tracking-tight">{action.title}</h3>
+      <p className="mt-1 max-w-[60ch] text-sm leading-6 text-muted-foreground">{action.description}</p>
+      <Button asChild className="mt-5">
+        <Link to={to(action.path)}>
+          {action.buttonLabel}
+          <ArrowRight className="size-4" />
+        </Link>
+      </Button>
+
+      {secondary.length > 0 ? (
+        <div className="mt-5 flex flex-wrap gap-2 border-t pt-4" aria-label="Other common actions">
+          {secondary.map((item) => (
+            <Button key={item.kind} asChild size="sm" variant="ghost" className="text-muted-foreground">
+              <Link to={to(item.path)}>
+                <item.icon className="size-4" />
+                {item.title}
+              </Link>
+            </Button>
+          ))}
+        </div>
+      ) : null}
+
+      {data.openWork.latestPurchase && action.kind !== "purchase" ? (
+        <p className="mt-3 text-xs text-muted-foreground">
+          A delivery draft was last updated {relativeTime(data.openWork.latestPurchase.updatedAt)}.
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+function AttentionQueue({
+  data,
+  role,
+  to,
+}: {
+  data: DashboardData;
+  role: Role;
+  to: (path: string) => string;
+}) {
+  const items = attentionItems(data, role);
+  const unresolved = unresolvedCount(data);
+  const allClear = data.readiness.activeItems > 0 && data.period.countDates > 0 && unresolved === 0;
+
+  return (
+    <section aria-labelledby="attention-heading" className="border-t pt-6 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6">
+      <div className="flex items-center gap-2">
+        <AlertTriangle className="size-4 text-warning" />
+        <h2 id="attention-heading" className="text-sm font-semibold">Needs attention</h2>
+      </div>
+
+      {items.length > 0 ? (
+        <ul className="mt-4 space-y-1">
+          {items.map((item) => (
+            <li key={item.kind}>
+              <Link
+                to={to(item.path)}
+                className="group flex min-h-10 items-center gap-3 rounded-md px-2 py-2 -mx-2 transition-colors duration-150 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <item.icon className="size-4 shrink-0 text-muted-foreground" />
+                <span className="min-w-0 flex-1 text-sm">{item.label}</span>
+                <ArrowRight className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5" />
+              </Link>
+            </li>
+          ))}
+        </ul>
+      ) : allClear ? (
+        <div className="mt-4 flex gap-3 rounded-md bg-success/10 p-3 text-sm">
+          <Check className="mt-0.5 size-4 shrink-0 text-success" />
+          <p>No pricing, import, delivery, or count work needs review right now.</p>
+        </div>
+      ) : (
+        <p className="mt-4 text-sm leading-6 text-muted-foreground">
+          Finish the location setup before this dashboard can confirm that all operational checks are clear.
+        </p>
+      )}
+
+      {unresolved > items.reduce((total, item) => total + item.count, 0) ? (
+        <p className="mt-3 text-xs text-muted-foreground">
+          Some unresolved work requires a manager to complete.
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+interface AttentionItem {
+  kind: ActionKind;
+  count: number;
+  label: string;
+  path: string;
+  icon: LucideIcon;
+}
+
+function attentionItems(data: DashboardData, role: Role): AttentionItem[] {
+  const { missingPrices, unmatchedRows, draftPurchases, openCounts } = data.attention;
+  const items: Array<AttentionItem | null> = [
+    missingPrices > 0 && can(role, "prices.edit")
+      ? { kind: "prices", count: missingPrices, label: `Complete pricing for ${missingPrices} ${missingPrices === 1 ? "item" : "items"}`, path: "stock", icon: Tags }
+      : null,
+    unmatchedRows > 0 && can(role, "imports.upload")
+      ? { kind: "import", count: unmatchedRows, label: `Review ${unmatchedRows} unmatched import ${unmatchedRows === 1 ? "row" : "rows"}`, path: "imports", icon: FileInput }
+      : null,
+    draftPurchases > 0 && can(role, "entries.create")
+      ? { kind: "purchase", count: draftPurchases, label: `Continue ${draftPurchases} delivery ${draftPurchases === 1 ? "draft" : "drafts"}`, path: "purchases", icon: ShoppingCart }
+      : null,
+    openCounts > 0 && can(role, "entries.create")
+      ? { kind: "count", count: openCounts, label: `Continue ${openCounts} open ${openCounts === 1 ? "count" : "counts"}`, path: "counts", icon: ClipboardList }
+      : null,
+  ];
+  return items.filter((item): item is AttentionItem => item !== null);
+}
+
+function SetupChecklist({
+  data,
+  role,
+  to,
+}: {
+  data: DashboardData;
+  role: Role;
+  to: (path: string) => string;
+}) {
+  const steps = [
+    {
+      title: "Add inventory items",
+      detail: data.readiness.activeItems > 0 ? `${data.readiness.activeItems} active items available` : "Create the location catalog",
+      done: data.readiness.activeItems > 0,
+      path: "items",
+      actionable: can(role, "master.write"),
     },
-  ].filter((i) => i.show);
+    {
+      title: "Complete item pricing",
+      detail: data.readiness.activeItems === 0
+        ? "Add items before assigning prices"
+        : data.attention.missingPrices === 0
+          ? "All active items have cost and retail prices"
+          : `${data.attention.missingPrices} ${data.attention.missingPrices === 1 ? "item needs" : "items need"} pricing`,
+      done: data.readiness.activeItems > 0 && data.attention.missingPrices === 0,
+      path: "stock",
+      actionable: can(role, "prices.edit"),
+    },
+    {
+      title: "Commit the beginning count",
+      detail: data.period.countDates > 0 ? "The first audit period is active" : "Record the opening quantities",
+      done: data.period.countDates > 0,
+      path: "counts",
+      actionable: can(role, "entries.create"),
+    },
+  ];
 
   return (
     <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-center gap-2">
-          <AlertTriangle className="size-4 text-warning" />
-          <CardTitle className="text-base">Needs attention</CardTitle>
-        </div>
-      </CardHeader>
       <CardContent>
-        {items.length === 0 ? (
-          <p className="text-sm text-muted-foreground">All clear — nothing needs review right now.</p>
-        ) : (
-          <ul className="space-y-1">
-            {items.map((i) => (
-              <li key={i.path}>
-                <Link
-                  to={to(i.path)}
-                  className="flex items-center gap-3 rounded-md px-2 py-1.5 -mx-2 transition-colors hover:bg-accent"
-                >
-                  <i.icon className="size-4 shrink-0 text-muted-foreground" />
-                  <span className="text-sm">
-                    <span className="tnum font-semibold">{i.count}</span> {i.label}
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
+        <h2 className="text-base font-semibold">Finish location setup</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Complete these steps before the first reconciliation can be generated.
+        </p>
+        <ol className="mt-5 space-y-4">
+          {steps.map((step) => (
+            <li key={step.title} className="flex gap-3">
+              {step.done ? (
+                <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-success/10 text-success" aria-label="Complete">
+                  <Check className="size-3.5" />
+                </span>
+              ) : (
+                <span className="flex size-6 shrink-0 items-center justify-center text-muted-foreground" aria-label="Not complete">
+                  <Circle className="size-4" />
+                </span>
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium">{step.title}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">{step.detail}</p>
+              </div>
+              {!step.done && step.actionable ? (
+                <Button asChild size="sm" variant="ghost">
+                  <Link to={to(step.path)}>Open</Link>
+                </Button>
+              ) : null}
+            </li>
+          ))}
+        </ol>
       </CardContent>
     </Card>
   );
 }
 
-function VarianceLeaders({ data, to }: { data: DashboardData; to: (p: string) => string }) {
+function VarianceLeaders({ data, to }: { data: DashboardData; to: (path: string) => string }) {
   const leaders = data.varianceLeaders;
-  const chartData = leaders.map((l) => ({
-    name: l.itemName,
-    value: round2(l.varianceCost),
-    short: l.short,
-  }));
+  const maxMagnitude = Math.max(1, ...leaders.map((item) => Math.abs(item.varianceCost)));
 
   return (
     <Card>
-      <CardHeader className="pb-2">
-        <div className="flex items-center gap-2">
-          <TrendingDown className="size-4 text-primary" />
-          <CardTitle className="text-base">Variance leaders</CardTitle>
-        </div>
-        {data.period.latest && (
-          <CardDescription>
-            Largest cost swings, {data.period.latest.begin} → {data.period.latest.end}. Red = shortage.
-          </CardDescription>
-        )}
-      </CardHeader>
       <CardContent>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <TrendingDown className="size-4 text-primary" />
+              <h2 className="text-base font-semibold">Variance leaders</h2>
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {data.period.latest
+                ? `${formatDate(data.period.latest.begin)} to ${formatDate(data.period.latest.end)}, ranked by cost impact.`
+                : "Items with the largest cost impact in the latest period."}
+            </p>
+          </div>
+          {data.period.canAudit ? (
+            <Button asChild size="sm" variant="ghost">
+              <Link to={to("reports/full-audit")}>Open Full Audit</Link>
+            </Button>
+          ) : null}
+        </div>
+
         {!data.period.canAudit ? (
-          <p className="py-8 text-center text-sm text-muted-foreground">
-            Variance leaders appear once two counts close a period.
+          <p className="py-8 text-sm text-muted-foreground">
+            Commit a second count date to reveal the first period's variance.
           </p>
         ) : leaders.length === 0 ? (
-          <p className="py-8 text-center text-sm text-muted-foreground">
-            No cost variance in the latest period — the count reconciled cleanly.
-          </p>
+          <div className="mt-5 rounded-md bg-success/10 p-4 text-sm">
+            The latest period has no cost variance. Open the Full Audit to review the source records.
+          </div>
         ) : (
-          <>
-            <ResponsiveContainer width="100%" height={Math.max(140, chartData.length * 38)}>
-              <BarChart data={chartData} layout="vertical" margin={{ left: 8, right: 16, top: 4, bottom: 4 }}>
-                <XAxis type="number" hide />
-                <YAxis
-                  type="category"
-                  dataKey="name"
-                  width={150}
-                  tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
-                  tickLine={false}
-                  axisLine={false}
-                />
-                <Tooltip
-                  cursor={{ fill: "var(--muted)" }}
-                  formatter={(v) => [formatMoney(Number(v)), "Variance"]}
-                  contentStyle={{
-                    fontSize: 12,
-                    borderRadius: 8,
-                    border: "1px solid var(--border)",
-                    background: "var(--popover)",
-                  }}
-                />
-                <Bar dataKey="value" radius={4} barSize={18}>
-                  {chartData.map((d, i) => (
-                    <Cell key={i} fill={d.short ? "var(--destructive)" : "var(--chart-4)"} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-            <div className="mt-2 flex justify-end">
-              <Button asChild size="sm" variant="ghost">
-                <Link to={to("reports/full-audit")}>Full Audit →</Link>
-              </Button>
-            </div>
-          </>
+          <ol className="mt-5 divide-y" aria-label="Items ranked by absolute cost variance">
+            {leaders.map((item) => {
+              const width = `${Math.max(4, Math.abs(item.varianceCost) / maxMagnitude * 100)}%`;
+              return (
+                <li key={item.locationItemId} className="grid gap-3 py-3 first:pt-0 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium" title={item.itemName}>{item.itemName}</p>
+                    <div className="mt-2 h-0.5 max-w-72 overflow-hidden" aria-hidden="true">
+                      <div
+                        className={item.short ? "h-full bg-destructive" : "h-full bg-success"}
+                        style={{ width }}
+                      />
+                    </div>
+                  </div>
+                  <div className="text-left sm:text-right">
+                    <p className={item.short ? "text-xs font-medium text-destructive" : "text-xs font-medium text-success"}>
+                      {item.short ? "Shortage" : "Surplus"}
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground tnum">
+                      {item.variancePct === null ? "Percentage n/a" : `${Math.abs(item.variancePct).toFixed(1)}%`}
+                    </p>
+                  </div>
+                  <div className="text-left sm:min-w-32 sm:text-right">
+                    <p className="text-sm font-semibold tnum">{formatMoney(item.varianceCost)}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground tnum">Retail {formatMoney(item.varianceRetail)}</p>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
         )}
       </CardContent>
     </Card>
   );
 }
 
-function RecentActivity({ data }: { data: DashboardData }) {
+function RecentActivity({
+  data,
+  role,
+  to,
+}: {
+  data: DashboardData;
+  role: Role;
+  to: (path: string) => string;
+}) {
   return (
     <Card>
-      <CardHeader className="pb-2">
-        <div className="flex items-center gap-2">
-          <Activity className="size-4 text-primary" />
-          <CardTitle className="text-base">Recent activity</CardTitle>
-        </div>
-      </CardHeader>
       <CardContent>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Activity className="size-4 text-primary" />
+            <h2 className="text-base font-semibold">Recent activity</h2>
+          </div>
+          {can(role, "activity.view") ? (
+            <Button asChild size="sm" variant="ghost">
+              <Link to={to("admin/activity")}>View activity</Link>
+            </Button>
+          ) : null}
+        </div>
+
         {data.recentActivity.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">No activity recorded yet.</p>
+          <p className="py-8 text-sm text-muted-foreground">
+            No activity has been recorded for this location yet.
+          </p>
         ) : (
-          <ul className="divide-y">
-            {data.recentActivity.map((a) => (
-              <li key={a.id} className="flex items-start gap-3 py-2 first:pt-0 last:pb-0">
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm">{a.summary}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {a.userName ?? "System"} · {relativeTime(a.ts)}
-                  </p>
-                </div>
+          <ul className="mt-4 divide-y">
+            {data.recentActivity.map((item) => (
+              <li key={item.id} className="py-3 first:pt-0 last:pb-0">
+                <p className="line-clamp-2 text-sm">{item.summary}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {item.userName ?? "System"} <span aria-hidden="true">·</span> {relativeTime(item.ts)}
+                </p>
               </li>
             ))}
           </ul>
@@ -321,23 +628,47 @@ function RecentActivity({ data }: { data: DashboardData }) {
       </CardContent>
     </Card>
   );
+}
+
+function DashboardSkeleton() {
+  return (
+    <div className="space-y-4" aria-label="Loading dashboard">
+      <Skeleton className="h-24 rounded-none" />
+      <Skeleton className="h-56" />
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.75fr)]">
+        <Skeleton className="h-80" />
+        <Skeleton className="h-80" />
+      </div>
+    </div>
+  );
+}
+
+function unresolvedCount(data: DashboardData): number {
+  return data.attention.missingPrices
+    + data.attention.unmatchedRows
+    + data.attention.draftPurchases
+    + data.attention.openCounts;
+}
+
+function formatDate(date: string): string {
+  return DATE.format(new Date(`${date}T00:00:00`));
 }
 
 function greeting(): string {
-  const h = new Date().getHours();
-  if (h < 12) return "Good morning";
-  if (h < 18) return "Good afternoon";
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
   return "Good evening";
 }
 
 function relativeTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.round(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.round(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.round(hrs / 24);
+  const diff = Math.max(0, Date.now() - new Date(iso).getTime());
+  const minutes = Math.round(diff / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
   if (days < 30) return `${days}d ago`;
   return new Date(iso).toLocaleDateString();
 }

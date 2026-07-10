@@ -57,11 +57,16 @@ State, not theater. 150–250 ms, `cubic-bezier(0.16, 1, 0.3, 1)` (ease-out-quin
 Buttons: primary (filled blue) / secondary (outline) / ghost (toolbars) / destructive (voids — always behind an AlertDialog with a required reason field). One primary per view. Labels above inputs; helper text present; errors below in destructive; no placeholder-as-label. Icons: lucide-react at 16px/`strokeWidth 1.75` in controls, 20px in nav.
 
 Signature patterns:
+- **Operational dashboard**: a border-separated status strip answers audit stage, latest committed count, auditable period, unresolved work, and data freshness. One role- and state-aware primary action leads; delivery, sale, and import remain compact secondary actions. Attention shares one panel with the next action, while variance and location-only activity occupy the lower row. New locations see a three-step setup checklist instead of empty variance chrome.
 - **Rapid-entry pane** (counts/sales/purchases): left = form column with autofocused item combobox, Enter commits line and refocuses; right = "recent entries" list (modernized legacy live preview) + running totals.
 - **Weigh calculator**: scale input with unit suffix; beneath it a computed strip — `(812 g − 478 g) × 30.12 → 673 ml · 0.96 of 700 ml` — updating live; blocking error when scale < tare, amber note when content exceeds container.
 - **Report table**: sticky first column + header, category group rows, negative variance rows tinted `destructive/8%` with red variance text, click-through drill-downs, print stylesheet (A4 landscape, repeating header, no chrome).
 - **Match badges** (imports): EXACT (blue), ALIAS (blue outline), FUZZY n% (amber), UNMATCHED (red outline).
 - **Empty states teach**: icon, one sentence, one primary action ("No counts yet — start your first count").
+
+The dashboard never shows four equal launch cards or an unqualified "All clear." Its next-action precedence is open count → unmatched import → purchase draft → empty catalog → beginning count → missing prices → Full Audit → next count → read-only reports. Variance leaders expose direction, percentage, cost, and retail values as semantic text; magnitude bars are supplementary only.
+
+The authenticated entry surface remains `/login`; no public marketing route is planned until LIS has an approved sales workflow and public proof assets. Its permanent copy is "Welcome back" / "Sign in to continue to your assigned inventory locations" on the form side and "Know what changed between counts" / "Count, review, reconcile, and trace every variance to its source" on the brand side. Remember-me defaults off for shared workplace devices.
 
 ## Voice
 

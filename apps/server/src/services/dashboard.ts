@@ -8,6 +8,7 @@ import { buildFullAudit, committedCountDates } from "./report-assembly";
  */
 
 export interface DashboardData {
+  generatedAt: string;
   period: {
     lastCountDate: string | null;
     daysSinceLastCount: number | null;
@@ -21,11 +22,19 @@ export interface DashboardData {
     draftPurchases: number; // uncommitted purchases
     openCounts: number; // count sessions still open
   };
+  readiness: {
+    activeItems: number;
+  };
+  openWork: {
+    latestCount: { id: string; date: string; lineCount: number } | null;
+    latestPurchase: { id: string; invoiceRef: string | null; supplierName: string | null; updatedAt: string } | null;
+  };
   varianceLeaders: Array<{
     locationItemId: string;
     itemName: string;
     variancePct: number | null;
     varianceCost: number;
+    varianceRetail: number;
     short: boolean;
   }>;
   recentActivity: Array<{
@@ -33,6 +42,8 @@ export interface DashboardData {
     ts: string;
     userName: string | null;
     action: string;
+    entity: string;
+    entityId: string | null;
     summary: string;
   }>;
 }
@@ -53,21 +64,18 @@ function todayBusinessDate(): string {
   return `${y}-${m}-${d}`;
 }
 
-export async function buildDashboard(locationId: string, clientId: string): Promise<DashboardData> {
-  const dates = await committedCountDates(locationId);
-  const lastCountDate = dates.at(-1) ?? null;
-  const canAudit = dates.length >= 2;
-  const latest: { begin: string; end: string } | null = canAudit
-    ? { begin: dates[dates.length - 2]!, end: dates[dates.length - 1]! }
-    : null;
-
+export async function buildDashboard(locationId: string, _clientId: string): Promise<DashboardData> {
   const [
+    dates,
     priceItems,
     unmatchedRows,
     draftPurchases,
     openCounts,
+    latestCount,
+    latestPurchase,
     recent,
   ] = await Promise.all([
+    committedCountDates(locationId),
     prisma.locationItem.findMany({
       where: { locationId, isActive: true },
       select: { cost: true, retail: true },
@@ -77,13 +85,47 @@ export async function buildDashboard(locationId: string, clientId: string): Prom
     }),
     prisma.purchase.count({ where: { locationId, status: "DRAFT" } }),
     prisma.countSession.count({ where: { locationId, status: "OPEN" } }),
+    prisma.countSession.findFirst({
+      where: { locationId, status: "OPEN" },
+      orderBy: [{ countDate: "desc" }, { createdAt: "desc" }],
+      select: {
+        id: true,
+        countDate: true,
+        _count: { select: { lines: { where: { status: "ACTIVE" } } } },
+      },
+    }),
+    prisma.purchase.findFirst({
+      where: { locationId, status: "DRAFT" },
+      orderBy: [{ purchaseDate: "desc" }, { createdAt: "desc" }],
+      select: {
+        id: true,
+        refNo: true,
+        createdAt: true,
+        supplier: { select: { name: true } },
+        lines: { orderBy: { createdAt: "desc" }, take: 1, select: { createdAt: true } },
+      },
+    }),
     prisma.activityLog.findMany({
-      where: { OR: [{ locationId }, { clientId, locationId: null }] },
+      where: { locationId },
       orderBy: { ts: "desc" },
-      take: 8,
-      select: { id: true, ts: true, userName: true, action: true, summary: true },
+      take: 5,
+      select: {
+        id: true,
+        ts: true,
+        userName: true,
+        action: true,
+        entity: true,
+        entityId: true,
+        summary: true,
+      },
     }),
   ]);
+
+  const lastCountDate = dates.at(-1) ?? null;
+  const canAudit = dates.length >= 2;
+  const latest: { begin: string; end: string } | null = canAudit
+    ? { begin: dates[dates.length - 2]!, end: dates[dates.length - 1]! }
+    : null;
 
   const missingPrices = priceItems.filter((p) => p.cost <= 0 || p.retail <= 0).length;
 
@@ -99,11 +141,13 @@ export async function buildDashboard(locationId: string, clientId: string): Prom
         itemName: r.itemName,
         variancePct: r.variancePct,
         varianceCost: r.varianceCost,
+        varianceRetail: r.varianceRetail,
         short: r.variance < 0,
       }));
   }
 
   return {
+    generatedAt: new Date().toISOString(),
     period: {
       lastCountDate,
       daysSinceLastCount: lastCountDate ? daysBetween(lastCountDate, todayBusinessDate()) : null,
@@ -112,12 +156,28 @@ export async function buildDashboard(locationId: string, clientId: string): Prom
       latest,
     },
     attention: { missingPrices, unmatchedRows, draftPurchases, openCounts },
+    readiness: { activeItems: priceItems.length },
+    openWork: {
+      latestCount: latestCount
+        ? { id: latestCount.id, date: latestCount.countDate, lineCount: latestCount._count.lines }
+        : null,
+      latestPurchase: latestPurchase
+        ? {
+            id: latestPurchase.id,
+            invoiceRef: latestPurchase.refNo,
+            supplierName: latestPurchase.supplier?.name ?? null,
+            updatedAt: (latestPurchase.lines[0]?.createdAt ?? latestPurchase.createdAt).toISOString(),
+          }
+        : null,
+    },
     varianceLeaders,
     recentActivity: recent.map((a) => ({
       id: a.id,
       ts: a.ts.toISOString(),
       userName: a.userName,
       action: a.action,
+      entity: a.entity,
+      entityId: a.entityId,
       summary: a.summary,
     })),
   };

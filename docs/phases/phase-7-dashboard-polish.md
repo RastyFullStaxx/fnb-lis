@@ -31,3 +31,12 @@
 - **Analytics/telemetry, env-gated**: web `lib/analytics.ts` (PostHog + Sentry) and server `lib/telemetry.ts` (Sentry) — no keys → fully no-op, SDKs loaded lazily via indirect specifier so the default build carries no dependency; never sends inventory values or PII.
 - **Role gates** (curl): accountant → `/api/activity` 403, `/api/admin/users` 403; staff → dashboard 200, `/api/settings/company` 403.
 - **Sacred math untouched**: Full Audit grand total still −330.69 cost / −869.57 retail (branding is presentation-only). Both apps typecheck clean; DB reset to pristine golden seed after verification.
+
+## Dashboard and entry refinement (2026-07-10)
+
+- Replaced equal dashboard launch cards with a deterministic next-action resolver driven by role permissions, active-location readiness, and open work. Open counts, import review, and delivery drafts now lead users back into the unfinished record before a new workflow is offered.
+- Added an operational status strip, setup checklist for new locations, explicit cost/retail variance values, a five-row location-only activity feed, retryable error state, and "All clear" readiness guards.
+- Extended the dashboard aggregate with a generated timestamp, active-item readiness, resumable count/delivery details, retail variance, and activity entity metadata. Activity on the location dashboard no longer includes client-wide rows.
+- Refined `/login` as the only entry surface: universal FNB/LIS language, task-focused sign-in copy, administrator-reset guidance, remember-me off by default, 44 px touch targets, field error associations, and high-contrast inline errors.
+- Corrected the shared shell to one main landmark, gave sidebar controls distinct accessible names, and aligned the shared Card primitive to the documented 10 px radius, 20 px padding, and border-only depth system.
+- Public marketing pages, offline/sync status, new dependencies, and automated tests remain intentionally deferred.

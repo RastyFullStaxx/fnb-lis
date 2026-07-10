@@ -102,9 +102,9 @@ function ShellLayout({ me, current }: { me: MeResponse; current: CurrentLocation
 
       <SidebarInset>
         <Topbar current={current} navItems={[...mainNav, ...catalogNav, ...adminNav]} />
-        <main className="flex-1 p-6">
+        <div data-slot="page-content" className="flex-1 p-4 sm:p-6">
           <Outlet />
-        </main>
+        </div>
       </SidebarInset>
       <Toaster position="top-center" />
     </SidebarProvider>
@@ -264,7 +264,7 @@ function Topbar({ current, navItems }: { current: CurrentLocation; navItems: Nav
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-2 px-4">
-      <SidebarTrigger className="-ml-1" />
+      <SidebarTrigger className="-ml-1" aria-label="Toggle navigation menu" />
       <Separator orientation="vertical" className="mr-1 !h-5" />
       <h1 className="text-sm font-medium">{title}</h1>
       <div className="ml-auto flex items-center gap-2">

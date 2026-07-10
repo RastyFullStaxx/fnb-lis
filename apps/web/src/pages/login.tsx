@@ -20,7 +20,7 @@ export function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
 
-  const [rememberMe, setRememberMe] = useState(true);
+  const [rememberMe, setRememberMe] = useState(false);
 
   const form = useForm<LoginRequest>({
     resolver: zodResolver(loginRequest),
@@ -45,7 +45,7 @@ export function LoginPage() {
         <div className="-mt-2 -ml-3 flex items-center gap-2.5">
           <img src={lisLogo} alt="" className="size-[84px] object-contain" />
           <span className="text-xs font-medium tracking-wide text-sidebar-foreground/60 uppercase">
-            Powered by LIS
+            FNB/LIS
           </span>
         </div>
 
@@ -58,12 +58,12 @@ export function LoginPage() {
                   Password resets aren't self-service
                 </h1>
                 <p className="mt-1 text-sm text-sidebar-foreground/70">
-                  Contact your system administrator to have it reset.
+                  Ask the administrator who created your account to reset your password.
                 </p>
                 <Button
                   type="button"
                   variant="outline"
-                  className="mt-6 border-sidebar-border text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground bg-transparent"
+                  className="mt-6 min-h-11 border-sidebar-border bg-transparent text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                   onClick={() => setShowForgotPassword(false)}
                 >
                   <ArrowLeft className="size-4" />
@@ -74,8 +74,11 @@ export function LoginPage() {
               <>
                 <div className="mb-8">
                   <h1 className="text-xl font-semibold tracking-tight text-balance text-sidebar-foreground">
-                    Bar and Kitchen Inventory Management System
+                    Welcome back
                   </h1>
+                  <p className="mt-1 max-w-sm text-sm text-sidebar-foreground/70">
+                    Sign in to continue to your assigned inventory locations.
+                  </p>
                 </div>
 
                 <form onSubmit={onSubmit} className="space-y-4" noValidate>
@@ -86,11 +89,17 @@ export function LoginPage() {
                       autoComplete="username"
                       autoFocus
                       aria-invalid={!!form.formState.errors.username}
-                      className="bg-white border-sidebar-border text-foreground placeholder:text-muted-foreground focus-visible:ring-sidebar-ring"
+                      aria-describedby={form.formState.errors.username ? "username-error" : undefined}
+                      className="min-h-11 border-sidebar-border bg-white text-foreground placeholder:text-muted-foreground focus-visible:ring-sidebar-ring"
                       {...form.register("username")}
                     />
                     {form.formState.errors.username && (
-                      <p className="text-sm text-destructive">{form.formState.errors.username.message}</p>
+                      <p
+                        id="username-error"
+                        className="rounded-md bg-white px-3 py-2 text-sm font-medium text-destructive"
+                      >
+                        {form.formState.errors.username.message}
+                      </p>
                     )}
                   </div>
                   <div className="space-y-2">
@@ -101,7 +110,8 @@ export function LoginPage() {
                         type={showPassword ? "text" : "password"}
                         autoComplete="current-password"
                         aria-invalid={!!form.formState.errors.password}
-                        className="pr-9 bg-white border-sidebar-border text-foreground placeholder:text-muted-foreground focus-visible:ring-sidebar-ring"
+                        aria-describedby={form.formState.errors.password ? "password-error" : undefined}
+                        className="min-h-11 border-sidebar-border bg-white pr-11 text-foreground placeholder:text-muted-foreground focus-visible:ring-sidebar-ring"
                         {...form.register("password")}
                       />
                       <button
@@ -109,7 +119,7 @@ export function LoginPage() {
                         onClick={() => setShowPassword((v) => !v)}
                         aria-label={showPassword ? "Hide password" : "Show password"}
                         aria-pressed={showPassword}
-                        className="absolute inset-y-0 right-0 flex w-9 translate-y-px items-center justify-center text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/50 rounded-md"
+                        className="absolute inset-y-0 right-0 flex w-11 translate-y-px items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/50"
                       >
                         {showPassword ? (
                           <EyeOff size={16} strokeWidth={1.75} aria-hidden="true" />
@@ -119,38 +129,46 @@ export function LoginPage() {
                       </button>
                     </div>
                     {form.formState.errors.password && (
-                      <p className="text-sm text-destructive">{form.formState.errors.password.message}</p>
+                      <p
+                        id="password-error"
+                        className="rounded-md bg-white px-3 py-2 text-sm font-medium text-destructive"
+                      >
+                        {form.formState.errors.password.message}
+                      </p>
                     )}
                   </div>
 
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
+                  <div className="flex min-h-11 items-center justify-between gap-3">
+                    <div className="flex min-h-11 items-center gap-2">
                       <Checkbox
                         id="remember-me"
                         checked={rememberMe}
                         onCheckedChange={(v) => setRememberMe(v === true)}
                         className="border-sidebar-border data-[state=checked]:bg-primary data-[state=checked]:border-primary"
                       />
-                      <Label htmlFor="remember-me" className="font-normal text-sidebar-foreground/70">
+                      <Label htmlFor="remember-me" className="flex min-h-11 cursor-pointer items-center font-normal text-sidebar-foreground/70">
                         Remember me
                       </Label>
                     </div>
                     <button
                       type="button"
                       onClick={() => setShowForgotPassword(true)}
-                      className="text-sm font-medium text-sidebar-foreground hover:underline"
+                      className="min-h-11 text-sm font-medium text-sidebar-foreground hover:underline"
                     >
                       Forgot password?
                     </button>
                   </div>
 
                   {serverError && (
-                    <p role="alert" className="text-sm text-destructive">
+                    <p
+                      role="alert"
+                      className="rounded-md bg-white px-3 py-2 text-sm font-medium text-destructive"
+                    >
                       {serverError}
                     </p>
                   )}
 
-                  <Button type="submit" className="w-full" disabled={login.isPending}>
+                  <Button type="submit" className="min-h-11 w-full" disabled={login.isPending}>
                     {login.isPending ? "Signing in…" : "Sign in"}
                   </Button>
                 </form>
@@ -166,46 +184,14 @@ export function LoginPage() {
 
       {/* Brand panel — now white */}
       <div className="relative hidden flex-col items-center justify-center gap-10 overflow-hidden bg-background px-12 py-16 lg:flex">
-        {/* Geometric accent, top-right */}
-        <svg
-          className="pointer-events-none absolute top-0 right-0 h-44 w-44"
-          viewBox="0 0 176 176"
-          fill="none"
-          aria-hidden="true"
-        >
-          <rect x="132" y="8" width="30" height="30" rx="6" fill="currentColor" className="text-primary" fillOpacity="0.14" />
-          <rect x="96" y="8" width="20" height="20" rx="5" fill="currentColor" className="text-primary" fillOpacity="0.08" />
-          <rect x="132" y="52" width="20" height="20" rx="5" fill="currentColor" className="text-primary" fillOpacity="0.08" />
-          <rect x="160" y="52" width="12" height="12" rx="3" fill="currentColor" className="text-primary" fillOpacity="0.16" />
-          <rect x="108" y="44" width="12" height="12" rx="3" fill="currentColor" className="text-primary" fillOpacity="0.06" />
-          <rect x="150" y="90" width="14" height="14" rx="3" fill="currentColor" className="text-primary" fillOpacity="0.1" />
-          <rect x="70" y="16" width="12" height="12" rx="3" fill="currentColor" className="text-primary" fillOpacity="0.06" />
-        </svg>
-
-        {/* Geometric accent, bottom-left */}
-        <svg
-          className="pointer-events-none absolute bottom-0 left-0 h-44 w-44"
-          viewBox="0 0 176 176"
-          fill="none"
-          aria-hidden="true"
-        >
-          <rect x="14" y="138" width="30" height="30" rx="6" fill="currentColor" className="text-primary" fillOpacity="0.14" />
-          <rect x="56" y="148" width="20" height="20" rx="5" fill="currentColor" className="text-primary" fillOpacity="0.08" />
-          <rect x="14" y="104" width="20" height="20" rx="5" fill="currentColor" className="text-primary" fillOpacity="0.08" />
-          <rect x="4" y="72" width="12" height="12" rx="3" fill="currentColor" className="text-primary" fillOpacity="0.16" />
-          <rect x="56" y="112" width="12" height="12" rx="3" fill="currentColor" className="text-primary" fillOpacity="0.06" />
-          <rect x="12" y="60" width="14" height="14" rx="3" fill="currentColor" className="text-primary" fillOpacity="0.1" />
-          <rect x="94" y="150" width="12" height="12" rx="3" fill="currentColor" className="text-primary" fillOpacity="0.06" />
-        </svg>
-
         <InventoryIllustration className="w-full max-w-md shrink-0 -mt-5" />
 
         <div className="-mt-9 max-w-sm text-center">
           <h2 className="text-xl font-semibold tracking-tight text-foreground text-balance">
-            Every ingredient and item, accounted for
+            Know what changed between counts.
           </h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            From opening count to closing variance.
+            Count, review, reconcile, and trace every variance to its source.
           </p>
         </div>
       </div>
