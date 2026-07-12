@@ -52,7 +52,6 @@ export function ImportsPage() {
     <div>
       <PageHeader
         title="Imports"
-        description="Drop a POS export or supplier file. The system extracts and matches rows; you review before anything touches inventory."
       />
 
       <UploadCard />

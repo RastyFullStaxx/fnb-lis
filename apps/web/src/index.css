@@ -123,6 +123,20 @@
   --sidebar-ring: hsl(217.2 91.2% 59.8%);
 }
 
+/* Top loading bar: indeterminate royal-blue slide (see components/top-progress.tsx).
+   Easing matches the app motion token in DESIGN.md. */
+@keyframes progress-slide {
+  0% {
+    transform: translateX(-125%);
+  }
+  100% {
+    transform: translateX(360%);
+  }
+}
+.animate-progress-slide {
+  animation: progress-slide 1.05s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
 /* Print: strip the app chrome, land reports on A4 landscape with a repeating
    table header. Use `print:hidden` on controls and `hidden print:block` on the
    print-only report header. */

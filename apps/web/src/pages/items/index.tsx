@@ -29,7 +29,6 @@ export function ItemsPage() {
     <div>
       <PageHeader
         title="Items"
-        description="The master catalog shared by every client — items, categories, and units of measure."
       />
       <Tabs value={tab} onValueChange={setTab}>
         <div className="flex flex-wrap items-center gap-2">

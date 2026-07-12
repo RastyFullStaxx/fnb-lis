@@ -6,7 +6,7 @@ import { useCountDates } from "@/api/ops";
 import { exportUrl, useSalesReport } from "@/api/reports";
 import { formatMoney } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
-import { EmptyState } from "@/components/empty-state";
+import { TableSurface, TableLoading, TableEmpty } from "@/components/table-surface";
 import { DateRangeControl, ExportButtons } from "@/components/report-toolbar";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -18,7 +18,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useReportRange } from "./use-report-range";
 
 const n2 = (v: number) => round2(v).toLocaleString("en-US", { maximumFractionDigits: 2 });
@@ -31,9 +30,10 @@ export function SalesReportPage() {
 
   return (
     <div>
-      <PageHeader
-        title="Sales Report"
-        description="Revenue transactions in the period — items and menus, with discounts. Inclusive date range."
+      <PageHeader title="Sales Report" />
+
+      <TableSurface
+        filters={<DateRangeControl from={from} to={to} onFrom={setFrom} onTo={setTo} />}
         actions={
           <ExportButtons
             xlsxUrl={exportUrl(locationId, "sales", "xlsx", { from, to })}
@@ -41,18 +41,12 @@ export function SalesReportPage() {
             disabled={!report.data?.rows.length}
           />
         }
-      />
-
-      <div className="mb-4">
-        <DateRangeControl from={from} to={to} onFrom={setFrom} onTo={setTo} />
-      </div>
-
-      {report.isPending ? (
-        <Skeleton className="h-80 w-full" />
-      ) : !report.data || report.data.rows.length === 0 ? (
-        <EmptyState icon={Receipt} title="No sales in this range" description="Adjust the dates to find recorded sales." />
-      ) : (
-        <div className="rounded-lg border">
+      >
+        {report.isPending ? (
+          <TableLoading />
+        ) : !report.data || report.data.rows.length === 0 ? (
+          <TableEmpty icon={Receipt} title="No sales in this range" description="Adjust the dates to find recorded sales." />
+        ) : (
           <Table>
             <TableHeader>
               <TableRow className="bg-muted hover:bg-muted">
@@ -99,8 +93,8 @@ export function SalesReportPage() {
               </TableRow>
             </TableFooter>
           </Table>
-        </div>
-      )}
+        )}
+      </TableSurface>
     </div>
   );
 }

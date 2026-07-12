@@ -55,7 +55,6 @@ export function PurchasesPage() {
     <div>
       <PageHeader
         title="Purchases"
-        description="Deliveries into stock — drafted, reviewed, committed. Returned bottles live here too: their content re-enters the pool."
       />
       <Tabs value={tab} onValueChange={setTab}>
         <div className="flex items-center justify-between gap-2">

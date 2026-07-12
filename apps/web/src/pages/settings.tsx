@@ -27,10 +27,7 @@ export function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Settings"
-        description="Company details that brand your reports, and the product-type list that classifies your catalog."
-      />
+      <PageHeader title="Settings" />
       <CompanyCard />
       {can(role, "admin.manage") && <ProductTypesCard />}
     </div>

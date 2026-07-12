@@ -10,6 +10,15 @@ Ground-up rebuild of a legacy bar/kitchen inventory-audit system. Web first, Ele
 - [docs/phases/](docs/phases/) — build order + "done when" gates; work the current phase
 - AGENTS.md is the original project brief (kept as-is for reference)
 
+## Skills & tooling — reach for these on every task
+
+Prefer a skill over improvising. Check for a matching skill before starting work, not after.
+
+- **ponytail (minimalism — apply first, always).** Installed at `.agents/skills/ponytail*`. Before writing code, walk the ladder and stop at the first hit: (1) does it need to exist? [YAGNI] (2) already in the codebase? (3) stdlib? (4) native platform feature? (5) an installed dep? (6) a one-liner? (7) only then write the minimum. Never trade away validation, error handling, or security to be shorter. Mark deliberate corner-cuts with a `// ponytail:` comment naming the ceiling + upgrade path (see `apps/server/src/routes/auth.ts`). Sub-skills: `ponytail-review` (audit a diff), `ponytail-audit` (whole tree), `ponytail-debt` (collect the `ponytail:` markers into a ledger), `ponytail-gain`, `ponytail-help`.
+- **Installed agent skills** (`.agents/skills/`): `impeccable` for building/polishing product UI, `design-motion-principles` for motion/transition work, `agent-browser` for driving the app in a real browser (QA, dogfooding). The **taste-skill collection** (`taste-skill`, plus `minimalist-skill` / `soft-skill` / `brutalist-skill` style variants, `redesign-skill`, `brandkit`, `stitch-skill`, `image-to-code-skill`, `imagegen-frontend-web|mobile`, `output-skill`, `gpt-tasteskill`) — for landing/marketing pages, **not** dashboards or data tables.
+- **shadcn:** component library is set up in `apps/web` (`components.json`, `src/components/ui/`); the Shadcn UI MCP (`mcp__Shadcn_UI__*`) provides component/block/theme lookups. Reuse a shadcn primitive before hand-rolling one (ponytail rung 2/5).
+- **Claude's built-in skills:** `verify` before calling a change done, `code-review` / `simplify` on a finished diff, `security-review` on auth/session/import paths, `run` to launch the app, `dataviz` before writing any chart.
+
 ## Hard rules
 
 - Never commit. I will do the commiting when you're done between each sessions

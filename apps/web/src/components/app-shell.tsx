@@ -39,6 +39,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { CommandPalette } from "@/components/command-palette";
 import { StockySheet } from "@/components/stocky/stocky-sheet";
+import { TopProgress } from "@/components/top-progress";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Toaster } from "@/components/ui/sonner";
@@ -85,6 +86,7 @@ function ShellLayout({ me, current }: { me: MeResponse; current: CurrentLocation
 
   return (
     <SidebarProvider>
+      <TopProgress />
       <Sidebar collapsible="icon">
         <SidebarHeader>
           <LocationSwitcher me={me} current={current} />

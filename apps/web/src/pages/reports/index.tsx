@@ -23,7 +23,7 @@ export function ReportsPage() {
   const locationId = useLocationId();
   return (
     <div>
-      <PageHeader title="Reports" description="Every number traces back to committed records." />
+      <PageHeader title="Reports" />
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {REPORTS.map((r) =>
           r.ready ? (

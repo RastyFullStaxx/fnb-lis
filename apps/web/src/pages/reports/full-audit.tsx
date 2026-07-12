@@ -90,7 +90,6 @@ export function FullAuditPage() {
     <div className="mx-auto max-w-full print:max-w-none">
       <PageHeader
         title="Full Audit"
-        description="Beginning count + purchases + returns − ending count = usage; compared against what was sold, used, and produced."
         actions={
           <ExportButtons
             xlsxUrl={exportUrl(locationId, "full-audit", "xlsx", exportParams)}

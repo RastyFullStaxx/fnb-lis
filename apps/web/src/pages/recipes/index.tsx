@@ -27,7 +27,6 @@ export function RecipesPage() {
     <div>
       <PageHeader
         title="Recipes"
-        description="Menus expand into ingredient consumption when sold. Publishing changes creates a new version — past sales keep the recipe they were sold under."
         actions={
           <Button onClick={() => setBuilding("new")}>
             <Plus className="size-4" /> New menu

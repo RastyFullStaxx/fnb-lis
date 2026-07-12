@@ -68,7 +68,6 @@ export function AdminUsersPage() {
     <div>
       <PageHeader
         title="Users"
-        description="Create accounts, assign roles and client access, reset passwords, and disable accounts. Records are never deleted."
         actions={
           <Button onClick={() => setCreating(true)}>
             <Plus className="size-4" /> New user

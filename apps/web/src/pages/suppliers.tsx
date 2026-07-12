@@ -41,7 +41,6 @@ export function SuppliersPage() {
     <div>
       <PageHeader
         title="Suppliers"
-        description="Shared across this client's locations — attach them to purchases for supplier reports."
         actions={
           <Button onClick={() => setCreating(true)}>
             <Plus className="size-4" /> New supplier

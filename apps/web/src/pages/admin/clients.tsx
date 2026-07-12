@@ -36,7 +36,6 @@ export function AdminClientsPage() {
     <div>
       <PageHeader
         title="Clients & locations"
-        description="Each client owns its own catalog, suppliers, and locations. Add a client, then give it locations."
         actions={
           <Button onClick={() => setCreating(true)}>
             <Plus className="size-4" /> New client

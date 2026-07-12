@@ -8,7 +8,7 @@ import { useCopyFromLocation, useLocationItems } from "@/api/location";
 import { variantLabel } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { PageHeader } from "@/components/page-header";
-import { EmptyState } from "@/components/empty-state";
+import { TableSurface, TableLoading, TableEmpty } from "@/components/table-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,7 +35,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Toggle } from "@/components/toggle-chip";
 import { AttachItemDialog } from "./attach-dialog";
 import { PriceEdit } from "./price-edit";
@@ -57,7 +56,6 @@ export function StockPage() {
     <div>
       <PageHeader
         title="Stock"
-        description="This location's operating catalog — every countable, purchasable, sellable item with its prices."
         actions={
           canEditPrices && (
             <>
@@ -72,51 +70,49 @@ export function StockPage() {
         }
       />
 
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <div className="relative w-64">
-          <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search this catalog…"
-            className="pl-8"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+      <TableSurface
+        filters={
+          <>
+            <div className="relative w-64">
+              <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search this catalog…"
+                className="bg-background pl-8"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+            {missingCount > 0 && (
+              <Toggle pressed={missingOnly} onPressedChange={setMissingOnly}>
+                <TriangleAlert className="size-3.5" />
+                {missingCount} missing price{missingCount === 1 ? "" : "s"}
+              </Toggle>
+            )}
+          </>
+        }
+      >
+        {rows.isPending ? (
+          <TableLoading />
+        ) : (rows.data ?? []).length === 0 ? (
+          <TableEmpty
+            icon={Boxes}
+            title={search || missingOnly ? "Nothing matches the current filter" : "This location's catalog is empty"}
+            description={
+              search || missingOnly
+                ? "Clear the search or filter to see everything."
+                : "Add items from the master catalog, or copy another location's catalog to start fast."
+            }
+            action={
+              canEditPrices &&
+              !search &&
+              !missingOnly && (
+                <Button onClick={() => setAttachOpen(true)}>
+                  <Plus className="size-4" /> Add items
+                </Button>
+              )
+            }
           />
-        </div>
-        {missingCount > 0 && (
-          <Toggle pressed={missingOnly} onPressedChange={setMissingOnly}>
-            <TriangleAlert className="size-3.5" />
-            {missingCount} missing price{missingCount === 1 ? "" : "s"}
-          </Toggle>
-        )}
-      </div>
-
-      {rows.isPending ? (
-        <div className="space-y-2">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <Skeleton key={i} className="h-11 w-full" />
-          ))}
-        </div>
-      ) : (rows.data ?? []).length === 0 ? (
-        <EmptyState
-          icon={Boxes}
-          title={search || missingOnly ? "Nothing matches the current filter" : "This location's catalog is empty"}
-          description={
-            search || missingOnly
-              ? "Clear the search or filter to see everything."
-              : "Add items from the master catalog, or copy another location's catalog to start fast."
-          }
-          action={
-            canEditPrices &&
-            !search &&
-            !missingOnly && (
-              <Button onClick={() => setAttachOpen(true)}>
-                <Plus className="size-4" /> Add items
-              </Button>
-            )
-          }
-        />
-      ) : (
-        <div className="rounded-lg border">
+        ) : (
           <Table>
             <TableHeader>
               <TableRow className="bg-muted hover:bg-muted">
@@ -157,8 +153,8 @@ export function StockPage() {
               })}
             </TableBody>
           </Table>
-        </div>
-      )}
+        )}
+      </TableSurface>
 
       <AttachItemDialog open={attachOpen} onOpenChange={setAttachOpen} />
       <CopyFromDialog open={copyOpen} onOpenChange={setCopyOpen} />

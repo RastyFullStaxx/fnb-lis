@@ -44,7 +44,6 @@ export function CountsPage() {
     <div>
       <PageHeader
         title="Counts"
-        description="Physical stock counts anchor every audit period — count, commit, and the date becomes a report boundary."
         actions={
           <Button onClick={() => setCreateOpen(true)}>
             <Plus className="size-4" /> Start a count

@@ -76,10 +76,7 @@ export function SalesPage() {
 
   return (
     <div>
-      <PageHeader
-        title="Sales"
-        description="What left the shelves — sales, non-revenue use, and production. Every entry commits immediately; fixes are void + re-entry."
-      />
+      <PageHeader title="Sales" />
 
       <Tabs value={kind} onValueChange={(v) => setKind(v as SaleKind)}>
         <TabsList>

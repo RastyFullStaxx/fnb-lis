@@ -38,9 +38,19 @@ One family: **Geist Variable** (`@fontsource-variable/geist`), with **Geist Mono
 ## Space, shape, depth
 
 - Spacing grid 4px; page gutter 24px; card padding 16–20px; dense table rows 40px, forms 8px gaps.
+- **Page width is consistent across every route.** Page content fills the `main` container (its `p-6` gutter is the only inset) — no per-page `max-w-[…]` cap or `mx-auto` centering on the top-level page wrapper. A page that constrains its own width sits narrower than its siblings and reads as a bug. Constrain width *within* a page (prose at 65ch, a form column) never at the page root.
 - Radius scale, locked: controls 8px, cards/panels 10px, badges/pills full. Nothing above 12px.
 - Depth via borders and the `--muted` second neutral, not shadows. Shadows only on floating layers (popover/dialog: `0 8px 24px oklch(0.2 0.03 264 / 0.12)`).
 - Tables: sticky header on `--muted`, hairline dividers, hover `--muted/50`, no zebra.
+
+## Page skeleton & uniformity
+
+**The goal: navigating between pages feels like the content swaps under a fixed frame — title, controls, and data table never move.** Every list/report page is built from the same three stacked parts, in the same order, at the same position. Only the contents change. This is what makes the app feel frictionless and fast — the eye never re-hunts for where things are.
+
+- **Header** — `PageHeader`: title (left) + optional primary action(s) (right). **No subtitle.** Explanatory prose belongs in docs/help, empty states, or tooltips — not stacked under every title where it pushes the data down and adds noise the daily user reads past. One `text-xl` title, always at the same y-position.
+- **Data surface** — `TableSurface`: one bordered, rounded card. Filters, search, and tabs are **fused to the top of the table** as a `border-b bg-muted/30` toolbar (filters/search left, contextual actions like apply/clear/export right) — never a control strip floating in the gap above the table. Loading and empty states render *inside* the surface (`TableLoading`, `TableEmpty`) so the toolbar stays put and only the body swaps.
+- **Secondary blocks** — rollups/summaries (e.g. "by supplier") go in a `Card` *below* the surface, never above it; the primary table is always the first thing under the header.
+- Tabs that switch a whole workspace (Sales, Purchases — a form + list, not one filtered table) stay as a top-level mode switch; the surface pattern is for pages whose controls filter a single table.
 
 ## Motion (design-motion-principles applied)
 
@@ -50,6 +60,7 @@ State, not theater. 150–250 ms, `cubic-bezier(0.16, 1, 0.3, 1)` (ease-out-quin
 - Live weigh preview: number transitions with a 150 ms opacity/translate tick — visible feedback that the math ran.
 - Row void: 200 ms tint sweep to muted+strikethrough. Commit: button → check morph, then Sonner toast.
 - Skeletons shaped like the final layout — never centered spinners. `prefers-reduced-motion`: crossfade only.
+- **Loading bar:** a slim (2px) royal-blue indeterminate bar pinned to the top of the viewport (`TopProgress`, driven by React Query's global fetching count) is the one global load cue on every navigation/data fetch — it appears the instant a fetch starts and clears the moment data lands. In-place skeletons handle the body; the top bar handles the "something is happening" signal. No route-level spinners or full-page blockers.
 - No page-load choreography, no infinite loops, max one animated attention cue per screen.
 
 ## Components (shadcn/ui, one vocabulary)
