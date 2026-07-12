@@ -30,10 +30,8 @@ export function SalesReportPage() {
 
   return (
     <div>
-      <PageHeader title="Sales Report" />
-
-      <TableSurface
-        filters={<DateRangeControl from={from} to={to} onFrom={setFrom} onTo={setTo} />}
+      <PageHeader
+        title="Sales Report"
         actions={
           <ExportButtons
             xlsxUrl={exportUrl(locationId, "sales", "xlsx", { from, to })}
@@ -41,7 +39,9 @@ export function SalesReportPage() {
             disabled={!report.data?.rows.length}
           />
         }
-      >
+      />
+
+      <TableSurface filters={<DateRangeControl from={from} to={to} onFrom={setFrom} onTo={setTo} />}>
         {report.isPending ? (
           <TableLoading />
         ) : !report.data || report.data.rows.length === 0 ? (

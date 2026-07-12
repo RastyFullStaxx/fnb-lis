@@ -17,7 +17,7 @@ export function Toggle({
       aria-pressed={pressed}
       onClick={() => onPressedChange(!pressed)}
       className={cn(
-        "inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-sm transition-colors",
+        "inline-flex h-8 items-center gap-1.5 rounded-md border px-3 text-sm transition-colors",
         pressed
           ? "border-warning bg-warning/10 text-foreground"
           : "text-muted-foreground hover:bg-accent hover:text-foreground",

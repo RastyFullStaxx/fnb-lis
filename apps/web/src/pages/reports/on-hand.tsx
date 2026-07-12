@@ -26,7 +26,16 @@ export function OnHandReportPage() {
 
   return (
     <div>
-      <PageHeader title="Inventory on Hand" />
+      <PageHeader
+        title="Inventory on Hand"
+        actions={
+          <ExportButtons
+            xlsxUrl={exportUrl(locationId, "on-hand", "xlsx")}
+            csvUrl={exportUrl(locationId, "on-hand", "csv")}
+            disabled={!report.data?.rows.length}
+          />
+        }
+      />
 
       <TableSurface
         filters={
@@ -35,13 +44,6 @@ export function OnHandReportPage() {
               As of last count <span className="tnum font-medium text-foreground">{report.data.lastCountDate}</span>
             </p>
           ) : undefined
-        }
-        actions={
-          <ExportButtons
-            xlsxUrl={exportUrl(locationId, "on-hand", "xlsx")}
-            csvUrl={exportUrl(locationId, "on-hand", "csv")}
-            disabled={!report.data?.rows.length}
-          />
         }
       >
         {report.isPending ? (

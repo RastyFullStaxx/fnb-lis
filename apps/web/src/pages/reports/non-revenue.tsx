@@ -17,7 +17,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useReportRange } from "./use-report-range";
 
 const n2 = (v: number) => round2(v).toLocaleString("en-US", { maximumFractionDigits: 2 });
@@ -30,10 +29,8 @@ export function NonRevenueReportPage() {
 
   return (
     <div>
-      <PageHeader title="Non-Revenue Report" />
-
-      <TableSurface
-        filters={<DateRangeControl from={from} to={to} onFrom={setFrom} onTo={setTo} />}
+      <PageHeader
+        title="Non-Revenue Report"
         actions={
           <ExportButtons
             xlsxUrl={exportUrl(locationId, "non-revenue", "xlsx", { from, to })}
@@ -41,7 +38,9 @@ export function NonRevenueReportPage() {
             disabled={!report.data?.rows.length}
           />
         }
-      >
+      />
+
+      <TableSurface filters={<DateRangeControl from={from} to={to} onFrom={setFrom} onTo={setTo} />}>
         {report.isPending ? (
           <TableLoading />
         ) : !report.data || report.data.rows.length === 0 ? (
@@ -89,24 +88,20 @@ export function NonRevenueReportPage() {
       </TableSurface>
 
       {report.data && report.data.rows.length > 0 && (
-        <Card className="mt-6">
-          <CardHeader>
-            <CardTitle className="text-base">By reason</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-2">
-              {report.data.byReason.map((g) => (
-                <div key={g.reason} className="rounded-lg border px-3 py-2">
-                  <p className="text-sm font-medium">{g.reason}</p>
-                  <p className="tnum text-xs text-muted-foreground">
-                    {g.count} entr{g.count === 1 ? "y" : "ies"} · qty {n2(g.qty)}
-                    {g.cost > 0 && ` · ${formatMoney(g.cost)}`}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+        <div className="mt-8">
+          <h3 className="mb-3 text-sm font-semibold">By reason</h3>
+          <div className="flex flex-wrap gap-x-10 gap-y-3">
+            {report.data.byReason.map((g) => (
+              <div key={g.reason}>
+                <p className="text-sm font-medium">{g.reason}</p>
+                <p className="tnum text-xs text-muted-foreground">
+                  {g.count} entr{g.count === 1 ? "y" : "ies"} · qty {n2(g.qty)}
+                  {g.cost > 0 && ` · ${formatMoney(g.cost)}`}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );

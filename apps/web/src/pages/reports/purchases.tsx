@@ -16,7 +16,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useReportRange } from "./use-report-range";
 
 const n2 = (v: number) => round2(v).toLocaleString("en-US", { maximumFractionDigits: 2 });
@@ -29,10 +28,8 @@ export function PurchaseReportPage() {
 
   return (
     <div>
-      <PageHeader title="Purchase Report" />
-
-      <TableSurface
-        filters={<DateRangeControl from={from} to={to} onFrom={setFrom} onTo={setTo} />}
+      <PageHeader
+        title="Purchase Report"
         actions={
           <ExportButtons
             xlsxUrl={exportUrl(locationId, "purchases", "xlsx", { from, to })}
@@ -40,7 +37,9 @@ export function PurchaseReportPage() {
             disabled={!report.data?.rows.length}
           />
         }
-      >
+      />
+
+      <TableSurface filters={<DateRangeControl from={from} to={to} onFrom={setFrom} onTo={setTo} />}>
         {report.isPending ? (
           <TableLoading />
         ) : !report.data || report.data.rows.length === 0 ? (
@@ -87,31 +86,27 @@ export function PurchaseReportPage() {
       </TableSurface>
 
       {report.data && report.data.rows.length > 0 && (
-        <Card className="mt-6">
-          <CardHeader>
-            <CardTitle className="text-base">By supplier</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead>Supplier</TableHead>
-                  <TableHead className="text-right">Qty</TableHead>
-                  <TableHead className="text-right">Cost</TableHead>
+        <div className="mt-8">
+          <h3 className="mb-2 text-sm font-semibold">By supplier</h3>
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead>Supplier</TableHead>
+                <TableHead className="text-right">Qty</TableHead>
+                <TableHead className="text-right">Cost</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {report.data.bySupplier.map((s) => (
+                <TableRow key={s.supplier}>
+                  <TableCell className="font-medium">{s.supplier}</TableCell>
+                  <TableCell className="tnum text-right">{n2(s.qty)}</TableCell>
+                  <TableCell className="tnum text-right">{formatMoney(s.cost)}</TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {report.data.bySupplier.map((s) => (
-                  <TableRow key={s.supplier}>
-                    <TableCell className="font-medium">{s.supplier}</TableCell>
-                    <TableCell className="tnum text-right">{n2(s.qty)}</TableCell>
-                    <TableCell className="tnum text-right">{formatMoney(s.cost)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       )}
     </div>
   );

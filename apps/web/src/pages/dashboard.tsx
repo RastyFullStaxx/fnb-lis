@@ -64,13 +64,10 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <header className="max-w-2xl">
+      <header>
         <h2 className="text-xl font-semibold tracking-tight">
           {greeting()}, {firstName}
         </h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          See the current audit period, unresolved work, and the next action for this location.
-        </p>
       </header>
 
       {dash.isPending ? (

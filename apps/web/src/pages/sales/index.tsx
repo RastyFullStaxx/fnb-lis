@@ -94,7 +94,7 @@ export function SalesPage() {
 
           <div className="lg:border-l lg:pl-6">
             <div className="mb-2 text-sm font-medium">Recent entries</div>
-            <div className="max-h-[30rem] divide-y overflow-y-auto rounded-lg border">
+            <div className="max-h-[30rem] divide-y overflow-y-auto">
             {sales.isPending ? (
               <Skeleton className="m-4 h-24" />
             ) : (sales.data ?? []).length === 0 ? (
@@ -213,7 +213,7 @@ function QuickEntry({ kind }: { kind: SaleKind }) {
   };
 
   return (
-    <div className="space-y-4 rounded-lg border p-4">
+    <div className="space-y-4">
       <div>
         <h3 className="font-medium">{copy.title}</h3>
         <p className="text-sm text-muted-foreground">{copy.hint}</p>

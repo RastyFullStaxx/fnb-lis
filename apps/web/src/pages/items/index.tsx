@@ -29,22 +29,22 @@ export function ItemsPage() {
 
   const action =
     tab === "items" ? (
-      <Button size="sm" onClick={() => setItemFormOpen(true)}>
+      <Button onClick={() => setItemFormOpen(true)}>
         <Plus className="size-4" /> New item
       </Button>
     ) : tab === "categories" ? (
-      <Button size="sm" onClick={() => setCatCreateOpen(true)}>
+      <Button onClick={() => setCatCreateOpen(true)}>
         <Plus className="size-4" /> New category
       </Button>
     ) : (
-      <Button size="sm" onClick={() => setUnitCreateOpen(true)}>
+      <Button onClick={() => setUnitCreateOpen(true)}>
         <Plus className="size-4" /> New unit
       </Button>
     );
 
   return (
     <div>
-      <PageHeader title="Items" />
+      <PageHeader title="Items" actions={action} />
       <Tabs value={tab} onValueChange={setTab}>
         <TableSurface
           filters={
@@ -74,7 +74,6 @@ export function ItemsPage() {
               )}
             </>
           }
-          actions={action}
         >
           <TabsContent value="items" className="m-0">
             <ItemsTab search={search} productType={productType} formOpen={itemFormOpen} setFormOpen={setItemFormOpen} />

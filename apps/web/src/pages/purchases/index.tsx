@@ -53,7 +53,16 @@ export function PurchasesPage() {
 
   return (
     <div>
-      <PageHeader title="Purchases" />
+      <PageHeader
+        title="Purchases"
+        actions={
+          tab === "purchases" ? (
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus className="size-4" /> Receive delivery
+            </Button>
+          ) : undefined
+        }
+      />
       <Tabs value={tab} onValueChange={setTab}>
         <TableSurface
           filters={
@@ -61,13 +70,6 @@ export function PurchasesPage() {
               <TabsTrigger value="purchases">Deliveries</TabsTrigger>
               <TabsTrigger value="forfeits">Returned bottles</TabsTrigger>
             </TabsList>
-          }
-          actions={
-            tab === "purchases" ? (
-              <Button size="sm" onClick={() => setCreateOpen(true)}>
-                <Plus className="size-4" /> Receive delivery
-              </Button>
-            ) : undefined
           }
         >
           <TabsContent value="purchases" className="m-0">
@@ -324,8 +326,8 @@ function ForfeitsTab() {
         </div>
       </div>
 
-      <div className="rounded-lg border">
-        <div className="border-b bg-muted px-4 py-2 text-sm font-medium">Recent returns</div>
+      <div className="lg:border-l lg:pl-6">
+        <div className="mb-2 text-sm font-medium">Recent returns</div>
         <div className="max-h-[26rem] divide-y overflow-y-auto">
           {forfeits.isPending ? (
             <Skeleton className="m-4 h-24" />

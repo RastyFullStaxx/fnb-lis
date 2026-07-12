@@ -118,6 +118,8 @@ export function FullAuditPage() {
         </div>
       )}
 
+      {/* Controls sit above the table: the wide reconciliation grid needs its own
+          free-scrolling container, which a fused (overflow-hidden) surface would clip. */}
       <div className="mb-3 flex flex-wrap items-end gap-2 print:hidden">
         <div className="space-y-1">
           <p className="text-xs font-medium text-muted-foreground">Beginning count</p>
