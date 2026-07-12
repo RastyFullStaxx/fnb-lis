@@ -43,9 +43,9 @@ export function ItemsPage() {
     );
 
   return (
-    <div>
+    <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader title="Items" actions={action} />
-      <Tabs value={tab} onValueChange={setTab}>
+      <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col">
         <TableSurface
           filters={
             <>

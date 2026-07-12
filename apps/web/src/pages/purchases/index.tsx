@@ -52,7 +52,7 @@ export function PurchasesPage() {
   const [createOpen, setCreateOpen] = useState(false);
 
   return (
-    <div>
+    <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader
         title="Purchases"
         actions={
@@ -63,7 +63,7 @@ export function PurchasesPage() {
           ) : undefined
         }
       />
-      <Tabs value={tab} onValueChange={setTab}>
+      <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col">
         <TableSurface
           filters={
             <TabsList>

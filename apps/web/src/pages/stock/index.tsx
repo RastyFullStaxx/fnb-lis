@@ -53,7 +53,7 @@ export function StockPage() {
   const missingCount = rows.data?.filter((r) => r.cost === 0 || r.retail === 0).length ?? 0;
 
   return (
-    <div>
+    <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader
         title="Stock"
         actions={

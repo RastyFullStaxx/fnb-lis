@@ -11,7 +11,9 @@ import { exportUrl, useFullAuditDrill } from "@/api/reports";
 import { formatMoney } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
+import { TableLoading, TableEmpty } from "@/components/table-surface";
 import { ExportButtons } from "@/components/report-toolbar";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -87,7 +89,7 @@ export function FullAuditPage() {
   const exportParams = { begin: effectiveBegin ?? "", end: effectiveEnd ?? "", ...(productType !== ALL ? { productType } : {}) };
 
   return (
-    <div className="mx-auto max-w-full print:max-w-none">
+    <div className="flex min-h-0 flex-1 flex-col print:block">
       <PageHeader
         title="Full Audit"
         actions={
@@ -118,13 +120,11 @@ export function FullAuditPage() {
         </div>
       )}
 
-      {/* Controls sit above the table: the wide reconciliation grid needs its own
-          free-scrolling container, which a fused (overflow-hidden) surface would clip. */}
-      <div className="mb-3 flex flex-wrap items-end gap-2 print:hidden">
-        <div className="space-y-1">
-          <p className="text-xs font-medium text-muted-foreground">Beginning count</p>
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border print:block print:overflow-visible print:rounded-none print:border-0">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-muted/30 px-3 py-2.5 print:hidden">
+          <Label htmlFor="fa-begin" className="text-xs text-muted-foreground">Beginning</Label>
           <Select value={effectiveBegin} onValueChange={(v) => { setBegin(v); if (effectiveEnd && effectiveEnd <= v) setEnd(undefined); }}>
-            <SelectTrigger className="tnum w-40">
+            <SelectTrigger id="fa-begin" className="tnum w-40 bg-background">
               <SelectValue placeholder="Pick a date" />
             </SelectTrigger>
             <SelectContent>
@@ -135,11 +135,9 @@ export function FullAuditPage() {
               ))}
             </SelectContent>
           </Select>
-        </div>
-        <div className="space-y-1">
-          <p className="text-xs font-medium text-muted-foreground">Ending count</p>
+          <Label htmlFor="fa-end" className="text-xs text-muted-foreground">Ending</Label>
           <Select value={effectiveEnd} onValueChange={setEnd}>
-            <SelectTrigger className="tnum w-40">
+            <SelectTrigger id="fa-end" className="tnum w-40 bg-background">
               <SelectValue placeholder="Pick a date" />
             </SelectTrigger>
             <SelectContent>
@@ -150,11 +148,9 @@ export function FullAuditPage() {
               ))}
             </SelectContent>
           </Select>
-        </div>
-        <div className="space-y-1">
-          <p className="text-xs font-medium text-muted-foreground">Type</p>
+          <Label htmlFor="fa-type" className="text-xs text-muted-foreground">Type</Label>
           <Select value={productType} onValueChange={setProductType}>
-            <SelectTrigger className="w-36">
+            <SelectTrigger id="fa-type" className="w-36 bg-background">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -167,27 +163,29 @@ export function FullAuditPage() {
             </SelectContent>
           </Select>
         </div>
-      </div>
 
-      {effectiveBegin && effectiveEnd && (
-        <p className="mb-4 flex items-center gap-1.5 text-xs text-muted-foreground print:hidden">
-          <Info className="size-3.5" />
-          Activity from {effectiveBegin} up to — not including — {effectiveEnd} (your ending count day).
-          Counts are read on each boundary date.
-        </p>
-      )}
+        {effectiveBegin && effectiveEnd && (
+          <p className="flex shrink-0 items-center gap-1.5 border-b px-3 py-2 text-xs text-muted-foreground print:hidden">
+            <Info className="size-3.5" />
+            Activity from {effectiveBegin} up to — not including — {effectiveEnd} (your ending count day).
+            Counts are read on each boundary date.
+          </p>
+        )}
 
-      {report.isPending && effectiveBegin && effectiveEnd ? (
-        <Skeleton className="h-96 w-full" />
-      ) : report.data ? (
-        report.data.rows.length === 0 ? (
-          <EmptyState
-            icon={BarChart3}
-            title="No activity or counts in this period"
-            description="Pick different boundary dates, or check that the counts were committed."
-          />
-        ) : (
-          <div className="overflow-x-auto rounded-lg border print:overflow-visible print:border-0">
+        <div className="min-h-0 flex-1 overflow-auto [&_[data-slot=table-container]]:overflow-visible print:overflow-visible">
+          {report.isPending && effectiveBegin && effectiveEnd ? (
+            <TableLoading rows={10} />
+          ) : !report.data ? (
+            <div className="px-4 py-16 text-center text-sm text-muted-foreground">
+              Pick a beginning and ending count to run the reconciliation.
+            </div>
+          ) : report.data.rows.length === 0 ? (
+            <TableEmpty
+              icon={BarChart3}
+              title="No activity or counts in this period"
+              description="Pick different boundary dates, or check that the counts were committed."
+            />
+          ) : (
             <Table className="min-w-[72rem]">
               <TableHeader className="sticky top-0 z-10">
                 <TableRow className="bg-muted hover:bg-muted">
@@ -225,9 +223,9 @@ export function FullAuditPage() {
                 </TableRow>
               </TableBody>
             </Table>
-          </div>
-        )
-      ) : null}
+          )}
+        </div>
+      </div>
 
       <DrillDialog item={drill} begin={effectiveBegin} end={effectiveEnd} onClose={() => setDrill(null)} />
     </div>

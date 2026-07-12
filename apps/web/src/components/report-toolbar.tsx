@@ -18,21 +18,30 @@ export function DateRangeControl({
   onFrom: (v: string) => void;
   onTo: (v: string) => void;
 }) {
+  // Inline label + input pairs, matching every other page's toolbar (see admin/activity).
   return (
-    <div className="flex flex-wrap items-end gap-2 print:hidden">
-      <div className="space-y-1">
-        <Label htmlFor="range-from" className="text-xs text-muted-foreground">
-          From
-        </Label>
-        <Input id="range-from" type="date" className="tnum w-40" value={from} onChange={(e) => onFrom(e.target.value)} />
-      </div>
-      <div className="space-y-1">
-        <Label htmlFor="range-to" className="text-xs text-muted-foreground">
-          To
-        </Label>
-        <Input id="range-to" type="date" className="tnum w-40" value={to} onChange={(e) => onTo(e.target.value)} />
-      </div>
-    </div>
+    <>
+      <Label htmlFor="range-from" className="text-xs text-muted-foreground">
+        From
+      </Label>
+      <Input
+        id="range-from"
+        type="date"
+        className="tnum w-40 bg-background"
+        value={from}
+        onChange={(e) => onFrom(e.target.value)}
+      />
+      <Label htmlFor="range-to" className="text-xs text-muted-foreground">
+        To
+      </Label>
+      <Input
+        id="range-to"
+        type="date"
+        className="tnum w-40 bg-background"
+        value={to}
+        onChange={(e) => onTo(e.target.value)}
+      />
+    </>
   );
 }
 

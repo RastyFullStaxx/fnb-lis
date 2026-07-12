@@ -65,7 +65,7 @@ export function ImportsPage() {
   });
 
   return (
-    <div>
+    <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader
         title="Imports"
         actions={

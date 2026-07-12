@@ -27,14 +27,27 @@ export function TableSurface({
 }) {
   const hasToolbar = Boolean(filters || actions);
   return (
-    <div className={cn("overflow-hidden rounded-lg border", className)}>
+    <div className={cn("flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border", className)}>
       {hasToolbar && (
-        <div className="flex flex-wrap items-center gap-2 border-b bg-muted/30 px-3 py-2.5 print:hidden">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-muted/30 px-3 py-2.5 print:hidden">
           {filters && <div className="flex flex-1 flex-wrap items-center gap-2">{filters}</div>}
           {actions && <div className="ml-auto flex items-center gap-2">{actions}</div>}
         </div>
       )}
-      {bodyClassName ? <div className={bodyClassName}>{children}</div> : children}
+      {/* The body is the only thing that scrolls: the table header sticks so column
+          labels stay while rows scroll, and the page chrome above never moves. */}
+      <div
+        className={cn(
+          "min-h-0 flex-1 overflow-auto",
+          // The inner shadcn table wrapper is its own scroll container, which would
+          // trap the sticky header — flatten it so this body is the only scroller.
+          "[&_[data-slot=table-container]]:overflow-visible",
+          "[&_thead]:sticky [&_thead]:top-0 [&_thead]:z-10",
+          bodyClassName,
+        )}
+      >
+        {children}
+      </div>
     </div>
   );
 }

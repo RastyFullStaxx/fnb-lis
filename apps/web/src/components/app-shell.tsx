@@ -104,7 +104,7 @@ function ShellLayout({ me, current }: { me: MeResponse; current: CurrentLocation
 
       <SidebarInset>
         <Topbar current={current} navItems={[...mainNav, ...catalogNav, ...adminNav]} />
-        <div data-slot="page-content" className="flex-1 p-4 sm:p-6">
+        <div data-slot="page-content" className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4 sm:p-6">
           <Outlet />
         </div>
       </SidebarInset>
@@ -265,7 +265,7 @@ function Topbar({ current, navItems }: { current: CurrentLocation; navItems: Nav
   const [stockyOpen, setStockyOpen] = useState(false);
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-2 px-4">
+    <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
       <SidebarTrigger className="-ml-1" aria-label="Toggle navigation menu" />
       <Separator orientation="vertical" className="mr-1 !h-5" />
       <h1 className="text-sm font-medium">{title}</h1>
