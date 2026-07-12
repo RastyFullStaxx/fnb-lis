@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Plus } from "lucide-react";
+import { Tags } from "lucide-react";
 import { toast } from "sonner";
 import { categoryUpsert, type CategoryUpsert } from "@fnb/core";
 import { useCategories, useCreateCategory, useProductTypes, useUpdateCategory } from "@/api/master";
@@ -33,71 +33,66 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Skeleton } from "@/components/ui/skeleton";
+import { TableLoading, TableEmpty } from "@/components/table-surface";
 
-export function CategoriesTab() {
+export function CategoriesTab({
+  createOpen,
+  setCreateOpen,
+}: {
+  createOpen: boolean;
+  setCreateOpen: (open: boolean) => void;
+}) {
   const categories = useCategories();
   const [editing, setEditing] = useState<Category | null>(null);
-  const [creating, setCreating] = useState(false);
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground">
-          Categories group items for reports and count sheets. A default density factor lets any item in the
-          category be weighed without per-item setup.
-        </p>
-        <Button onClick={() => setCreating(true)}>
-          <Plus className="size-4" /> New category
-        </Button>
-      </div>
-
+    <>
       {categories.isPending ? (
-        <Skeleton className="h-64 w-full" />
+        <TableLoading />
+      ) : (categories.data ?? []).length === 0 ? (
+        <TableEmpty icon={Tags} title="No categories yet" description="Add a category to group items for reports and count sheets." />
       ) : (
-        <div className="rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-muted hover:bg-muted">
-                <TableHead>Category</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead className="text-right">Default density factor</TableHead>
-                <TableHead className="text-right">Items</TableHead>
-                <TableHead className="w-20" />
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted hover:bg-muted">
+              <TableHead>Category</TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead className="text-right">Default density factor</TableHead>
+              <TableHead className="text-right">Items</TableHead>
+              <TableHead className="w-20" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {categories.data!.map((cat) => (
+              <TableRow key={cat.id}>
+                <TableCell className="font-medium">{cat.name}</TableCell>
+                <TableCell className="text-muted-foreground">{cat.productType}</TableCell>
+                <TableCell className="tnum text-right">
+                  {cat.defaultDensityFactor ?? <span className="text-muted-foreground">—</span>}
+                </TableCell>
+                <TableCell className="tnum text-right">{cat._count?.items ?? 0}</TableCell>
+                <TableCell className="text-right">
+                  <Button variant="ghost" size="sm" onClick={() => setEditing(cat)}>
+                    Edit
+                  </Button>
+                </TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {categories.data!.map((cat) => (
-                <TableRow key={cat.id}>
-                  <TableCell className="font-medium">{cat.name}</TableCell>
-                  <TableCell className="text-muted-foreground">{cat.productType}</TableCell>
-                  <TableCell className="tnum text-right">
-                    {cat.defaultDensityFactor ?? <span className="text-muted-foreground">—</span>}
-                  </TableCell>
-                  <TableCell className="tnum text-right">{cat._count?.items ?? 0}</TableCell>
-                  <TableCell className="text-right">
-                    <Button variant="ghost" size="sm" onClick={() => setEditing(cat)}>
-                      Edit
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+            ))}
+          </TableBody>
+        </Table>
       )}
 
       <CategoryDialog
-        open={creating || editing !== null}
+        open={createOpen || editing !== null}
         category={editing}
         onOpenChange={(open) => {
           if (!open) {
-            setCreating(false);
+            setCreateOpen(false);
             setEditing(null);
           }
         }}
       />
-    </div>
+    </>
   );
 }
 

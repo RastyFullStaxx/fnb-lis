@@ -8,7 +8,7 @@ import { useCreateSupplier, useSuppliers, useUpdateSupplier } from "@/api/locati
 import type { Supplier } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { PageHeader } from "@/components/page-header";
-import { EmptyState } from "@/components/empty-state";
+import { TableSurface, TableLoading, TableEmpty, ToolbarSearch } from "@/components/table-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +23,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -30,12 +37,21 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Skeleton } from "@/components/ui/skeleton";
 
 export function SuppliersPage() {
   const suppliers = useSuppliers();
   const [editing, setEditing] = useState<Supplier | null>(null);
   const [creating, setCreating] = useState(false);
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("ALL");
+
+  const q = search.trim().toLowerCase();
+  const filtered = (suppliers.data ?? []).filter((s) => {
+    const matchesStatus = status === "ALL" || (status === "ACTIVE" ? s.isActive : !s.isActive);
+    const matchesSearch =
+      !q || s.name.toLowerCase().includes(q) || (s.contactInfo ?? "").toLowerCase().includes(q);
+    return matchesStatus && matchesSearch;
+  });
 
   return (
     <div>
@@ -48,21 +64,43 @@ export function SuppliersPage() {
         }
       />
 
-      {suppliers.isPending ? (
-        <Skeleton className="h-64 w-full" />
-      ) : (suppliers.data ?? []).length === 0 ? (
-        <EmptyState
-          icon={Truck}
-          title="No suppliers yet"
-          description="Add the vendors this client buys from."
-          action={
-            <Button onClick={() => setCreating(true)}>
-              <Plus className="size-4" /> New supplier
-            </Button>
-          }
-        />
-      ) : (
-        <div className="rounded-lg border">
+      <TableSurface
+        filters={
+          <>
+            <ToolbarSearch value={search} onChange={setSearch} placeholder="Search suppliers…" />
+            <Select value={status} onValueChange={setStatus}>
+              <SelectTrigger className="w-36 bg-background">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All</SelectItem>
+                <SelectItem value="ACTIVE">Active</SelectItem>
+                <SelectItem value="INACTIVE">Inactive</SelectItem>
+              </SelectContent>
+            </Select>
+          </>
+        }
+      >
+        {suppliers.isPending ? (
+          <TableLoading />
+        ) : filtered.length === 0 ? (
+          <TableEmpty
+            icon={Truck}
+            title={(suppliers.data ?? []).length === 0 ? "No suppliers yet" : "Nothing matches the current filter"}
+            description={
+              (suppliers.data ?? []).length === 0
+                ? "Add the vendors this client buys from."
+                : "Clear the search or status filter to see everything."
+            }
+            action={
+              (suppliers.data ?? []).length === 0 && (
+                <Button onClick={() => setCreating(true)}>
+                  <Plus className="size-4" /> New supplier
+                </Button>
+              )
+            }
+          />
+        ) : (
           <Table>
             <TableHeader>
               <TableRow className="bg-muted hover:bg-muted">
@@ -73,7 +111,7 @@ export function SuppliersPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {suppliers.data!.map((s) => (
+              {filtered.map((s) => (
                 <TableRow key={s.id}>
                   <TableCell className="font-medium">{s.name}</TableCell>
                   <TableCell className="max-w-md truncate text-muted-foreground">
@@ -93,8 +131,8 @@ export function SuppliersPage() {
               ))}
             </TableBody>
           </Table>
-        </div>
-      )}
+        )}
+      </TableSurface>
 
       <SupplierDialog
         open={creating || editing !== null}

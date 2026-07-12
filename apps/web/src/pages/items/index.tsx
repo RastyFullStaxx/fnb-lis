@@ -1,9 +1,8 @@
 import { useState } from "react";
-import { Plus, Search } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useProductTypes } from "@/api/master";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -12,6 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { PageHeader } from "@/components/page-header";
+import { TableSurface, ToolbarSearch } from "@/components/table-surface";
 import { ItemsTab } from "./items-tab";
 import { CategoriesTab } from "./categories-tab";
 import { UnitsTab } from "./units-tab";
@@ -22,60 +22,70 @@ export function ItemsPage() {
   const [tab, setTab] = useState("items");
   const [search, setSearch] = useState("");
   const [productType, setProductType] = useState(ALL);
-  const [formOpen, setFormOpen] = useState(false);
+  const [itemFormOpen, setItemFormOpen] = useState(false);
+  const [catCreateOpen, setCatCreateOpen] = useState(false);
+  const [unitCreateOpen, setUnitCreateOpen] = useState(false);
   const productTypes = useProductTypes();
+
+  const action =
+    tab === "items" ? (
+      <Button size="sm" onClick={() => setItemFormOpen(true)}>
+        <Plus className="size-4" /> New item
+      </Button>
+    ) : tab === "categories" ? (
+      <Button size="sm" onClick={() => setCatCreateOpen(true)}>
+        <Plus className="size-4" /> New category
+      </Button>
+    ) : (
+      <Button size="sm" onClick={() => setUnitCreateOpen(true)}>
+        <Plus className="size-4" /> New unit
+      </Button>
+    );
 
   return (
     <div>
-      <PageHeader
-        title="Items"
-      />
+      <PageHeader title="Items" />
       <Tabs value={tab} onValueChange={setTab}>
-        <div className="flex flex-wrap items-center gap-2">
-          <TabsList>
-            <TabsTrigger value="items">Items</TabsTrigger>
-            <TabsTrigger value="categories">Categories</TabsTrigger>
-            <TabsTrigger value="units">Units</TabsTrigger>
-          </TabsList>
-          {tab === "items" && (
+        <TableSurface
+          filters={
             <>
-              <div className="relative w-64">
-                <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="Search items…"
-                  className="pl-8"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-              </div>
-              <Select value={productType} onValueChange={setProductType}>
-                <SelectTrigger className="w-40">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL}>All types</SelectItem>
-                  {(productTypes.data?.productTypes ?? []).map((t) => (
-                    <SelectItem key={t} value={t}>
-                      {t}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button className="ml-auto" onClick={() => setFormOpen(true)}>
-                <Plus className="size-4" /> New item
-              </Button>
+              <TabsList>
+                <TabsTrigger value="items">Items</TabsTrigger>
+                <TabsTrigger value="categories">Categories</TabsTrigger>
+                <TabsTrigger value="units">Units</TabsTrigger>
+              </TabsList>
+              {tab === "items" && (
+                <>
+                  <ToolbarSearch value={search} onChange={setSearch} placeholder="Search items…" />
+                  <Select value={productType} onValueChange={setProductType}>
+                    <SelectTrigger className="w-40 bg-background">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={ALL}>All types</SelectItem>
+                      {(productTypes.data?.productTypes ?? []).map((t) => (
+                        <SelectItem key={t} value={t}>
+                          {t}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </>
+              )}
             </>
-          )}
-        </div>
-        <TabsContent value="items" className="mt-4">
-          <ItemsTab search={search} productType={productType} formOpen={formOpen} setFormOpen={setFormOpen} />
-        </TabsContent>
-        <TabsContent value="categories" className="mt-4">
-          <CategoriesTab />
-        </TabsContent>
-        <TabsContent value="units" className="mt-4">
-          <UnitsTab />
-        </TabsContent>
+          }
+          actions={action}
+        >
+          <TabsContent value="items" className="m-0">
+            <ItemsTab search={search} productType={productType} formOpen={itemFormOpen} setFormOpen={setItemFormOpen} />
+          </TabsContent>
+          <TabsContent value="categories" className="m-0">
+            <CategoriesTab createOpen={catCreateOpen} setCreateOpen={setCatCreateOpen} />
+          </TabsContent>
+          <TabsContent value="units" className="m-0">
+            <UnitsTab createOpen={unitCreateOpen} setCreateOpen={setUnitCreateOpen} />
+          </TabsContent>
+        </TableSurface>
       </Tabs>
     </div>
   );

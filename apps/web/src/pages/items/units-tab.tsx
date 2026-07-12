@@ -1,7 +1,6 @@
-import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Plus } from "lucide-react";
+import { Ruler } from "lucide-react";
 import { toast } from "sonner";
 import { unitCreate, type UnitCreate } from "@fnb/core";
 import { useCreateUnit, useUnits } from "@/api/master";
@@ -33,7 +32,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Skeleton } from "@/components/ui/skeleton";
+import { TableLoading, TableEmpty } from "@/components/table-surface";
 
 const KIND_LABELS: Record<string, { label: string; base: string }> = {
   VOLUME: { label: "Volume", base: "ml" },
@@ -41,59 +40,54 @@ const KIND_LABELS: Record<string, { label: string; base: string }> = {
   COUNT: { label: "Count", base: "unit" },
 };
 
-export function UnitsTab() {
+export function UnitsTab({
+  createOpen,
+  setCreateOpen,
+}: {
+  createOpen: boolean;
+  setCreateOpen: (open: boolean) => void;
+}) {
   const units = useUnits();
-  const [creating, setCreating] = useState(false);
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground">
-          Units convert automatically within a kind — 500 g is 0.5 kg everywhere. Add custom units with
-          their factor to the base (ml, g, or 1).
-        </p>
-        <Button onClick={() => setCreating(true)}>
-          <Plus className="size-4" /> New unit
-        </Button>
-      </div>
-
+    <>
       {units.isPending ? (
-        <Skeleton className="h-64 w-full" />
+        <TableLoading />
+      ) : (units.data ?? []).length === 0 ? (
+        <TableEmpty icon={Ruler} title="No units yet" description="Add a unit with its factor to the base (ml, g, or 1)." />
       ) : (
-        <div className="rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-muted hover:bg-muted">
-                <TableHead>Unit</TableHead>
-                <TableHead>Kind</TableHead>
-                <TableHead className="text-right">Factor to base</TableHead>
-                <TableHead className="text-right">Source</TableHead>
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted hover:bg-muted">
+              <TableHead>Unit</TableHead>
+              <TableHead>Kind</TableHead>
+              <TableHead className="text-right">Factor to base</TableHead>
+              <TableHead className="text-right">Source</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {units.data!.map((unit) => (
+              <TableRow key={unit.id}>
+                <TableCell className="font-medium">{unit.name}</TableCell>
+                <TableCell className="text-muted-foreground">
+                  {KIND_LABELS[unit.kind]?.label ?? unit.kind}
+                </TableCell>
+                <TableCell className="tnum text-right">
+                  {unit.factorToBase} {KIND_LABELS[unit.kind]?.base}
+                </TableCell>
+                <TableCell className="text-right">
+                  <Badge variant={unit.isSystem ? "secondary" : "outline"}>
+                    {unit.isSystem ? "System" : "Custom"}
+                  </Badge>
+                </TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {units.data!.map((unit) => (
-                <TableRow key={unit.id}>
-                  <TableCell className="font-medium">{unit.name}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {KIND_LABELS[unit.kind]?.label ?? unit.kind}
-                  </TableCell>
-                  <TableCell className="tnum text-right">
-                    {unit.factorToBase} {KIND_LABELS[unit.kind]?.base}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Badge variant={unit.isSystem ? "secondary" : "outline"}>
-                      {unit.isSystem ? "System" : "Custom"}
-                    </Badge>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+            ))}
+          </TableBody>
+        </Table>
       )}
 
-      <UnitDialog open={creating} onOpenChange={setCreating} />
-    </div>
+      <UnitDialog open={createOpen} onOpenChange={setCreateOpen} />
+    </>
   );
 }
 

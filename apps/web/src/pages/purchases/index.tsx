@@ -10,7 +10,7 @@ import { variantLabel, type Forfeit, type LocationItem } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { formatMoney } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
-import { EmptyState } from "@/components/empty-state";
+import { TableSurface, TableLoading, TableEmpty } from "@/components/table-surface";
 import { ItemCombobox } from "@/components/item-combobox";
 import { VoidDialog } from "@/components/void-dialog";
 import { useWeighPreview, WeighPreviewStrip } from "@/components/weigh-calculator";
@@ -53,27 +53,30 @@ export function PurchasesPage() {
 
   return (
     <div>
-      <PageHeader
-        title="Purchases"
-      />
+      <PageHeader title="Purchases" />
       <Tabs value={tab} onValueChange={setTab}>
-        <div className="flex items-center justify-between gap-2">
-          <TabsList>
-            <TabsTrigger value="purchases">Deliveries</TabsTrigger>
-            <TabsTrigger value="forfeits">Returned bottles</TabsTrigger>
-          </TabsList>
-          {tab === "purchases" && (
-            <Button onClick={() => setCreateOpen(true)}>
-              <Plus className="size-4" /> Receive delivery
-            </Button>
-          )}
-        </div>
-        <TabsContent value="purchases" className="mt-4">
-          <PurchasesTab createOpen={createOpen} setCreateOpen={setCreateOpen} />
-        </TabsContent>
-        <TabsContent value="forfeits" className="mt-4">
-          <ForfeitsTab />
-        </TabsContent>
+        <TableSurface
+          filters={
+            <TabsList>
+              <TabsTrigger value="purchases">Deliveries</TabsTrigger>
+              <TabsTrigger value="forfeits">Returned bottles</TabsTrigger>
+            </TabsList>
+          }
+          actions={
+            tab === "purchases" ? (
+              <Button size="sm" onClick={() => setCreateOpen(true)}>
+                <Plus className="size-4" /> Receive delivery
+              </Button>
+            ) : undefined
+          }
+        >
+          <TabsContent value="purchases" className="m-0">
+            <PurchasesTab createOpen={createOpen} setCreateOpen={setCreateOpen} />
+          </TabsContent>
+          <TabsContent value="forfeits" className="m-0 p-4">
+            <ForfeitsTab />
+          </TabsContent>
+        </TableSurface>
       </Tabs>
     </div>
   );
@@ -90,11 +93,11 @@ function PurchasesTab({
   const locationId = useLocationId();
 
   return (
-    <div className="space-y-4">
+    <>
       {purchases.isPending ? (
-        <Skeleton className="h-64 w-full" />
+        <TableLoading />
       ) : (purchases.data ?? []).length === 0 ? (
-        <EmptyState
+        <TableEmpty
           icon={ShoppingCart}
           title="No purchases yet"
           description="Record deliveries here — committed purchases add into the period's stock pool."
@@ -105,49 +108,47 @@ function PurchasesTab({
           }
         />
       ) : (
-        <div className="rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-muted hover:bg-muted">
-                <TableHead>Date</TableHead>
-                <TableHead>Supplier / Ref</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Lines</TableHead>
-                <TableHead className="text-right">Total</TableHead>
-                <TableHead className="w-24" />
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted hover:bg-muted">
+              <TableHead>Date</TableHead>
+              <TableHead>Supplier / Ref</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="text-right">Lines</TableHead>
+              <TableHead className="text-right">Total</TableHead>
+              <TableHead className="w-24" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {purchases.data!.map((p) => (
+              <TableRow key={p.id} className={p.status === "VOID" ? "opacity-50" : undefined}>
+                <TableCell className="tnum font-medium">{p.purchaseDate}</TableCell>
+                <TableCell className="text-muted-foreground">
+                  {p.supplier?.name ?? "—"}
+                  {p.refNo && <span className="ml-2 text-xs">({p.refNo})</span>}
+                </TableCell>
+                <TableCell>
+                  <Badge variant={p.status === "DRAFT" ? "default" : p.status === "COMMITTED" ? "secondary" : "outline"}>
+                    {p.status === "DRAFT" ? "Draft" : p.status === "COMMITTED" ? "Committed" : "Void"}
+                  </Badge>
+                </TableCell>
+                <TableCell className="tnum text-right">{p.lineCount}</TableCell>
+                <TableCell className="tnum text-right">{formatMoney(p.total ?? 0)}</TableCell>
+                <TableCell className="text-right">
+                  <Button asChild variant="ghost" size="sm">
+                    <Link to={`/l/${locationId}/purchases/${p.id}`}>
+                      {p.status === "DRAFT" ? "Continue" : "View"}
+                    </Link>
+                  </Button>
+                </TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {purchases.data!.map((p) => (
-                <TableRow key={p.id} className={p.status === "VOID" ? "opacity-50" : undefined}>
-                  <TableCell className="tnum font-medium">{p.purchaseDate}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {p.supplier?.name ?? "—"}
-                    {p.refNo && <span className="ml-2 text-xs">({p.refNo})</span>}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={p.status === "DRAFT" ? "default" : p.status === "COMMITTED" ? "secondary" : "outline"}>
-                      {p.status === "DRAFT" ? "Draft" : p.status === "COMMITTED" ? "Committed" : "Void"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="tnum text-right">{p.lineCount}</TableCell>
-                  <TableCell className="tnum text-right">{formatMoney(p.total ?? 0)}</TableCell>
-                  <TableCell className="text-right">
-                    <Button asChild variant="ghost" size="sm">
-                      <Link to={`/l/${locationId}/purchases/${p.id}`}>
-                        {p.status === "DRAFT" ? "Continue" : "View"}
-                      </Link>
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+            ))}
+          </TableBody>
+        </Table>
       )}
 
       <NewPurchaseDialog open={createOpen} onOpenChange={setCreateOpen} />
-    </div>
+    </>
   );
 }
 
@@ -264,7 +265,7 @@ function ForfeitsTab() {
 
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
-      <div className="space-y-4 rounded-lg border p-4">
+      <div className="space-y-4">
         <p className="text-sm text-muted-foreground">
           A customer leaves an unfinished bottle — weigh it and its content returns to stock. This is the
           legacy "forfeited bottle": it <span className="font-medium text-foreground">adds into</span> the

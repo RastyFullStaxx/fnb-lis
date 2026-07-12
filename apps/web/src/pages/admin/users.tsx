@@ -12,7 +12,7 @@ import {
 } from "@/api/admin";
 import { ApiError } from "@/api/http";
 import { PageHeader } from "@/components/page-header";
-import { EmptyState } from "@/components/empty-state";
+import { TableSurface, TableLoading, TableEmpty, ToolbarSearch } from "@/components/table-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -63,6 +63,18 @@ export function AdminUsersPage() {
   const users = useAdminUsers();
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<AdminUser | null>(null);
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("ALL");
+
+  const q = search.trim().toLowerCase();
+  const filtered = (users.data ?? []).filter((u) => {
+    const matchesStatus = status === "ALL" || u.status === status;
+    const matchesSearch =
+      !q ||
+      `${u.firstName} ${u.lastName}`.toLowerCase().includes(q) ||
+      u.username.toLowerCase().includes(q);
+    return matchesStatus && matchesSearch;
+  });
 
   return (
     <div>
@@ -75,12 +87,36 @@ export function AdminUsersPage() {
         }
       />
 
-      {users.isPending ? (
-        <Skeleton className="h-64 w-full" />
-      ) : (users.data ?? []).length === 0 ? (
-        <EmptyState icon={UserCog} title="No users yet" description="Create the first account." />
-      ) : (
-        <div className="rounded-lg border">
+      <TableSurface
+        filters={
+          <>
+            <ToolbarSearch value={search} onChange={setSearch} placeholder="Search name or username…" />
+            <Select value={status} onValueChange={setStatus}>
+              <SelectTrigger className="w-36 bg-background">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All</SelectItem>
+                <SelectItem value="ACTIVE">Active</SelectItem>
+                <SelectItem value="DISABLED">Disabled</SelectItem>
+              </SelectContent>
+            </Select>
+          </>
+        }
+      >
+        {users.isPending ? (
+          <TableLoading />
+        ) : filtered.length === 0 ? (
+          <TableEmpty
+            icon={UserCog}
+            title={(users.data ?? []).length === 0 ? "No users yet" : "Nothing matches the current filter"}
+            description={
+              (users.data ?? []).length === 0
+                ? "Create the first account."
+                : "Clear the search or status filter to see everyone."
+            }
+          />
+        ) : (
           <Table>
             <TableHeader>
               <TableRow className="bg-muted hover:bg-muted">
@@ -92,7 +128,7 @@ export function AdminUsersPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {users.data!.map((u) => (
+              {filtered.map((u) => (
                 <TableRow key={u.id} className={u.status === "DISABLED" ? "opacity-60" : undefined}>
                   <TableCell>
                     <div className="font-medium">
@@ -124,8 +160,8 @@ export function AdminUsersPage() {
               ))}
             </TableBody>
           </Table>
-        </div>
-      )}
+        )}
+      </TableSurface>
 
       <CreateUserDialog open={creating} onOpenChange={setCreating} />
       <EditUserDialog user={editing} onClose={() => setEditing(null)} />

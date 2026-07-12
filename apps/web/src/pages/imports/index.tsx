@@ -7,10 +7,17 @@ import { useLocationId } from "@/api/location";
 import { useImportBatches, useUploadImport, type ImportKind } from "@/api/imports";
 import { ApiError } from "@/api/http";
 import { PageHeader } from "@/components/page-header";
-import { EmptyState } from "@/components/empty-state";
+import { TableSurface, TableLoading, TableEmpty, ToolbarSearch } from "@/components/table-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -26,7 +33,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 const KIND_LABELS: Record<string, string> = {
@@ -47,22 +53,67 @@ const STATUS_BADGE: Record<string, { label: string; variant: "default" | "second
 export function ImportsPage() {
   const batches = useImportBatches();
   const locationId = useLocationId();
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [kind, setKind] = useState("ALL");
+
+  const q = search.trim().toLowerCase();
+  const filtered = (batches.data ?? []).filter((b) => {
+    const matchesKind = kind === "ALL" || b.kind === kind;
+    const matchesSearch = !q || b.fileName.toLowerCase().includes(q);
+    return matchesKind && matchesSearch;
+  });
 
   return (
     <div>
       <PageHeader
         title="Imports"
+        actions={
+          <Button onClick={() => setUploadOpen(true)}>
+            <Upload className="size-4" /> Import
+          </Button>
+        }
       />
 
-      <UploadCard />
-
-      <h3 className="mt-8 mb-3 text-sm font-semibold">Recent imports</h3>
-      {batches.isPending ? (
-        <Skeleton className="h-48 w-full" />
-      ) : (batches.data ?? []).length === 0 ? (
-        <EmptyState icon={FileInput} title="No imports yet" description="Upload a CSV or Excel file above to get started." />
-      ) : (
-        <div className="rounded-lg border">
+      <TableSurface
+        filters={
+          <>
+            <ToolbarSearch value={search} onChange={setSearch} placeholder="Search file name…" />
+            <Select value={kind} onValueChange={setKind}>
+              <SelectTrigger className="w-40 bg-background">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All types</SelectItem>
+                <SelectItem value="SALES">Sales</SelectItem>
+                <SelectItem value="PURCHASES">Purchases</SelectItem>
+                <SelectItem value="NON_REVENUE">Non-revenue</SelectItem>
+                <SelectItem value="COUNTS">Counts</SelectItem>
+              </SelectContent>
+            </Select>
+          </>
+        }
+      >
+        {batches.isPending ? (
+          <TableLoading />
+        ) : filtered.length === 0 ? (
+          <TableEmpty
+            icon={FileInput}
+            title={(batches.data ?? []).length === 0 ? "No imports yet" : "Nothing matches the current filter"}
+            description={
+              (batches.data ?? []).length === 0
+                ? "Use the Import button to upload a POS export or supplier file — you review before anything touches inventory."
+                : "Clear the search or type filter to see everything."
+            }
+            action={
+              (batches.data ?? []).length === 0 && (
+                <Button onClick={() => setUploadOpen(true)}>
+                  <Upload className="size-4" /> Import
+                </Button>
+              )
+            }
+          />
+        ) : (
           <Table>
             <TableHeader>
               <TableRow className="bg-muted hover:bg-muted">
@@ -76,7 +127,7 @@ export function ImportsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {batches.data!.map((b) => (
+              {filtered.map((b) => (
                 <TableRow key={b.id} className={cn(b.status === "REVERSED" && "opacity-60")}>
                   <TableCell className="max-w-56 truncate font-medium">{b.fileName}</TableCell>
                   <TableCell className="text-muted-foreground">{KIND_LABELS[b.kind] ?? b.kind}</TableCell>
@@ -102,13 +153,15 @@ export function ImportsPage() {
               ))}
             </TableBody>
           </Table>
-        </div>
-      )}
+        )}
+      </TableSurface>
+
+      <ImportDialog open={uploadOpen} onOpenChange={setUploadOpen} />
     </div>
   );
 }
 
-function UploadCard() {
+function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const me = useMe();
   const navigate = useNavigate();
   const locationId = useLocationId();
@@ -124,6 +177,7 @@ function UploadCard() {
       const result = await upload.mutateAsync({ kind, file });
       if (result.warnings.length > 0) result.warnings.forEach((w) => toast.warning(w));
       toast.success("File processed — review the extracted rows");
+      onOpenChange(false);
       navigate(`/l/${locationId}/imports/${result.id}`);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Upload failed");
@@ -131,13 +185,22 @@ function UploadCard() {
   };
 
   return (
-    <div className="rounded-lg border p-5">
-      <div className="mb-4 flex flex-wrap items-end gap-3">
-        <div className="space-y-1.5">
-          <Label>Import type</Label>
-          <Select value={kind} onValueChange={(v) => setKind(v as ImportKind)}>
-            <SelectTrigger className="w-44">
-              <SelectValue />
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Import a file</DialogTitle>
+          <DialogDescription>
+            Drop a POS export or supplier file. The system extracts and matches rows; you review before
+            anything touches inventory.
+          </DialogDescription>
+        </DialogHeader>
+      <div>
+        <div className="mb-4 flex flex-wrap items-end gap-3">
+          <div className="space-y-1.5">
+            <Label>Import type</Label>
+            <Select value={kind} onValueChange={(v) => setKind(v as ImportKind)}>
+              <SelectTrigger className="w-44">
+                <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="SALES">Sales</SelectItem>
@@ -194,6 +257,8 @@ function UploadCard() {
           to the server to enable it — CSV and Excel work without it.
         </p>
       )}
-    </div>
+      </div>
+      </DialogContent>
+    </Dialog>
   );
 }

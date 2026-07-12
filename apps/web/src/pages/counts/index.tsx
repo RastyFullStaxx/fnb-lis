@@ -6,7 +6,7 @@ import { useLocationId } from "@/api/location";
 import { useCountMutations, useCountSessions } from "@/api/ops";
 import { ApiError } from "@/api/http";
 import { PageHeader } from "@/components/page-header";
-import { EmptyState } from "@/components/empty-state";
+import { TableSurface, TableLoading, TableEmpty, ToolbarSearch } from "@/components/table-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -27,7 +34,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Skeleton } from "@/components/ui/skeleton";
 
 const STATUS_BADGE: Record<string, "secondary" | "default" | "outline"> = {
   OPEN: "default",
@@ -39,6 +45,16 @@ export function CountsPage() {
   const sessions = useCountSessions();
   const locationId = useLocationId();
   const [createOpen, setCreateOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("ALL");
+
+  const q = search.trim().toLowerCase();
+  const filtered = (sessions.data ?? []).filter((s) => {
+    const matchesStatus = status === "ALL" || s.status === status;
+    const matchesSearch =
+      !q || s.countDate.includes(q) || (s.createdByName ?? "").toLowerCase().includes(q);
+    return matchesStatus && matchesSearch;
+  });
 
   return (
     <div>
@@ -51,21 +67,46 @@ export function CountsPage() {
         }
       />
 
-      {sessions.isPending ? (
-        <Skeleton className="h-64 w-full" />
-      ) : (sessions.data ?? []).length === 0 ? (
-        <EmptyState
-          icon={ClipboardList}
-          title="No counts yet"
-          description="Start your first count — it becomes the beginning inventory of your first audit period."
-          action={
-            <Button onClick={() => setCreateOpen(true)}>
-              <Plus className="size-4" /> Start a count
-            </Button>
-          }
-        />
-      ) : (
-        <div className="rounded-lg border">
+      <TableSurface
+        filters={
+          <>
+            <ToolbarSearch value={search} onChange={setSearch} placeholder="Search date or encoder…" />
+            <Select value={status} onValueChange={setStatus}>
+              <SelectTrigger className="w-40 bg-background">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All statuses</SelectItem>
+                <SelectItem value="OPEN">Counting</SelectItem>
+                <SelectItem value="COMMITTED">Committed</SelectItem>
+                <SelectItem value="VOID">Void</SelectItem>
+              </SelectContent>
+            </Select>
+          </>
+        }
+      >
+        {sessions.isPending ? (
+          <TableLoading />
+        ) : filtered.length === 0 ? (
+          <TableEmpty
+            icon={ClipboardList}
+            title={
+              (sessions.data ?? []).length === 0 ? "No counts yet" : "Nothing matches the current filter"
+            }
+            description={
+              (sessions.data ?? []).length === 0
+                ? "Start your first count — it becomes the beginning inventory of your first audit period."
+                : "Clear the search or status filter to see everything."
+            }
+            action={
+              (sessions.data ?? []).length === 0 && (
+                <Button onClick={() => setCreateOpen(true)}>
+                  <Plus className="size-4" /> Start a count
+                </Button>
+              )
+            }
+          />
+        ) : (
           <Table>
             <TableHeader>
               <TableRow className="bg-muted hover:bg-muted">
@@ -77,7 +118,7 @@ export function CountsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {sessions.data!.map((s) => (
+              {filtered.map((s) => (
                 <TableRow key={s.id} className={s.status === "VOID" ? "opacity-50" : undefined}>
                   <TableCell className="tnum font-medium">{s.countDate}</TableCell>
                   <TableCell>
@@ -101,8 +142,8 @@ export function CountsPage() {
               ))}
             </TableBody>
           </Table>
-        </div>
-      )}
+        )}
+      </TableSurface>
 
       <NewCountDialog open={createOpen} onOpenChange={setCreateOpen} />
     </div>

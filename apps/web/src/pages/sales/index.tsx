@@ -10,6 +10,7 @@ import { variantLabel, type LocationItem, type SaleRecord } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { formatMoney } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
+import { TableSurface } from "@/components/table-surface";
 import { VoidDialog } from "@/components/void-dialog";
 import {
   Command,
@@ -79,19 +80,21 @@ export function SalesPage() {
       <PageHeader title="Sales" />
 
       <Tabs value={kind} onValueChange={(v) => setKind(v as SaleKind)}>
-        <TabsList>
-          <TabsTrigger value="SALE">Sales</TabsTrigger>
-          <TabsTrigger value="NON_REVENUE">Non-revenue</TabsTrigger>
-          <TabsTrigger value="PRODUCTION">Production</TabsTrigger>
-        </TabsList>
-      </Tabs>
+        <TableSurface
+          filters={
+            <TabsList>
+              <TabsTrigger value="SALE">Sales</TabsTrigger>
+              <TabsTrigger value="NON_REVENUE">Non-revenue</TabsTrigger>
+              <TabsTrigger value="PRODUCTION">Production</TabsTrigger>
+            </TabsList>
+          }
+          bodyClassName="grid gap-6 p-4 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]"
+        >
+          <QuickEntry kind={kind} />
 
-      <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
-        <QuickEntry kind={kind} />
-
-        <div className="rounded-lg border">
-          <div className="border-b bg-muted px-4 py-2 text-sm font-medium">Recent entries</div>
-          <div className="max-h-[30rem] divide-y overflow-y-auto">
+          <div className="lg:border-l lg:pl-6">
+            <div className="mb-2 text-sm font-medium">Recent entries</div>
+            <div className="max-h-[30rem] divide-y overflow-y-auto rounded-lg border">
             {sales.isPending ? (
               <Skeleton className="m-4 h-24" />
             ) : (sales.data ?? []).length === 0 ? (
@@ -134,8 +137,9 @@ export function SalesPage() {
               })
             )}
           </div>
-        </div>
-      </div>
+          </div>
+        </TableSurface>
+      </Tabs>
 
       <VoidDialog
         open={voiding !== null}

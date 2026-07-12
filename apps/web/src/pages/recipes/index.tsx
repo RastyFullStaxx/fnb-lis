@@ -3,7 +3,7 @@ import { Martini, Plus } from "lucide-react";
 import { useMenus, type MenuSummary } from "@/api/menus";
 import { formatMoney } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
-import { EmptyState } from "@/components/empty-state";
+import { TableSurface, TableLoading, TableEmpty, ToolbarSearch } from "@/components/table-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,7 +14,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Skeleton } from "@/components/ui/skeleton";
 import { RecipeBuilderSheet } from "./builder";
 import { MenuDetailSheet } from "./detail";
 
@@ -22,6 +21,10 @@ export function RecipesPage() {
   const menus = useMenus();
   const [building, setBuilding] = useState<MenuSummary | "new" | null>(null);
   const [viewing, setViewing] = useState<MenuSummary | null>(null);
+  const [search, setSearch] = useState("");
+
+  const q = search.trim().toLowerCase();
+  const filtered = (menus.data ?? []).filter((m) => !q || m.name.toLowerCase().includes(q));
 
   return (
     <div>
@@ -34,21 +37,27 @@ export function RecipesPage() {
         }
       />
 
-      {menus.isPending ? (
-        <Skeleton className="h-64 w-full" />
-      ) : (menus.data ?? []).length === 0 ? (
-        <EmptyState
-          icon={Martini}
-          title="No menus yet"
-          description="Build your first cocktail or dish — its recipe links menu sales to ingredient stock."
-          action={
-            <Button onClick={() => setBuilding("new")}>
-              <Plus className="size-4" /> New menu
-            </Button>
-          }
-        />
-      ) : (
-        <div className="rounded-lg border">
+      <TableSurface filters={<ToolbarSearch value={search} onChange={setSearch} placeholder="Search menus…" />}>
+        {menus.isPending ? (
+          <TableLoading />
+        ) : filtered.length === 0 ? (
+          <TableEmpty
+            icon={Martini}
+            title={(menus.data ?? []).length === 0 ? "No menus yet" : "No menus match your search"}
+            description={
+              (menus.data ?? []).length === 0
+                ? "Build your first cocktail or dish — its recipe links menu sales to ingredient stock."
+                : "Try a different name."
+            }
+            action={
+              (menus.data ?? []).length === 0 && (
+                <Button onClick={() => setBuilding("new")}>
+                  <Plus className="size-4" /> New menu
+                </Button>
+              )
+            }
+          />
+        ) : (
           <Table>
             <TableHeader>
               <TableRow className="bg-muted hover:bg-muted">
@@ -62,7 +71,7 @@ export function RecipesPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {menus.data!.map((menu) => {
+              {filtered.map((menu) => {
                 const cur = menu.current;
                 const margin = cur && cur.srp > 0 ? ((cur.srp - cur.costAtPublish) / cur.srp) * 100 : null;
                 return (
@@ -97,8 +106,8 @@ export function RecipesPage() {
               })}
             </TableBody>
           </Table>
-        </div>
-      )}
+        )}
+      </TableSurface>
 
       <RecipeBuilderSheet
         open={building !== null}

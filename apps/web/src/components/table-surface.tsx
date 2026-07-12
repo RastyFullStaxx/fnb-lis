@@ -1,5 +1,7 @@
 import type { ComponentType, ReactNode } from "react";
+import { Search } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 
 /**
@@ -14,11 +16,14 @@ export function TableSurface({
   actions,
   children,
   className,
+  bodyClassName,
 }: {
   filters?: ReactNode;
   actions?: ReactNode;
   children: ReactNode;
   className?: string;
+  /** Padding/layout for the body — pass e.g. "p-4" for a form/workspace body so it isn't flush like a table. */
+  bodyClassName?: string;
 }) {
   const hasToolbar = Boolean(filters || actions);
   return (
@@ -29,7 +34,36 @@ export function TableSurface({
           {actions && <div className="ml-auto flex items-center gap-2">{actions}</div>}
         </div>
       )}
-      {children}
+      {bodyClassName ? <div className={bodyClassName}>{children}</div> : children}
+    </div>
+  );
+}
+
+/** The one search box used in every table toolbar — identical affordance across pages. */
+export function ToolbarSearch({
+  value,
+  onChange,
+  placeholder = "Search…",
+  className,
+  onEnter,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  className?: string;
+  onEnter?: () => void;
+}) {
+  return (
+    <div className={cn("relative w-64", className)}>
+      <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+      <Input
+        aria-label={placeholder}
+        placeholder={placeholder}
+        className="bg-background pl-8"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={onEnter ? (e) => e.key === "Enter" && onEnter() : undefined}
+      />
     </div>
   );
 }
