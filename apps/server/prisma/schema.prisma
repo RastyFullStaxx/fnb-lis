@@ -91,20 +91,28 @@ model UserClientAccess {
 
 // ───────────────────────── Subscription & Packages ─────────────────────────
 // packageType: BASIC | MEDIUM | ONE_TIME
-// billingCycle: STANDALONE | MONTHLY | ANNUAL
+// billingCycle: STANDALONE | MONTHLY (implied by packageType — see PACKAGE_BILLING_CYCLE in @fnb/core)
 // inventoryModules: comma-separated list of BAR | KITCHEN | ASSET
 //   Valid combos: BAR | KITCHEN | ASSET | BAR_KITCHEN | BAR_KITCHEN_ASSET
 // maxEntities: 1 for BASIC, 5 for MEDIUM, 0 = unlimited for ONE_TIME/STANDALONE
+//
+// paid / lastPaidAt — explicit payment tracking (never assumed true on creation):
+//   paid = true means the admin has confirmed payment for the current billing period.
+//   lastPaidAt = the timestamp of the most recent "Mark as paid" click.
+//   For MONTHLY plans, effective access state is computed on read (compute-on-load, no
+//   background job) — see admin.ts deriveAccessState().
 
 model Subscription {
   id               String    @id @default(cuid())
   clientId         String    @unique
   client           Client    @relation(fields: [clientId], references: [id])
   packageType      String // BASIC | MEDIUM | ONE_TIME
-  billingCycle     String // STANDALONE | MONTHLY | ANNUAL
+  billingCycle     String // STANDALONE | MONTHLY
   inventoryModules String // BAR | KITCHEN | ASSET | BAR_KITCHEN | BAR_KITCHEN_ASSET
   maxEntities      Int       @default(1) // 1=BASIC, 5=MEDIUM, 0=unlimited
   status           String    @default("ACTIVE") // ACTIVE | SUSPENDED | CANCELLED | TRIAL
+  paid             Boolean   @default(false) // explicit paid flag for the CURRENT billing period
+  lastPaidAt       DateTime? // null until first "Mark as paid"; updated on every mark-paid click
   startDate        String // YYYY-MM-DD
   endDate          String? // null = no expiry (ONE_TIME / perpetual)
   note             String?

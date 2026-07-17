@@ -25,7 +25,6 @@ import { SettingsPage } from "./pages/settings";
 import { AdminClientsPage } from "./pages/admin/clients";
 import { AdminUsersPage } from "./pages/admin/users";
 import { AdminActivityPage } from "./pages/admin/activity";
-import { AdminSubscriptionsPage } from "./pages/admin/subscriptions";
 
 export const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
@@ -57,7 +56,9 @@ export const router = createBrowserRouter([
       { path: "settings", element: <SettingsPage /> },
       { path: "admin/clients", element: <AdminClientsPage /> },
       { path: "admin/users", element: <AdminUsersPage /> },
-      { path: "admin/subscriptions", element: <AdminSubscriptionsPage /> },
+      // Subscriptions are now managed inline on the Clients page.
+      // Redirect old bookmarks so nothing hard-404s.
+      { path: "admin/subscriptions", element: <Navigate to="../clients" replace /> },
       { path: "admin/activity", element: <AdminActivityPage /> },
       { path: "admin/*", element: <ComingSoonPage title="Administration" phase={7} /> },
     ],

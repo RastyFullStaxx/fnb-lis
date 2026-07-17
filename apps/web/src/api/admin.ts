@@ -18,6 +18,8 @@ export interface AdminSubscription {
   inventoryModules: string;
   maxEntities: number;
   status: string;
+  paid: boolean;
+  lastPaidAt: string | null;
   startDate: string;
   endDate: string | null;
   note: string | null;
@@ -56,7 +58,63 @@ export interface AdminUser {
   clientAccess: AdminUserClientAccess[];
 }
 
-// ── Clients & locations ──
+// ── Access state (compute-on-load mirror of server deriveAccessState) ─────────
+// Returns the derived effective access state for display.
+// Callers should check sub.status first — CANCELLED/SUSPENDED override this.
+export function deriveAccessState(sub: Pick<AdminSubscription, "billingCycle" | "paid" | "lastPaidAt" | "startDate">): "ACTIVE" | "GRACE" | "VIEW_ONLY" {
+  const now = new Date();
+
+  if (sub.billingCycle !== "MONTHLY") {
+    return sub.paid ? "ACTIVE" : "GRACE";
+  }
+
+  // Compute current period due date (same anchor logic as server)
+  const anchor = new Date(sub.startDate + "T00:00:00Z");
+  const anchorDay = anchor.getUTCDate();
+  const year = now.getUTCFullYear();
+  const month = now.getUTCMonth();
+  const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  const due =
+    anchorDay <= daysInMonth
+      ? new Date(Date.UTC(year, month, anchorDay))
+      : new Date(Date.UTC(year, month + 1, 1));
+
+  const periodStart = new Date(due);
+  periodStart.setUTCMonth(periodStart.getUTCMonth() - 1);
+
+  const lastPaid = sub.lastPaidAt ? new Date(sub.lastPaidAt) : null;
+  const paidInPeriod =
+    sub.paid &&
+    lastPaid !== null &&
+    lastPaid >= periodStart &&
+    lastPaid <= due;
+
+  if (paidInPeriod) return "ACTIVE";
+
+  const msOverdue = now.getTime() - due.getTime();
+  const daysOverdue = msOverdue / (1000 * 60 * 60 * 24);
+
+  if (daysOverdue <= 7) return "GRACE";
+  return "VIEW_ONLY";
+}
+
+/** Days until due (negative = overdue). Only meaningful for MONTHLY plans. */
+export function daysUntilDue(sub: Pick<AdminSubscription, "startDate">): number {
+  const now = new Date();
+  const anchor = new Date(sub.startDate + "T00:00:00Z");
+  const anchorDay = anchor.getUTCDate();
+  const year = now.getUTCFullYear();
+  const month = now.getUTCMonth();
+  const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  const due =
+    anchorDay <= daysInMonth
+      ? new Date(Date.UTC(year, month, anchorDay))
+      : new Date(Date.UTC(year, month + 1, 1));
+
+  return Math.round((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+// ── Clients & locations ────────────────────────────────────────────────────
 
 export function useAdminClients() {
   return useQuery({ queryKey: ["admin", "clients"], queryFn: () => api<AdminClient[]>("/api/admin/clients") });
@@ -66,6 +124,33 @@ export function useCreateClient() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: { name: string }) => post<AdminClient>("/api/admin/clients", body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "clients"] });
+      qc.invalidateQueries({ queryKey: ["me"] });
+    },
+  });
+}
+
+export interface CreateFullClientBody {
+  name: string;
+  extraLocationNames: string[];
+  subscription: {
+    packageType: string;
+    billingCycle: string;
+    inventoryModules: string;
+    startDate: string;
+    endDate?: string | null;
+    note?: string | null;
+  };
+}
+
+// One-shot "New client" creation — client + locations + subscription in a
+// single atomic request. Used by the New Client modal so the whole form
+// submits together, same as /api/admin/clients/full on the server.
+export function useCreateFullClient() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateFullClientBody) => post<AdminClient>("/api/admin/clients/full", body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin", "clients"] });
       qc.invalidateQueries({ queryKey: ["me"] });
@@ -97,7 +182,7 @@ export function useAddLocation() {
   });
 }
 
-// ── Users ──
+// ── Users ──────────────────────────────────────────────────────────────────
 
 export function useAdminUsers() {
   return useQuery({ queryKey: ["admin", "users"], queryFn: () => api<AdminUser[]>("/api/admin/users") });
@@ -147,7 +232,7 @@ export function useUpdateUserAccess() {
   });
 }
 
-// ── Subscriptions ──
+// ── Subscriptions ──────────────────────────────────────────────────────────
 
 export interface AdminSubscriptionWithClient extends AdminSubscription {
   client: { id: string; name: string; status: string };
@@ -186,7 +271,6 @@ export interface UpdateSubscriptionBody {
   packageType?: string;
   billingCycle?: string;
   inventoryModules?: string;
-  status?: string;
   startDate?: string;
   endDate?: string | null;
   note?: string | null;
@@ -204,11 +288,49 @@ export function useUpdateSubscription() {
   });
 }
 
+// ── Payment actions ────────────────────────────────────────────────────────
+
+export function useMarkPaid() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id }: { id: string }) =>
+      post<AdminSubscriptionWithClient>(`/api/admin/subscriptions/${id}/mark-paid`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "clients"] });
+      qc.invalidateQueries({ queryKey: ["admin", "subscriptions"] });
+    },
+  });
+}
+
+export function useUnmarkPaid() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id }: { id: string }) =>
+      post<AdminSubscriptionWithClient>(`/api/admin/subscriptions/${id}/unmark-paid`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "clients"] });
+      qc.invalidateQueries({ queryKey: ["admin", "subscriptions"] });
+    },
+  });
+}
+
+export function useCancelSubscription() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id }: { id: string }) =>
+      post<AdminSubscriptionWithClient>(`/api/admin/subscriptions/${id}/cancel`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "clients"] });
+      qc.invalidateQueries({ queryKey: ["admin", "subscriptions"] });
+    },
+  });
+}
+
 export function useSubscriptionCheck(clientId: string | null) {
   return useQuery({
     queryKey: ["admin", "subscriptions", "check", clientId],
     queryFn: () =>
-      api<{ hasSubscription: boolean; subscription?: AdminSubscription; locationCount?: number; canAddEntity: boolean }>(
+      api<{ hasSubscription: boolean; subscription?: AdminSubscription; locationCount?: number; canAddEntity: boolean; accessState?: string }>(
         `/api/admin/subscriptions/${clientId}/check`,
       ),
     enabled: !!clientId,

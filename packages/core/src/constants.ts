@@ -59,6 +59,25 @@ export const PACKAGE_LABELS: Record<PackageType, string> = {
   ONE_TIME: "One-Time Installation",
 };
 
+/**
+ * Billing cycle is not an independent choice — it's implied by the package.
+ * BASIC/MEDIUM are capped, ongoing-access tiers, so they only make sense as
+ * a recurring charge. ONE_TIME is the unlimited, pay-once-and-own-it tier,
+ * so it only makes sense as a standalone charge. The UI derives billingCycle
+ * from packageType via this map instead of exposing it as a separate field.
+ */
+export const PACKAGE_BILLING_CYCLE: Record<PackageType, BillingCycle> = {
+  BASIC: "MONTHLY",
+  MEDIUM: "MONTHLY",
+  ONE_TIME: "STANDALONE",
+};
+
+/** Short qualifier for compact inline display next to a package label, e.g. in a Select item's secondary text. */
+export const BILLING_CYCLE_SHORT_LABELS: Record<BillingCycle, string> = {
+  STANDALONE: "One-time",
+  MONTHLY: "Monthly",
+};
+
 export const INVENTORY_MODULE_LABELS: Record<InventoryModule, string> = {
   BAR: "Bar Inventory Only",
   KITCHEN: "Kitchen Inventory Only",

@@ -56,10 +56,10 @@ export const CATALOG_NAV: NavItem[] = [
   { title: "Settings", path: "settings", icon: Settings, permission: "master.write" },
 ];
 
+// Subscriptions are managed inline inside the Clients page — no separate nav item.
 export const ADMIN_NAV: NavItem[] = [
   { title: "Clients", path: "admin/clients", icon: Building2, permission: "admin.manage" },
   { title: "Users", path: "admin/users", icon: UserCog, permission: "admin.manage" },
-  { title: "Subscriptions", path: "admin/subscriptions", icon: BadgeCheck, permission: "admin.manage" },
   { title: "Activity", path: "admin/activity", icon: Activity, permission: "activity.view" },
 ];
 

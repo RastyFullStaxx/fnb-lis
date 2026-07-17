@@ -7,9 +7,11 @@ import {
   INVENTORY_MODULES,
   PACKAGE_LABELS,
   INVENTORY_MODULE_LABELS,
+  PACKAGE_BILLING_CYCLE,
   type Role,
   type PackageType,
   type InventoryModule,
+  type BillingCycle,
 } from "@fnb/core";
 import {
   useAdminClients,
@@ -76,6 +78,7 @@ export function AdminUsersPage() {
   const [status, setStatus] = useState("ALL");
   const [pkgFilter, setPkgFilter] = useState("ALL");
   const [moduleFilter, setModuleFilter] = useState("ALL");
+  const [billingFilter, setBillingFilter] = useState("ALL");
 
   const q = search.trim().toLowerCase();
   const filtered = (users.data ?? []).filter((u) => {
@@ -101,7 +104,21 @@ export function AdminUsersPage() {
         ? u.clientAccess.every((a) => !a.client.subscription)
         : u.clientAccess.some((a) => a.client.subscription?.inventoryModules === moduleFilter));
 
-    return matchesStatus && matchesSearch && matchesPkg && matchesModule;
+    // Subscription vs. Standalone — derived from each client's package via
+    // PACKAGE_BILLING_CYCLE, same source of truth the Clients page uses.
+    // This is the broad grouping the client asked to monitor separately from
+    // exact package tier: recurring subscribers (Basic/Medium) vs. one-time
+    // standalone installs (One-Time).
+    const matchesBilling =
+      billingFilter === "ALL" ||
+      (billingFilter === "__none__"
+        ? u.clientAccess.every((a) => !a.client.subscription)
+        : u.clientAccess.some((a) => {
+            const pkg = a.client.subscription?.packageType as PackageType | undefined;
+            return pkg && PACKAGE_BILLING_CYCLE[pkg] === billingFilter;
+          }));
+
+    return matchesStatus && matchesSearch && matchesPkg && matchesModule && matchesBilling;
   });
 
   return (
@@ -127,6 +144,17 @@ export function AdminUsersPage() {
                 <SelectItem value="ALL">All</SelectItem>
                 <SelectItem value="ACTIVE">Active</SelectItem>
                 <SelectItem value="DISABLED">Disabled</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={billingFilter} onValueChange={setBillingFilter}>
+              <SelectTrigger className="w-44 bg-background">
+                <SelectValue placeholder="Billing type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All billing types</SelectItem>
+                <SelectItem value="__none__">No package</SelectItem>
+                <SelectItem value="MONTHLY">Subscription</SelectItem>
+                <SelectItem value="STANDALONE">Standalone</SelectItem>
               </SelectContent>
             </Select>
             <Select value={pkgFilter} onValueChange={setPkgFilter}>
