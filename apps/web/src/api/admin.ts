@@ -9,6 +9,22 @@ export interface AdminLocation {
   name: string;
   status: string;
 }
+
+export interface AdminSubscription {
+  id: string;
+  clientId: string;
+  packageType: string;
+  billingCycle: string;
+  inventoryModules: string;
+  maxEntities: number;
+  status: string;
+  startDate: string;
+  endDate: string | null;
+  note: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface AdminClient {
   id: string;
   name: string;
@@ -16,6 +32,16 @@ export interface AdminClient {
   createdAt: string;
   locations: AdminLocation[];
   access: Array<{ userId: string; clientId: string; user: { id: string; username: string } }>;
+  subscription: AdminSubscription | null;
+}
+
+export interface AdminUserClientAccess {
+  clientId: string;
+  client: {
+    id: string;
+    name: string;
+    subscription: Pick<AdminSubscription, "packageType" | "billingCycle" | "inventoryModules" | "status"> | null;
+  };
 }
 
 export interface AdminUser {
@@ -27,7 +53,7 @@ export interface AdminUser {
   role: Role;
   status: "ACTIVE" | "DISABLED";
   createdAt: string;
-  clientAccess: Array<{ clientId: string; client: { id: string; name: string } }>;
+  clientAccess: AdminUserClientAccess[];
 }
 
 // ── Clients & locations ──
@@ -118,5 +144,73 @@ export function useUpdateUserAccess() {
     mutationFn: ({ id, clientIds }: { id: string; clientIds: string[] }) =>
       put<{ ok: boolean }>(`/api/admin/users/${id}/access`, { clientIds }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "users"] }),
+  });
+}
+
+// ── Subscriptions ──
+
+export interface AdminSubscriptionWithClient extends AdminSubscription {
+  client: { id: string; name: string; status: string };
+}
+
+export function useAdminSubscriptions() {
+  return useQuery({
+    queryKey: ["admin", "subscriptions"],
+    queryFn: () => api<AdminSubscriptionWithClient[]>("/api/admin/subscriptions"),
+  });
+}
+
+export interface CreateSubscriptionBody {
+  clientId: string;
+  packageType: string;
+  billingCycle: string;
+  inventoryModules: string;
+  startDate: string;
+  endDate?: string | null;
+  note?: string | null;
+}
+
+export function useCreateSubscription() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateSubscriptionBody) =>
+      post<AdminSubscriptionWithClient>("/api/admin/subscriptions", body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "subscriptions"] });
+      qc.invalidateQueries({ queryKey: ["admin", "clients"] });
+    },
+  });
+}
+
+export interface UpdateSubscriptionBody {
+  packageType?: string;
+  billingCycle?: string;
+  inventoryModules?: string;
+  status?: string;
+  startDate?: string;
+  endDate?: string | null;
+  note?: string | null;
+}
+
+export function useUpdateSubscription() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: UpdateSubscriptionBody & { id: string }) =>
+      put<AdminSubscriptionWithClient>(`/api/admin/subscriptions/${id}`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "subscriptions"] });
+      qc.invalidateQueries({ queryKey: ["admin", "clients"] });
+    },
+  });
+}
+
+export function useSubscriptionCheck(clientId: string | null) {
+  return useQuery({
+    queryKey: ["admin", "subscriptions", "check", clientId],
+    queryFn: () =>
+      api<{ hasSubscription: boolean; subscription?: AdminSubscription; locationCount?: number; canAddEntity: boolean }>(
+        `/api/admin/subscriptions/${clientId}/check`,
+      ),
+    enabled: !!clientId,
   });
 }

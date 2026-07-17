@@ -11,6 +11,7 @@ import {
   useUpdateProductTypes,
   type CompanyInfo,
 } from "@/api/settings";
+import { usePreferencesContext } from "@/lib/preferences";
 import { ApiError } from "@/api/http";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +21,13 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export function SettingsPage() {
   const me = useMe();
@@ -28,9 +36,74 @@ export function SettingsPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Settings" />
+      <DisplayPreferencesCard />
       <CompanyCard />
       {can(role, "admin.manage") && <ProductTypesCard />}
     </div>
+  );
+}
+
+function DisplayPreferencesCard() {
+  const { preferences, setPreferences, isSaving } = usePreferencesContext();
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Display</CardTitle>
+        <CardDescription>
+          Personal preferences for how the app looks on this account — saved to your profile, so they
+          follow you to any device you sign in on.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="pref-font-size">Text size</Label>
+            <Select
+              value={preferences.fontSize}
+              onValueChange={(v) =>
+                setPreferences({ ...preferences, fontSize: v as typeof preferences.fontSize })
+              }
+              disabled={isSaving}
+            >
+              <SelectTrigger id="pref-font-size">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="default">Default</SelectItem>
+                <SelectItem value="large">Large</SelectItem>
+                <SelectItem value="x-large">Extra large</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Scales text and controls across the whole app — similar to macOS's Large Text display
+              setting.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="pref-unit-system">Preferred unit of measurement</Label>
+            <Select
+              value={preferences.unitSystem}
+              onValueChange={(v) =>
+                setPreferences({ ...preferences, unitSystem: v as typeof preferences.unitSystem })
+              }
+              disabled={isSaving}
+            >
+              <SelectTrigger id="pref-unit-system">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="metric">Metric (g / kg)</SelectItem>
+                <SelectItem value="imperial">Imperial (oz / lb)</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Sets the default scale unit when weighing open bottles during counts.
+            </p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

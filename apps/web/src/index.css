@@ -112,6 +112,17 @@
   }
 }
 
+/* Font size preference (Settings -> Display): scales rem sizing app-wide. */
+html[data-font-size="default"] {
+  font-size: 100%; /* 16px */
+}
+html[data-font-size="large"] {
+  font-size: 112.5%; /* 18px */
+}
+html[data-font-size="x-large"] {
+  font-size: 125%; /* 20px */
+}
+
 .dark {
   --sidebar: hsl(240 5.9% 10%);
   --sidebar-foreground: hsl(240 4.8% 95.9%);

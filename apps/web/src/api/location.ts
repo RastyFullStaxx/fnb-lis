@@ -31,6 +31,12 @@ export function useLocationItems(filters: { search?: string; missingPrices?: boo
   });
 }
 
+/**
+ * Master variants not yet in this location's catalog. The server already
+ * restricts results to the client's subscribed inventory module(s) — this
+ * hook doesn't need to (and can't) work around that; productType here is
+ * just an additional narrowing within whatever the subscription allows.
+ */
 export function useAvailableVariants(filters: { search?: string; productType?: string }, enabled = true) {
   const locationId = useLocationId();
   const params = new URLSearchParams();
@@ -70,7 +76,9 @@ export function useCopyFromLocation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (sourceLocationId: string) =>
-      post<{ copied: number; skipped: number }>(`${base(locationId)}/copy-from/${sourceLocationId}`),
+      post<{ copied: number; skipped: number; skippedByModule: number }>(
+        `${base(locationId)}/copy-from/${sourceLocationId}`,
+      ),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["locationItems", locationId] }),
   });
 }

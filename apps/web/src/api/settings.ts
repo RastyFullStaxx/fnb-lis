@@ -25,6 +25,31 @@ export function useUpdateCompanyInfo(clientId: string) {
   });
 }
 
+export interface UserPreferences {
+  fontSize: "default" | "large" | "x-large";
+  unitSystem: "metric" | "imperial";
+}
+
+export const DEFAULT_PREFERENCES: UserPreferences = { fontSize: "default", unitSystem: "metric" };
+
+export function usePreferences(enabled = true) {
+  return useQuery({
+    queryKey: ["settings", "preferences"],
+    queryFn: () => api<UserPreferences>("/api/settings/preferences"),
+    staleTime: 5 * 60 * 1000,
+    enabled,
+    retry: false,
+  });
+}
+
+export function useUpdatePreferences() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: UserPreferences) => put<UserPreferences>("/api/settings/preferences", body),
+    onSuccess: (data) => qc.setQueryData(["settings", "preferences"], data),
+  });
+}
+
 export function useUpdateProductTypes() {
   const qc = useQueryClient();
   return useMutation({

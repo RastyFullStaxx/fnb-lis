@@ -87,7 +87,10 @@ export function SalesReportPage() {
                   Total
                 </TableCell>
                 <TableCell className="tnum text-right font-medium">{n2(report.data.totals.qty)}</TableCell>
-                <TableCell colSpan={2} />
+                <TableCell />
+                <TableCell className="tnum text-right font-medium">
+                  {report.data.totals.discount > 0 ? `−${formatMoney(report.data.totals.discount)}` : "—"}
+                </TableCell>
                 <TableCell className="tnum text-right font-semibold">{formatMoney(report.data.totals.gross)}</TableCell>
                 <TableCell className="tnum text-right font-semibold">{formatMoney(report.data.totals.net)}</TableCell>
               </TableRow>

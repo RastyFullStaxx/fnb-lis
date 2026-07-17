@@ -54,10 +54,11 @@ model Client {
   status    String   @default("ACTIVE") // ACTIVE | ARCHIVED
   createdAt DateTime @default(now())
 
-  locations Location[]
-  access    UserClientAccess[]
-  suppliers Supplier[]
-  aliases   ItemAlias[]
+  locations    Location[]
+  access       UserClientAccess[]
+  suppliers    Supplier[]
+  aliases      ItemAlias[]
+  subscription Subscription?
 }
 
 model Location {
@@ -86,6 +87,32 @@ model UserClientAccess {
   client   Client @relation(fields: [clientId], references: [id])
 
   @@id([userId, clientId])
+}
+
+// ───────────────────────── Subscription & Packages ─────────────────────────
+// packageType: BASIC | MEDIUM | ONE_TIME
+// billingCycle: STANDALONE | MONTHLY | ANNUAL
+// inventoryModules: comma-separated list of BAR | KITCHEN | ASSET
+//   Valid combos: BAR | KITCHEN | ASSET | BAR_KITCHEN | BAR_KITCHEN_ASSET
+// maxEntities: 1 for BASIC, 5 for MEDIUM, 0 = unlimited for ONE_TIME/STANDALONE
+
+model Subscription {
+  id               String    @id @default(cuid())
+  clientId         String    @unique
+  client           Client    @relation(fields: [clientId], references: [id])
+  packageType      String // BASIC | MEDIUM | ONE_TIME
+  billingCycle     String // STANDALONE | MONTHLY | ANNUAL
+  inventoryModules String // BAR | KITCHEN | ASSET | BAR_KITCHEN | BAR_KITCHEN_ASSET
+  maxEntities      Int       @default(1) // 1=BASIC, 5=MEDIUM, 0=unlimited
+  status           String    @default("ACTIVE") // ACTIVE | SUSPENDED | CANCELLED | TRIAL
+  startDate        String // YYYY-MM-DD
+  endDate          String? // null = no expiry (ONE_TIME / perpetual)
+  note             String?
+  createdById      String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  cancelledAt      DateTime?
+  cancelledById    String?
 }
 
 // ───────────────────────── Master data (global) ─────────────────────────

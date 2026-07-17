@@ -88,7 +88,7 @@ export function SalesPage() {
               <TabsTrigger value="PRODUCTION">Production</TabsTrigger>
             </TabsList>
           }
-          bodyClassName="grid gap-6 p-4 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]"
+          bodyClassName="grid gap-6 p-4 lg:grid-cols-[minmax(0,6fr)_minmax(0,6fr)]"
         >
           <QuickEntry kind={kind} />
 
@@ -122,11 +122,19 @@ export function SalesPage() {
                         {voided && sale.voidReason && ` · void: ${sale.voidReason}`}
                       </p>
                     </div>
-                    {sale.kind === "SALE" && !voided && (
-                      <Badge variant="outline" className="tnum shrink-0">
-                        {formatMoney(sale.unitPrice * sale.qty)}
-                      </Badge>
-                    )}
+                    {sale.kind === "SALE" && !voided && (() => {
+                      const gross = sale.unitPrice * sale.qty;
+                      const net = gross * (1 - sale.discountPct / 100);
+                      const hasDiscount = sale.discountPct > 0;
+                      return (
+                        <Badge variant="outline" className="tnum shrink-0 gap-1.5">
+                          {hasDiscount && (
+                            <span className="text-muted-foreground line-through">{formatMoney(gross)}</span>
+                          )}
+                          <span className={hasDiscount ? "font-medium" : undefined}>{formatMoney(net)}</span>
+                        </Badge>
+                      );
+                    })()}
                     {canVoid && !voided && (
                       <Button variant="ghost" size="sm" onClick={() => setVoiding(sale)}>
                         Void

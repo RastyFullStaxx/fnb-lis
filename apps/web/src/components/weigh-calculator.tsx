@@ -8,12 +8,19 @@ import {
 } from "@fnb/core";
 import type { LocationItem } from "@/api/types";
 import { cn } from "@/lib/utils";
+import { defaultWeighUnit, useUnitSystem } from "@/lib/preferences";
 
 /**
  * The live weigh strip — the SAME core math the server uses, running in the
  * browser as the user types. Screen math can never disagree with report math.
  */
 export function useWeighPreview(item: LocationItem | null, scaleText: string) {
+  const unitSystem = useUnitSystem();
+  // Fallback only for items that have no tare unit configured yet — a
+  // properly set-up item always carries its own real tareWeightUnit, since
+  // that reflects how the container was actually weighed, not a display
+  // choice. Only the fallback should follow the user's preference.
+  const fallbackUnit = defaultWeighUnit(unitSystem);
   return useMemo(() => {
     if (!item) return null;
     const variant = item.itemVariant;
@@ -24,11 +31,17 @@ export function useWeighPreview(item: LocationItem | null, scaleText: string) {
     );
     const tare = variant.tareWeight;
     if (!density || tare === null) {
-      return { ready: false as const, missing: !density ? "density factor" : "tare weight" };
+      return { ready: false as const, missing: !density ? "liquid weight formula" : "tare weight" };
     }
     const scale = Number(scaleText);
     if (scaleText === "" || !Number.isFinite(scale)) {
-      return { ready: true as const, entered: false as const, tare, density, unit: variant.tareWeightUnit ?? "oz" };
+      return {
+        ready: true as const,
+        entered: false as const,
+        tare,
+        density,
+        unit: variant.tareWeightUnit ?? fallbackUnit,
+      };
     }
     const input = { scaleWeight: scale, tareWeight: tare, densityFactor: density };
     const warnings = validateWeigh(input, variant.size);
@@ -39,14 +52,14 @@ export function useWeighPreview(item: LocationItem | null, scaleText: string) {
       entered: true as const,
       tare,
       density,
-      unit: variant.tareWeightUnit ?? "oz",
+      unit: variant.tareWeightUnit ?? fallbackUnit,
       scale,
       remaining,
       equivalent: blocking ? 0 : openEquivalent(remaining, variant.size, true),
       warnings,
       blocking,
     };
-  }, [item, scaleText]);
+  }, [item, scaleText, fallbackUnit]);
 }
 
 export function WeighPreviewStrip({
@@ -69,7 +82,7 @@ export function WeighPreviewStrip({
   if (!preview.entered) {
     return (
       <p className="text-sm text-muted-foreground tnum">
-        Tare {preview.tare} {preview.unit} · factor ×{preview.density} — type the scale reading.
+        Tare {preview.tare} {preview.unit} · Liquid Weight ×{preview.density} — type the scale reading.
       </p>
     );
   }
@@ -87,7 +100,7 @@ export function WeighPreviewStrip({
           <span className="text-sm text-destructive">{warning?.message}</span>
         ) : (
           <span className="tnum text-sm">
-            ({preview.scale} − {preview.tare}) × {preview.density} →{" "}
+            (scale {preview.scale} − tare {preview.tare}) × Liquid Weight {preview.density} →{" "}
             <span className="font-semibold">
               {preview.remaining} {contentUnit}
             </span>{" "}

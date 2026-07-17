@@ -1,7 +1,14 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
-import { role as roleSchema } from "@fnb/core";
+import {
+  role as roleSchema,
+  PACKAGE_TYPES,
+  BILLING_CYCLES,
+  INVENTORY_MODULES,
+  SUBSCRIPTION_STATUSES,
+  PACKAGE_MAX_ENTITIES,
+} from "@fnb/core";
 import { prisma } from "../db";
 import { AppError } from "../lib/errors";
 import { hashPassword } from "../auth/password";
@@ -34,13 +41,37 @@ const userUpdateBody = z.object({
 });
 const accessBody = z.object({ clientIds: z.array(z.string()) });
 
+// ── Subscription schemas ──
+const subscriptionCreateBody = z.object({
+  clientId: z.string().min(1),
+  packageType: z.enum(PACKAGE_TYPES),
+  billingCycle: z.enum(BILLING_CYCLES),
+  inventoryModules: z.enum(INVENTORY_MODULES),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+  note: z.string().optional().nullable(),
+});
+const subscriptionUpdateBody = z.object({
+  packageType: z.enum(PACKAGE_TYPES).optional(),
+  billingCycle: z.enum(BILLING_CYCLES).optional(),
+  inventoryModules: z.enum(INVENTORY_MODULES).optional(),
+  status: z.enum(SUBSCRIPTION_STATUSES).optional(),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+  note: z.string().optional().nullable(),
+});
+
 export const adminRoutes = new Hono<AppEnv>()
   .use(requireAuth, requirePermission("admin.manage"))
 
   // ── Clients & locations ──
   .get("/clients", async (c) => {
     const clients = await prisma.client.findMany({
-      include: { locations: true, access: { include: { user: true } } },
+      include: {
+        locations: true,
+        access: { include: { user: true } },
+        subscription: true,
+      },
       orderBy: { name: "asc" },
     });
     return c.json(clients);
@@ -77,6 +108,19 @@ export const adminRoutes = new Hono<AppEnv>()
     const clientId = c.req.param("id");
     const { name } = c.req.valid("json");
     const user = c.get("user")!;
+
+    // Enforce entity limit from subscription
+    const subscription = await prisma.subscription.findUnique({ where: { clientId } });
+    if (subscription && subscription.maxEntities > 0) {
+      const locationCount = await prisma.location.count({ where: { clientId, status: "ACTIVE" } });
+      if (locationCount >= subscription.maxEntities) {
+        throw new AppError(
+          403,
+          `Package limit reached. Your ${subscription.packageType} package allows up to ${subscription.maxEntities} location(s). Please upgrade to add more.`,
+        );
+      }
+    }
+
     const location = await prisma.$transaction(async (tx) => {
       const created = await tx.location.create({ data: { clientId, name } });
       await logActivity(
@@ -94,7 +138,17 @@ export const adminRoutes = new Hono<AppEnv>()
       select: {
         id: true, username: true, firstName: true, lastName: true, email: true,
         role: true, status: true, createdAt: true,
-        clientAccess: { include: { client: { select: { id: true, name: true } } } },
+        clientAccess: {
+          include: {
+            client: {
+              select: {
+                id: true,
+                name: true,
+                subscription: { select: { packageType: true, billingCycle: true, inventoryModules: true, status: true } },
+              },
+            },
+          },
+        },
       },
       orderBy: { username: "asc" },
     });
@@ -163,4 +217,103 @@ export const adminRoutes = new Hono<AppEnv>()
       );
     });
     return c.json({ ok: true });
+  })
+
+  // ── Subscriptions ──
+  .get("/subscriptions", async (c) => {
+    const subs = await prisma.subscription.findMany({
+      include: { client: { select: { id: true, name: true, status: true } } },
+      orderBy: { createdAt: "desc" },
+    });
+    return c.json(subs);
+  })
+  .post("/subscriptions", zValidator("json", subscriptionCreateBody), async (c) => {
+    const body = c.req.valid("json");
+    const user = c.get("user")!;
+
+    const existing = await prisma.subscription.findUnique({ where: { clientId: body.clientId } });
+    if (existing) throw new AppError(409, "This client already has a subscription. Update it instead.");
+
+    const maxEntities = PACKAGE_MAX_ENTITIES[body.packageType as keyof typeof PACKAGE_MAX_ENTITIES];
+
+    const sub = await prisma.$transaction(async (tx) => {
+      const created = await tx.subscription.create({
+        data: {
+          clientId: body.clientId,
+          packageType: body.packageType,
+          billingCycle: body.billingCycle,
+          inventoryModules: body.inventoryModules,
+          maxEntities,
+          startDate: body.startDate,
+          endDate: body.endDate ?? null,
+          note: body.note ?? null,
+          createdById: user.id,
+          status: "ACTIVE",
+        },
+        include: { client: { select: { id: true, name: true } } },
+      });
+      await logActivity(
+        {
+          user,
+          clientId: body.clientId,
+          action: "subscription.create",
+          entity: "Subscription",
+          entityId: created.id,
+          summary: `Created ${body.packageType} subscription for client "${created.client.name}"`,
+          details: body,
+        },
+        tx,
+      );
+      return created;
+    });
+    return c.json(sub, 201);
+  })
+  .put("/subscriptions/:id", zValidator("json", subscriptionUpdateBody), async (c) => {
+    const id = c.req.param("id");
+    const body = c.req.valid("json");
+    const user = c.get("user")!;
+
+    const data: Record<string, unknown> = { ...body };
+
+    // Recalculate maxEntities if packageType changes
+    if (body.packageType) {
+      data.maxEntities = PACKAGE_MAX_ENTITIES[body.packageType as keyof typeof PACKAGE_MAX_ENTITIES];
+    }
+    if (body.endDate === null) data.endDate = null;
+
+    // Handle cancellation timestamp
+    if (body.status === "CANCELLED") {
+      data.cancelledAt = new Date();
+      data.cancelledById = user.id;
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const u = await tx.subscription.update({
+        where: { id },
+        data,
+        include: { client: { select: { id: true, name: true } } },
+      });
+      await logActivity(
+        {
+          user,
+          clientId: u.clientId,
+          action: "subscription.update",
+          entity: "Subscription",
+          entityId: id,
+          summary: `Updated subscription for "${u.client.name}"`,
+          details: body,
+        },
+        tx,
+      );
+      return u;
+    });
+    return c.json(updated);
+  })
+  .get("/subscriptions/:clientId/check", async (c) => {
+    const clientId = c.req.param("clientId");
+    const sub = await prisma.subscription.findUnique({ where: { clientId } });
+    if (!sub) return c.json({ hasSubscription: false, canAddEntity: true });
+    const locationCount = await prisma.location.count({ where: { clientId, status: "ACTIVE" } });
+    const canAddEntity = sub.maxEntities === 0 || locationCount < sub.maxEntities;
+    return c.json({ hasSubscription: true, subscription: sub, locationCount, canAddEntity });
   });

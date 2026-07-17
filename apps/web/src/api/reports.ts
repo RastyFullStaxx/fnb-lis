@@ -20,7 +20,7 @@ export interface SalesReport {
     gross: number;
     net: number;
   }>;
-  totals: { qty: number; gross: number; net: number };
+  totals: { qty: number; gross: number; discount: number; net: number };
 }
 
 export interface PurchaseReport {

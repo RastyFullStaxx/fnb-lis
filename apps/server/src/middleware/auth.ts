@@ -11,6 +11,8 @@ export type AppEnv = {
     user: SessionUser | null;
     client: Client;
     location: Location;
+    /** The active location's client subscription's inventoryModules (e.g. "BAR"), or null if unassigned. */
+    subscriptionModules: string | null;
   };
 };
 
@@ -76,7 +78,7 @@ export const requireLocationAccess = createMiddleware<AppEnv>(async (c, next) =>
 
   const location = await prisma.location.findUnique({
     where: { id: locationId },
-    include: { client: true },
+    include: { client: { include: { subscription: { select: { inventoryModules: true, status: true } } } } },
   });
   if (!location || location.status !== "ACTIVE" || location.client.status !== "ACTIVE") {
     throw new AppError(404, "Location not found");
@@ -91,5 +93,14 @@ export const requireLocationAccess = createMiddleware<AppEnv>(async (c, next) =>
 
   c.set("client", location.client);
   c.set("location", location);
+  // Suspended/cancelled subscriptions fall back to unrestricted (null) rather than
+  // silently locking a client out of their own data — billing status is handled
+  // separately (admin UI), not by hiding inventory the client already paid for.
+  c.set(
+    "subscriptionModules",
+    location.client.subscription && location.client.subscription.status === "ACTIVE"
+      ? location.client.subscription.inventoryModules
+      : null,
+  );
   await next();
 });

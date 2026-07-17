@@ -6,12 +6,18 @@ import { prisma } from "../db";
  * Date semantics (architecture.md §6): counts ON beginDate and ON endDate
  * (COMMITTED sessions, ACTIVE lines); activity in the HALF-OPEN [begin, end).
  * TEXT YYYY-MM-DD dates make the window plain string comparisons.
+ *
+ * `allowedProductTypes`, when provided, restricts which catalog rows are fed
+ * into `reconcile()` to those product types a client's subscription module
+ * covers (see @fnb/core `allowedProductTypes`). This is purely an input
+ * filter — reconcile()'s formulas are untouched.
  */
 export async function buildFullAudit(
   locationId: string,
   beginDate: string,
   endDate: string,
   productType?: string,
+  allowedProductTypes?: readonly string[] | null,
 ): Promise<ReconReport> {
   const [beginLines, endLines, purchaseLines, forfeits, sales] = await Promise.all([
     prisma.countLine.findMany({
@@ -153,6 +159,7 @@ export async function buildFullAudit(
   for (const li of locationItems) {
     const category = li.itemVariant.item.category;
     if (productType && category.productType !== productType) continue;
+    if (allowedProductTypes && !allowedProductTypes.includes(category.productType)) continue;
     const agg = aggs.get(li.id)!;
     inputs.push({
       locationItemId: li.id,
@@ -187,14 +194,15 @@ export async function committedCountDates(locationId: string): Promise<string[]>
  * Stock on hand: latest committed count per item + committed activity since
  * (same movement math as the report, endDate = far future).
  */
-export async function stockOnHand(locationId: string): Promise<
-  Array<{ locationItemId: string; onHand: number; lastCountDate: string | null }>
-> {
+export async function stockOnHand(
+  locationId: string,
+  allowedProductTypes?: readonly string[] | null,
+): Promise<Array<{ locationItemId: string; onHand: number; lastCountDate: string | null }>> {
   const dates = await committedCountDates(locationId);
   const lastDate = dates.at(-1) ?? null;
   const FUTURE = "9999-12-31";
   if (!lastDate) return [];
-  const report = await buildFullAudit(locationId, lastDate, FUTURE);
+  const report = await buildFullAudit(locationId, lastDate, FUTURE, undefined, allowedProductTypes);
   // usage = begin + purchases + forfeits − end; with no end counts, on-hand = begin + purchases + forfeits − expected consumption
   return report.rows.map((row) => ({
     locationItemId: row.locationItemId,

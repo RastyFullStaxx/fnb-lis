@@ -57,7 +57,7 @@ export function CategoriesTab({
             <TableRow className="bg-muted hover:bg-muted">
               <TableHead>Category</TableHead>
               <TableHead>Type</TableHead>
-              <TableHead className="text-right">Default density factor</TableHead>
+              <TableHead className="text-right">Liquid Weight (default)</TableHead>
               <TableHead className="text-right">Items</TableHead>
               <TableHead className="w-20" />
             </TableRow>
@@ -140,7 +140,8 @@ function CategoryDialog({
         <DialogHeader>
           <DialogTitle>{category ? "Edit category" : "New category"}</DialogTitle>
           <DialogDescription>
-            The density factor converts scale weight into content (e.g. Vodka 30.12 ml per oz).
+            The Liquid Weight formula (density factor) converts scale weight into remaining content —
+            e.g. Vodka is 30.12 ml per oz.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={onSubmit} className="space-y-4">
@@ -173,7 +174,7 @@ function CategoryDialog({
             )}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="cat-density">Default density factor (optional)</Label>
+            <Label htmlFor="cat-density">Liquid Weight — default density factor (optional)</Label>
             <Input
               id="cat-density"
               type="number"
@@ -185,6 +186,9 @@ function CategoryDialog({
                 setValueAs: (v) => (v === "" || v === null ? null : Number(v)),
               })}
             />
+            <p className="text-xs text-muted-foreground">
+              Applied to items in this category that don't set their own Liquid Weight value.
+            </p>
           </div>
           <DialogFooter>
             <Button type="submit" disabled={createCategory.isPending || updateCategory.isPending}>
