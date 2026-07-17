@@ -607,14 +607,7 @@ function SubscriptionPanel({
       </div>
 
       {!cancelled && (
-        <div className="flex items-center justify-between pt-1">
-          <Button
-            onClick={save}
-            disabled={!isDirty || update.isPending}
-            size="sm"
-          >
-            Save changes
-          </Button>
+        <div className="flex items-center justify-end gap-2 pt-1">
           <Button
             variant="ghost"
             size="sm"
@@ -623,6 +616,13 @@ function SubscriptionPanel({
           >
             <XCircle className="size-4" />
             Cancel subscription
+          </Button>
+          <Button
+            onClick={save}
+            disabled={!isDirty || update.isPending}
+            size="sm"
+          >
+            Save changes
           </Button>
         </div>
       )}
@@ -679,9 +679,11 @@ function CreateSubscriptionPanel({ clientId, onDone }: { clientId: string; onDon
         onInventoryModulesChange={setInventoryModules}
       />
 
-      <Button onClick={submit} disabled={create.isPending} size="sm">
-        Create subscription
-      </Button>
+      <div className="flex justify-end">
+        <Button onClick={submit} disabled={create.isPending} size="sm">
+          Create subscription
+        </Button>
+      </div>
     </div>
   );
 }

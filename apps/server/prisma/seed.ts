@@ -23,11 +23,25 @@ async function seedUsers() {
 }
 
 async function seedClients() {
-  const prime = await upsertClientByName("Prime Hospitality Group");
+  const admin = await prisma.user.findUnique({ where: { username: "admin" } });
+
+  // Subscription is mandatory at creation time (see POST /clients/full) — a
+  // Client can never exist without one through the real app. Seed them
+  // together per client so the seeded data matches that invariant instead
+  // of drifting into a "client with no package" state the UI can't produce.
+  const prime = await upsertClientWithSubscription(
+    "Prime Hospitality Group",
+    { packageType: "MEDIUM", billingCycle: "MONTHLY", inventoryModules: "BAR_KITCHEN" },
+    admin?.id,
+  );
   await upsertLocation(prime.id, "Main Bar");
   await upsertLocation(prime.id, "Kitchen");
 
-  const casa = await upsertClientByName("Casa Verde Restaurant");
+  const casa = await upsertClientWithSubscription(
+    "Casa Verde Restaurant",
+    { packageType: "BASIC", billingCycle: "MONTHLY", inventoryModules: "KITCHEN" },
+    admin?.id,
+  );
   await upsertLocation(casa.id, "Main");
 
   // Non-admin users are scoped via UserClientAccess (ADMIN bypasses).
@@ -48,40 +62,33 @@ async function seedClients() {
       });
     }
   }
-
-  // Seed demo subscriptions
-  const admin = await prisma.user.findUnique({ where: { username: "admin" } });
-  await seedSubscription(prime.id, "MEDIUM", "MONTHLY", "BAR_KITCHEN", admin?.id);
-  await seedSubscription(casa.id, "BASIC", "MONTHLY", "KITCHEN", admin?.id);
 }
 
-async function seedSubscription(
-  clientId: string,
-  packageType: string,
-  billingCycle: string,
-  inventoryModules: string,
+async function upsertClientWithSubscription(
+  name: string,
+  sub: { packageType: string; billingCycle: string; inventoryModules: string },
   createdById?: string,
 ) {
-  const existing = await prisma.subscription.findUnique({ where: { clientId } });
-  if (existing) return;
-  const maxEntities = PACKAGE_MAX_ENTITIES[packageType as keyof typeof PACKAGE_MAX_ENTITIES] ?? 1;
+  const existing = await prisma.client.findFirst({ where: { name } });
+  if (existing) return existing;
+
+  const maxEntities = PACKAGE_MAX_ENTITIES[sub.packageType as keyof typeof PACKAGE_MAX_ENTITIES] ?? 1;
+  const client = await prisma.client.create({ data: { name } });
   await prisma.subscription.create({
     data: {
-      clientId,
-      packageType,
-      billingCycle,
-      inventoryModules,
+      clientId: client.id,
+      packageType: sub.packageType,
+      billingCycle: sub.billingCycle,
+      inventoryModules: sub.inventoryModules,
       maxEntities,
       status: "ACTIVE",
       startDate: "2026-01-01",
       createdById: createdById ?? null,
+      paid: false,
+      lastPaidAt: null,
     },
   });
-}
-
-async function upsertClientByName(name: string) {
-  const existing = await prisma.client.findFirst({ where: { name } });
-  return existing ?? prisma.client.create({ data: { name } });
+  return client;
 }
 
 async function upsertLocation(clientId: string, name: string) {
