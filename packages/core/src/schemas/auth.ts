@@ -24,10 +24,17 @@ export interface MeLocation {
   clientId: string;
 }
 
+export interface MeClientSubscription {
+  packageType: string;
+  inventoryModules: string;
+  status: string;
+}
+
 export interface MeClient {
   id: string;
   name: string;
   locations: MeLocation[];
+  subscription: MeClientSubscription | null;
 }
 
 export interface MeResponse {

@@ -106,14 +106,22 @@ async function buildMe(user: MeResponse["user"]): Promise<MeResponse> {
     user.role === "ADMIN"
       ? await prisma.client.findMany({
           where: { status: "ACTIVE" },
-          include: { locations: { where: { status: "ACTIVE" } } },
+          include: {
+            locations: { where: { status: "ACTIVE" } },
+            subscription: { select: { packageType: true, inventoryModules: true, status: true } },
+          },
           orderBy: { name: "asc" },
         })
       : (
           await prisma.userClientAccess.findMany({
             where: { userId: user.id, client: { status: "ACTIVE" } },
             include: {
-              client: { include: { locations: { where: { status: "ACTIVE" } } } },
+              client: {
+                include: {
+                  locations: { where: { status: "ACTIVE" } },
+                  subscription: { select: { packageType: true, inventoryModules: true, status: true } },
+                },
+              },
             },
           })
         )
@@ -124,6 +132,7 @@ async function buildMe(user: MeResponse["user"]): Promise<MeResponse> {
     id: cl.id,
     name: cl.name,
     locations: cl.locations.map((l) => ({ id: l.id, name: l.name, clientId: l.clientId })),
+    subscription: cl.subscription ?? null,
   }));
 
   return {

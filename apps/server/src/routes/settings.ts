@@ -40,6 +40,44 @@ export async function getCompanyInfo(clientId: string): Promise<CompanyInfo> {
   return parsed.success ? parsed.data : EMPTY;
 }
 
+/**
+ * Personal display preferences (font size, unit system). These are the
+ * signed-in user's own choices — not client data — so they only need
+ * requireAuth, not the master.write permission the rest of this router
+ * uses. Stored one row per user in Setting(clientId: "", key: "prefs:<userId>").
+ */
+const userPreferences = z.object({
+  fontSize: z.enum(["default", "large", "x-large"]).default("default"),
+  unitSystem: z.enum(["metric", "imperial"]).default("metric"),
+});
+export type UserPreferences = z.infer<typeof userPreferences>;
+
+const DEFAULT_PREFERENCES: UserPreferences = { fontSize: "default", unitSystem: "metric" };
+
+export const preferencesRoutes = new Hono<AppEnv>()
+  .use(requireAuth)
+
+  .get("/preferences", async (c) => {
+    const user = c.get("user")!;
+    const setting = await prisma.setting.findUnique({
+      where: { clientId_key: { clientId: "", key: `prefs:${user.id}` } },
+    });
+    if (!setting) return c.json(DEFAULT_PREFERENCES);
+    const parsed = userPreferences.safeParse(JSON.parse(setting.value));
+    return c.json(parsed.success ? parsed.data : DEFAULT_PREFERENCES);
+  })
+
+  .put("/preferences", zValidator("json", userPreferences), async (c) => {
+    const user = c.get("user")!;
+    const body = c.req.valid("json");
+    await prisma.setting.upsert({
+      where: { clientId_key: { clientId: "", key: `prefs:${user.id}` } },
+      update: { value: JSON.stringify(body) },
+      create: { clientId: "", key: `prefs:${user.id}`, value: JSON.stringify(body) },
+    });
+    return c.json(body);
+  });
+
 export const settingsRoutes = new Hono<AppEnv>()
   .use(requireAuth, requirePermission("master.write"))
 

@@ -64,7 +64,11 @@ function todayBusinessDate(): string {
   return `${y}-${m}-${d}`;
 }
 
-export async function buildDashboard(locationId: string, _clientId: string): Promise<DashboardData> {
+export async function buildDashboard(
+  locationId: string,
+  _clientId: string,
+  allowedProductTypes?: readonly string[] | null,
+): Promise<DashboardData> {
   const [
     dates,
     priceItems,
@@ -77,7 +81,13 @@ export async function buildDashboard(locationId: string, _clientId: string): Pro
   ] = await Promise.all([
     committedCountDates(locationId),
     prisma.locationItem.findMany({
-      where: { locationId, isActive: true },
+      where: {
+        locationId,
+        isActive: true,
+        ...(allowedProductTypes
+          ? { itemVariant: { item: { category: { productType: { in: [...allowedProductTypes] } } } } }
+          : {}),
+      },
       select: { cost: true, retail: true },
     }),
     prisma.importRow.count({
@@ -131,7 +141,7 @@ export async function buildDashboard(locationId: string, _clientId: string): Pro
 
   let varianceLeaders: DashboardData["varianceLeaders"] = [];
   if (latest) {
-    const report = await buildFullAudit(locationId, latest.begin, latest.end);
+    const report = await buildFullAudit(locationId, latest.begin, latest.end, undefined, allowedProductTypes);
     varianceLeaders = report.rows
       .filter((r) => r.varianceCost !== 0)
       .sort((a, b) => Math.abs(b.varianceCost) - Math.abs(a.varianceCost))

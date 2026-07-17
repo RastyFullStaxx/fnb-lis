@@ -80,9 +80,11 @@ interface CurrentLocation {
 
 function ShellLayout({ me, current }: { me: MeResponse; current: CurrentLocation }) {
   const role = me.user.role;
-  const mainNav = visibleNav(MAIN_NAV, role);
-  const catalogNav = visibleNav(CATALOG_NAV, role);
-  const adminNav = visibleNav(ADMIN_NAV, role);
+  const currentClient = me.clients.find((c) => c.id === current.clientId);
+  const inventoryModules = currentClient?.subscription?.inventoryModules ?? null;
+  const mainNav = visibleNav(MAIN_NAV, role, inventoryModules);
+  const catalogNav = visibleNav(CATALOG_NAV, role, inventoryModules);
+  const adminNav = visibleNav(ADMIN_NAV, role, inventoryModules);
 
   return (
     <SidebarProvider>
@@ -252,7 +254,7 @@ const PAGE_TITLES: Record<string, string> = {
   recipes: "Recipes",
   imports: "Imports",
   reports: "Reports",
-  items: "Items",
+  items: "Local Database",
   suppliers: "Suppliers",
   settings: "Settings",
   admin: "Administration",

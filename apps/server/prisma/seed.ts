@@ -1,5 +1,6 @@
 import { prisma } from "../src/db";
 import { hashPassword } from "../src/auth/password";
+import { PACKAGE_MAX_ENTITIES } from "@fnb/core";
 
 const PASSWORD = "Fnb!2026"; // documented demo password for all seeded roles
 
@@ -47,6 +48,35 @@ async function seedClients() {
       });
     }
   }
+
+  // Seed demo subscriptions
+  const admin = await prisma.user.findUnique({ where: { username: "admin" } });
+  await seedSubscription(prime.id, "MEDIUM", "MONTHLY", "BAR_KITCHEN", admin?.id);
+  await seedSubscription(casa.id, "BASIC", "MONTHLY", "KITCHEN", admin?.id);
+}
+
+async function seedSubscription(
+  clientId: string,
+  packageType: string,
+  billingCycle: string,
+  inventoryModules: string,
+  createdById?: string,
+) {
+  const existing = await prisma.subscription.findUnique({ where: { clientId } });
+  if (existing) return;
+  const maxEntities = PACKAGE_MAX_ENTITIES[packageType as keyof typeof PACKAGE_MAX_ENTITIES] ?? 1;
+  await prisma.subscription.create({
+    data: {
+      clientId,
+      packageType,
+      billingCycle,
+      inventoryModules,
+      maxEntities,
+      status: "ACTIVE",
+      startDate: "2026-01-01",
+      createdById: createdById ?? null,
+    },
+  });
 }
 
 async function upsertClientByName(name: string) {
@@ -89,7 +119,6 @@ async function seedUnits() {
 }
 
 async function seedCategories() {
-  // Density factors (ml per weight-unit on the oz scale) verified from legacy fnb.sql.
   const categories: Array<{ name: string; productType: string; defaultDensityFactor?: number; sortOrder: number }> = [
     { name: "Vodka", productType: "Beverage", defaultDensityFactor: 30.12, sortOrder: 1 },
     { name: "Rum", productType: "Beverage", defaultDensityFactor: 30.49, sortOrder: 2 },
@@ -144,9 +173,6 @@ async function seedSettings() {
   }
 }
 
-// ── Seed v2: demo items + location catalogs ──
-// Tare weights are in oz to match the legacy oz-scale density factors (ml per oz).
-
 interface SeedVariant {
   size: number;
   unit: string;
@@ -177,7 +203,6 @@ const ITEMS: Array<{ name: string; category: string; variants: SeedVariant[] }> 
   {
     name: "Grenadine Syrup",
     category: "Syrup",
-    // Item-level density override (no category default for Syrup).
     variants: [{ size: 750, unit: "ml", contentTracked: true, tareWeight: 15.0, densityFactor: 25.0 }],
   },
   { name: "Chicken Breast", category: "Poultry", variants: [{ size: 1, unit: "kg" }] },
@@ -187,12 +212,10 @@ const ITEMS: Array<{ name: string; category: string; variants: SeedVariant[] }> 
   { name: "Lime", category: "Produce", variants: [{ size: 1, unit: "pc" }] },
   { name: "Potato Fries", category: "Frozen", variants: [{ size: 1, unit: "kg" }] },
   { name: "Cooking Oil", category: "Dry Goods", variants: [{ size: 1, unit: "L" }] },
-  // Universality proof: a Supplies item counted in packs.
   { name: "Table Napkins", category: "Consumables", variants: [{ size: 1, unit: "pack" }] },
   { name: "Disposable Gloves", category: "Consumables", variants: [{ size: 1, unit: "box" }] },
 ];
 
-// [item name, size, unit, cost, retail, par] per location.
 type PriceRow = [string, number, string, number, number, number?];
 
 const MAIN_BAR_PRICES: PriceRow[] = [
@@ -207,7 +230,7 @@ const MAIN_BAR_PRICES: PriceRow[] = [
   ["Tonic Water", 200, "ml", 30, 90, 24],
   ["Cola", 1, "L", 42, 120, 12],
   ["Orange Juice", 1, "L", 80, 180, 10],
-  ["Grenadine Syrup", 750, "ml", 180, 0], // deliberately unpriced retail → exercises the red badge
+  ["Grenadine Syrup", 750, "ml", 180, 0],
   ["Lime", 1, "pc", 8, 20, 50],
   ["Table Napkins", 1, "pack", 85, 0, 5],
 ];
@@ -281,10 +304,6 @@ async function seedSuppliers() {
   }
 }
 
-// ── Seed v3: the GOLDEN CYCLE (2026-06-01 → 2026-06-08 at Main Bar) ──
-// Expected report numbers are hand-computed in docs/phases/phase-3-audit-cycle.md.
-// The Full Audit report MUST reproduce them exactly.
-
 async function seedGoldenCycle() {
   const location = await prisma.location.findFirst({
     where: { name: "Main Bar", client: { name: "Prime Hospitality Group" } },
@@ -293,7 +312,6 @@ async function seedGoldenCycle() {
   const manager = await prisma.user.findUnique({ where: { username: "manager" } });
   if (!location || !staff || !manager) return;
 
-  // Idempotency: skip if the golden begin count already exists.
   const existing = await prisma.countSession.findFirst({
     where: { locationId: location.id, countDate: "2026-06-01" },
   });
@@ -316,7 +334,6 @@ async function seedGoldenCycle() {
 
   const encoder = { createdById: staff.id, createdByName: "Paolo Reyes" };
 
-  // remaining = phpRound((scale − tare) × density) — oz scale, factors from categories.
   const weigh = (scale: number, tare: number, density: number) => {
     const scaled = Number(((scale - tare) * density).toPrecision(15));
     return scaled >= 0 ? Math.floor(scaled + 0.5) : Math.ceil(scaled - 0.5);
@@ -353,17 +370,15 @@ async function seedGoldenCycle() {
     }
   };
 
-  // Beginning count — 2026-06-01
   await countSession("2026-06-01", [
     { item: absolut, full: 12 },
-    { item: absolut, scale: 28.7, tare: 16.9, density: 30.12 }, // → 355 ml
+    { item: absolut, scale: 28.7, tare: 16.9, density: 30.12 },
     { item: jd, full: 8 },
-    { item: jd, scale: 25.0, tare: 17.2, density: 30.86 }, // → 241 ml
+    { item: jd, scale: 25.0, tare: 17.2, density: 30.86 },
     { item: beer, full: 48 },
     { item: tonic, full: 24 },
   ]);
 
-  // Purchase — 2026-06-03 (committed)
   const purchase = await prisma.purchase.create({
     data: {
       locationId: location.id, purchaseDate: "2026-06-03", supplierId: supplier?.id ?? null,
@@ -378,7 +393,6 @@ async function seedGoldenCycle() {
   await pline(beer, 24, 44);
   await pline(tonic, 12, 30);
 
-  // Sales / non-revenue / production
   const sale = (
     item: typeof absolut, saleDate: string, kind: string, qty: number, unitPrice: number,
     extra: { contentOverride?: number; reason?: string } = {},
@@ -398,18 +412,15 @@ async function seedGoldenCycle() {
   await sale(beer, "2026-06-06", "NON_REVENUE", 2, 0, { reason: "SPILLAGE" });
   await sale(tonic, "2026-06-05", "PRODUCTION", 4, 0);
 
-  // Forfeit (returned bottle) — 2026-06-06: content re-enters stock.
   await prisma.forfeit.create({
     data: {
       locationId: location.id, forfeitDate: "2026-06-06", locationItemId: absolut.id,
       scaleWeight: 25.4, scaleUnit: "oz", tareWeight: 16.9, densityFactor: 30.12,
-      remainingContent: weigh(25.4, 16.9, 30.12), // → 256 ml
+      remainingContent: weigh(25.4, 16.9, 30.12),
       note: "Customer left unfinished bottle (table 7)", ...encoder,
     },
   });
 
-  // Menu: Vodka Tonic v1 = 45 ml Absolut + 1 × Tonic 200 ml bottle, SRP 250.
-  // costAtPublish = (45/700)×620 + 1×30 = 69.857142857…
   const vodkaTonic = await prisma.menuItem.create({
     data: { locationId: location.id, name: "Vodka Tonic" },
   });
@@ -429,7 +440,6 @@ async function seedGoldenCycle() {
     },
   });
 
-  // Menu sales (recipe version snapshotted): ×12 clean, ×2 at 10% off, 1 staff non-rev.
   const menuSale = (saleDate: string, kind: string, qty: number, unitPrice: number, discountPct = 0, reason?: string) =>
     prisma.saleRecord.create({
       data: {
@@ -441,12 +451,11 @@ async function seedGoldenCycle() {
   await menuSale("2026-06-05", "SALE", 2, 250, 10);
   await menuSale("2026-06-06", "NON_REVENUE", 1, 0, 0, "STAFF_USE");
 
-  // Ending count — 2026-06-08 (tonic reflects the 15 bottles consumed via menus)
   await countSession("2026-06-08", [
     { item: absolut, full: 14 },
-    { item: absolut, scale: 22.6, tare: 16.9, density: 30.12 }, // → 172 ml
+    { item: absolut, scale: 22.6, tare: 16.9, density: 30.12 },
     { item: jd, full: 6 },
-    { item: jd, scale: 21.3, tare: 17.2, density: 30.86 }, // → 127 ml
+    { item: jd, scale: 21.3, tare: 17.2, density: 30.86 },
     { item: beer, full: 39 },
     { item: tonic, full: 8 },
   ]);
@@ -670,7 +679,7 @@ async function seedActivity() {
 
 async function main() {
   await seedUsers();
-  await seedClients();
+  await seedClients(); // includes demo subscriptions
   await seedUnits();
   await seedCategories();
   await seedSettings();
@@ -686,6 +695,7 @@ async function main() {
   await seedKitchenCycle();
   await seedActivity();
   console.log(`Seed complete. Logins: admin / manager / staff / accountant / readonly — password ${PASSWORD}`);
+  console.log("Demo subscriptions: Prime = Medium/BAR_KITCHEN, Casa Verde = Basic/KITCHEN");
 }
 
 main()

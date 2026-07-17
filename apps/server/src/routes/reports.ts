@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { allowedProductTypes } from "@fnb/core";
 import { AppError } from "../lib/errors";
 import { requirePermission, type AppEnv } from "../middleware/auth";
 import { buildFullAudit, committedCountDates } from "../services/report-assembly";
@@ -71,7 +72,8 @@ export const reportRoutes = new Hono<AppEnv>()
     if (!DATE_RE.test(begin) || !DATE_RE.test(end)) throw new AppError(400, "begin and end must be YYYY-MM-DD");
     if (end <= begin) throw new AppError(400, "The ending count date must be after the beginning date");
     const productType = c.req.query("productType") || undefined;
-    return c.json(await buildFullAudit(location.id, begin, end, productType));
+    const allowed = allowedProductTypes(c.get("subscriptionModules"));
+    return c.json(await buildFullAudit(location.id, begin, end, productType, allowed));
   })
 
   .get("/reports/full-audit/drill", async (c) => {
@@ -90,7 +92,8 @@ export const reportRoutes = new Hono<AppEnv>()
     const end = c.req.query("end") ?? "";
     if (!DATE_RE.test(begin) || !DATE_RE.test(end) || end <= begin) throw new AppError(400, "Valid begin < end required");
     const productType = c.req.query("productType") || undefined;
-    const report = await buildFullAudit(location.id, begin, end, productType);
+    const allowed = allowedProductTypes(c.get("subscriptionModules"));
+    const report = await buildFullAudit(location.id, begin, end, productType, allowed);
     const name = `full-audit_${location.name}_${begin}_${end}`.replace(/[^\w.-]+/g, "-");
     if (c.req.query("format") === "csv") return csvResponse(fullAuditCsv(report), name);
     return xlsxResponse(await fullAuditWorkbook(report, await meta(client, location.name)), name);
@@ -100,13 +103,15 @@ export const reportRoutes = new Hono<AppEnv>()
   .get("/reports/sales", async (c) => {
     const location = c.get("location");
     const { from, to } = requireRange(c);
-    return c.json(await salesReport(location.id, from, to));
+    const allowed = allowedProductTypes(c.get("subscriptionModules"));
+    return c.json(await salesReport(location.id, from, to, allowed));
   })
   .get("/reports/sales/export", exportGuard, async (c) => {
     const location = c.get("location");
     const client = c.get("client");
     const { from, to } = requireRange(c);
-    const report = await salesReport(location.id, from, to);
+    const allowed = allowedProductTypes(c.get("subscriptionModules"));
+    const report = await salesReport(location.id, from, to, allowed);
     const name = `sales_${location.name}_${from}_${to}`.replace(/[^\w.-]+/g, "-");
     if (c.req.query("format") === "csv") return csvResponse(salesCsv(report), name);
     return xlsxResponse(await salesWorkbook(report, await meta(client, location.name)), name);
@@ -116,13 +121,15 @@ export const reportRoutes = new Hono<AppEnv>()
   .get("/reports/purchases", async (c) => {
     const location = c.get("location");
     const { from, to } = requireRange(c);
-    return c.json(await purchaseReport(location.id, from, to));
+    const allowed = allowedProductTypes(c.get("subscriptionModules"));
+    return c.json(await purchaseReport(location.id, from, to, allowed));
   })
   .get("/reports/purchases/export", exportGuard, async (c) => {
     const location = c.get("location");
     const client = c.get("client");
     const { from, to } = requireRange(c);
-    const report = await purchaseReport(location.id, from, to);
+    const allowed = allowedProductTypes(c.get("subscriptionModules"));
+    const report = await purchaseReport(location.id, from, to, allowed);
     const name = `purchases_${location.name}_${from}_${to}`.replace(/[^\w.-]+/g, "-");
     if (c.req.query("format") === "csv") return csvResponse(purchaseCsv(report), name);
     return xlsxResponse(await purchaseWorkbook(report, await meta(client, location.name)), name);
@@ -132,13 +139,15 @@ export const reportRoutes = new Hono<AppEnv>()
   .get("/reports/non-revenue", async (c) => {
     const location = c.get("location");
     const { from, to } = requireRange(c);
-    return c.json(await nonRevenueReport(location.id, from, to));
+    const allowed = allowedProductTypes(c.get("subscriptionModules"));
+    return c.json(await nonRevenueReport(location.id, from, to, allowed));
   })
   .get("/reports/non-revenue/export", exportGuard, async (c) => {
     const location = c.get("location");
     const client = c.get("client");
     const { from, to } = requireRange(c);
-    const report = await nonRevenueReport(location.id, from, to);
+    const allowed = allowedProductTypes(c.get("subscriptionModules"));
+    const report = await nonRevenueReport(location.id, from, to, allowed);
     const name = `non-revenue_${location.name}_${from}_${to}`.replace(/[^\w.-]+/g, "-");
     if (c.req.query("format") === "csv") return csvResponse(nonRevenueCsv(report), name);
     return xlsxResponse(await nonRevenueWorkbook(report, await meta(client, location.name)), name);
@@ -147,12 +156,14 @@ export const reportRoutes = new Hono<AppEnv>()
   // ── Inventory on hand ──
   .get("/reports/on-hand", async (c) => {
     const location = c.get("location");
-    return c.json(await onHandReport(location.id));
+    const allowed = allowedProductTypes(c.get("subscriptionModules"));
+    return c.json(await onHandReport(location.id, allowed));
   })
   .get("/reports/on-hand/export", exportGuard, async (c) => {
     const location = c.get("location");
     const client = c.get("client");
-    const report = await onHandReport(location.id);
+    const allowed = allowedProductTypes(c.get("subscriptionModules"));
+    const report = await onHandReport(location.id, allowed);
     const name = `on-hand_${location.name}_${report.lastCountDate ?? "current"}`.replace(/[^\w.-]+/g, "-");
     if (c.req.query("format") === "csv") return csvResponse(onHandCsv(report), name);
     return xlsxResponse(await onHandWorkbook(report, await meta(client, location.name)), name);
@@ -161,7 +172,8 @@ export const reportRoutes = new Hono<AppEnv>()
   // Back-compat: the stock page reads on-hand quantities here.
   .get("/stock/on-hand", async (c) => {
     const location = c.get("location");
-    const report = await onHandReport(location.id);
+    const allowed = allowedProductTypes(c.get("subscriptionModules"));
+    const report = await onHandReport(location.id, allowed);
     return c.json(report.rows.map((r) => ({ locationItemId: r.locationItemId, onHand: r.onHand, lastCountDate: report.lastCountDate })));
   });
 

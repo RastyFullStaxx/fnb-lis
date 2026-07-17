@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { Link, useParams } from "react-router";
-import { ArrowLeft, Check, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { can, type Role } from "@fnb/core";
 import { useMe } from "@/api/auth";
@@ -78,11 +78,34 @@ function OpenSession({ session }: { session: SessionWithLines }) {
   const [mode, setMode] = useState<"FULL" | "WEIGH">("FULL");
   const [qty, setQty] = useState("");
   const [scale, setScale] = useState("");
+  const [editingLineId, setEditingLineId] = useState<string | null>(null);
   const comboRef = useRef<HTMLButtonElement>(null);
 
   const weighable = item?.itemVariant.contentTracked ?? false;
   const activeMode = weighable ? mode : "FULL";
   const preview = useWeighPreview(item, scale);
+
+  const resetForm = () => {
+    setQty("");
+    setScale("");
+    setItem(null);
+    setEditingLineId(null);
+  };
+
+  const startEdit = (line: CountLine) => {
+    setEditingLineId(line.id);
+    setItem(line.locationItem);
+    if (line.countType === "FULL") {
+      setMode("FULL");
+      setQty(String(line.qtyFull));
+      setScale("");
+    } else {
+      setMode("WEIGH");
+      setScale(line.scaleWeight != null ? String(line.scaleWeight) : "");
+      setQty("");
+    }
+    comboRef.current?.focus();
+  };
 
   const save = async () => {
     if (!item) return;
@@ -90,11 +113,13 @@ function OpenSession({ session }: { session: SessionWithLines }) {
       if (activeMode === "FULL") {
         const n = Number(qty);
         if (qty === "" || !Number.isFinite(n) || n < 0) return toast.error("Enter the counted quantity");
+        if (editingLineId) await mutations.removeLine.mutateAsync(editingLineId);
         await mutations.addLine.mutateAsync({ locationItemId: item.id, countType: "FULL", qtyFull: n });
       } else {
         if (!preview || !preview.ready || !preview.entered || preview.blocking) {
           return toast.error("Fix the scale reading first");
         }
+        if (editingLineId) await mutations.removeLine.mutateAsync(editingLineId);
         await mutations.addLine.mutateAsync({
           locationItemId: item.id,
           countType: "WEIGH",
@@ -104,11 +129,11 @@ function OpenSession({ session }: { session: SessionWithLines }) {
           densityFactor: preview.density,
         });
       }
+      const wasEditing = editingLineId !== null;
       // Enter → saved → refocus the item picker: the counting rhythm.
-      setQty("");
-      setScale("");
-      setItem(null);
+      resetForm();
       comboRef.current?.focus();
+      if (wasEditing) toast.success("Line updated");
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not save the line");
     }
@@ -131,6 +156,16 @@ function OpenSession({ session }: { session: SessionWithLines }) {
       <div className="grid gap-6 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
         {/* Entry pane */}
         <div className="space-y-4 rounded-lg border p-4">
+          {editingLineId && (
+            <div className="flex items-center justify-between rounded-md bg-accent px-3 py-2 text-sm text-accent-foreground">
+              <span className="flex items-center gap-1.5">
+                <Pencil className="size-3.5" /> Editing this line — save to replace it.
+              </span>
+              <Button variant="ghost" size="sm" onClick={resetForm}>
+                Cancel
+              </Button>
+            </div>
+          )}
           <div className="space-y-2">
             <Label>Item</Label>
             <ItemCombobox ref={comboRef} value={item} onSelect={setItem} autoFocus />
@@ -187,9 +222,15 @@ function OpenSession({ session }: { session: SessionWithLines }) {
           )}
 
           <div className="flex items-center justify-between">
-            <p className="text-xs text-muted-foreground">Enter saves and jumps back to the item picker.</p>
-            <Button onClick={save} disabled={!item || mutations.addLine.isPending}>
-              {mutations.addLine.isPending ? "Saving…" : "Save line"}
+            <p className="text-xs text-muted-foreground">
+              {editingLineId ? "Enter saves the change." : "Enter saves and jumps back to the item picker."}
+            </p>
+            <Button onClick={save} disabled={!item || mutations.addLine.isPending || mutations.removeLine.isPending}>
+              {mutations.addLine.isPending || mutations.removeLine.isPending
+                ? "Saving…"
+                : editingLineId
+                  ? "Save changes"
+                  : "Save line"}
             </Button>
           </div>
 
@@ -234,9 +275,14 @@ function OpenSession({ session }: { session: SessionWithLines }) {
                   key={line.id}
                   line={line}
                   removable
+                  editing={line.id === editingLineId}
+                  onEdit={() => startEdit(line)}
                   onRemove={() =>
                     mutations.removeLine
                       .mutateAsync(line.id)
+                      .then(() => {
+                        if (line.id === editingLineId) resetForm();
+                      })
                       .catch((err) =>
                         toast.error(err instanceof ApiError ? err.message : "Could not remove"),
                       )
@@ -297,18 +343,28 @@ function ReadOnlySession({ session }: { session: SessionWithLines }) {
 function LineRow({
   line,
   removable,
+  editing,
+  onEdit,
   onRemove,
   onVoid,
 }: {
   line: CountLine;
   removable?: boolean;
+  editing?: boolean;
+  onEdit?: () => void;
   onRemove?: () => void;
   onVoid?: () => void;
 }) {
   const variant = line.locationItem.itemVariant;
   const voided = line.status === "VOID";
   return (
-    <div className={cn("flex items-center gap-3 px-4 py-2.5", voided && "opacity-50")}>
+    <div
+      className={cn(
+        "flex items-center gap-3 px-4 py-2.5",
+        voided && "opacity-50",
+        editing && "bg-accent/60",
+      )}
+    >
       <div className="min-w-0 flex-1">
         <p className={cn("truncate text-sm font-medium", voided && "line-through")}>
           {variant.item.name}
@@ -328,6 +384,11 @@ function LineRow({
         <Badge variant="outline" className="tnum shrink-0">
           {(line.remainingContent / (variant.size || 1)).toFixed(2)} of {variantLabel(variant)}
         </Badge>
+      )}
+      {removable && onEdit && (
+        <Button variant="ghost" size="icon" aria-label="Edit line" onClick={onEdit}>
+          <Pencil className="size-4" />
+        </Button>
       )}
       {removable && onRemove && (
         <Button variant="ghost" size="icon" aria-label="Remove line" onClick={onRemove}>

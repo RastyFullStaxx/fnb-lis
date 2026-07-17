@@ -33,12 +33,28 @@ export interface SalesReport {
   from: string;
   to: string;
   rows: SalesReportRow[];
-  totals: { qty: number; gross: number; net: number };
+  totals: { qty: number; gross: number; discount: number; net: number };
 }
 
-export async function salesReport(locationId: string, from: string, to: string): Promise<SalesReport> {
+export async function salesReport(
+  locationId: string,
+  from: string,
+  to: string,
+  allowedProductTypes?: readonly string[] | null,
+): Promise<SalesReport> {
   const sales = await prisma.saleRecord.findMany({
-    where: { locationId, status: "ACTIVE", kind: "SALE", saleDate: { gte: from, lte: to } },
+    where: {
+      locationId,
+      status: "ACTIVE",
+      kind: "SALE",
+      saleDate: { gte: from, lte: to },
+      // Menu sales (locationItemId null) span ingredients across modules — they're
+      // left unfiltered here, matching how report-assembly treats menu expansion;
+      // only direct item rows carry a single productType to check.
+      ...(allowedProductTypes
+        ? { OR: [{ locationItemId: null }, { locationItem: { itemVariant: { item: { category: { productType: { in: [...allowedProductTypes] } } } } } }] }
+        : {}),
+    },
     include: { locationItem: { include: LI_INCLUDE }, menuItem: true },
     orderBy: [{ saleDate: "asc" }, { createdAt: "asc" }],
   });
@@ -60,8 +76,13 @@ export async function salesReport(locationId: string, from: string, to: string):
   });
 
   const totals = rows.reduce(
-    (acc, r) => ({ qty: acc.qty + r.qty, gross: acc.gross + r.gross, net: acc.net + r.net }),
-    { qty: 0, gross: 0, net: 0 },
+    (acc, r) => ({
+      qty: acc.qty + r.qty,
+      gross: acc.gross + r.gross,
+      discount: acc.discount + (r.gross - r.net),
+      net: acc.net + r.net,
+    }),
+    { qty: 0, gross: 0, discount: 0, net: 0 },
   );
   return { from, to, rows, totals };
 }
@@ -86,11 +107,19 @@ export interface PurchaseReport {
   totals: { qty: number; cost: number };
 }
 
-export async function purchaseReport(locationId: string, from: string, to: string): Promise<PurchaseReport> {
+export async function purchaseReport(
+  locationId: string,
+  from: string,
+  to: string,
+  allowedProductTypes?: readonly string[] | null,
+): Promise<PurchaseReport> {
   const lines = await prisma.purchaseLine.findMany({
     where: {
       status: "ACTIVE",
       purchase: { locationId, status: "COMMITTED", purchaseDate: { gte: from, lte: to } },
+      ...(allowedProductTypes
+        ? { locationItem: { itemVariant: { item: { category: { productType: { in: [...allowedProductTypes] } } } } } }
+        : {}),
     },
     include: { locationItem: { include: LI_INCLUDE }, purchase: { include: { supplier: true } } },
     orderBy: { purchase: { purchaseDate: "asc" } },
@@ -154,9 +183,22 @@ export interface NonRevenueReport {
   totals: { count: number; qty: number; cost: number };
 }
 
-export async function nonRevenueReport(locationId: string, from: string, to: string): Promise<NonRevenueReport> {
+export async function nonRevenueReport(
+  locationId: string,
+  from: string,
+  to: string,
+  allowedProductTypes?: readonly string[] | null,
+): Promise<NonRevenueReport> {
   const records = await prisma.saleRecord.findMany({
-    where: { locationId, status: "ACTIVE", kind: "NON_REVENUE", saleDate: { gte: from, lte: to } },
+    where: {
+      locationId,
+      status: "ACTIVE",
+      kind: "NON_REVENUE",
+      saleDate: { gte: from, lte: to },
+      ...(allowedProductTypes
+        ? { OR: [{ locationItemId: null }, { locationItem: { itemVariant: { item: { category: { productType: { in: [...allowedProductTypes] } } } } } }] }
+        : {}),
+    },
     include: { locationItem: { include: LI_INCLUDE }, menuItem: true },
     orderBy: [{ saleDate: "asc" }, { createdAt: "asc" }],
   });
@@ -212,13 +254,16 @@ export interface OnHandReport {
   totals: { costValue: number; retailValue: number };
 }
 
-export async function onHandReport(locationId: string): Promise<OnHandReport> {
+export async function onHandReport(
+  locationId: string,
+  allowedProductTypes?: readonly string[] | null,
+): Promise<OnHandReport> {
   const dates = await committedCountDates(locationId);
   const lastDate = dates.at(-1) ?? null;
   if (!lastDate) return { lastCountDate: null, rows: [], totals: { costValue: 0, retailValue: 0 } };
 
   // On-hand = last count + everything committed since (report end date = far future).
-  const report = await buildFullAudit(locationId, lastDate, "9999-12-31");
+  const report = await buildFullAudit(locationId, lastDate, "9999-12-31", undefined, allowedProductTypes);
 
   const priceRows = await prisma.locationItem.findMany({
     where: { id: { in: report.rows.map((r) => r.locationItemId) } },

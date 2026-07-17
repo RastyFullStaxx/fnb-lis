@@ -8,6 +8,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "react-router/dom";
 import { router } from "./router";
 import { captureError, initAnalytics } from "./lib/analytics";
+import { PreferencesProvider } from "./lib/preferences";
 
 void initAnalytics();
 
@@ -21,7 +22,9 @@ const queryClient = new QueryClient({
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <PreferencesProvider>
+        <RouterProvider router={router} />
+      </PreferencesProvider>
     </QueryClientProvider>
   </StrictMode>,
 );

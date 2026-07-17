@@ -5,6 +5,7 @@ import { Plus, Scale, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { itemCreate, type ItemCreate } from "@fnb/core";
 import { useCategories, useCreateItem, useUnits } from "@/api/master";
+import { defaultWeighUnit, useUnitSystem } from "@/lib/preferences";
 import { ApiError } from "@/api/http";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,15 +48,21 @@ export function ItemFormSheet({
   const categories = useCategories();
   const units = useUnits();
   const createItem = useCreateItem();
+  const unitSystem = useUnitSystem();
+  // New variants default their tare-weight unit to the signed-in user's
+  // preferred unit system (Settings → Display); it's just a starting point —
+  // whoever tares the container can still pick g or oz explicitly.
+  const emptyVariant = () => ({ ...EMPTY_VARIANT, tareWeightUnit: defaultWeighUnit(unitSystem) });
 
   const form = useForm<ItemCreate>({
     resolver: zodResolver(itemCreate),
-    defaultValues: { name: "", categoryId: "", description: null, variants: [{ ...EMPTY_VARIANT }] },
+    defaultValues: { name: "", categoryId: "", description: null, variants: [emptyVariant()] },
   });
   const variants = useFieldArray({ control: form.control, name: "variants" });
 
   useEffect(() => {
-    if (open) form.reset({ name: "", categoryId: "", description: null, variants: [{ ...EMPTY_VARIANT }] });
+    if (open) form.reset({ name: "", categoryId: "", description: null, variants: [emptyVariant()] });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, form]);
 
   const categoryId = form.watch("categoryId");
@@ -128,7 +135,7 @@ export function ItemFormSheet({
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => variants.append({ ...EMPTY_VARIANT })}
+                onClick={() => variants.append(emptyVariant())}
               >
                 <Plus className="size-4" /> Add size
               </Button>
@@ -194,7 +201,7 @@ export function ItemFormSheet({
                   </div>
 
                   {contentTracked && (
-                    <div className="grid grid-cols-3 items-end gap-2">
+                    <div className="grid grid-cols-2 items-end gap-2 sm:grid-cols-3">
                       <div className="space-y-1.5">
                         <Label className="text-xs">Tare weight</Label>
                         <Input
@@ -225,9 +232,9 @@ export function ItemFormSheet({
                           </SelectContent>
                         </Select>
                       </div>
-                      <div className="space-y-1.5">
+                      <div className="col-span-2 space-y-1.5 sm:col-span-1">
                         <Label className="flex items-center gap-1 text-xs">
-                          <Scale className="size-3" /> Density factor
+                          <Scale className="size-3" /> Liquid Weight
                         </Label>
                         <Input
                           type="number"
@@ -243,6 +250,10 @@ export function ItemFormSheet({
                             setValueAs: (v) => (v === "" || v === null ? null : Number(v)),
                           })}
                         />
+                        <p className="text-[11px] leading-tight text-muted-foreground">
+                          Density factor: ml of liquid per gram/oz of weight — converts a scale reading
+                          into remaining volume.
+                        </p>
                       </div>
                     </div>
                   )}

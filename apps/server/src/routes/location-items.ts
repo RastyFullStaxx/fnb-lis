@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
-import { locationItemAttach, locationItemUpdate, supplierUpsert } from "@fnb/core";
+import { allowedProductTypes, locationItemAttach, locationItemUpdate, supplierUpsert } from "@fnb/core";
 import { prisma } from "../db";
 import { AppError } from "../lib/errors";
 import { logActivity } from "../services/activity";
@@ -38,6 +38,23 @@ export const locationItemRoutes = new Hono<AppEnv>()
     const location = c.get("location");
     const user = c.get("user")!;
     const body = c.req.valid("json");
+
+    const variant = await prisma.itemVariant.findUnique({
+      where: { id: body.itemVariantId },
+      include: { item: { include: { category: true } } },
+    });
+    if (!variant) throw new AppError(404, "Item variant not found");
+
+    // Package/module enforcement: this location's client can only stock
+    // product types their subscription's inventory module covers.
+    const allowed = allowedProductTypes(c.get("subscriptionModules"));
+    if (allowed && !allowed.includes(variant.item.category.productType)) {
+      throw new AppError(
+        403,
+        `Your subscription doesn't include ${variant.item.category.productType} inventory. Upgrade the package to add "${variant.item.name}" to this location.`,
+      );
+    }
+
     const exists = await prisma.locationItem.findUnique({
       where: { locationId_itemVariantId: { locationId: location.id, itemVariantId: body.itemVariantId } },
     });
@@ -109,18 +126,39 @@ export const locationItemRoutes = new Hono<AppEnv>()
     return c.json(updated);
   })
 
-  /** Master variants not yet in this location's catalog (for the attach dialog). */
+  /**
+   * Master variants not yet in this location's catalog (for the attach dialog).
+   * Restricted to the client's subscribed inventory modules — a Bar-only
+   * client never sees Food/Supplies variants here, regardless of the
+   * productType query param.
+   */
   .get("/available-variants", async (c) => {
     const location = c.get("location");
     const search = c.req.query("search")?.trim();
-    const productType = c.req.query("productType");
+    const requestedProductType = c.req.query("productType");
+    const allowed = allowedProductTypes(c.get("subscriptionModules"));
+
+    // Intersect the caller's requested type (if any) with what the subscription allows.
+    let productTypeFilter: string | { in: string[] } | undefined;
+    if (requestedProductType) {
+      if (allowed && !allowed.includes(requestedProductType)) {
+        // Asking for a type outside the subscription — return nothing rather than 403,
+        // since this is a passive list endpoint feeding a dropdown that itself will
+        // be restricted (see AdminClients/subscription UI).
+        return c.json([]);
+      }
+      productTypeFilter = requestedProductType;
+    } else if (allowed) {
+      productTypeFilter = { in: [...allowed] };
+    }
+
     const variants = await prisma.itemVariant.findMany({
       where: {
         isActive: true,
         item: {
           isActive: true,
           name: search ? { contains: search } : undefined,
-          category: productType ? { productType } : undefined,
+          category: productTypeFilter ? { productType: productTypeFilter } : undefined,
         },
         locationItems: { none: { locationId: location.id, isActive: true } },
       },
@@ -131,7 +169,12 @@ export const locationItemRoutes = new Hono<AppEnv>()
     return c.json(variants);
   })
 
-  /** Legacy "copy local database": pull another location's catalog (skips items already present). */
+  /**
+   * Legacy "copy local database": pull another location's catalog (skips items
+   * already present). Items outside the destination client's subscribed
+   * modules are silently skipped — copying across clients/locations must not
+   * be a backdoor around the module restriction.
+   */
   .post("/copy-from/:otherLocationId", priceGuard, async (c) => {
     const location = c.get("location");
     const user = c.get("user")!;
@@ -148,13 +191,23 @@ export const locationItemRoutes = new Hono<AppEnv>()
       if (!access) throw new AppError(403, "No access to the source location");
     }
 
-    const source = await prisma.locationItem.findMany({ where: { locationId: otherId, isActive: true } });
+    const allowed = allowedProductTypes(c.get("subscriptionModules"));
+    const source = await prisma.locationItem.findMany({
+      where: { locationId: otherId, isActive: true },
+      include: { itemVariant: { include: { item: { include: { category: true } } } } },
+    });
     const existing = await prisma.locationItem.findMany({
       where: { locationId: location.id },
       select: { itemVariantId: true },
     });
     const existingSet = new Set(existing.map((e) => e.itemVariantId));
-    const toCopy = source.filter((s) => !existingSet.has(s.itemVariantId));
+    const eligible = source.filter((s) => !existingSet.has(s.itemVariantId));
+    const blockedByModule = allowed
+      ? eligible.filter((s) => !allowed.includes(s.itemVariant.item.category.productType))
+      : [];
+    const toCopy = allowed
+      ? eligible.filter((s) => allowed.includes(s.itemVariant.item.category.productType))
+      : eligible;
 
     await prisma.$transaction(async (tx) => {
       for (const s of toCopy) {
@@ -173,13 +226,23 @@ export const locationItemRoutes = new Hono<AppEnv>()
         {
           user, clientId: location.clientId, locationId: location.id,
           action: "locationItem.copyFrom", entity: "Location", entityId: location.id,
-          summary: `Copied ${toCopy.length} catalog item(s) from ${other.client.name} / ${other.name}`,
-          details: { sourceLocationId: otherId, copied: toCopy.length, skipped: source.length - toCopy.length },
+          summary: `Copied ${toCopy.length} catalog item(s) from ${other.client.name} / ${other.name}`
+            + (blockedByModule.length ? ` (${blockedByModule.length} skipped — outside subscribed modules)` : ""),
+          details: {
+            sourceLocationId: otherId,
+            copied: toCopy.length,
+            skipped: source.length - toCopy.length,
+            skippedByModule: blockedByModule.length,
+          },
         },
         tx,
       );
     });
-    return c.json({ copied: toCopy.length, skipped: source.length - toCopy.length });
+    return c.json({
+      copied: toCopy.length,
+      skipped: source.length - toCopy.length,
+      skippedByModule: blockedByModule.length,
+    });
   })
 
   // ── Suppliers (client-scoped) ──

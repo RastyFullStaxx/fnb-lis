@@ -1,7 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import { Copy, KeyRound, Plus, RefreshCw, UserCog } from "lucide-react";
+import { BadgeCheck, Copy, KeyRound, Package, Plus, RefreshCw, UserCog } from "lucide-react";
 import { toast } from "sonner";
-import { ROLES, type Role } from "@fnb/core";
+import {
+  ROLES,
+  PACKAGE_TYPES,
+  INVENTORY_MODULES,
+  PACKAGE_LABELS,
+  INVENTORY_MODULE_LABELS,
+  type Role,
+  type PackageType,
+  type InventoryModule,
+} from "@fnb/core";
 import {
   useAdminClients,
   useAdminUsers,
@@ -65,6 +74,8 @@ export function AdminUsersPage() {
   const [editing, setEditing] = useState<AdminUser | null>(null);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("ALL");
+  const [pkgFilter, setPkgFilter] = useState("ALL");
+  const [moduleFilter, setModuleFilter] = useState("ALL");
 
   const q = search.trim().toLowerCase();
   const filtered = (users.data ?? []).filter((u) => {
@@ -73,7 +84,24 @@ export function AdminUsersPage() {
       !q ||
       `${u.firstName} ${u.lastName}`.toLowerCase().includes(q) ||
       u.username.toLowerCase().includes(q);
-    return matchesStatus && matchesSearch;
+
+    // Package / module filters apply per client assignment. Admins aren't
+    // exempted here — an admin genuinely assigned to only Bar clients should
+    // disappear when filtering to "Kitchen", same as anyone else; that's the
+    // whole point of using these filters to monitor who's on what.
+    const matchesPkg =
+      pkgFilter === "ALL" ||
+      (pkgFilter === "__none__"
+        ? u.clientAccess.every((a) => !a.client.subscription)
+        : u.clientAccess.some((a) => a.client.subscription?.packageType === pkgFilter));
+
+    const matchesModule =
+      moduleFilter === "ALL" ||
+      (moduleFilter === "__none__"
+        ? u.clientAccess.every((a) => !a.client.subscription)
+        : u.clientAccess.some((a) => a.client.subscription?.inventoryModules === moduleFilter));
+
+    return matchesStatus && matchesSearch && matchesPkg && matchesModule;
   });
 
   return (
@@ -101,6 +129,30 @@ export function AdminUsersPage() {
                 <SelectItem value="DISABLED">Disabled</SelectItem>
               </SelectContent>
             </Select>
+            <Select value={pkgFilter} onValueChange={setPkgFilter}>
+              <SelectTrigger className="w-44 bg-background">
+                <SelectValue placeholder="Package" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All packages</SelectItem>
+                <SelectItem value="__none__">No package</SelectItem>
+                {PACKAGE_TYPES.map((p) => (
+                  <SelectItem key={p} value={p}>{PACKAGE_LABELS[p]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={moduleFilter} onValueChange={setModuleFilter}>
+              <SelectTrigger className="w-52 bg-background">
+                <SelectValue placeholder="Module" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All modules</SelectItem>
+                <SelectItem value="__none__">No module</SelectItem>
+                {INVENTORY_MODULES.map((m) => (
+                  <SelectItem key={m} value={m}>{INVENTORY_MODULE_LABELS[m]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </>
         }
       >
@@ -113,7 +165,7 @@ export function AdminUsersPage() {
             description={
               (users.data ?? []).length === 0
                 ? "Create the first account."
-                : "Clear the search or status filter to see everyone."
+                : "Clear the search or filters to see everyone."
             }
           />
         ) : (
@@ -122,7 +174,7 @@ export function AdminUsersPage() {
               <TableRow className="bg-muted hover:bg-muted">
                 <TableHead>User</TableHead>
                 <TableHead>Role</TableHead>
-                <TableHead>Clients</TableHead>
+                <TableHead>Clients / Packages</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="w-16" />
               </TableRow>
@@ -139,12 +191,36 @@ export function AdminUsersPage() {
                   <TableCell>
                     <Badge variant="secondary">{u.role}</Badge>
                   </TableCell>
-                  <TableCell className="max-w-56 text-sm text-muted-foreground">
-                    {u.role === "ADMIN"
-                      ? "All (admin)"
-                      : u.clientAccess.length === 0
-                        ? "—"
-                        : u.clientAccess.map((a) => a.client.name).join(", ")}
+                  <TableCell className="max-w-72 text-sm">
+                    {u.role === "ADMIN" ? (
+                      <span className="text-muted-foreground">All clients (admin)</span>
+                    ) : u.clientAccess.length === 0 ? (
+                      <span className="text-muted-foreground">—</span>
+                    ) : (
+                      <div className="space-y-1">
+                        {u.clientAccess.map((a) => (
+                          <div key={a.clientId} className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-muted-foreground">{a.client.name}</span>
+                            {a.client.subscription ? (
+                              <span className="inline-flex items-center gap-0.5 rounded-full bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
+                                <BadgeCheck className="size-2.5" />
+                                {PACKAGE_LABELS[a.client.subscription.packageType as PackageType] ?? a.client.subscription.packageType}
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-0.5 rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                                <Package className="size-2.5" />
+                                No pkg
+                              </span>
+                            )}
+                            {a.client.subscription && (
+                              <span className="text-xs text-muted-foreground">
+                                {INVENTORY_MODULE_LABELS[a.client.subscription.inventoryModules as InventoryModule] ?? a.client.subscription.inventoryModules}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </TableCell>
                   <TableCell>
                     <Badge variant={u.status === "ACTIVE" ? "secondary" : "outline"}>
@@ -183,7 +259,7 @@ function ClientCheckboxes({
   if ((clients.data ?? []).length === 0)
     return <p className="text-sm text-muted-foreground">No clients exist yet.</p>;
   return (
-    <div className="max-h-40 space-y-1 overflow-y-auto rounded-md border p-2">
+    <div className="max-h-48 space-y-1 overflow-y-auto rounded-md border p-2">
       {clients.data!.map((c) => (
         <label
           key={c.id}
@@ -196,7 +272,18 @@ function ClientCheckboxes({
             disabled={disabled}
             onChange={() => onToggle(c.id)}
           />
-          {c.name}
+          <span className="flex-1">{c.name}</span>
+          {c.subscription ? (
+            <span className="inline-flex items-center gap-0.5 rounded-full bg-primary/10 px-1.5 py-0.5 text-xs text-primary">
+              <BadgeCheck className="size-2.5" />
+              {PACKAGE_LABELS[c.subscription.packageType as PackageType] ?? c.subscription.packageType}
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-0.5 rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+              <Package className="size-2.5" />
+              No pkg
+            </span>
+          )}
         </label>
       ))}
     </div>
@@ -232,7 +319,6 @@ function CreateUserDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
   const [password, setPassword] = useState(generatePassword());
   const [clientIds, setClientIds] = useState<Set<string>>(new Set());
 
-  // Suggest a username from the name until the admin types their own.
   useEffect(() => {
     if (!usernameEdited) {
       const suggestion = `${firstName}${lastName ? "." + lastName : ""}`
@@ -355,6 +441,9 @@ function CreateUserDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
           {role !== "ADMIN" && (
             <div className="space-y-2">
               <Label>Client access</Label>
+              <p className="text-xs text-muted-foreground">
+                Package badges show each client's subscription tier.
+              </p>
               <ClientCheckboxes selected={clientIds} onToggle={toggle} />
             </div>
           )}
@@ -454,6 +543,9 @@ function EditUserDialog({ user, onClose }: { user: AdminUser | null; onClose: ()
           {role !== "ADMIN" && (
             <div className="space-y-2">
               <Label>Client access</Label>
+              <p className="text-xs text-muted-foreground">
+                Package badges show each client's subscription tier.
+              </p>
               <ClientCheckboxes selected={clientIds} onToggle={toggle} />
             </div>
           )}
