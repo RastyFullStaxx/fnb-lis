@@ -1,6 +1,6 @@
 import { prisma } from "../src/db";
 import { hashPassword } from "../src/auth/password";
-import { PACKAGE_MAX_ENTITIES } from "@fnb/core";
+import { allowedProductTypes } from "@fnb/core";
 
 const PASSWORD = "Fnb!2026"; // documented demo password for all seeded roles
 
@@ -16,7 +16,7 @@ async function seedUsers() {
   for (const u of users) {
     await prisma.user.upsert({
       where: { username: u.username },
-      update: { role: u.role, status: "ACTIVE" },
+      update: { role: u.role, status: "ACTIVE", passwordHash },
       create: { ...u, passwordHash, email: `${u.username}@fnb-lis.local` },
     });
   }
@@ -29,20 +29,31 @@ async function seedClients() {
   // Client can never exist without one through the real app. Seed them
   // together per client so the seeded data matches that invariant instead
   // of drifting into a "client with no package" state the UI can't produce.
+  //
+  // Modules are now atomic rows (Fix Plan Phase C) rather than a combo
+  // string — Prime is licensed for both BAR and KITCHEN; Casa Verde for
+  // KITCHEN only.
   const prime = await upsertClientWithSubscription(
     "Prime Hospitality Group",
-    { packageType: "MEDIUM", billingCycle: "MONTHLY", inventoryModules: "BAR_KITCHEN" },
+    { packageType: "MEDIUM", billingCycle: "MONTHLY", modules: ["BAR", "KITCHEN"], maxEntities: 5 },
     admin?.id,
   );
-  await upsertLocation(prime.id, "Main Bar");
-  await upsertLocation(prime.id, "Kitchen");
+  // Prime legitimately splits one operation into two locations — "Main Bar"
+  // (its own BAR module -> Beverage) and "Kitchen" (its own KITCHEN module ->
+  // Food). This is the real, supported "one location per module" pattern
+  // (packaging-model-fix-plan.md §1.2): each location's own LocationModule
+  // set is a strict subset of Prime's {BAR, KITCHEN} subscription ceiling.
+  await upsertLocationWithModules(prime.id, "Main Bar", ["BAR"]);
+  await upsertLocationWithModules(prime.id, "Kitchen", ["KITCHEN"]);
 
   const casa = await upsertClientWithSubscription(
     "Casa Verde Restaurant",
-    { packageType: "BASIC", billingCycle: "MONTHLY", inventoryModules: "KITCHEN" },
+    { packageType: "BASIC", billingCycle: "MONTHLY", modules: ["KITCHEN"], maxEntities: 1 },
     admin?.id,
   );
-  await upsertLocation(casa.id, "Main");
+  // Casa Verde is Basic tier (1 location) — its single "Main" location
+  // carries the client's whole module set (just {KITCHEN} here).
+  await upsertLocationWithModules(casa.id, "Main", ["KITCHEN"]);
 
   // Non-admin users are scoped via UserClientAccess (ADMIN bypasses).
   const assign: Record<string, string[]> = {
@@ -64,28 +75,56 @@ async function seedClients() {
   }
 }
 
+/**
+ * Finds the starter Plan (seeded by the Phase D `plan_catalog` migration —
+ * see prisma/migrations/20260719000000_plan_catalog) matching this
+ * (billingCycle, maxEntities, module-set) combo, so seeded Subscriptions
+ * link back to the catalog the same way a real client onboarded through the
+ * admin UI would (Fix Plan Phase D §2.2/§3). Falls back to null — and logs —
+ * if no matching starter Plan exists (e.g. a DB whose migrations haven't
+ * been re-applied since this phase landed); a subscription just isn't
+ * created "from" a catalog Plan in that case, same as before Phase D.
+ */
+async function findStarterPlan(
+  billingCycle: string,
+  maxEntities: number,
+  modules: readonly string[],
+): Promise<string | null> {
+  const candidates = await prisma.plan.findMany({ where: { billingCycle, maxEntities }, include: { modules: true } });
+  const wanted = [...modules].sort().join(",");
+  const match = candidates.find((p) => [...p.modules.map((m) => m.module)].sort().join(",") === wanted);
+  if (!match) {
+    console.warn(
+      `No starter Plan found for ${billingCycle}/max${maxEntities}/[${modules.join(",")}] — ` +
+        `leaving Subscription.planId null for this seed client. Run the plan_catalog migration first.`,
+    );
+  }
+  return match?.id ?? null;
+}
+
 async function upsertClientWithSubscription(
   name: string,
-  sub: { packageType: string; billingCycle: string; inventoryModules: string },
+  sub: { packageType: string; billingCycle: string; modules: readonly string[]; maxEntities: number },
   createdById?: string,
 ) {
   const existing = await prisma.client.findFirst({ where: { name } });
   if (existing) return existing;
 
-  const maxEntities = PACKAGE_MAX_ENTITIES[sub.packageType as keyof typeof PACKAGE_MAX_ENTITIES] ?? 1;
   const client = await prisma.client.create({ data: { name } });
+  const planId = await findStarterPlan(sub.billingCycle, sub.maxEntities, sub.modules);
   await prisma.subscription.create({
     data: {
       clientId: client.id,
+      planId,
       packageType: sub.packageType,
       billingCycle: sub.billingCycle,
-      inventoryModules: sub.inventoryModules,
-      maxEntities,
+      maxEntities: sub.maxEntities,
       status: "ACTIVE",
       startDate: "2026-01-01",
       createdById: createdById ?? null,
       paid: false,
       lastPaidAt: null,
+      modules: { create: sub.modules.map((module) => ({ module })) },
     },
   });
   return client;
@@ -94,6 +133,24 @@ async function upsertClientWithSubscription(
 async function upsertLocation(clientId: string, name: string) {
   const existing = await prisma.location.findFirst({ where: { clientId, name } });
   return existing ?? prisma.location.create({ data: { clientId, name } });
+}
+
+/**
+ * Creates (or reuses) a location and ensures its LocationModule set matches
+ * `modules` exactly. Callers are responsible for keeping `modules` a subset
+ * of the client's SubscriptionModule ceiling — the same rule the real
+ * /admin API enforces at write time (Fix Plan §2.3).
+ */
+async function upsertLocationWithModules(clientId: string, name: string, modules: readonly string[]) {
+  const location = await upsertLocation(clientId, name);
+  for (const module of modules) {
+    await prisma.locationModule.upsert({
+      where: { locationId_module: { locationId: location.id, module } },
+      update: {},
+      create: { locationId: location.id, module },
+    });
+  }
+  return location;
 }
 
 async function seedUnits() {
@@ -152,6 +209,10 @@ async function seedCategories() {
     { name: "Frozen", productType: "Food", sortOrder: 26 },
     { name: "Sauces & Dressings", productType: "Food", sortOrder: 27 },
     { name: "Consumables", productType: "Supplies", sortOrder: 30 },
+    // Asset now has its own real product type (Fix Plan Phase E) — equipment,
+    // tools, and other non-consumable items, distinct from the consumable
+    // Supplies above (Table Napkins, Disposable Gloves).
+    { name: "Equipment", productType: "Asset", sortOrder: 40 },
   ];
   for (const cat of categories) {
     await prisma.category.upsert({
@@ -168,7 +229,7 @@ async function seedCategories() {
 
 async function seedSettings() {
   const settings: Array<{ key: string; value: unknown }> = [
-    { key: "productTypes", value: ["Beverage", "Food", "Supplies"] },
+    { key: "productTypes", value: ["Beverage", "Food", "Supplies", "Asset"] },
     { key: "company", value: { name: "Liquor Inventory Solution", shortName: "LIS" } },
   ];
   for (const s of settings) {
@@ -221,6 +282,10 @@ const ITEMS: Array<{ name: string; category: string; variants: SeedVariant[] }> 
   { name: "Cooking Oil", category: "Dry Goods", variants: [{ size: 1, unit: "L" }] },
   { name: "Table Napkins", category: "Consumables", variants: [{ size: 1, unit: "pack" }] },
   { name: "Disposable Gloves", category: "Consumables", variants: [{ size: 1, unit: "box" }] },
+  // Asset catalog (Fix Plan Phase E) — non-consumable equipment, tracked as
+  // whole units rather than restocked like Beverage/Food/Supplies.
+  { name: "Bar Blender", category: "Equipment", variants: [{ size: 1, unit: "pc" }] },
+  { name: "Commercial Ice Machine", category: "Equipment", variants: [{ size: 1, unit: "pc" }] },
 ];
 
 type PriceRow = [string, number, string, number, number, number?];
@@ -238,8 +303,14 @@ const MAIN_BAR_PRICES: PriceRow[] = [
   ["Cola", 1, "L", 42, 120, 12],
   ["Orange Juice", 1, "L", 80, 180, 10],
   ["Grenadine Syrup", 750, "ml", 180, 0],
-  ["Lime", 1, "pc", 8, 20, 50],
-  ["Table Napkins", 1, "pack", 85, 0, 5],
+  // NOTE: Lime (Produce -> Food) and Table Napkins (Consumables -> Supplies)
+  // were removed from this list — Main Bar's LocationModule is {BAR}, which
+  // only allows Beverage (see assertLocationCatalogWithinModules). Both are
+  // real bar-side items in practice, but under this single-productType-per-
+  // category model they can't be stocked on a Bar-only location without
+  // either a Kitchen/Supplies module on Main Bar too, or a dedicated
+  // "garnish"/"barware" categorization decision — out of scope for the seed
+  // fix; keeping Main Bar strictly Beverage-only here.
 ];
 
 const KITCHEN_PRICES: PriceRow[] = [
@@ -249,7 +320,11 @@ const KITCHEN_PRICES: PriceRow[] = [
   ["Butter", 1, "kg", 320, 480, 3],
   ["Potato Fries", 1, "kg", 110, 240, 10],
   ["Cooking Oil", 1, "L", 95, 160, 8],
-  ["Disposable Gloves", 1, "box", 220, 0, 4],
+  // NOTE: Disposable Gloves (Consumables -> Supplies) removed — this list
+  // seeds both Prime's "Kitchen" and Casa Verde's "Main", and both locations'
+  // LocationModule is {KITCHEN}, which only allows Food (see
+  // assertLocationCatalogWithinModules). Same reasoning as the Main Bar note
+  // above.
 ];
 
 async function seedItems() {
@@ -299,6 +374,48 @@ async function seedLocationCatalog(clientName: string, locationName: string, pri
       update: { cost, retail, parLevel: parLevel ?? null },
       create: { locationId: location.id, itemVariantId: variant.id, cost, retail, parLevel: parLevel ?? null },
     });
+  }
+}
+
+/**
+ * Phase C guardrail (packaging-model-fix-plan.md §3 Phase F / acceptance
+ * criteria): fail the seed loudly if any LocationItem's Category.productType
+ * falls outside what that *location's own* LocationModule set allows — the
+ * enforced reality, not just the client's subscription ceiling. This is the
+ * layer that actually matters; Casa Verde's original bug (Beverage items on
+ * a Kitchen-only "Main" location) is now structurally impossible to seed
+ * silently, whether or not the location's name happens to hint at its module.
+ */
+async function assertLocationCatalogWithinModules(clientName: string, locationName: string) {
+  const location = await prisma.location.findFirst({
+    where: { name: locationName, client: { name: clientName } },
+    include: {
+      modules: true,
+      locationItems: {
+        include: { itemVariant: { include: { item: { include: { category: true } } } } },
+      },
+    },
+  });
+  if (!location) return;
+
+  const modules = location.modules.map((m) => m.module);
+  const allowed = allowedProductTypes(modules);
+  if (!allowed) return; // no modules assigned -> unrestricted, nothing to assert
+
+  const offenders = location.locationItems
+    .map((li) => ({
+      itemName: li.itemVariant.item.name,
+      productType: li.itemVariant.item.category.productType,
+    }))
+    .filter((row) => !allowed.includes(row.productType));
+
+  if (offenders.length > 0) {
+    const detail = offenders.map((o) => `${o.itemName} (${o.productType})`).join(", ");
+    throw new Error(
+      `Seed assertion failed: location "${locationName}" (${clientName}) has modules ` +
+        `[${modules.join(", ")}] (allows [${allowed.join(", ")}]) but is stocked with items ` +
+        `outside that: ${detail}. Fix the seed data for this location before continuing.`,
+    );
   }
 }
 
@@ -691,9 +808,22 @@ async function main() {
   await seedCategories();
   await seedSettings();
   await seedItems();
+  // Prime Hospitality Group legitimately splits one operation into two locations —
+  // "Main Bar" (BAR module -> Beverage) and "Kitchen" (KITCHEN module -> Food).
+  // This is a real, supported pattern (see packaging-model-fix-plan.md §1.2), not
+  // something to "merge" — do not collapse these back into a single location.
   await seedLocationCatalog("Prime Hospitality Group", "Main Bar", MAIN_BAR_PRICES);
   await seedLocationCatalog("Prime Hospitality Group", "Kitchen", KITCHEN_PRICES);
-  await seedLocationCatalog("Casa Verde Restaurant", "Main", MAIN_BAR_PRICES.slice(0, 8));
+  // Casa Verde's subscription is KITCHEN-only (allowed productType = "Food"), so its
+  // "Main" location must only ever be seeded from KITCHEN_PRICES. Seeding it from
+  // MAIN_BAR_PRICES (vodka, whisky, wine, beer -> "Beverage") was the bug this plan
+  // exists to fix: the real UI/validation in location-items.ts would reject this,
+  // but the old seed script bypassed it. Do not reintroduce a bar/beverage price
+  // list here.
+  await seedLocationCatalog("Casa Verde Restaurant", "Main", KITCHEN_PRICES);
+  await assertLocationCatalogWithinModules("Prime Hospitality Group", "Main Bar");
+  await assertLocationCatalogWithinModules("Prime Hospitality Group", "Kitchen");
+  await assertLocationCatalogWithinModules("Casa Verde Restaurant", "Main");
   await seedSuppliers();
   await seedGoldenCycle();
   await seedAliases();
@@ -702,7 +832,7 @@ async function main() {
   await seedKitchenCycle();
   await seedActivity();
   console.log(`Seed complete. Logins: admin / manager / staff / accountant / readonly — password ${PASSWORD}`);
-  console.log("Demo subscriptions: Prime = Medium/BAR_KITCHEN, Casa Verde = Basic/KITCHEN");
+  console.log("Demo subscriptions: Prime = Medium/{BAR,KITCHEN} (Main Bar=BAR, Kitchen=KITCHEN), Casa Verde = Basic/{KITCHEN}");
 }
 
 main()

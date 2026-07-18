@@ -107,8 +107,8 @@ async function buildMe(user: MeResponse["user"]): Promise<MeResponse> {
       ? await prisma.client.findMany({
           where: { status: "ACTIVE" },
           include: {
-            locations: { where: { status: "ACTIVE" } },
-            subscription: { select: { packageType: true, inventoryModules: true, status: true } },
+            locations: { where: { status: "ACTIVE" }, include: { modules: true } },
+            subscription: { select: { packageType: true, status: true, modules: true } },
           },
           orderBy: { name: "asc" },
         })
@@ -118,8 +118,8 @@ async function buildMe(user: MeResponse["user"]): Promise<MeResponse> {
             include: {
               client: {
                 include: {
-                  locations: { where: { status: "ACTIVE" } },
-                  subscription: { select: { packageType: true, inventoryModules: true, status: true } },
+                  locations: { where: { status: "ACTIVE" }, include: { modules: true } },
+                  subscription: { select: { packageType: true, status: true, modules: true } },
                 },
               },
             },
@@ -131,8 +131,19 @@ async function buildMe(user: MeResponse["user"]): Promise<MeResponse> {
   const meClients: MeClient[] = clients.map((cl) => ({
     id: cl.id,
     name: cl.name,
-    locations: cl.locations.map((l) => ({ id: l.id, name: l.name, clientId: l.clientId })),
-    subscription: cl.subscription ?? null,
+    locations: cl.locations.map((l) => ({
+      id: l.id,
+      name: l.name,
+      clientId: l.clientId,
+      modules: l.modules.map((m) => m.module),
+    })),
+    subscription: cl.subscription
+      ? {
+          packageType: cl.subscription.packageType,
+          status: cl.subscription.status,
+          modules: cl.subscription.modules.map((m) => m.module),
+        }
+      : null,
   }));
 
   return {

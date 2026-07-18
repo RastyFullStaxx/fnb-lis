@@ -22,11 +22,13 @@ export interface MeLocation {
   id: string;
   name: string;
   clientId: string;
+  /** This location's OWN modules (Fix Plan §2.3) — the enforced reality, not the client's ceiling. */
+  modules: string[];
 }
 
 export interface MeClientSubscription {
   packageType: string;
-  inventoryModules: string;
+  modules: string[];
   status: string;
 }
 

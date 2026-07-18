@@ -45,13 +45,16 @@ export const locationItemRoutes = new Hono<AppEnv>()
     });
     if (!variant) throw new AppError(404, "Item variant not found");
 
-    // Package/module enforcement: this location's client can only stock
-    // product types their subscription's inventory module covers.
-    const allowed = allowedProductTypes(c.get("subscriptionModules"));
+    // Module enforcement (Fix Plan Phase C §2.3): a location can only stock
+    // product types its OWN LocationModule set covers — not just whatever
+    // the client's subscription allows in total. This is the layer that
+    // actually gates catalog access; Casa Verde's original bug (a Kitchen-only
+    // location stocked with Beverage items) is now structurally impossible.
+    const allowed = allowedProductTypes(c.get("locationModules"));
     if (allowed && !allowed.includes(variant.item.category.productType)) {
       throw new AppError(
         403,
-        `Your subscription doesn't include ${variant.item.category.productType} inventory. Upgrade the package to add "${variant.item.name}" to this location.`,
+        `This location isn't set up for ${variant.item.category.productType} inventory. Add that module to this location (or raise it on the subscription first) to add "${variant.item.name}".`,
       );
     }
 
@@ -128,23 +131,23 @@ export const locationItemRoutes = new Hono<AppEnv>()
 
   /**
    * Master variants not yet in this location's catalog (for the attach dialog).
-   * Restricted to the client's subscribed inventory modules — a Bar-only
-   * client never sees Food/Supplies variants here, regardless of the
-   * productType query param.
+   * Restricted to this location's OWN modules (Fix Plan Phase C) — a
+   * Bar-only location never sees Food/Supplies variants here, regardless of
+   * the productType query param, even if its client is licensed for more.
    */
   .get("/available-variants", async (c) => {
     const location = c.get("location");
     const search = c.req.query("search")?.trim();
     const requestedProductType = c.req.query("productType");
-    const allowed = allowedProductTypes(c.get("subscriptionModules"));
+    const allowed = allowedProductTypes(c.get("locationModules"));
 
-    // Intersect the caller's requested type (if any) with what the subscription allows.
+    // Intersect the caller's requested type (if any) with what this location's modules allow.
     let productTypeFilter: string | { in: string[] } | undefined;
     if (requestedProductType) {
       if (allowed && !allowed.includes(requestedProductType)) {
-        // Asking for a type outside the subscription — return nothing rather than 403,
-        // since this is a passive list endpoint feeding a dropdown that itself will
-        // be restricted (see AdminClients/subscription UI).
+        // Asking for a type outside this location's modules — return nothing rather
+        // than 403, since this is a passive list endpoint feeding a dropdown that
+        // itself will be restricted (see AdminClients/subscription UI).
         return c.json([]);
       }
       productTypeFilter = requestedProductType;
@@ -171,9 +174,11 @@ export const locationItemRoutes = new Hono<AppEnv>()
 
   /**
    * Legacy "copy local database": pull another location's catalog (skips items
-   * already present). Items outside the destination client's subscribed
-   * modules are silently skipped — copying across clients/locations must not
-   * be a backdoor around the module restriction.
+   * already present). Items outside the DESTINATION location's own modules
+   * (Fix Plan Phase C) are silently skipped — copying across locations must
+   * not be a backdoor around the module restriction, even between two
+   * locations of the same client (e.g. copying Bar items into a Kitchen-only
+   * location).
    */
   .post("/copy-from/:otherLocationId", priceGuard, async (c) => {
     const location = c.get("location");
@@ -191,7 +196,7 @@ export const locationItemRoutes = new Hono<AppEnv>()
       if (!access) throw new AppError(403, "No access to the source location");
     }
 
-    const allowed = allowedProductTypes(c.get("subscriptionModules"));
+    const allowed = allowedProductTypes(c.get("locationModules"));
     const source = await prisma.locationItem.findMany({
       where: { locationId: otherId, isActive: true },
       include: { itemVariant: { include: { item: { include: { category: true } } } } },
@@ -227,7 +232,7 @@ export const locationItemRoutes = new Hono<AppEnv>()
           user, clientId: location.clientId, locationId: location.id,
           action: "locationItem.copyFrom", entity: "Location", entityId: location.id,
           summary: `Copied ${toCopy.length} catalog item(s) from ${other.client.name} / ${other.name}`
-            + (blockedByModule.length ? ` (${blockedByModule.length} skipped — outside subscribed modules)` : ""),
+            + (blockedByModule.length ? ` (${blockedByModule.length} skipped — outside this location's modules)` : ""),
           details: {
             sourceLocationId: otherId,
             copied: toCopy.length,

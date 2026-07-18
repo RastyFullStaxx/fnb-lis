@@ -4,14 +4,12 @@ import { toast } from "sonner";
 import {
   ROLES,
   PACKAGE_TYPES,
-  INVENTORY_MODULES,
+  MODULE_TYPES,
   PACKAGE_LABELS,
-  INVENTORY_MODULE_LABELS,
-  PACKAGE_BILLING_CYCLE,
+  MODULE_TYPE_LABELS,
   type Role,
   type PackageType,
-  type InventoryModule,
-  type BillingCycle,
+  type ModuleType,
 } from "@fnb/core";
 import {
   useAdminClients,
@@ -102,21 +100,19 @@ export function AdminUsersPage() {
       moduleFilter === "ALL" ||
       (moduleFilter === "__none__"
         ? u.clientAccess.every((a) => !a.client.subscription)
-        : u.clientAccess.some((a) => a.client.subscription?.inventoryModules === moduleFilter));
+        : u.clientAccess.some((a) => a.client.subscription?.modules.includes(moduleFilter)));
 
-    // Subscription vs. Standalone — derived from each client's package via
-    // PACKAGE_BILLING_CYCLE, same source of truth the Clients page uses.
-    // This is the broad grouping the client asked to monitor separately from
-    // exact package tier: recurring subscribers (Basic/Medium) vs. one-time
-    // standalone installs (One-Time).
+    // Subscription vs. Standalone — reads each client's actual billingCycle
+    // field directly. This is the broad grouping the client asked to monitor
+    // separately from exact package tier: recurring subscribers vs. one-time
+    // standalone installs. (Fix Plan Phase B: billingCycle is an independent,
+    // directly-settable field — no longer implied by packageType — so this
+    // must read the real value instead of deriving it.)
     const matchesBilling =
       billingFilter === "ALL" ||
       (billingFilter === "__none__"
         ? u.clientAccess.every((a) => !a.client.subscription)
-        : u.clientAccess.some((a) => {
-            const pkg = a.client.subscription?.packageType as PackageType | undefined;
-            return pkg && PACKAGE_BILLING_CYCLE[pkg] === billingFilter;
-          }));
+        : u.clientAccess.some((a) => a.client.subscription?.billingCycle === billingFilter));
 
     return matchesStatus && matchesSearch && matchesPkg && matchesModule && matchesBilling;
   });
@@ -176,8 +172,8 @@ export function AdminUsersPage() {
               <SelectContent>
                 <SelectItem value="ALL">All modules</SelectItem>
                 <SelectItem value="__none__">No module</SelectItem>
-                {INVENTORY_MODULES.map((m) => (
-                  <SelectItem key={m} value={m}>{INVENTORY_MODULE_LABELS[m]}</SelectItem>
+                {MODULE_TYPES.map((m) => (
+                  <SelectItem key={m} value={m}>{MODULE_TYPE_LABELS[m]}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -242,7 +238,9 @@ export function AdminUsersPage() {
                             )}
                             {a.client.subscription && (
                               <span className="text-xs text-muted-foreground">
-                                {INVENTORY_MODULE_LABELS[a.client.subscription.inventoryModules as InventoryModule] ?? a.client.subscription.inventoryModules}
+                                {a.client.subscription.modules
+                                  .map((m) => MODULE_TYPE_LABELS[m as ModuleType] ?? m)
+                                  .join(" + ")}
                               </span>
                             )}
                           </div>

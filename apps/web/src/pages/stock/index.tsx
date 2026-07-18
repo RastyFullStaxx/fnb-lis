@@ -2,9 +2,9 @@ import { useState } from "react";
 import { useParams } from "react-router";
 import { Boxes, Copy, Plus, Search, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
-import { can, INVENTORY_MODULE_LABELS, type InventoryModule, type Role } from "@fnb/core";
+import { can, MODULE_TYPE_LABELS, type ModuleType, type Role } from "@fnb/core";
 import { useMe } from "@/api/auth";
-import { useCopyFromLocation, useCurrentClient, useLocationItems } from "@/api/location";
+import { useCopyFromLocation, useCurrentLocation, useLocationItems } from "@/api/location";
 import { variantLabel } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { PageHeader } from "@/components/page-header";
@@ -41,7 +41,7 @@ import { PriceEdit } from "./price-edit";
 
 export function StockPage() {
   const me = useMe();
-  const client = useCurrentClient();
+  const location = useCurrentLocation();
   const [search, setSearch] = useState("");
   const [missingOnly, setMissingOnly] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
@@ -52,7 +52,7 @@ export function StockPage() {
   const canEditPrices = can(role, "prices.edit");
 
   const missingCount = rows.data?.filter((r) => r.cost === 0 || r.retail === 0).length ?? 0;
-  const subscription = client?.subscription;
+  const locationModules = location?.modules ?? [];
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -72,13 +72,13 @@ export function StockPage() {
         }
       />
 
-      {subscription && (
+      {locationModules.length > 0 && (
         <p className="mb-3 text-xs text-muted-foreground">
-          This client's catalog is limited to{" "}
+          This location's catalog is limited to{" "}
           <span className="font-medium text-foreground">
-            {INVENTORY_MODULE_LABELS[subscription.inventoryModules as InventoryModule] ?? subscription.inventoryModules}
+            {locationModules.map((m) => MODULE_TYPE_LABELS[m as ModuleType] ?? m).join(" + ")}
           </span>{" "}
-          under its current subscription.
+          under its assigned modules.
         </p>
       )}
 
@@ -195,7 +195,7 @@ function CopyFromDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
         notes.push(`${result.skipped - result.skippedByModule} already existed`);
       }
       if (result.skippedByModule > 0) {
-        notes.push(`${result.skippedByModule} outside this client's subscribed modules`);
+        notes.push(`${result.skippedByModule} outside this location's assigned modules`);
       }
       toast.success(
         `Copied ${result.copied} item(s)` + (notes.length > 0 ? ` — ${notes.join("; ")}` : ""),
@@ -213,7 +213,7 @@ function CopyFromDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
           <DialogTitle>Copy catalog from another location</DialogTitle>
           <DialogDescription>
             Brings that location's items and prices into this one. Items already here — or outside this
-            client's subscribed inventory modules — are left out.
+            location's assigned modules — are left out.
           </DialogDescription>
         </DialogHeader>
         <Select value={sourceId} onValueChange={setSourceId}>

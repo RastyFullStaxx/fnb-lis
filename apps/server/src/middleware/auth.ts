@@ -11,8 +11,13 @@ export type AppEnv = {
     user: SessionUser | null;
     client: Client;
     location: Location;
-    /** The active location's client subscription's inventoryModules (e.g. "BAR"), or null if unassigned. */
-    subscriptionModules: string | null;
+    /**
+     * The active location's OWN modules (e.g. ["BAR"]) — the enforced
+     * reality per Fix Plan §2.3, not the client's subscription ceiling.
+     * Null if the location has no LocationModule rows (unassigned/legacy —
+     * matches allowedProductTypes(null) -> unrestricted).
+     */
+    locationModules: string[] | null;
   };
 };
 
@@ -78,7 +83,10 @@ export const requireLocationAccess = createMiddleware<AppEnv>(async (c, next) =>
 
   const location = await prisma.location.findUnique({
     where: { id: locationId },
-    include: { client: { include: { subscription: { select: { inventoryModules: true, status: true } } } } },
+    include: {
+      client: { include: { subscription: { select: { status: true } } } },
+      modules: { select: { module: true } },
+    },
   });
   if (!location || location.status !== "ACTIVE" || location.client.status !== "ACTIVE") {
     throw new AppError(404, "Location not found");
@@ -96,11 +104,16 @@ export const requireLocationAccess = createMiddleware<AppEnv>(async (c, next) =>
   // Suspended/cancelled subscriptions fall back to unrestricted (null) rather than
   // silently locking a client out of their own data — billing status is handled
   // separately (admin UI), not by hiding inventory the client already paid for.
+  //
+  // Phase C: the module ceiling is what actually gates catalog access — this
+  // reads the LOCATION's own module set (LocationModule), not the client's
+  // subscription-wide set, per the §2.3 design principle ("each location's
+  // own modules are the enforced reality"). A location with no LocationModule
+  // rows (unassigned/legacy) stays unrestricted.
+  const subscriptionActive = !location.client.subscription || location.client.subscription.status === "ACTIVE";
   c.set(
-    "subscriptionModules",
-    location.client.subscription && location.client.subscription.status === "ACTIVE"
-      ? location.client.subscription.inventoryModules
-      : null,
+    "locationModules",
+    subscriptionActive && location.modules.length > 0 ? location.modules.map((m) => m.module) : null,
   );
   await next();
 });

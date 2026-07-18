@@ -69,6 +69,7 @@ model Location {
   status    String   @default("ACTIVE")
   createdAt DateTime @default(now())
 
+  modules       LocationModule[]
   locationItems LocationItem[]
   countSessions CountSession[]
   purchases     Purchase[]
@@ -80,6 +81,20 @@ model Location {
   @@index([clientId])
 }
 
+// The enforced reality for a single location: which modules it may stock,
+// per the Fix Plan §2.3 design principle. Must be a subset of that location's
+// client's SubscriptionModule set (the ceiling) — validated in application
+// code at write time (see routes/admin.ts locationModulesBody), not by the
+// database, since Prisma/SQLite can't express a cross-table subset constraint.
+model LocationModule {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  module     String // BAR | KITCHEN | ASSET
+
+  @@unique([locationId, module])
+}
+
 model UserClientAccess {
   userId   String
   clientId String
@@ -89,12 +104,54 @@ model UserClientAccess {
   @@id([userId, clientId])
 }
 
+// ───────────────────────── Plan catalog (sellable templates) ─────────────────────────
+// Fix Plan Phase D §2.1: a Plan is the reusable, admin-composed sales template —
+// billing cycle, module set, max locations — that sales picks from to compose a
+// new offer without an engineer redeploying code. No price field: pricing is
+// per-client/per-deal, not catalog-fixed (Fix Plan §4 open question #2,
+// resolved) — see Subscription.negotiatedPrice below.
+
+model Plan {
+  id           String   @id @default(cuid())
+  name         String // "Bar Only — Monthly", "Full Suite — One-Time", etc. (free text, admin-set)
+  billingCycle String // STANDALONE | MONTHLY — independent of everything else
+  maxEntities  Int // 0 = unlimited; admin sets any number
+  isActive     Boolean  @default(true)
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+  createdById  String?
+
+  modules       PlanModule[]
+  subscriptions Subscription[]
+}
+
+// Which atomic modules a Plan bundles — same atomic BAR | KITCHEN | ASSET
+// units as SubscriptionModule/LocationModule (Fix Plan Phase C), never a
+// pre-combined string.
+model PlanModule {
+  id     String @id @default(cuid())
+  planId String
+  plan   Plan   @relation(fields: [planId], references: [id])
+  module String // BAR | KITCHEN | ASSET
+
+  @@unique([planId, module])
+}
+
 // ───────────────────────── Subscription & Packages ─────────────────────────
 // packageType: BASIC | MEDIUM | ONE_TIME
-// billingCycle: STANDALONE | MONTHLY (implied by packageType — see PACKAGE_BILLING_CYCLE in @fnb/core)
-// inventoryModules: comma-separated list of BAR | KITCHEN | ASSET
-//   Valid combos: BAR | KITCHEN | ASSET | BAR_KITCHEN | BAR_KITCHEN_ASSET
-// maxEntities: 1 for BASIC, 5 for MEDIUM, 0 = unlimited for ONE_TIME/STANDALONE
+// billingCycle: STANDALONE | MONTHLY (independently settable — see admin.ts;
+//   no longer derived from packageType, per Fix Plan Phase B)
+// modules: SubscriptionModule rows, one per atomic module (BAR | KITCHEN | ASSET)
+//   the client is licensed for in total — the *ceiling* every location's own
+//   LocationModule set must stay within (Fix Plan Phase C §2.3/§2.2).
+// maxEntities: any admin-set number; 0 = unlimited
+// planId / plan: which sellable Plan this subscription was created from (Fix
+//   Plan Phase D §2.2) — billingCycle/maxEntities/modules above are snapshotted
+//   onto the Subscription at creation time (so later edits to the Plan, or the
+//   Plan being deactivated, never retroactively change an existing client's
+//   deal); planId is kept only for traceability back to the catalog entry.
+// negotiatedPrice: optional per-client/per-deal price, if tracked in-system at
+//   all (Fix Plan §4 open question #2) — the Plan catalog itself has no price.
 //
 // paid / lastPaidAt — explicit payment tracking (never assumed true on creation):
 //   paid = true means the admin has confirmed payment for the current billing period.
@@ -103,24 +160,39 @@ model UserClientAccess {
 //   background job) — see admin.ts deriveAccessState().
 
 model Subscription {
-  id               String    @id @default(cuid())
-  clientId         String    @unique
-  client           Client    @relation(fields: [clientId], references: [id])
-  packageType      String // BASIC | MEDIUM | ONE_TIME
-  billingCycle     String // STANDALONE | MONTHLY
-  inventoryModules String // BAR | KITCHEN | ASSET | BAR_KITCHEN | BAR_KITCHEN_ASSET
-  maxEntities      Int       @default(1) // 1=BASIC, 5=MEDIUM, 0=unlimited
-  status           String    @default("ACTIVE") // ACTIVE | SUSPENDED | CANCELLED | TRIAL
-  paid             Boolean   @default(false) // explicit paid flag for the CURRENT billing period
-  lastPaidAt       DateTime? // null until first "Mark as paid"; updated on every mark-paid click
-  startDate        String // YYYY-MM-DD
-  endDate          String? // null = no expiry (ONE_TIME / perpetual)
-  note             String?
-  createdById      String?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-  cancelledAt      DateTime?
-  cancelledById    String?
+  id              String    @id @default(cuid())
+  clientId        String    @unique
+  client          Client    @relation(fields: [clientId], references: [id])
+  planId          String?
+  plan            Plan?     @relation(fields: [planId], references: [id])
+  packageType     String // BASIC | MEDIUM | ONE_TIME
+  billingCycle    String // STANDALONE | MONTHLY
+  maxEntities     Int       @default(1) // 1=BASIC, 5=MEDIUM, 0=unlimited
+  negotiatedPrice Float? // optional per-client deal price — see note above
+  status          String    @default("ACTIVE") // ACTIVE | SUSPENDED | CANCELLED | TRIAL
+  paid            Boolean   @default(false) // explicit paid flag for the CURRENT billing period
+  lastPaidAt      DateTime? // null until first "Mark as paid"; updated on every mark-paid click
+  startDate       String // YYYY-MM-DD
+  endDate         String? // null = no expiry (ONE_TIME / perpetual)
+  note            String?
+  createdById     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  cancelledAt     DateTime?
+  cancelledById   String?
+
+  modules SubscriptionModule[]
+}
+
+// The ceiling: every atomic module (BAR | KITCHEN | ASSET) this client is
+// licensed for across every location they operate (Fix Plan §2.2/§2.3).
+model SubscriptionModule {
+  id             String       @id @default(cuid())
+  subscriptionId String
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id])
+  module         String // BAR | KITCHEN | ASSET
+
+  @@unique([subscriptionId, module])
 }
 
 // ───────────────────────── Master data (global) ─────────────────────────

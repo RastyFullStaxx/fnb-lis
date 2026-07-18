@@ -8,15 +8,22 @@ export interface AdminLocation {
   id: string;
   name: string;
   status: string;
+  /** This location's OWN modules (Fix Plan §2.3) — the enforced reality, must be a subset of the client's subscription modules. */
+  modules: string[];
 }
 
 export interface AdminSubscription {
   id: string;
   clientId: string;
+  /** Which catalog Plan this was composed from (Fix Plan Phase D §2.2) — traceability only; fields below remain independently overridable. */
+  planId: string | null;
   packageType: string;
   billingCycle: string;
-  inventoryModules: string;
+  /** The client's licensed ceiling (Fix Plan §2.2) — atomic modules, any non-empty subset. */
+  modules: string[];
   maxEntities: number;
+  /** Optional per-client/per-deal price, if tracked at all (Fix Plan §4 open question #2). */
+  negotiatedPrice: number | null;
   status: string;
   paid: boolean;
   lastPaidAt: string | null;
@@ -37,12 +44,43 @@ export interface AdminClient {
   subscription: AdminSubscription | null;
 }
 
+/** Raw shape of a module join-table row as returned by the server (SubscriptionModule/LocationModule). */
+interface ModuleRow {
+  module: string;
+}
+
+/** Normalizes the server's `{ modules: [{module}, ...] }` include shape into a flat `string[]`. */
+function toModuleList(modules: ModuleRow[] | undefined | null): string[] {
+  return modules?.map((m) => m.module) ?? [];
+}
+
+interface AdminLocationWire extends Omit<AdminLocation, "modules"> {
+  modules?: ModuleRow[];
+}
+interface AdminSubscriptionWire extends Omit<AdminSubscription, "modules"> {
+  modules?: ModuleRow[];
+}
+interface AdminClientWire extends Omit<AdminClient, "locations" | "subscription"> {
+  locations: AdminLocationWire[];
+  subscription: AdminSubscriptionWire | null;
+}
+
+function normalizeClient(client: AdminClientWire): AdminClient {
+  return {
+    ...client,
+    locations: client.locations.map((l) => ({ ...l, modules: toModuleList(l.modules) })),
+    subscription: client.subscription
+      ? { ...client.subscription, modules: toModuleList(client.subscription.modules) }
+      : null,
+  };
+}
+
 export interface AdminUserClientAccess {
   clientId: string;
   client: {
     id: string;
     name: string;
-    subscription: Pick<AdminSubscription, "packageType" | "billingCycle" | "inventoryModules" | "status"> | null;
+    subscription: (Pick<AdminSubscription, "packageType" | "billingCycle" | "status"> & { modules: string[] }) | null;
   };
 }
 
@@ -117,7 +155,10 @@ export function daysUntilDue(sub: Pick<AdminSubscription, "startDate">): number 
 // ── Clients & locations ────────────────────────────────────────────────────
 
 export function useAdminClients() {
-  return useQuery({ queryKey: ["admin", "clients"], queryFn: () => api<AdminClient[]>("/api/admin/clients") });
+  return useQuery({
+    queryKey: ["admin", "clients"],
+    queryFn: async () => (await api<AdminClientWire[]>("/api/admin/clients")).map(normalizeClient),
+  });
 }
 
 export function useCreateClient() {
@@ -135,9 +176,14 @@ export interface CreateFullClientBody {
   name: string;
   extraLocationNames: string[];
   subscription: {
+    /** Which catalog Plan this was composed from (Fix Plan Phase D §2.2) — optional; kept for traceability only. */
+    planId?: string | null;
     packageType: string;
     billingCycle: string;
-    inventoryModules: string;
+    modules: string[];
+    maxEntities: number;
+    /** Optional per-client deal price, if tracked at all. */
+    negotiatedPrice?: number | null;
     startDate: string;
     endDate?: string | null;
     note?: string | null;
@@ -150,7 +196,7 @@ export interface CreateFullClientBody {
 export function useCreateFullClient() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: CreateFullClientBody) => post<AdminClient>("/api/admin/clients/full", body),
+    mutationFn: (body: CreateFullClientBody) => post<AdminClientWire>("/api/admin/clients/full", body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin", "clients"] });
       qc.invalidateQueries({ queryKey: ["me"] });
@@ -174,7 +220,7 @@ export function useAddLocation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ clientId, name }: { clientId: string; name: string }) =>
-      post<AdminLocation>(`/api/admin/clients/${clientId}/locations`, { name }),
+      post<AdminLocationWire>(`/api/admin/clients/${clientId}/locations`, { name }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin", "clients"] });
       qc.invalidateQueries({ queryKey: ["me"] });
@@ -182,10 +228,127 @@ export function useAddLocation() {
   });
 }
 
+// Sets a single location's own module set (Fix Plan §2.3) — server enforces
+// it stays a subset of the client's current subscription modules.
+export function useUpdateLocationModules() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ locationId, modules }: { locationId: string; modules: string[] }) =>
+      put<AdminLocationWire>(`/api/admin/locations/${locationId}/modules`, { modules }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "clients"] });
+      qc.invalidateQueries({ queryKey: ["me"] });
+    },
+  });
+}
+
+// ── Plans (Fix Plan Phase D §2.1) ────────────────────────────────────────────
+// The sellable catalog — sales composes new packaging combos here (billing
+// cycle, module set, max locations) without an engineer redeploying code.
+// No price field: pricing is per-client/per-deal (Subscription.negotiatedPrice),
+// not catalog-fixed (Fix Plan §4 open question #2, resolved).
+
+export interface AdminPlan {
+  id: string;
+  name: string;
+  billingCycle: string;
+  modules: string[];
+  maxEntities: number;
+  isActive: boolean;
+  sortOrder: number;
+  createdAt: string;
+  createdById: string | null;
+}
+interface AdminPlanWire extends Omit<AdminPlan, "modules"> {
+  modules?: ModuleRow[];
+}
+function normalizePlan(plan: AdminPlanWire): AdminPlan {
+  return { ...plan, modules: toModuleList(plan.modules) };
+}
+
+export function useAdminPlans() {
+  return useQuery({
+    queryKey: ["admin", "plans"],
+    queryFn: async () => (await api<AdminPlanWire[]>("/api/admin/plans")).map(normalizePlan),
+  });
+}
+
+export interface CreatePlanBody {
+  name: string;
+  billingCycle: string;
+  modules: string[];
+  maxEntities: number;
+  isActive?: boolean;
+  sortOrder?: number;
+}
+
+export function useCreatePlan() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreatePlanBody) => post<AdminPlanWire>("/api/admin/plans", body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "plans"] }),
+  });
+}
+
+export interface UpdatePlanBody {
+  name?: string;
+  billingCycle?: string;
+  modules?: string[];
+  maxEntities?: number;
+  isActive?: boolean;
+  sortOrder?: number;
+}
+
+export function useUpdatePlan() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: UpdatePlanBody & { id: string }) => put<AdminPlanWire>(`/api/admin/plans/${id}`, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "plans"] }),
+  });
+}
+
+// Deleting is only allowed once nothing references the plan anymore (server
+// enforces this) — deactivate (isActive: false via update) a plan that's
+// ever been sold from instead, so existing Subscription traceability isn't lost.
+export function useDeletePlan() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id }: { id: string }) => api<{ ok: boolean; deleted: string }>(`/api/admin/plans/${id}`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "plans"] }),
+  });
+}
+
 // ── Users ──────────────────────────────────────────────────────────────────
 
+interface AdminUserClientAccessWire extends Omit<AdminUserClientAccess, "client"> {
+  client: Omit<AdminUserClientAccess["client"], "subscription"> & {
+    subscription: (Pick<AdminSubscription, "packageType" | "billingCycle" | "status"> & { modules?: ModuleRow[] }) | null;
+  };
+}
+interface AdminUserWire extends Omit<AdminUser, "clientAccess"> {
+  clientAccess: AdminUserClientAccessWire[];
+}
+
+function normalizeUser(user: AdminUserWire): AdminUser {
+  return {
+    ...user,
+    clientAccess: user.clientAccess.map((a) => ({
+      ...a,
+      client: {
+        ...a.client,
+        subscription: a.client.subscription
+          ? { ...a.client.subscription, modules: toModuleList(a.client.subscription.modules) }
+          : null,
+      },
+    })),
+  };
+}
+
 export function useAdminUsers() {
-  return useQuery({ queryKey: ["admin", "users"], queryFn: () => api<AdminUser[]>("/api/admin/users") });
+  return useQuery({
+    queryKey: ["admin", "users"],
+    queryFn: async () => (await api<AdminUserWire[]>("/api/admin/users")).map(normalizeUser),
+  });
 }
 
 export interface CreateUserBody {
@@ -237,19 +400,31 @@ export function useUpdateUserAccess() {
 export interface AdminSubscriptionWithClient extends AdminSubscription {
   client: { id: string; name: string; status: string };
 }
+interface AdminSubscriptionWithClientWire extends Omit<AdminSubscriptionWithClient, "modules"> {
+  modules?: ModuleRow[];
+}
+function normalizeSubscription(sub: AdminSubscriptionWithClientWire): AdminSubscriptionWithClient {
+  return { ...sub, modules: toModuleList(sub.modules) };
+}
 
 export function useAdminSubscriptions() {
   return useQuery({
     queryKey: ["admin", "subscriptions"],
-    queryFn: () => api<AdminSubscriptionWithClient[]>("/api/admin/subscriptions"),
+    queryFn: async () =>
+      (await api<AdminSubscriptionWithClientWire[]>("/api/admin/subscriptions")).map(normalizeSubscription),
   });
 }
 
 export interface CreateSubscriptionBody {
   clientId: string;
+  /** Which catalog Plan this was composed from (Fix Plan Phase D §2.2) — optional; kept for traceability only. */
+  planId?: string | null;
   packageType: string;
   billingCycle: string;
-  inventoryModules: string;
+  modules: string[];
+  maxEntities: number;
+  /** Optional per-client deal price, if tracked at all. */
+  negotiatedPrice?: number | null;
   startDate: string;
   endDate?: string | null;
   note?: string | null;
@@ -259,7 +434,7 @@ export function useCreateSubscription() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: CreateSubscriptionBody) =>
-      post<AdminSubscriptionWithClient>("/api/admin/subscriptions", body),
+      post<AdminSubscriptionWithClientWire>("/api/admin/subscriptions", body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin", "subscriptions"] });
       qc.invalidateQueries({ queryKey: ["admin", "clients"] });
@@ -268,9 +443,14 @@ export function useCreateSubscription() {
 }
 
 export interface UpdateSubscriptionBody {
+  /** Which catalog Plan this was composed from (Fix Plan Phase D §2.2) — optional; kept for traceability only. */
+  planId?: string | null;
   packageType?: string;
   billingCycle?: string;
-  inventoryModules?: string;
+  modules?: string[];
+  maxEntities?: number;
+  /** Optional per-client deal price, if tracked at all. */
+  negotiatedPrice?: number | null;
   startDate?: string;
   endDate?: string | null;
   note?: string | null;
@@ -280,7 +460,7 @@ export function useUpdateSubscription() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, ...body }: UpdateSubscriptionBody & { id: string }) =>
-      put<AdminSubscriptionWithClient>(`/api/admin/subscriptions/${id}`, body),
+      put<AdminSubscriptionWithClientWire>(`/api/admin/subscriptions/${id}`, body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin", "subscriptions"] });
       qc.invalidateQueries({ queryKey: ["admin", "clients"] });
@@ -294,7 +474,7 @@ export function useMarkPaid() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id }: { id: string }) =>
-      post<AdminSubscriptionWithClient>(`/api/admin/subscriptions/${id}/mark-paid`, {}),
+      post<AdminSubscriptionWithClientWire>(`/api/admin/subscriptions/${id}/mark-paid`, {}),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin", "clients"] });
       qc.invalidateQueries({ queryKey: ["admin", "subscriptions"] });
@@ -306,7 +486,7 @@ export function useUnmarkPaid() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id }: { id: string }) =>
-      post<AdminSubscriptionWithClient>(`/api/admin/subscriptions/${id}/unmark-paid`, {}),
+      post<AdminSubscriptionWithClientWire>(`/api/admin/subscriptions/${id}/unmark-paid`, {}),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin", "clients"] });
       qc.invalidateQueries({ queryKey: ["admin", "subscriptions"] });
@@ -318,7 +498,7 @@ export function useCancelSubscription() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id }: { id: string }) =>
-      post<AdminSubscriptionWithClient>(`/api/admin/subscriptions/${id}/cancel`, {}),
+      post<AdminSubscriptionWithClientWire>(`/api/admin/subscriptions/${id}/cancel`, {}),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin", "clients"] });
       qc.invalidateQueries({ queryKey: ["admin", "subscriptions"] });
@@ -326,13 +506,20 @@ export function useCancelSubscription() {
   });
 }
 
+// The /check endpoint returns the raw Subscription row (no `modules` include
+// server-side) — it's only used for maxEntities/status/billing checks, not
+// module display, so it's typed without `modules` here.
 export function useSubscriptionCheck(clientId: string | null) {
   return useQuery({
     queryKey: ["admin", "subscriptions", "check", clientId],
     queryFn: () =>
-      api<{ hasSubscription: boolean; subscription?: AdminSubscription; locationCount?: number; canAddEntity: boolean; accessState?: string }>(
-        `/api/admin/subscriptions/${clientId}/check`,
-      ),
+      api<{
+        hasSubscription: boolean;
+        subscription?: Omit<AdminSubscription, "modules">;
+        locationCount?: number;
+        canAddEntity: boolean;
+        accessState?: string;
+      }>(`/api/admin/subscriptions/${clientId}/check`),
     enabled: !!clientId,
   });
 }

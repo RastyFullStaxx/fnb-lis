@@ -6,6 +6,6 @@ import { buildDashboard } from "../services/dashboard";
 export const dashboardRoutes = new Hono<AppEnv>().get("/dashboard", async (c) => {
   const location = c.get("location");
   const client = c.get("client");
-  const allowed = allowedProductTypes(c.get("subscriptionModules"));
+  const allowed = allowedProductTypes(c.get("locationModules"));
   return c.json(await buildDashboard(location.id, client.id, allowed));
 });

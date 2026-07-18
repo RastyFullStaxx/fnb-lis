@@ -34,23 +34,24 @@ export type PackageType = (typeof PACKAGE_TYPES)[number];
 export const BILLING_CYCLES = ["STANDALONE", "MONTHLY"] as const;
 export type BillingCycle = (typeof BILLING_CYCLES)[number];
 
-/** Inventory modules that can be enabled per subscription */
-export const INVENTORY_MODULES = ["BAR", "KITCHEN", "ASSET", "BAR_KITCHEN", "BAR_KITCHEN_ASSET"] as const;
-export type InventoryModule = (typeof INVENTORY_MODULES)[number];
+/**
+ * Atomic inventory modules (Fix Plan Phase C). Replaces the old 5-value
+ * closed-combo enum (`BAR | KITCHEN | ASSET | BAR_KITCHEN | BAR_KITCHEN_ASSET`)
+ * with the three real, composable units. A "package" is now any subset of
+ * these — {BAR, ASSET}, all three, etc. — represented as multiple rows
+ * (SubscriptionModule / PlanModule / LocationModule), never as a combo string.
+ */
+export const MODULE_TYPES = ["BAR", "KITCHEN", "ASSET"] as const;
+export type ModuleType = (typeof MODULE_TYPES)[number];
+
+/** @deprecated Renamed to `MODULE_TYPES` now that modules are atomic (Phase C). Kept as an alias during migration. */
+export const INVENTORY_MODULES = MODULE_TYPES;
+/** @deprecated Renamed to `ModuleType`. Kept as an alias during migration. */
+export type InventoryModule = ModuleType;
 
 /** Subscription statuses */
 export const SUBSCRIPTION_STATUSES = ["ACTIVE", "SUSPENDED", "CANCELLED", "TRIAL"] as const;
 export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUSES)[number];
-
-/**
- * Maximum entities (clients/locations) allowed per package.
- * 0 = unlimited (ONE_TIME).
- */
-export const PACKAGE_MAX_ENTITIES: Record<PackageType, number> = {
-  BASIC: 1,
-  MEDIUM: 5,
-  ONE_TIME: 0, // unlimited
-};
 
 /** Human-readable labels */
 export const PACKAGE_LABELS: Record<PackageType, string> = {
@@ -60,71 +61,108 @@ export const PACKAGE_LABELS: Record<PackageType, string> = {
 };
 
 /**
- * Billing cycle is not an independent choice — it's implied by the package.
- * BASIC/MEDIUM are capped, ongoing-access tiers, so they only make sense as
- * a recurring charge. ONE_TIME is the unlimited, pay-once-and-own-it tier,
- * so it only makes sense as a standalone charge. The UI derives billingCycle
- * from packageType via this map instead of exposing it as a separate field.
+ * Default maxEntities to pre-fill when an admin picks a package tier in a
+ * form — a starting point, not an enforced ceiling. The actual maxEntities
+ * on a Subscription is a directly-settable field (see admin.ts), so any
+ * value can be typed in over this default; nothing recalculates it after
+ * creation. (Fix Plan Phase B: billing cycle & entity count decoupled from
+ * package tier — packageType alone no longer determines either.)
  */
-export const PACKAGE_BILLING_CYCLE: Record<PackageType, BillingCycle> = {
+export const PACKAGE_DEFAULT_MAX_ENTITIES: Record<PackageType, number> = {
+  BASIC: 1,
+  MEDIUM: 5,
+  ONE_TIME: 0, // unlimited
+};
+
+/**
+ * Default billingCycle to pre-fill when an admin picks a package tier in a
+ * form — a starting point, not a derivation. The actual billingCycle on a
+ * Subscription is a directly-settable field (see admin.ts); an admin can
+ * sell "Basic, one-time payment" or "One-Time package, billed monthly" by
+ * simply choosing a different value here. (Fix Plan Phase B.)
+ */
+export const PACKAGE_DEFAULT_BILLING_CYCLE: Record<PackageType, BillingCycle> = {
   BASIC: "MONTHLY",
   MEDIUM: "MONTHLY",
   ONE_TIME: "STANDALONE",
 };
 
-/** Short qualifier for compact inline display next to a package label, e.g. in a Select item's secondary text. */
-export const BILLING_CYCLE_SHORT_LABELS: Record<BillingCycle, string> = {
-  STANDALONE: "One-time",
-  MONTHLY: "Monthly",
+export const MODULE_TYPE_LABELS: Record<ModuleType, string> = {
+  BAR: "Bar",
+  KITCHEN: "Kitchen",
+  ASSET: "Asset",
 };
 
-export const INVENTORY_MODULE_LABELS: Record<InventoryModule, string> = {
-  BAR: "Bar Inventory Only",
-  KITCHEN: "Kitchen Inventory Only",
-  ASSET: "Asset Inventory Only",
-  BAR_KITCHEN: "Bar & Kitchen Inventory",
-  BAR_KITCHEN_ASSET: "Bar, Kitchen & Asset Inventory",
-};
+/** @deprecated Renamed to `MODULE_TYPE_LABELS`. Kept as an alias during migration. */
+export const INVENTORY_MODULE_LABELS = MODULE_TYPE_LABELS;
 
 /**
- * Which master `Category.productType` values ("Beverage" | "Food" | "Supplies" —
- * see Setting "productTypes") a subscription's inventory module unlocks.
+ * Which master `Category.productType` values ("Beverage" | "Food" | "Supplies" |
+ * "Asset" — see Setting "productTypes") a single atomic module unlocks.
  *
- * This is the single mapping that turns "inventoryModules" from a label into an
- * actual restriction: every place that scopes catalog data to a client/location
- * (attaching items, listing a location's catalog, filtering reports) should
- * intersect against `allowedProductTypes(subscription)` rather than trusting
- * the caller's own productType query param.
+ * This is the single mapping that turns a module set into an actual restriction:
+ * every place that scopes catalog data to a client/location (attaching items,
+ * listing a location's catalog, filtering reports) should intersect against
+ * `allowedProductTypes(modules)` rather than trusting the caller's own
+ * productType query param.
  *
- * "Asset" has no seeded product type of its own yet (the legacy catalog only
- * ever had Beverage/Food/Supplies) — it maps to "Supplies", which is where
- * non-consumable/equipment-style items already land (see seed categories).
- * If a client later wants a dedicated "Asset" product type, add it to the
- * global Setting "productTypes" list and to this map — no schema change needed.
+ * Asset now has its own real product type (Fix Plan Phase E, resolved open
+ * question #4) — the original modernization plan already listed Asset and
+ * Supply as separate item types (Asset: non-consumable equipment/tools/
+ * furniture; Supplies: consumable napkins/gloves/etc.), and the "Supplies"
+ * alias here was only ever a stopgap until this split landed.
  */
-export const INVENTORY_MODULE_PRODUCT_TYPES: Record<InventoryModule, readonly string[]> = {
+export const MODULE_PRODUCT_TYPES: Record<ModuleType, readonly string[]> = {
   BAR: ["Beverage"],
   KITCHEN: ["Food"],
-  ASSET: ["Supplies"],
-  BAR_KITCHEN: ["Beverage", "Food"],
-  BAR_KITCHEN_ASSET: ["Beverage", "Food", "Supplies"],
+  ASSET: ["Asset"],
 };
 
-/** Product types allowed for a given subscription (null/no-subscription = unrestricted). */
-export function allowedProductTypes(inventoryModules: string | null | undefined): readonly string[] | null {
-  if (!inventoryModules) return null; // no subscription on record -> don't restrict (legacy/unassigned clients)
-  const types = INVENTORY_MODULE_PRODUCT_TYPES[inventoryModules as InventoryModule];
-  return types ?? null;
+/** @deprecated Renamed to `MODULE_PRODUCT_TYPES`. Kept as an alias during migration. */
+export const INVENTORY_MODULE_PRODUCT_TYPES = MODULE_PRODUCT_TYPES;
+
+/**
+ * Product types allowed for a given set of modules (null/undefined/empty =
+ * unrestricted — legacy/unassigned clients, or callers that pass through the
+ * whole-client ceiling rather than a location's own set).
+ *
+ * Accepts either:
+ *  - a module list (`["BAR", "KITCHEN"]`) — the composable shape everywhere
+ *    a SubscriptionModule/LocationModule set is read from, or
+ *  - a single legacy combo string (`"BAR_KITCHEN"`) — accepted for backward
+ *    compatibility while any pre-migration data/tests still pass one in.
+ */
+export function allowedProductTypes(
+  modules: readonly string[] | string | null | undefined,
+): readonly string[] | null {
+  if (!modules) return null; // nothing on record -> don't restrict (legacy/unassigned clients)
+  const list = Array.isArray(modules) ? modules : splitLegacyModuleCombo(modules);
+  if (list.length === 0) return null;
+  const types = new Set<string>();
+  for (const m of list) {
+    for (const t of MODULE_PRODUCT_TYPES[m as ModuleType] ?? []) types.add(t);
+  }
+  return types.size > 0 ? [...types] : null;
 }
 
-/** Whether a given Category.productType is permitted under a subscription's modules. */
+/** Whether a given Category.productType is permitted under a module set. */
 export function isProductTypeAllowed(
   productType: string,
-  inventoryModules: string | null | undefined,
+  modules: readonly string[] | string | null | undefined,
 ): boolean {
-  const allowed = allowedProductTypes(inventoryModules);
+  const allowed = allowedProductTypes(modules);
   if (!allowed) return true;
   return allowed.includes(productType);
+}
+
+/**
+ * Splits a legacy pre-Phase-C combo string ("BAR_KITCHEN_ASSET", etc.) into
+ * atomic modules. Only exists to keep `allowedProductTypes` accepting old
+ * values during migration — new code should always pass an array of atomic
+ * modules (from SubscriptionModule/LocationModule rows) instead.
+ */
+function splitLegacyModuleCombo(combo: string): ModuleType[] {
+  return MODULE_TYPES.filter((m) => combo === m || combo.split("_").includes(m));
 }
 
 export const BILLING_CYCLE_LABELS: Record<BillingCycle, string> = {

@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   AlertCircle,
   BadgeCheck,
+  Boxes,
   Building2,
   CalendarDays,
   CheckCircle2,
@@ -13,29 +14,31 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import {
-  INVENTORY_MODULE_LABELS,
+  MODULE_TYPE_LABELS,
   PACKAGE_LABELS,
-  PACKAGE_MAX_ENTITIES,
-  PACKAGE_BILLING_CYCLE,
-  BILLING_CYCLE_LABELS,
+  PACKAGE_DEFAULT_MAX_ENTITIES,
+  PACKAGE_DEFAULT_BILLING_CYCLE,
   type BillingCycle,
-  type InventoryModule,
+  type ModuleType,
   type PackageType,
 } from "@fnb/core";
-import { PackageAndModulesFields, LocationsField } from "@/components/client-form-fields";
+import { PackageAndModulesFields, LocationModulesField, LocationsField, PlanPickerField, NegotiatedPriceField, type PlanOption } from "@/components/client-form-fields";
 import {
   deriveAccessState,
   daysUntilDue,
   useAddLocation,
   useAdminClients,
+  useAdminPlans,
   useCancelSubscription,
   useCreateFullClient,
   useCreateSubscription,
   useMarkPaid,
   useUnmarkPaid,
   useUpdateClient,
+  useUpdateLocationModules,
   useUpdateSubscription,
   type AdminClient,
+  type AdminLocation,
   type AdminSubscription,
 } from "@/api/admin";
 import { ApiError } from "@/api/http";
@@ -67,6 +70,21 @@ import {
 } from "@/components/ui/alert-dialog";
 
 // ── Access state helpers ────────────────────────────────────────────────────
+
+// Normalizes the fetched Plan catalog into the shape PlanPickerField expects,
+// so every subscription form (New client, Create subscription, edit
+// subscription) shares one source of truth for "what plans exist".
+function usePlanOptions(): PlanOption[] {
+  const plans = useAdminPlans();
+  return (plans.data ?? []).map((p) => ({
+    id: p.id,
+    name: p.name,
+    billingCycle: p.billingCycle as BillingCycle,
+    modules: p.modules as ModuleType[],
+    maxEntities: p.maxEntities,
+    isActive: p.isActive,
+  }));
+}
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -166,7 +184,7 @@ export function AdminClientsPage() {
                           {PACKAGE_LABELS[sub.packageType as PackageType] ?? sub.packageType}
                         </span>
                         <span className="text-xs text-muted-foreground">
-                          {INVENTORY_MODULE_LABELS[sub.inventoryModules as InventoryModule] ?? sub.inventoryModules}
+                          {sub.modules.map((m) => MODULE_TYPE_LABELS[m as ModuleType] ?? m).join(" + ")}
                         </span>
                         <AccessStateBadge sub={sub} />
                         <DueBadge sub={sub} />
@@ -197,7 +215,7 @@ export function AdminClientsPage() {
                   {atLimit && (
                     <div className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
                       <AlertCircle className="size-3.5 shrink-0" />
-                      Location limit reached for <strong>{PACKAGE_LABELS[sub!.packageType as PackageType]}</strong>. Upgrade to add more.
+                      Location limit reached ({sub!.maxEntities} max). Raise "Max locations" in Manage to add more.
                     </div>
                   )}
                   <div className="flex flex-wrap gap-2">
@@ -210,6 +228,11 @@ export function AdminClientsPage() {
                       >
                         <MapPin className="size-3.5 text-muted-foreground" />
                         {loc.name}
+                        {loc.modules.length > 0 && (
+                          <span className="text-xs text-muted-foreground">
+                            ({loc.modules.map((m) => MODULE_TYPE_LABELS[m as ModuleType] ?? m).join("+")})
+                          </span>
+                        )}
                         {loc.status !== "ACTIVE" && (
                           <span className="text-xs text-muted-foreground">(inactive)</span>
                         )}
@@ -240,15 +263,41 @@ export function AdminClientsPage() {
 
 function CreateClientDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const createFull = useCreateFullClient();
+  const planOptions = usePlanOptions();
 
   const [name, setName] = useState("");
   const [extraLocations, setExtraLocations] = useState<string[]>([]);
   const [newLocName, setNewLocName] = useState("");
+  const [planId, setPlanId] = useState<string | null>(null);
   const [packageType, setPackageType] = useState<PackageType>("BASIC");
-  const [inventoryModules, setInventoryModules] = useState<InventoryModule>("BAR");
-  const billingCycle = PACKAGE_BILLING_CYCLE[packageType];
+  const [modules, setModules] = useState<ModuleType[]>(["BAR"]);
+  const [billingCycle, setBillingCycle] = useState<BillingCycle>(PACKAGE_DEFAULT_BILLING_CYCLE.BASIC);
+  const [maxEntities, setMaxEntities] = useState<number>(PACKAGE_DEFAULT_MAX_ENTITIES.BASIC);
+  const [negotiatedPrice, setNegotiatedPrice] = useState<number | null>(null);
 
-  const maxEntities = PACKAGE_MAX_ENTITIES[packageType];
+  // Changing the package tier re-seeds billing cycle & max locations from
+  // that tier's defaults — but both remain independently editable afterwards
+  // (Fix Plan Phase B: billing cycle and entity count are not welded to
+  // package tier; this is just a convenient starting point).
+  const handlePackageTypeChange = (v: PackageType) => {
+    setPackageType(v);
+    setBillingCycle(PACKAGE_DEFAULT_BILLING_CYCLE[v]);
+    setMaxEntities(PACKAGE_DEFAULT_MAX_ENTITIES[v]);
+    setPlanId(null); // hand-editing the package moves this off the picked plan
+  };
+
+  // Picking a catalog Plan pre-fills billing cycle, modules, and max
+  // locations (Fix Plan Phase D §3) — all three remain editable afterwards;
+  // picking "Custom" just clears planId without touching current values.
+  const handleApplyPlan = (plan: PlanOption | null) => {
+    setPlanId(plan?.id ?? null);
+    if (plan) {
+      setBillingCycle(plan.billingCycle);
+      setModules(plan.modules);
+      setMaxEntities(plan.maxEntities);
+    }
+  };
+
   const totalLocations = 1 + extraLocations.length; // "Main" + extras
   const atLimit = maxEntities > 0 && totalLocations >= maxEntities;
 
@@ -256,8 +305,12 @@ function CreateClientDialog({ open, onOpenChange }: { open: boolean; onOpenChang
     setName("");
     setExtraLocations([]);
     setNewLocName("");
+    setPlanId(null);
     setPackageType("BASIC");
-    setInventoryModules("BAR");
+    setModules(["BAR"]);
+    setBillingCycle(PACKAGE_DEFAULT_BILLING_CYCLE.BASIC);
+    setMaxEntities(PACKAGE_DEFAULT_MAX_ENTITIES.BASIC);
+    setNegotiatedPrice(null);
   };
 
   const close = () => {
@@ -282,9 +335,12 @@ function CreateClientDialog({ open, onOpenChange }: { open: boolean; onOpenChang
         name: name.trim(),
         extraLocationNames: extraLocations,
         subscription: {
+          planId,
           packageType,
           billingCycle,
-          inventoryModules,
+          modules,
+          maxEntities,
+          negotiatedPrice,
           startDate: today(),
           endDate: null,
           note: null,
@@ -316,13 +372,22 @@ function CreateClientDialog({ open, onOpenChange }: { open: boolean; onOpenChang
           />
         </div>
 
-        {/* ── Subscription (Package + Inventory modules) ── */}
+        {/* ── Plan picker (Fix Plan Phase D) ── */}
+        <PlanPickerField plans={planOptions} planId={planId} onApplyPlan={handleApplyPlan} />
+
+        {/* ── Subscription (Package + Billing + Max locations + Inventory modules) ── */}
         <PackageAndModulesFields
           packageType={packageType}
-          onPackageTypeChange={setPackageType}
-          inventoryModules={inventoryModules}
-          onInventoryModulesChange={setInventoryModules}
+          onPackageTypeChange={handlePackageTypeChange}
+          modules={modules}
+          onModulesChange={setModules}
+          billingCycle={billingCycle}
+          onBillingCycleChange={setBillingCycle}
+          maxEntities={maxEntities}
+          onMaxEntitiesChange={setMaxEntities}
         />
+
+        <NegotiatedPriceField value={negotiatedPrice} onChange={setNegotiatedPrice} />
 
         {/* ── Locations ── */}
         <LocationsField
@@ -339,7 +404,7 @@ function CreateClientDialog({ open, onOpenChange }: { open: boolean; onOpenChang
           onNewLocNameChange={setNewLocName}
           onAdd={addLoc}
           atLimit={atLimit}
-          limitMessage={`Location limit reached (${maxEntities} max for ${PACKAGE_LABELS[packageType]}). Choose a bigger package to add more.`}
+          limitMessage={`Location limit reached (${maxEntities} max). Raise "Max locations" to add more.`}
           helperText={'"Main" is created automatically for every client.'}
         />
 
@@ -448,8 +513,28 @@ function ClientDetailBody({ client }: { client: AdminClient }) {
         onAdd={addLoc}
         adding={addLocation.isPending}
         atLimit={!!atLimit}
-        limitMessage={`Location limit reached (${sub?.maxEntities} max). Upgrade to add more.`}
+        limitMessage={`Location limit reached (${sub?.maxEntities} max). Raise "Max locations" in the subscription below to add more.`}
       />
+
+      {/* ── Per-location modules (Fix Plan §2.3: the enforced reality, a subset of the subscription's ceiling above) ── */}
+      {sub && client.locations.filter((l) => l.status === "ACTIVE").length > 0 && (
+        <div className="space-y-2">
+          <Label className="flex items-center gap-1.5">
+            <Boxes className="size-3.5" /> Location modules
+          </Label>
+          <p className="text-xs text-muted-foreground">
+            What each location can actually stock — narrower than the subscription above (e.g. split a
+            multi-module client into one location per module, like "Main Bar" using just Bar).
+          </p>
+          <div className="space-y-3">
+            {client.locations
+              .filter((l) => l.status === "ACTIVE")
+              .map((loc) => (
+                <LocationModulesRow key={loc.id} location={loc} ceiling={sub.modules as ModuleType[]} />
+              ))}
+          </div>
+        </div>
+      )}
 
       {sub && (
         <CancelSubscriptionDialog
@@ -459,6 +544,45 @@ function ClientDetailBody({ client }: { client: AdminClient }) {
           clientName={client.name}
         />
       )}
+    </div>
+  );
+}
+
+// ── Per-location modules row ─────────────────────────────────────────────────
+// Fix Plan §2.3: a location's own modules are the enforced reality and must
+// stay a subset of `ceiling` (the client's current subscription modules).
+
+function LocationModulesRow({ location, ceiling }: { location: AdminLocation; ceiling: ModuleType[] }) {
+  const updateModules = useUpdateLocationModules();
+  const [modules, setModules] = useState<ModuleType[]>(
+    location.modules.length > 0 ? (location.modules as ModuleType[]) : ceiling,
+  );
+
+  const isDirty = JSON.stringify([...modules].sort()) !== JSON.stringify([...location.modules].sort());
+
+  const save = async () => {
+    try {
+      await updateModules.mutateAsync({ locationId: location.id, modules });
+      toast.success(`Updated modules for "${location.name}"`);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not update location modules");
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2 rounded-md border px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-center gap-1.5 text-sm font-medium shrink-0">
+        <MapPin className="size-3.5 text-muted-foreground" />
+        {location.name}
+      </div>
+      <div className="flex flex-1 items-center gap-2">
+        <LocationModulesField modules={modules} onModulesChange={setModules} ceiling={ceiling} />
+        {isDirty && (
+          <Button size="sm" onClick={save} disabled={updateModules.isPending} className="shrink-0">
+            Save
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
@@ -475,17 +599,42 @@ function SubscriptionPanel({
   const update = useUpdateSubscription();
   const markPaid = useMarkPaid();
   const unmarkPaid = useUnmarkPaid();
+  const planOptions = usePlanOptions();
 
+  const [planId, setPlanId] = useState<string | null>(sub.planId);
   const [packageType, setPackageType] = useState<PackageType>(sub.packageType as PackageType);
-  const [inventoryModules, setInventoryModules] = useState<InventoryModule>(sub.inventoryModules as InventoryModule);
-  const billingCycle = PACKAGE_BILLING_CYCLE[packageType];
+  const [modules, setModules] = useState<ModuleType[]>(sub.modules as ModuleType[]);
+  const [billingCycle, setBillingCycle] = useState<BillingCycle>(sub.billingCycle as BillingCycle);
+  const [maxEntities, setMaxEntities] = useState<number>(sub.maxEntities);
+  const [negotiatedPrice, setNegotiatedPrice] = useState<number | null>(sub.negotiatedPrice);
 
   const isDirty =
-    packageType !== sub.packageType || inventoryModules !== sub.inventoryModules;
+    planId !== sub.planId ||
+    packageType !== sub.packageType ||
+    JSON.stringify([...modules].sort()) !== JSON.stringify([...sub.modules].sort()) ||
+    billingCycle !== sub.billingCycle ||
+    maxEntities !== sub.maxEntities ||
+    negotiatedPrice !== sub.negotiatedPrice;
+
+  // Narrowing the module set here can cascade: the server drops any
+  // LocationModule row outside the new set (Fix Plan §2.3 — a location's
+  // modules must stay a subset of this ceiling), so warn before that happens.
+  const narrowing = modules.length < sub.modules.length || sub.modules.some((m) => !modules.includes(m as ModuleType));
+
+  // Re-picking a Plan re-fills billing cycle, modules, and max locations —
+  // still independently editable afterwards, same as at client creation.
+  const handleApplyPlan = (plan: PlanOption | null) => {
+    setPlanId(plan?.id ?? null);
+    if (plan) {
+      setBillingCycle(plan.billingCycle);
+      setModules(plan.modules);
+      setMaxEntities(plan.maxEntities);
+    }
+  };
 
   const save = async () => {
     try {
-      await update.mutateAsync({ id: sub.id, packageType, billingCycle, inventoryModules });
+      await update.mutateAsync({ id: sub.id, planId, packageType, billingCycle, modules, maxEntities, negotiatedPrice });
       toast.success("Subscription updated");
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not update subscription");
@@ -582,22 +731,30 @@ function SubscriptionPanel({
         </div>
       )}
 
+      {!cancelled && (
+        <PlanPickerField plans={planOptions} planId={planId} onApplyPlan={handleApplyPlan} />
+      )}
+
       <PackageAndModulesFields
         packageType={packageType}
         onPackageTypeChange={setPackageType}
-        inventoryModules={inventoryModules}
-        onInventoryModulesChange={setInventoryModules}
+        modules={modules}
+        onModulesChange={setModules}
+        billingCycle={billingCycle}
+        onBillingCycleChange={setBillingCycle}
+        maxEntities={maxEntities}
+        onMaxEntitiesChange={setMaxEntities}
         packageLocked={cancelled}
         modulesLocked={cancelled}
       />
-
-      <div className="space-y-2">
-        <Label>Billing</Label>
-        <div className="flex h-10 items-center rounded-md border border-input bg-muted/50 px-3 text-sm text-muted-foreground">
-          {BILLING_CYCLE_LABELS[billingCycle as BillingCycle] ?? billingCycle}
-          <span className="ml-auto text-xs">By package</span>
+      {narrowing && (
+        <div className="flex items-center gap-2 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950/30 dark:border-amber-800 dark:text-amber-400">
+          <AlertCircle className="size-3.5 shrink-0" />
+          Removing a module here also removes it from any location currently assigned it.
         </div>
-      </div>
+      )}
+
+      <NegotiatedPriceField value={negotiatedPrice} onChange={setNegotiatedPrice} disabled={cancelled} />
 
       <div className="text-xs text-muted-foreground flex gap-4">
         <span className="flex items-center gap-1">
@@ -641,18 +798,41 @@ function SubscriptionPanel({
 
 function CreateSubscriptionPanel({ clientId, onDone }: { clientId: string; onDone?: () => void }) {
   const create = useCreateSubscription();
+  const planOptions = usePlanOptions();
 
+  const [planId, setPlanId] = useState<string | null>(null);
   const [packageType, setPackageType] = useState<PackageType>("BASIC");
-  const [inventoryModules, setInventoryModules] = useState<InventoryModule>("BAR");
-  const billingCycle = PACKAGE_BILLING_CYCLE[packageType];
+  const [modules, setModules] = useState<ModuleType[]>(["BAR"]);
+  const [billingCycle, setBillingCycle] = useState<BillingCycle>(PACKAGE_DEFAULT_BILLING_CYCLE.BASIC);
+  const [maxEntities, setMaxEntities] = useState<number>(PACKAGE_DEFAULT_MAX_ENTITIES.BASIC);
+  const [negotiatedPrice, setNegotiatedPrice] = useState<number | null>(null);
+
+  const handlePackageTypeChange = (v: PackageType) => {
+    setPackageType(v);
+    setBillingCycle(PACKAGE_DEFAULT_BILLING_CYCLE[v]);
+    setMaxEntities(PACKAGE_DEFAULT_MAX_ENTITIES[v]);
+    setPlanId(null);
+  };
+
+  const handleApplyPlan = (plan: PlanOption | null) => {
+    setPlanId(plan?.id ?? null);
+    if (plan) {
+      setBillingCycle(plan.billingCycle);
+      setModules(plan.modules);
+      setMaxEntities(plan.maxEntities);
+    }
+  };
 
   const submit = async () => {
     try {
       await create.mutateAsync({
         clientId,
+        planId,
         packageType,
         billingCycle,
-        inventoryModules,
+        modules,
+        maxEntities,
+        negotiatedPrice,
         startDate: today(),
         endDate: null,
         note: null,
@@ -672,12 +852,20 @@ function CreateSubscriptionPanel({ clientId, onDone }: { clientId: string; onDon
         No subscription yet. Assign one below.
       </div>
 
+      <PlanPickerField plans={planOptions} planId={planId} onApplyPlan={handleApplyPlan} />
+
       <PackageAndModulesFields
         packageType={packageType}
-        onPackageTypeChange={setPackageType}
-        inventoryModules={inventoryModules}
-        onInventoryModulesChange={setInventoryModules}
+        onPackageTypeChange={handlePackageTypeChange}
+        modules={modules}
+        onModulesChange={setModules}
+        billingCycle={billingCycle}
+        onBillingCycleChange={setBillingCycle}
+        maxEntities={maxEntities}
+        onMaxEntitiesChange={setMaxEntities}
       />
+
+      <NegotiatedPriceField value={negotiatedPrice} onChange={setNegotiatedPrice} />
 
       <div className="flex justify-end">
         <Button onClick={submit} disabled={create.isPending} size="sm">

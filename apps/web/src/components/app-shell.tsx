@@ -76,15 +76,19 @@ interface CurrentLocation {
   name: string;
   clientId: string;
   clientName: string;
+  modules: string[];
 }
 
 function ShellLayout({ me, current }: { me: MeResponse; current: CurrentLocation }) {
   const role = me.user.role;
-  const currentClient = me.clients.find((c) => c.id === current.clientId);
-  const inventoryModules = currentClient?.subscription?.inventoryModules ?? null;
-  const mainNav = visibleNav(MAIN_NAV, role, inventoryModules);
-  const catalogNav = visibleNav(CATALOG_NAV, role, inventoryModules);
-  const adminNav = visibleNav(ADMIN_NAV, role, inventoryModules);
+  // Fix Plan §2.3: nav visibility is gated by THIS location's own modules
+  // (the enforced reality), not the client's whole subscription ceiling —
+  // a Bar-only location shouldn't see Recipes built from Kitchen items just
+  // because its client also operates a separate Kitchen location.
+  const locationModules = current.modules;
+  const mainNav = visibleNav(MAIN_NAV, role, locationModules);
+  const catalogNav = visibleNav(CATALOG_NAV, role, locationModules);
+  const adminNav = visibleNav(ADMIN_NAV, role, locationModules);
 
   return (
     <SidebarProvider>

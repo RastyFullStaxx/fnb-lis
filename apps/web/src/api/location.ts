@@ -18,6 +18,18 @@ export function useCurrentClient(): (MeClient & { locationName?: string }) | und
   return me.data?.clients.find((c) => c.locations.some((l) => l.id === locationId));
 }
 
+/**
+ * The active location itself (from the cached /me payload) — use this, not
+ * the client's subscription, when you need the modules that actually gate
+ * this location's catalog (Fix Plan §2.3: the location's own set is the
+ * enforced reality, the client's subscription is just the ceiling).
+ */
+export function useCurrentLocation() {
+  const me = useMe();
+  const locationId = useLocationId();
+  return me.data?.clients.flatMap((c) => c.locations).find((l) => l.id === locationId);
+}
+
 const base = (locationId: string) => `/api/locations/${locationId}`;
 
 export function useLocationItems(filters: { search?: string; missingPrices?: boolean } = {}) {
@@ -33,9 +45,9 @@ export function useLocationItems(filters: { search?: string; missingPrices?: boo
 
 /**
  * Master variants not yet in this location's catalog. The server already
- * restricts results to the client's subscribed inventory module(s) — this
+ * restricts results to THIS LOCATION's own modules (Fix Plan §2.3) — this
  * hook doesn't need to (and can't) work around that; productType here is
- * just an additional narrowing within whatever the subscription allows.
+ * just an additional narrowing within whatever the location's modules allow.
  */
 export function useAvailableVariants(filters: { search?: string; productType?: string }, enabled = true) {
   const locationId = useLocationId();

@@ -15,7 +15,7 @@ import {
   Building2,
   BarChart3,
 } from "lucide-react";
-import { can, INVENTORY_MODULE_PRODUCT_TYPES, type InventoryModule, type Permission, type Role } from "@fnb/core";
+import { can, allowedProductTypes, type Permission, type Role } from "@fnb/core";
 
 export interface NavItem {
   title: string;
@@ -59,19 +59,19 @@ export const CATALOG_NAV: NavItem[] = [
 // Subscriptions are managed inline inside the Clients page — no separate nav item.
 export const ADMIN_NAV: NavItem[] = [
   { title: "Clients", path: "admin/clients", icon: Building2, permission: "admin.manage" },
+  { title: "Plans", path: "admin/plans", icon: Package, permission: "admin.manage" },
   { title: "Users", path: "admin/users", icon: UserCog, permission: "admin.manage" },
   { title: "Activity", path: "admin/activity", icon: Activity, permission: "activity.view" },
 ];
 
 /**
- * @param inventoryModules The active client's subscription.inventoryModules
- * (e.g. "BAR"), or null/undefined for an unassigned/legacy client — which
- * stays unrestricted, matching the server's `allowedProductTypes(null) -> null`.
+ * @param locationModules The active LOCATION's own modules (e.g. ["BAR"]) —
+ * the enforced reality per Fix Plan §2.3, not the client's subscription
+ * ceiling. Null/empty for an unassigned/legacy location — which stays
+ * unrestricted, matching the server's `allowedProductTypes(null) -> null`.
  */
-export function visibleNav(items: NavItem[], role: Role, inventoryModules?: string | null): NavItem[] {
-  const allowedTypes = inventoryModules
-    ? INVENTORY_MODULE_PRODUCT_TYPES[inventoryModules as InventoryModule]
-    : null;
+export function visibleNav(items: NavItem[], role: Role, locationModules?: readonly string[] | null): NavItem[] {
+  const allowedTypes = allowedProductTypes(locationModules);
   return items.filter((item) => {
     if (item.permission && !can(role, item.permission)) return false;
     if (item.requiresProductTypes && allowedTypes) {
