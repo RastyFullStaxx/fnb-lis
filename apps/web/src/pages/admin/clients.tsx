@@ -1,7 +1,6 @@
 import { useState } from "react";
 import {
   AlertCircle,
-  BadgeCheck,
   Boxes,
   Building2,
   CalendarDays,
@@ -22,13 +21,12 @@ import {
   type ModuleType,
   type PackageType,
 } from "@fnb/core";
-import { PackageAndModulesFields, LocationModulesField, LocationsField, PlanPickerField, NegotiatedPriceField, type PlanOption } from "@/components/client-form-fields";
+import { PackageAndModulesFields, LocationModulesField, LocationsField, NegotiatedPriceField } from "@/components/client-form-fields";
 import {
   deriveAccessState,
   daysUntilDue,
   useAddLocation,
   useAdminClients,
-  useAdminPlans,
   useCancelSubscription,
   useCreateFullClient,
   useCreateSubscription,
@@ -53,7 +51,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -70,21 +67,6 @@ import {
 } from "@/components/ui/alert-dialog";
 
 // ── Access state helpers ────────────────────────────────────────────────────
-
-// Normalizes the fetched Plan catalog into the shape PlanPickerField expects,
-// so every subscription form (New client, Create subscription, edit
-// subscription) shares one source of truth for "what plans exist".
-function usePlanOptions(): PlanOption[] {
-  const plans = useAdminPlans();
-  return (plans.data ?? []).map((p) => ({
-    id: p.id,
-    name: p.name,
-    billingCycle: p.billingCycle as BillingCycle,
-    modules: p.modules as ModuleType[],
-    maxEntities: p.maxEntities,
-    isActive: p.isActive,
-  }));
-}
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -174,50 +156,44 @@ export function AdminClientsPage() {
             return (
               <Card key={client.id} className={client.status !== "ACTIVE" ? "opacity-60" : undefined}>
                 <CardHeader className="!flex flex-row items-center justify-between gap-3 space-y-0 pb-3">
-                  <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex items-center gap-2">
                     <CardTitle className="text-base">{client.name}</CardTitle>
                     {client.status !== "ACTIVE" && <Badge variant="outline">Archived</Badge>}
-                    {sub ? (
-                      <>
-                        <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                          <BadgeCheck className="size-3" />
-                          {PACKAGE_LABELS[sub.packageType as PackageType] ?? sub.packageType}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          {sub.modules.map((m) => MODULE_TYPE_LABELS[m as ModuleType] ?? m).join(" + ")}
-                        </span>
-                        <AccessStateBadge sub={sub} />
-                        <DueBadge sub={sub} />
-                      </>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                        <Package className="size-3" />
-                        No package
-                      </span>
-                    )}
-                    <span className="text-xs text-muted-foreground">
-                      {client.access.length} user{client.access.length === 1 ? "" : "s"}
-                    </span>
-                    {sub && sub.maxEntities > 0 && (
-                      <span className={`text-xs ${atLimit ? "text-destructive font-medium" : "text-muted-foreground"}`}>
-                        {activeLocations}/{sub.maxEntities} locations
-                      </span>
-                    )}
-                    {sub && sub.maxEntities === 0 && (
-                      <span className="text-xs text-green-600">Unlimited locations</span>
-                    )}
+                    {sub && <AccessStateBadge sub={sub} />}
                   </div>
                   <Button variant="ghost" size="sm" className="shrink-0" onClick={() => setManaging(client)}>
                     Manage
                   </Button>
                 </CardHeader>
-                <CardContent className="space-y-2">
-                  {atLimit && (
-                    <div className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                      <AlertCircle className="size-3.5 shrink-0" />
-                      Location limit reached ({sub!.maxEntities} max). Raise "Max locations" in Manage to add more.
-                    </div>
-                  )}
+                <CardContent className="space-y-3">
+                  {/* One restrained meta line — package, modules, users, location count/limit,
+                      due date all read as plain text at the same weight, separated by middots,
+                      instead of a row of competing badges. */}
+                  <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
+                    {sub ? (
+                      <>
+                        <span className="font-medium text-foreground">
+                          {PACKAGE_LABELS[sub.packageType as PackageType] ?? sub.packageType}
+                        </span>
+                        <span>·</span>
+                        <span>{sub.modules.map((m) => MODULE_TYPE_LABELS[m as ModuleType] ?? m).join(" + ")}</span>
+                        <span>·</span>
+                        <span className={atLimit ? "text-destructive font-medium" : undefined}>
+                          {sub.maxEntities === 0
+                            ? "Unlimited locations"
+                            : `${activeLocations}/${sub.maxEntities} locations`}
+                        </span>
+                      </>
+                    ) : (
+                      <span>No package</span>
+                    )}
+                    <span>·</span>
+                    <span>
+                      {client.access.length} user{client.access.length === 1 ? "" : "s"}
+                    </span>
+                    {sub && <DueBadge sub={sub} />}
+                  </div>
+
                   <div className="flex flex-wrap gap-2">
                     {client.locations.map((loc) => (
                       <span
@@ -263,28 +239,14 @@ export function AdminClientsPage() {
 
 function CreateClientDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const createFull = useCreateFullClient();
-  const planOptions = usePlanOptions();
 
   const [name, setName] = useState("");
   const [extraLocations, setExtraLocations] = useState<string[]>([]);
   const [newLocName, setNewLocName] = useState("");
-  const [planId, setPlanId] = useState<string | null>(null);
   const [modules, setModules] = useState<ModuleType[]>(["BAR"]);
   const [billingCycle, setBillingCycle] = useState<BillingCycle>(PACKAGE_DEFAULT_BILLING_CYCLE.BASIC);
   const [maxEntities, setMaxEntities] = useState<number>(PACKAGE_DEFAULT_MAX_ENTITIES.BASIC);
   const [negotiatedPrice, setNegotiatedPrice] = useState<number | null>(null);
-
-  // Picking a catalog Plan pre-fills billing cycle, modules, and max
-  // locations (Fix Plan Phase D §3) — all three remain editable afterwards;
-  // picking "Custom" just clears planId without touching current values.
-  const handleApplyPlan = (plan: PlanOption | null) => {
-    setPlanId(plan?.id ?? null);
-    if (plan) {
-      setBillingCycle(plan.billingCycle);
-      setModules(plan.modules);
-      setMaxEntities(plan.maxEntities);
-    }
-  };
 
   const totalLocations = 1 + extraLocations.length; // "Main" + extras
   const atLimit = maxEntities > 0 && totalLocations >= maxEntities;
@@ -293,7 +255,6 @@ function CreateClientDialog({ open, onOpenChange }: { open: boolean; onOpenChang
     setName("");
     setExtraLocations([]);
     setNewLocName("");
-    setPlanId(null);
     setModules(["BAR"]);
     setBillingCycle(PACKAGE_DEFAULT_BILLING_CYCLE.BASIC);
     setMaxEntities(PACKAGE_DEFAULT_MAX_ENTITIES.BASIC);
@@ -322,7 +283,6 @@ function CreateClientDialog({ open, onOpenChange }: { open: boolean; onOpenChang
         name: name.trim(),
         extraLocationNames: extraLocations,
         subscription: {
-          planId,
           billingCycle,
           modules,
           maxEntities,
@@ -344,7 +304,6 @@ function CreateClientDialog({ open, onOpenChange }: { open: boolean; onOpenChang
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>New client</DialogTitle>
-          <DialogDescription>Set up the client, its locations, and subscription together.</DialogDescription>
         </DialogHeader>
 
         {/* ── Name ── */}
@@ -357,9 +316,6 @@ function CreateClientDialog({ open, onOpenChange }: { open: boolean; onOpenChang
             onChange={(e) => setName(e.target.value)}
           />
         </div>
-
-        {/* ── Plan picker (Fix Plan Phase D) ── */}
-        <PlanPickerField plans={planOptions} planId={planId} onApplyPlan={handleApplyPlan} />
 
         {/* ── Subscription (Billing + Max locations + Inventory modules) — package tier is shown, computed from these, not set separately ── */}
         <PackageAndModulesFields
@@ -415,7 +371,6 @@ function ManageClientDialog({ client, onClose }: { client: AdminClient | null; o
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{client.name}</DialogTitle>
-          <DialogDescription>Manage name, locations, and subscription.</DialogDescription>
         </DialogHeader>
         <ClientDetailBody client={client} />
       </DialogContent>
@@ -456,19 +411,20 @@ function ClientDetailBody({ client }: { client: AdminClient }) {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="divide-y">
       {/* ── Name ── */}
-      <div className="space-y-2">
+      <div className="space-y-2 pb-5">
         <Label htmlFor="manage-name">Client name</Label>
-        <div className="flex gap-2">
-          <Input
-            id="manage-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && saveName()}
-          />
+        <Input
+          id="manage-name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && saveName()}
+        />
+        <div className="flex justify-end">
           <Button
             variant="outline"
+            size="sm"
             onClick={saveName}
             disabled={!name.trim() || name.trim() === client.name || update.isPending}
           >
@@ -478,39 +434,39 @@ function ClientDetailBody({ client }: { client: AdminClient }) {
       </div>
 
       {/* ── Subscription ── */}
-      {sub ? (
-        <SubscriptionPanel sub={sub} onCancelRequest={() => setCancelConfirmOpen(true)} />
-      ) : (
-        <CreateSubscriptionPanel clientId={client.id} />
-      )}
+      <div className="py-5">
+        {sub ? (
+          <SubscriptionPanel sub={sub} onCancelRequest={() => setCancelConfirmOpen(true)} />
+        ) : (
+          <CreateSubscriptionPanel clientId={client.id} />
+        )}
+      </div>
 
       {/* ── Locations ── */}
-      <LocationsField
-        inputId="manage-loc"
-        locations={client.locations.map((loc) => ({
-          key: loc.id,
-          name: loc.name,
-          inactive: loc.status !== "ACTIVE",
-        }))}
-        newLocName={newLocName}
-        onNewLocNameChange={setNewLocName}
-        onAdd={addLoc}
-        adding={addLocation.isPending}
-        atLimit={!!atLimit}
-        limitMessage={`Location limit reached (${sub?.maxEntities} max). Raise "Max locations" in the subscription below to add more.`}
-      />
+      <div className="py-5">
+        <LocationsField
+          inputId="manage-loc"
+          locations={client.locations.map((loc) => ({
+            key: loc.id,
+            name: loc.name,
+            inactive: loc.status !== "ACTIVE",
+          }))}
+          newLocName={newLocName}
+          onNewLocNameChange={setNewLocName}
+          onAdd={addLoc}
+          adding={addLocation.isPending}
+          atLimit={!!atLimit}
+          limitMessage={`Location limit reached (${sub?.maxEntities} max). Raise "Max locations" in the subscription above to add more.`}
+        />
+      </div>
 
-      {/* ── Per-location modules (Fix Plan §2.3: the enforced reality, a subset of the subscription's ceiling above) ── */}
+      {/* ── Per-location modules — the enforced reality, a subset of the subscription's ceiling above ── */}
       {sub && client.locations.filter((l) => l.status === "ACTIVE").length > 0 && (
-        <div className="space-y-2">
+        <div className="space-y-3 pt-5">
           <Label className="flex items-center gap-1.5">
             <Boxes className="size-3.5" /> Location modules
           </Label>
-          <p className="text-xs text-muted-foreground">
-            What each location can actually stock — narrower than the subscription above (e.g. split a
-            multi-module client into one location per module, like "Main Bar" using just Bar).
-          </p>
-          <div className="space-y-3">
+          <div className="divide-y">
             {client.locations
               .filter((l) => l.status === "ACTIVE")
               .map((loc) => (
@@ -554,12 +510,12 @@ function LocationModulesRow({ location, ceiling }: { location: AdminLocation; ce
   };
 
   return (
-    <div className="flex flex-col gap-2 rounded-md border px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex items-center gap-1.5 text-sm font-medium shrink-0">
         <MapPin className="size-3.5 text-muted-foreground" />
         {location.name}
       </div>
-      <div className="flex flex-1 items-center gap-2">
+      <div className="flex flex-1 items-center gap-2 sm:justify-end">
         <LocationModulesField modules={modules} onModulesChange={setModules} ceiling={ceiling} />
         {isDirty && (
           <Button size="sm" onClick={save} disabled={updateModules.isPending} className="shrink-0">
@@ -583,16 +539,13 @@ function SubscriptionPanel({
   const update = useUpdateSubscription();
   const markPaid = useMarkPaid();
   const unmarkPaid = useUnmarkPaid();
-  const planOptions = usePlanOptions();
 
-  const [planId, setPlanId] = useState<string | null>(sub.planId);
   const [modules, setModules] = useState<ModuleType[]>(sub.modules as ModuleType[]);
   const [billingCycle, setBillingCycle] = useState<BillingCycle>(sub.billingCycle as BillingCycle);
   const [maxEntities, setMaxEntities] = useState<number>(sub.maxEntities);
   const [negotiatedPrice, setNegotiatedPrice] = useState<number | null>(sub.negotiatedPrice);
 
   const isDirty =
-    planId !== sub.planId ||
     JSON.stringify([...modules].sort()) !== JSON.stringify([...sub.modules].sort()) ||
     billingCycle !== sub.billingCycle ||
     maxEntities !== sub.maxEntities ||
@@ -603,20 +556,9 @@ function SubscriptionPanel({
   // modules must stay a subset of this ceiling), so warn before that happens.
   const narrowing = modules.length < sub.modules.length || sub.modules.some((m) => !modules.includes(m as ModuleType));
 
-  // Re-picking a Plan re-fills billing cycle, modules, and max locations —
-  // still independently editable afterwards, same as at client creation.
-  const handleApplyPlan = (plan: PlanOption | null) => {
-    setPlanId(plan?.id ?? null);
-    if (plan) {
-      setBillingCycle(plan.billingCycle);
-      setModules(plan.modules);
-      setMaxEntities(plan.maxEntities);
-    }
-  };
-
   const save = async () => {
     try {
-      await update.mutateAsync({ id: sub.id, planId, billingCycle, modules, maxEntities, negotiatedPrice });
+      await update.mutateAsync({ id: sub.id, billingCycle, modules, maxEntities, negotiatedPrice });
       toast.success("Subscription updated");
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not update subscription");
@@ -651,25 +593,24 @@ function SubscriptionPanel({
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <Label>Subscription</Label>
-        <div className="flex items-center gap-2">
-          <AccessStateBadge sub={sub} />
-          {days !== null && <DueBadge sub={sub} />}
-        </div>
+        {!cancelled && <AccessStateBadge sub={sub} />}
       </div>
 
-      {/* Payment state banner */}
+      {/* One status line — the badge above is the at-a-glance signal; this is
+          the only place the explanation appears, so the two never repeat the
+          same fact in different words. */}
       {!cancelled && accessState === "VIEW_ONLY" && (
         <div className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
           <AlertCircle className="size-3.5 shrink-0" />
-          Client is in view-only mode — overdue by more than 7 days. Mark as paid to restore access.
+          Overdue by more than 7 days — mark as paid to restore access.
         </div>
       )}
-      {!cancelled && accessState === "GRACE" && sub.billingCycle === "MONTHLY" && (
+      {!cancelled && accessState === "GRACE" && sub.billingCycle === "MONTHLY" && days !== null && (
         <div className="flex items-center gap-2 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950/30 dark:border-amber-800 dark:text-amber-400">
           <CalendarDays className="size-3.5 shrink-0" />
-          {days !== null && days >= 0
+          {days >= 0
             ? `Payment due in ${days} day${days === 1 ? "" : "s"}.`
-            : `${Math.abs(days ?? 0)} day${Math.abs(days ?? 0) === 1 ? "" : "s"} past due — within grace window.`}
+            : `${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"} past due — within grace window.`}
         </div>
       )}
 
@@ -713,10 +654,6 @@ function SubscriptionPanel({
         </div>
       )}
 
-      {!cancelled && (
-        <PlanPickerField plans={planOptions} planId={planId} onApplyPlan={handleApplyPlan} />
-      )}
-
       <PackageAndModulesFields
         modules={modules}
         onModulesChange={setModules}
@@ -736,40 +673,41 @@ function SubscriptionPanel({
 
       <NegotiatedPriceField value={negotiatedPrice} onChange={setNegotiatedPrice} disabled={cancelled} />
 
-      <div className="text-xs text-muted-foreground flex gap-4">
-        <span className="flex items-center gap-1">
-          <CalendarDays className="size-3.5" /> Started {sub.startDate}
-        </span>
-        {sub.endDate && <span>Ends {sub.endDate}</span>}
+      {/* Footer: meta (left) + actions (right) — every section in this dialog
+          keeps its primary action(s) in this same bottom-right spot. */}
+      <div className="flex items-center justify-between gap-3 pt-1">
+        <div className="text-xs text-muted-foreground flex gap-3">
+          <span className="flex items-center gap-1">
+            <CalendarDays className="size-3.5" /> Started {sub.startDate}
+          </span>
+          {sub.endDate && <span>Ends {sub.endDate}</span>}
+          {cancelled && (
+            <span>
+              Cancelled{sub.cancelledAt ? ` ${new Date(sub.cancelledAt as unknown as string).toLocaleDateString()}` : ""}
+            </span>
+          )}
+        </div>
+        {!cancelled && (
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-1.5 text-destructive hover:text-destructive"
+              onClick={onCancelRequest}
+            >
+              <XCircle className="size-4" />
+              Cancel subscription
+            </Button>
+            <Button
+              onClick={save}
+              disabled={!isDirty || update.isPending}
+              size="sm"
+            >
+              Save changes
+            </Button>
+          </div>
+        )}
       </div>
-
-      {!cancelled && (
-        <div className="flex items-center justify-end gap-2 pt-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="gap-1.5 text-destructive hover:text-destructive"
-            onClick={onCancelRequest}
-          >
-            <XCircle className="size-4" />
-            Cancel subscription
-          </Button>
-          <Button
-            onClick={save}
-            disabled={!isDirty || update.isPending}
-            size="sm"
-          >
-            Save changes
-          </Button>
-        </div>
-      )}
-
-      {cancelled && (
-        <div className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-          This subscription was cancelled
-          {sub.cancelledAt ? ` on ${new Date(sub.cancelledAt as unknown as string).toLocaleDateString()}` : ""}.
-        </div>
-      )}
     </div>
   );
 }
@@ -778,28 +716,16 @@ function SubscriptionPanel({
 
 function CreateSubscriptionPanel({ clientId, onDone }: { clientId: string; onDone?: () => void }) {
   const create = useCreateSubscription();
-  const planOptions = usePlanOptions();
 
-  const [planId, setPlanId] = useState<string | null>(null);
   const [modules, setModules] = useState<ModuleType[]>(["BAR"]);
   const [billingCycle, setBillingCycle] = useState<BillingCycle>(PACKAGE_DEFAULT_BILLING_CYCLE.BASIC);
   const [maxEntities, setMaxEntities] = useState<number>(PACKAGE_DEFAULT_MAX_ENTITIES.BASIC);
   const [negotiatedPrice, setNegotiatedPrice] = useState<number | null>(null);
 
-  const handleApplyPlan = (plan: PlanOption | null) => {
-    setPlanId(plan?.id ?? null);
-    if (plan) {
-      setBillingCycle(plan.billingCycle);
-      setModules(plan.modules);
-      setMaxEntities(plan.maxEntities);
-    }
-  };
-
   const submit = async () => {
     try {
       await create.mutateAsync({
         clientId,
-        planId,
         billingCycle,
         modules,
         maxEntities,
@@ -822,8 +748,6 @@ function CreateSubscriptionPanel({ clientId, onDone }: { clientId: string; onDon
         <Package className="size-3.5 shrink-0" />
         No subscription yet. Assign one below.
       </div>
-
-      <PlanPickerField plans={planOptions} planId={planId} onApplyPlan={handleApplyPlan} />
 
       <PackageAndModulesFields
         modules={modules}

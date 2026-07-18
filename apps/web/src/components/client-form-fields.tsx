@@ -155,67 +155,6 @@ export function PackageAndModulesFields({
   );
 }
 
-// ── Plan picker (Fix Plan Phase D §2.1/§3) ──────────────────────────────────
-// Lets an admin start from a catalog Plan, which pre-fills billing cycle,
-// modules, and max locations below — all of which remain independently
-// overridable afterwards (picking a Plan is a convenient starting point,
-// not a lock, same spirit as the Package tier defaults in constants.ts).
-// Selecting "Custom (no plan)" clears planId without changing the fields
-// already filled in.
-
-export interface PlanOption {
-  id: string;
-  name: string;
-  billingCycle: BillingCycle;
-  modules: ModuleType[];
-  maxEntities: number;
-  isActive: boolean;
-}
-
-export function PlanPickerField({
-  plans,
-  planId,
-  onApplyPlan,
-  disabled = false,
-}: {
-  plans: PlanOption[];
-  planId: string | null;
-  /** Called with the full plan when one is picked, or null for "Custom (no plan)". */
-  onApplyPlan: (plan: PlanOption | null) => void;
-  disabled?: boolean;
-}) {
-  // Selectable plans = active ones, plus the currently-assigned plan even if
-  // it's since been deactivated (so existing selections don't disappear).
-  const selectable = plans.filter((p) => p.isActive || p.id === planId);
-
-  return (
-    <div className="space-y-2">
-      <Label>Start from a plan</Label>
-      <Select
-        value={planId ?? "__custom__"}
-        onValueChange={(v) => onApplyPlan(v === "__custom__" ? null : (plans.find((p) => p.id === v) ?? null))}
-        disabled={disabled}
-      >
-        <SelectTrigger className="w-full">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="__custom__">Custom (no plan)</SelectItem>
-          {selectable.map((p) => (
-            <SelectItem key={p.id} value={p.id}>
-              {p.name}
-              {!p.isActive ? " (inactive)" : ""}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <p className="text-xs text-muted-foreground">
-        Pre-fills billing cycle, modules, and max locations below — all still editable per deal.
-      </p>
-    </div>
-  );
-}
-
 // ── Negotiated price (Fix Plan §4 open question #2) ─────────────────────────
 // Optional, per-client/per-deal — the Plan catalog itself carries no price.
 

@@ -15,8 +15,6 @@ export interface AdminLocation {
 export interface AdminSubscription {
   id: string;
   clientId: string;
-  /** Which catalog Plan this was composed from (Fix Plan Phase D §2.2) — traceability only; fields below remain independently overridable. */
-  planId: string | null;
   /** Read-only — derived server-side from billingCycle + maxEntities (derivePackageType). Never sent as input. */
   packageType: string;
   billingCycle: string;
@@ -177,8 +175,6 @@ export interface CreateFullClientBody {
   name: string;
   extraLocationNames: string[];
   subscription: {
-    /** Which catalog Plan this was composed from (Fix Plan Phase D §2.2) — optional; kept for traceability only. */
-    planId?: string | null;
     // packageType is NOT sent — the server derives it from billingCycle + maxEntities.
     billingCycle: string;
     modules: string[];
@@ -240,82 +236,6 @@ export function useUpdateLocationModules() {
       qc.invalidateQueries({ queryKey: ["admin", "clients"] });
       qc.invalidateQueries({ queryKey: ["me"] });
     },
-  });
-}
-
-// ── Plans (Fix Plan Phase D §2.1) ────────────────────────────────────────────
-// The sellable catalog — sales composes new packaging combos here (billing
-// cycle, module set, max locations) without an engineer redeploying code.
-// No price field: pricing is per-client/per-deal (Subscription.negotiatedPrice),
-// not catalog-fixed (Fix Plan §4 open question #2, resolved).
-
-export interface AdminPlan {
-  id: string;
-  name: string;
-  billingCycle: string;
-  modules: string[];
-  maxEntities: number;
-  isActive: boolean;
-  sortOrder: number;
-  createdAt: string;
-  createdById: string | null;
-}
-interface AdminPlanWire extends Omit<AdminPlan, "modules"> {
-  modules?: ModuleRow[];
-}
-function normalizePlan(plan: AdminPlanWire): AdminPlan {
-  return { ...plan, modules: toModuleList(plan.modules) };
-}
-
-export function useAdminPlans() {
-  return useQuery({
-    queryKey: ["admin", "plans"],
-    queryFn: async () => (await api<AdminPlanWire[]>("/api/admin/plans")).map(normalizePlan),
-  });
-}
-
-export interface CreatePlanBody {
-  name: string;
-  billingCycle: string;
-  modules: string[];
-  maxEntities: number;
-  isActive?: boolean;
-  sortOrder?: number;
-}
-
-export function useCreatePlan() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (body: CreatePlanBody) => post<AdminPlanWire>("/api/admin/plans", body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "plans"] }),
-  });
-}
-
-export interface UpdatePlanBody {
-  name?: string;
-  billingCycle?: string;
-  modules?: string[];
-  maxEntities?: number;
-  isActive?: boolean;
-  sortOrder?: number;
-}
-
-export function useUpdatePlan() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, ...body }: UpdatePlanBody & { id: string }) => put<AdminPlanWire>(`/api/admin/plans/${id}`, body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "plans"] }),
-  });
-}
-
-// Deleting is only allowed once nothing references the plan anymore (server
-// enforces this) — deactivate (isActive: false via update) a plan that's
-// ever been sold from instead, so existing Subscription traceability isn't lost.
-export function useDeletePlan() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id }: { id: string }) => api<{ ok: boolean; deleted: string }>(`/api/admin/plans/${id}`, { method: "DELETE" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "plans"] }),
   });
 }
 
@@ -418,8 +338,6 @@ export function useAdminSubscriptions() {
 
 export interface CreateSubscriptionBody {
   clientId: string;
-  /** Which catalog Plan this was composed from (Fix Plan Phase D §2.2) — optional; kept for traceability only. */
-  planId?: string | null;
   // packageType is NOT sent — the server derives it from billingCycle + maxEntities.
   billingCycle: string;
   modules: string[];
@@ -444,8 +362,6 @@ export function useCreateSubscription() {
 }
 
 export interface UpdateSubscriptionBody {
-  /** Which catalog Plan this was composed from (Fix Plan Phase D §2.2) — optional; kept for traceability only. */
-  planId?: string | null;
   // packageType is NOT sent — the server derives it from billingCycle + maxEntities.
   billingCycle?: string;
   modules?: string[];

@@ -104,39 +104,6 @@ model UserClientAccess {
   @@id([userId, clientId])
 }
 
-// ───────────────────────── Plan catalog (sellable templates) ─────────────────────────
-// Fix Plan Phase D §2.1: a Plan is the reusable, admin-composed sales template —
-// billing cycle, module set, max locations — that sales picks from to compose a
-// new offer without an engineer redeploying code. No price field: pricing is
-// per-client/per-deal, not catalog-fixed (Fix Plan §4 open question #2,
-// resolved) — see Subscription.negotiatedPrice below.
-
-model Plan {
-  id           String   @id @default(cuid())
-  name         String // "Bar Only — Monthly", "Full Suite — One-Time", etc. (free text, admin-set)
-  billingCycle String // STANDALONE | MONTHLY — independent of everything else
-  maxEntities  Int // 0 = unlimited; admin sets any number
-  isActive     Boolean  @default(true)
-  sortOrder    Int      @default(0)
-  createdAt    DateTime @default(now())
-  createdById  String?
-
-  modules       PlanModule[]
-  subscriptions Subscription[]
-}
-
-// Which atomic modules a Plan bundles — same atomic BAR | KITCHEN | ASSET
-// units as SubscriptionModule/LocationModule (Fix Plan Phase C), never a
-// pre-combined string.
-model PlanModule {
-  id     String @id @default(cuid())
-  planId String
-  plan   Plan   @relation(fields: [planId], references: [id])
-  module String // BAR | KITCHEN | ASSET
-
-  @@unique([planId, module])
-}
-
 // ───────────────────────── Subscription & Packages ─────────────────────────
 // packageType: BASIC | MEDIUM | ONE_TIME — DERIVED, not independently settable.
 //   Computed server-side from (billingCycle, maxEntities) via
@@ -150,13 +117,8 @@ model PlanModule {
 //   the client is licensed for in total — the *ceiling* every location's own
 //   LocationModule set must stay within (Fix Plan Phase C §2.3/§2.2).
 // maxEntities: any admin-set number; 0 = unlimited — drives packageType above.
-// planId / plan: which sellable Plan this subscription was created from (Fix
-//   Plan Phase D §2.2) — billingCycle/maxEntities/modules above are snapshotted
-//   onto the Subscription at creation time (so later edits to the Plan, or the
-//   Plan being deactivated, never retroactively change an existing client's
-//   deal); planId is kept only for traceability back to the catalog entry.
 // negotiatedPrice: optional per-client/per-deal price, if tracked in-system at
-//   all (Fix Plan §4 open question #2) — the Plan catalog itself has no price.
+//   all — set directly on the subscription, not sourced from any catalog.
 //
 // paid / lastPaidAt — explicit payment tracking (never assumed true on creation):
 //   paid = true means the admin has confirmed payment for the current billing period.
@@ -168,8 +130,6 @@ model Subscription {
   id              String    @id @default(cuid())
   clientId        String    @unique
   client          Client    @relation(fields: [clientId], references: [id])
-  planId          String?
-  plan            Plan?     @relation(fields: [planId], references: [id])
   packageType     String // BASIC | MEDIUM | ONE_TIME — derived, see note above
   billingCycle    String // STANDALONE | MONTHLY
   maxEntities     Int       @default(1) // 1=BASIC, 2+/0=MEDIUM (monthly), 0=unlimited (standalone/ONE_TIME)

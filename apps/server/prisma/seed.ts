@@ -75,33 +75,6 @@ async function seedClients() {
   }
 }
 
-/**
- * Finds the starter Plan (seeded by the Phase D `plan_catalog` migration —
- * see prisma/migrations/20260719000000_plan_catalog) matching this
- * (billingCycle, maxEntities, module-set) combo, so seeded Subscriptions
- * link back to the catalog the same way a real client onboarded through the
- * admin UI would (Fix Plan Phase D §2.2/§3). Falls back to null — and logs —
- * if no matching starter Plan exists (e.g. a DB whose migrations haven't
- * been re-applied since this phase landed); a subscription just isn't
- * created "from" a catalog Plan in that case, same as before Phase D.
- */
-async function findStarterPlan(
-  billingCycle: string,
-  maxEntities: number,
-  modules: readonly string[],
-): Promise<string | null> {
-  const candidates = await prisma.plan.findMany({ where: { billingCycle, maxEntities }, include: { modules: true } });
-  const wanted = [...modules].sort().join(",");
-  const match = candidates.find((p) => [...p.modules.map((m) => m.module)].sort().join(",") === wanted);
-  if (!match) {
-    console.warn(
-      `No starter Plan found for ${billingCycle}/max${maxEntities}/[${modules.join(",")}] — ` +
-        `leaving Subscription.planId null for this seed client. Run the plan_catalog migration first.`,
-    );
-  }
-  return match?.id ?? null;
-}
-
 async function upsertClientWithSubscription(
   name: string,
   sub: { billingCycle: "MONTHLY" | "STANDALONE"; modules: readonly string[]; maxEntities: number },
@@ -111,11 +84,9 @@ async function upsertClientWithSubscription(
   if (existing) return existing;
 
   const client = await prisma.client.create({ data: { name } });
-  const planId = await findStarterPlan(sub.billingCycle, sub.maxEntities, sub.modules);
   await prisma.subscription.create({
     data: {
       clientId: client.id,
-      planId,
       packageType: derivePackageType(sub.billingCycle, sub.maxEntities),
       billingCycle: sub.billingCycle,
       maxEntities: sub.maxEntities,

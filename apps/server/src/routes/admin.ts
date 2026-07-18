@@ -99,10 +99,6 @@ const fullClientBody = z.object({
   name: z.string().trim().min(1),
   extraLocationNames: z.array(z.string().trim().min(1)).default([]),
   subscription: z.object({
-    // Which catalog Plan this was composed from (Fix Plan Phase D §2.2) —
-    // optional; kept for traceability only. The fields below are what's
-    // actually snapshotted onto the Subscription and remain overridable.
-    planId: z.string().min(1).optional().nullable(),
     // packageType is NOT accepted from the client — it's derived from
     // billingCycle + maxEntities below (derivePackageType), so the tier
     // badge can never drift from the real subscription.
@@ -142,10 +138,6 @@ const accessBody = z.object({ clientIds: z.array(z.string()) });
 // Subscription schemas
 const subscriptionCreateBody = z.object({
   clientId: z.string().min(1),
-  // Which catalog Plan this was composed from (Fix Plan Phase D §2.2) —
-  // optional; kept for traceability only. The fields below are what's
-  // actually snapshotted onto the Subscription and remain overridable.
-  planId: z.string().min(1).optional().nullable(),
   // packageType is NOT accepted from the client — derived server-side, see
   // derivePackageType() usage below.
   billingCycle: z.enum(BILLING_CYCLES),
@@ -157,7 +149,6 @@ const subscriptionCreateBody = z.object({
   note: z.string().optional().nullable(),
 });
 const subscriptionUpdateBody = z.object({
-  planId: z.string().min(1).optional().nullable(),
   // packageType is NOT accepted from the client — see subscriptionCreateBody above.
   billingCycle: z.enum(BILLING_CYCLES).optional(),
   modules: z.array(z.enum(MODULE_TYPES)).min(1, "Select at least one module").optional(),
@@ -166,26 +157,6 @@ const subscriptionUpdateBody = z.object({
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
   note: z.string().optional().nullable(),
-});
-
-// Plan schemas (Fix Plan Phase D §2.1) — the sellable catalog. No price
-// field: pricing is per-client/per-deal (Subscription.negotiatedPrice
-// above), not catalog-fixed (§4 open question #2, resolved).
-const planCreateBody = z.object({
-  name: z.string().trim().min(1),
-  billingCycle: z.enum(BILLING_CYCLES),
-  modules: z.array(z.enum(MODULE_TYPES)).min(1, "Select at least one module"),
-  maxEntities: z.number().int().min(0), // 0 = unlimited
-  isActive: z.boolean().optional(),
-  sortOrder: z.number().int().optional(),
-});
-const planUpdateBody = z.object({
-  name: z.string().trim().min(1).optional(),
-  billingCycle: z.enum(BILLING_CYCLES).optional(),
-  modules: z.array(z.enum(MODULE_TYPES)).min(1, "Select at least one module").optional(),
-  maxEntities: z.number().int().min(0).optional(),
-  isActive: z.boolean().optional(),
-  sortOrder: z.number().int().optional(),
 });
 
 // A location's own module set (Fix Plan §2.3) — must be a non-empty subset
@@ -205,7 +176,7 @@ export const adminRoutes = new Hono<AppEnv>()
       include: {
         locations: { include: { modules: true } },
         access: { include: { user: true } },
-        subscription: { include: { modules: true, plan: true } },
+        subscription: { include: { modules: true } },
       },
       orderBy: { name: "asc" },
     });
@@ -359,7 +330,6 @@ export const adminRoutes = new Hono<AppEnv>()
       const sub = await tx.subscription.create({
         data: {
           clientId: created.id,
-          planId: subscription.planId ?? null,
           packageType: derivePackageType(subscription.billingCycle, maxEntities),
           billingCycle: subscription.billingCycle,
           maxEntities,
@@ -409,7 +379,7 @@ export const adminRoutes = new Hono<AppEnv>()
         include: {
           locations: { include: { modules: true } },
           access: { include: { user: true } },
-          subscription: { include: { modules: true, plan: true } },
+          subscription: { include: { modules: true } },
         },
       });
     });
@@ -515,116 +485,6 @@ export const adminRoutes = new Hono<AppEnv>()
     return c.json({ ok: true });
   })
 
-  // ── Plans (Fix Plan Phase D §2.1) ────────────────────────────────────────────
-  // The sellable catalog — sales composes new packaging combos here (billing
-  // cycle, module set, max locations) without an engineer redeploying code.
-  // A Subscription can reference a Plan for traceability (planId), but the
-  // Subscription's own fields are what's actually enforced going forward —
-  // editing or deactivating a Plan here never retroactively changes an
-  // existing client's deal (see the schema.prisma comment on Subscription).
-
-  .get("/plans", async (c) => {
-    const plans = await prisma.plan.findMany({
-      include: { modules: true },
-      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-    });
-    return c.json(plans);
-  })
-
-  .post("/plans", zValidator("json", planCreateBody), async (c) => {
-    const body = c.req.valid("json");
-    const user = c.get("user")!;
-
-    const plan = await prisma.$transaction(async (tx) => {
-      const created = await tx.plan.create({
-        data: {
-          name: body.name,
-          billingCycle: body.billingCycle,
-          maxEntities: body.maxEntities,
-          isActive: body.isActive ?? true,
-          sortOrder: body.sortOrder ?? 0,
-          createdById: user.id,
-          modules: { create: body.modules.map((module) => ({ module })) },
-        },
-        include: { modules: true },
-      });
-      await logActivity(
-        {
-          user,
-          action: "plan.create",
-          entity: "Plan",
-          entityId: created.id,
-          summary: `Created plan "${created.name}"`,
-          details: body,
-        },
-        tx,
-      );
-      return created;
-    });
-    return c.json(plan, 201);
-  })
-
-  .put("/plans/:id", zValidator("json", planUpdateBody), async (c) => {
-    const id = c.req.param("id");
-    const body = c.req.valid("json");
-    const user = c.get("user")!;
-    const { modules, ...rest } = body;
-
-    const updated = await prisma.$transaction(async (tx) => {
-      const existing = await tx.plan.findUnique({ where: { id } });
-      if (!existing) throw new AppError(404, "Plan not found");
-
-      if (modules) {
-        await tx.planModule.deleteMany({ where: { planId: id } });
-        await tx.planModule.createMany({ data: modules.map((module) => ({ planId: id, module })) });
-      }
-      const u = await tx.plan.update({ where: { id }, data: rest, include: { modules: true } });
-      await logActivity(
-        {
-          user,
-          action: "plan.update",
-          entity: "Plan",
-          entityId: id,
-          summary: `Updated plan "${u.name}"`,
-          details: body,
-        },
-        tx,
-      );
-      return u;
-    });
-    return c.json(updated);
-  })
-
-  // Deleting is only allowed once nothing references the plan anymore — a
-  // Subscription's planId is kept for traceability, so a Plan that's ever
-  // been sold from should be deactivated (isActive: false via PUT above)
-  // instead, not deleted out from under that history.
-  .delete("/plans/:id", async (c) => {
-    const id = c.req.param("id");
-    const user = c.get("user")!;
-
-    const inUse = await prisma.subscription.count({ where: { planId: id } });
-    if (inUse > 0) {
-      throw new AppError(
-        409,
-        `This plan is in use by ${inUse} subscription${inUse === 1 ? "" : "s"}. Deactivate it instead of deleting, so existing traceability isn't lost.`,
-      );
-    }
-
-    const deleted = await prisma.$transaction(async (tx) => {
-      const existing = await tx.plan.findUnique({ where: { id } });
-      if (!existing) throw new AppError(404, "Plan not found");
-      await tx.planModule.deleteMany({ where: { planId: id } });
-      await tx.plan.delete({ where: { id } });
-      await logActivity(
-        { user, action: "plan.delete", entity: "Plan", entityId: id, summary: `Deleted plan "${existing.name}"` },
-        tx,
-      );
-      return existing;
-    });
-    return c.json({ ok: true, deleted: deleted.id });
-  })
-
   // ── Subscriptions ──────────────────────────────────────────────────────────
   // The separate /subscriptions list page is gone — subscription management
   // now lives inside the Clients page (edit dialog per client). These CRUD
@@ -632,7 +492,7 @@ export const adminRoutes = new Hono<AppEnv>()
 
   .get("/subscriptions", async (c) => {
     const subs = await prisma.subscription.findMany({
-      include: { client: { select: { id: true, name: true, status: true } }, modules: true, plan: true },
+      include: { client: { select: { id: true, name: true, status: true } }, modules: true },
       orderBy: { createdAt: "desc" },
     });
     return c.json(subs);
@@ -649,7 +509,6 @@ export const adminRoutes = new Hono<AppEnv>()
       const created = await tx.subscription.create({
         data: {
           clientId: body.clientId,
-          planId: body.planId ?? null,
           packageType: derivePackageType(body.billingCycle, body.maxEntities),
           billingCycle: body.billingCycle,
           maxEntities: body.maxEntities,
@@ -663,7 +522,7 @@ export const adminRoutes = new Hono<AppEnv>()
           lastPaidAt: null,
           modules: { create: body.modules.map((module) => ({ module })) },
         },
-        include: { client: { select: { id: true, name: true } }, modules: true, plan: true },
+        include: { client: { select: { id: true, name: true } }, modules: true },
       });
       await logActivity(
         {
@@ -725,7 +584,7 @@ export const adminRoutes = new Hono<AppEnv>()
       const u = await tx.subscription.update({
         where: { id },
         data,
-        include: { client: { select: { id: true, name: true } }, modules: true, plan: true },
+        include: { client: { select: { id: true, name: true } }, modules: true },
       });
       await logActivity(
         {
