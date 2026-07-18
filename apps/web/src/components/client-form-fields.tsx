@@ -1,4 +1,4 @@
-import { AlertCircle, MapPin, Plus, Tag, X } from "lucide-react";
+import { MapPin, Plus, X } from "lucide-react";
 import {
   BILLING_CYCLE_LABELS,
   BILLING_CYCLES,
@@ -8,6 +8,7 @@ import {
   derivePackageType,
   type BillingCycle,
   type ModuleType,
+  type PackageType,
 } from "@fnb/core";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -64,14 +65,16 @@ export function PackageAndModulesFields({
     }
   };
 
-  // There used to be a separate "Package" dropdown (Basic/Medium/One-Time)
-  // here, settable independently of billing cycle and max locations. It
-  // could drift from reality — e.g. badged "Basic" while actually licensed
-  // for unlimited locations — because nothing kept them in sync. It's been
-  // removed; the tier is now always computed from the two fields that
-  // actually define it (see derivePackageType), shown below as a read-only
-  // confirmation instead of a separately-set input.
   const tier = derivePackageType(billingCycle, maxEntities);
+  const isStandalone = billingCycle === "STANDALONE";
+
+  const handleTierChange = (next: PackageType) => {
+    if (next === "BASIC") {
+      onMaxEntitiesChange(1);
+    } else if (next === "MEDIUM" && maxEntities < 2) {
+      onMaxEntitiesChange(2);
+    }
+  };
 
   return (
     <>
@@ -81,7 +84,16 @@ export function PackageAndModulesFields({
           {locked ? (
             <ReadOnlyField>{BILLING_CYCLE_LABELS[billingCycle] ?? billingCycle}</ReadOnlyField>
           ) : (
-            <Select value={billingCycle} onValueChange={(v) => onBillingCycleChange(v as BillingCycle)}>
+            <Select
+              value={billingCycle}
+              onValueChange={(v) => {
+                const next = v as BillingCycle;
+                onBillingCycleChange(next);
+                if (next === "MONTHLY" && billingCycle === "STANDALONE") {
+                  onMaxEntitiesChange(1);
+                }
+              }}
+            >
               <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
@@ -97,28 +109,42 @@ export function PackageAndModulesFields({
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="max-entities">Max locations</Label>
+          <Label htmlFor="package-tier">Package</Label>
           {locked ? (
-            <ReadOnlyField>{maxEntities === 0 ? "Unlimited" : maxEntities}</ReadOnlyField>
+            <ReadOnlyField>{PACKAGE_LABELS[tier]}</ReadOnlyField>
+          ) : isStandalone ? (
+            <ReadOnlyField>{PACKAGE_LABELS.ONE_TIME}</ReadOnlyField>
           ) : (
-            <Input
-              id="max-entities"
-              type="number"
-              min={0}
-              step={1}
-              value={maxEntities}
-              onChange={(e) => onMaxEntitiesChange(Math.max(0, Math.trunc(Number(e.target.value) || 0)))}
-              placeholder="0 = unlimited"
-            />
+            <Select value={tier} onValueChange={(v) => handleTierChange(v as PackageType)}>
+              <SelectTrigger id="package-tier" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="BASIC">Basic — 1 location</SelectItem>
+                <SelectItem value="MEDIUM">Medium — 2–5 locations</SelectItem>
+              </SelectContent>
+            </Select>
           )}
         </div>
       </div>
 
-      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Tag className="size-3.5 shrink-0" />
-        Resolves to the <strong className="font-medium text-foreground">{PACKAGE_LABELS[tier]}</strong> package
-        {tier === "MEDIUM" && " (1–5 locations)"}
-      </p>
+      {!locked && !isStandalone && tier === "MEDIUM" && (
+        <div className="space-y-2">
+          <Label htmlFor="max-entities">Max locations</Label>
+          <Select value={String(maxEntities)} onValueChange={(v) => onMaxEntitiesChange(Number(v))}>
+            <SelectTrigger id="max-entities" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {[2, 3, 4, 5].map((n) => (
+                <SelectItem key={n} value={String(n)}>
+                  {n} locations
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
 
       <div className="space-y-2">
         <Label>Inventory modules</Label>
@@ -183,9 +209,6 @@ export function NegotiatedPriceField({
           placeholder="Not tracked here"
         />
       )}
-      <p className="text-xs text-muted-foreground">
-        Per-client deal price, if tracked in-system at all. The plan catalog itself has no fixed price.
-      </p>
     </div>
   );
 }
@@ -303,12 +326,7 @@ export function LocationsField({
         )}
       </div>
       {helperText && <p className="text-xs text-muted-foreground">{helperText}</p>}
-      {atLimit ? (
-        <div className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
-          <AlertCircle className="size-3.5 shrink-0" />
-          {limitMessage ?? "Location limit reached."}
-        </div>
-      ) : (
+      {!atLimit && (
         <div className="flex gap-2">
           <Input
             id={inputId}

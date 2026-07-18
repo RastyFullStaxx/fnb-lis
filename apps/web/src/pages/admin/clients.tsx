@@ -1,7 +1,6 @@
 import { useState } from "react";
 import {
   AlertCircle,
-  Boxes,
   Building2,
   CalendarDays,
   CheckCircle2,
@@ -21,7 +20,7 @@ import {
   type ModuleType,
   type PackageType,
 } from "@fnb/core";
-import { PackageAndModulesFields, LocationModulesField, LocationsField, NegotiatedPriceField } from "@/components/client-form-fields";
+import { PackageAndModulesFields, LocationsField, NegotiatedPriceField } from "@/components/client-form-fields";
 import {
   deriveAccessState,
   daysUntilDue,
@@ -33,10 +32,8 @@ import {
   useMarkPaid,
   useUnmarkPaid,
   useUpdateClient,
-  useUpdateLocationModules,
   useUpdateSubscription,
   type AdminClient,
-  type AdminLocation,
   type AdminSubscription,
 } from "@/api/admin";
 import { ApiError } from "@/api/http";
@@ -370,7 +367,7 @@ function ManageClientDialog({ client, onClose }: { client: AdminClient | null; o
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{client.name}</DialogTitle>
+          <DialogTitle>Manage client</DialogTitle>
         </DialogHeader>
         <ClientDetailBody client={client} />
       </DialogContent>
@@ -379,23 +376,58 @@ function ManageClientDialog({ client, onClose }: { client: AdminClient | null; o
 }
 
 function ClientDetailBody({ client }: { client: AdminClient }) {
-  const update = useUpdateClient();
+  const updateClient = useUpdateClient();
+  const updateSub = useUpdateSubscription();
   const addLocation = useAddLocation();
+  const markPaid = useMarkPaid();
+  const unmarkPaid = useUnmarkPaid();
   const [name, setName] = useState(client.name);
   const [newLocName, setNewLocName] = useState("");
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
 
   const sub = client.subscription;
   const activeLocations = client.locations.filter((l) => l.status === "ACTIVE").length;
-  const atLimit = sub && sub.maxEntities > 0 && activeLocations >= sub.maxEntities;
 
-  const saveName = async () => {
-    if (!name.trim() || name.trim() === client.name) return;
+  // Subscription fields live here now (not inside SubscriptionPanel) so a
+  // single Save button can cover name + subscription together.
+  const [modules, setModules] = useState<ModuleType[]>((sub?.modules as ModuleType[]) ?? ["BAR"]);
+  const [billingCycle, setBillingCycle] = useState<BillingCycle>((sub?.billingCycle as BillingCycle) ?? "MONTHLY");
+  const [maxEntities, setMaxEntities] = useState<number>(sub?.maxEntities ?? 1);
+  const [negotiatedPrice, setNegotiatedPrice] = useState<number | null>(sub?.negotiatedPrice ?? null);
+
+  // Uses the live, not-yet-saved maxEntities (same as CreateClientDialog) so
+  // picking Basic in the tier dropdown immediately hides "Add location",
+  // even before Save is clicked.
+  const atLimit = maxEntities > 0 && activeLocations >= maxEntities;
+
+  const nameDirty = name.trim() !== "" && name.trim() !== client.name;
+  const subDirty =
+    !!sub &&
+    (JSON.stringify([...modules].sort()) !== JSON.stringify([...sub.modules].sort()) ||
+      billingCycle !== sub.billingCycle ||
+      maxEntities !== sub.maxEntities ||
+      negotiatedPrice !== sub.negotiatedPrice);
+  const isDirty = nameDirty || subDirty;
+
+  // Narrowing the module set here can cascade: the server drops any
+  // LocationModule row outside the new set (Fix Plan §2.3 — a location's
+  // modules must stay a subset of this ceiling), so warn before that happens.
+  const narrowing =
+    !!sub && (modules.length < sub.modules.length || sub.modules.some((m) => !modules.includes(m as ModuleType)));
+
+  const saving = updateClient.isPending || updateSub.isPending;
+
+  const save = async () => {
     try {
-      await update.mutateAsync({ id: client.id, name: name.trim() });
-      toast.success("Client renamed");
+      if (nameDirty) {
+        await updateClient.mutateAsync({ id: client.id, name: name.trim() });
+      }
+      if (subDirty && sub) {
+        await updateSub.mutateAsync({ id: sub.id, billingCycle, modules, maxEntities, negotiatedPrice });
+      }
+      toast.success("Client updated");
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Could not rename");
+      toast.error(err instanceof ApiError ? err.message : "Could not save changes");
     }
   };
 
@@ -410,69 +442,131 @@ function ClientDetailBody({ client }: { client: AdminClient }) {
     }
   };
 
+  const handleMarkPaid = async () => {
+    if (!sub) return;
+    try {
+      await markPaid.mutateAsync({ id: sub.id });
+      toast.success("Marked as paid");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not mark as paid");
+    }
+  };
+
+  const handleUnmarkPaid = async () => {
+    if (!sub) return;
+    try {
+      await unmarkPaid.mutateAsync({ id: sub.id });
+      toast.success("Payment mark reversed");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not reverse payment");
+    }
+  };
+
+  const cancelled = sub?.status === "CANCELLED";
+
   return (
-    <div className="divide-y">
+    <div className="space-y-5">
       {/* ── Name ── */}
-      <div className="space-y-2 pb-5">
+      <div className="space-y-2">
         <Label htmlFor="manage-name">Client name</Label>
         <Input
           id="manage-name"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && saveName()}
         />
-        <div className="flex justify-end">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={saveName}
-            disabled={!name.trim() || name.trim() === client.name || update.isPending}
-          >
-            Save
-          </Button>
-        </div>
       </div>
 
       {/* ── Subscription ── */}
-      <div className="py-5">
-        {sub ? (
-          <SubscriptionPanel sub={sub} onCancelRequest={() => setCancelConfirmOpen(true)} />
-        ) : (
-          <CreateSubscriptionPanel clientId={client.id} />
-        )}
-      </div>
+      {sub ? (
+        <SubscriptionPanel
+          sub={sub}
+          modules={modules}
+          onModulesChange={setModules}
+          billingCycle={billingCycle}
+          onBillingCycleChange={setBillingCycle}
+          maxEntities={maxEntities}
+          onMaxEntitiesChange={setMaxEntities}
+          negotiatedPrice={negotiatedPrice}
+          onNegotiatedPriceChange={setNegotiatedPrice}
+          narrowing={narrowing}
+        />
+      ) : (
+        <CreateSubscriptionPanel clientId={client.id} />
+      )}
 
       {/* ── Locations ── */}
-      <div className="py-5">
-        <LocationsField
-          inputId="manage-loc"
-          locations={client.locations.map((loc) => ({
-            key: loc.id,
-            name: loc.name,
-            inactive: loc.status !== "ACTIVE",
-          }))}
-          newLocName={newLocName}
-          onNewLocNameChange={setNewLocName}
-          onAdd={addLoc}
-          adding={addLocation.isPending}
-          atLimit={!!atLimit}
-          limitMessage={`Location limit reached (${sub?.maxEntities} max). Raise "Max locations" in the subscription above to add more.`}
-        />
-      </div>
+      <LocationsField
+        inputId="manage-loc"
+        locations={client.locations.map((loc) => ({
+          key: loc.id,
+          name: loc.name,
+          inactive: loc.status !== "ACTIVE",
+        }))}
+        newLocName={newLocName}
+        onNewLocNameChange={setNewLocName}
+        onAdd={addLoc}
+        adding={addLocation.isPending}
+        atLimit={!!atLimit}
+      />
 
-      {/* ── Per-location modules — the enforced reality, a subset of the subscription's ceiling above ── */}
-      {sub && client.locations.filter((l) => l.status === "ACTIVE").length > 0 && (
-        <div className="space-y-3 pt-5">
-          <Label className="flex items-center gap-1.5">
-            <Boxes className="size-3.5" /> Location modules
-          </Label>
-          <div className="divide-y">
-            {client.locations
-              .filter((l) => l.status === "ACTIVE")
-              .map((loc) => (
-                <LocationModulesRow key={loc.id} location={loc} ceiling={sub.modules as ModuleType[]} />
-              ))}
+      {/* ── Actions: paid status on its own line, then Mark as paid / Cancel
+          (left) + Save (right) together on one row. ── */}
+      {sub && !cancelled && (
+        <div className="space-y-2 pt-1">
+          {sub.paid && (
+            <div className="flex items-center gap-1.5 rounded-md bg-green-50 border border-green-200 px-3 py-1.5 text-xs text-green-700 dark:bg-green-950/30 dark:border-green-800 dark:text-green-400 w-fit">
+              <CheckCircle2 className="size-3.5" />
+              Paid
+              {sub.lastPaidAt && (
+                <span className="text-green-500">
+                  · {new Date(sub.lastPaidAt).toLocaleDateString()}
+                </span>
+              )}
+            </div>
+          )}
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              {!sub.paid ? (
+                <Button size="sm" className="gap-1.5" onClick={handleMarkPaid} disabled={markPaid.isPending}>
+                  <CheckCircle2 className="size-4" />
+                  Mark as paid
+                </Button>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="gap-1 text-muted-foreground"
+                  onClick={handleUnmarkPaid}
+                  disabled={unmarkPaid.isPending}
+                  title="Undo — reverse the mark-paid if it was clicked by mistake"
+                >
+                  <RotateCcw className="size-3.5" />
+                  Undo
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5 text-destructive hover:text-destructive"
+                onClick={() => setCancelConfirmOpen(true)}
+              >
+                <XCircle className="size-4" />
+                Cancel subscription
+              </Button>
+            </div>
+            <Button onClick={save} disabled={!isDirty || saving} size="sm">
+              Save
+            </Button>
           </div>
+        </div>
+      )}
+
+      {/* No subscription yet, or cancelled — just Save for name/locations. */}
+      {(!sub || cancelled) && (
+        <div className="flex justify-end pt-1">
+          <Button onClick={save} disabled={!isDirty || saving} size="sm">
+            Save
+          </Button>
         </div>
       )}
 
@@ -488,101 +582,31 @@ function ClientDetailBody({ client }: { client: AdminClient }) {
   );
 }
 
-// ── Per-location modules row ─────────────────────────────────────────────────
-// Fix Plan §2.3: a location's own modules are the enforced reality and must
-// stay a subset of `ceiling` (the client's current subscription modules).
-
-function LocationModulesRow({ location, ceiling }: { location: AdminLocation; ceiling: ModuleType[] }) {
-  const updateModules = useUpdateLocationModules();
-  const [modules, setModules] = useState<ModuleType[]>(
-    location.modules.length > 0 ? (location.modules as ModuleType[]) : ceiling,
-  );
-
-  const isDirty = JSON.stringify([...modules].sort()) !== JSON.stringify([...location.modules].sort());
-
-  const save = async () => {
-    try {
-      await updateModules.mutateAsync({ locationId: location.id, modules });
-      toast.success(`Updated modules for "${location.name}"`);
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Could not update location modules");
-    }
-  };
-
-  return (
-    <div className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between">
-      <div className="flex items-center gap-1.5 text-sm font-medium shrink-0">
-        <MapPin className="size-3.5 text-muted-foreground" />
-        {location.name}
-      </div>
-      <div className="flex flex-1 items-center gap-2 sm:justify-end">
-        <LocationModulesField modules={modules} onModulesChange={setModules} ceiling={ceiling} />
-        {isDirty && (
-          <Button size="sm" onClick={save} disabled={updateModules.isPending} className="shrink-0">
-            Save
-          </Button>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // ── Subscription panel (shown when client already has one) ──────────────────
 
 function SubscriptionPanel({
   sub,
-  onCancelRequest,
+  modules,
+  onModulesChange,
+  billingCycle,
+  onBillingCycleChange,
+  maxEntities,
+  onMaxEntitiesChange,
+  negotiatedPrice,
+  onNegotiatedPriceChange,
+  narrowing,
 }: {
   sub: AdminSubscription;
-  onCancelRequest: () => void;
+  modules: ModuleType[];
+  onModulesChange: (v: ModuleType[]) => void;
+  billingCycle: BillingCycle;
+  onBillingCycleChange: (v: BillingCycle) => void;
+  maxEntities: number;
+  onMaxEntitiesChange: (v: number) => void;
+  negotiatedPrice: number | null;
+  onNegotiatedPriceChange: (v: number | null) => void;
+  narrowing: boolean;
 }) {
-  const update = useUpdateSubscription();
-  const markPaid = useMarkPaid();
-  const unmarkPaid = useUnmarkPaid();
-
-  const [modules, setModules] = useState<ModuleType[]>(sub.modules as ModuleType[]);
-  const [billingCycle, setBillingCycle] = useState<BillingCycle>(sub.billingCycle as BillingCycle);
-  const [maxEntities, setMaxEntities] = useState<number>(sub.maxEntities);
-  const [negotiatedPrice, setNegotiatedPrice] = useState<number | null>(sub.negotiatedPrice);
-
-  const isDirty =
-    JSON.stringify([...modules].sort()) !== JSON.stringify([...sub.modules].sort()) ||
-    billingCycle !== sub.billingCycle ||
-    maxEntities !== sub.maxEntities ||
-    negotiatedPrice !== sub.negotiatedPrice;
-
-  // Narrowing the module set here can cascade: the server drops any
-  // LocationModule row outside the new set (Fix Plan §2.3 — a location's
-  // modules must stay a subset of this ceiling), so warn before that happens.
-  const narrowing = modules.length < sub.modules.length || sub.modules.some((m) => !modules.includes(m as ModuleType));
-
-  const save = async () => {
-    try {
-      await update.mutateAsync({ id: sub.id, billingCycle, modules, maxEntities, negotiatedPrice });
-      toast.success("Subscription updated");
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Could not update subscription");
-    }
-  };
-
-  const handleMarkPaid = async () => {
-    try {
-      await markPaid.mutateAsync({ id: sub.id });
-      toast.success("Marked as paid");
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Could not mark as paid");
-    }
-  };
-
-  const handleUnmarkPaid = async () => {
-    try {
-      await unmarkPaid.mutateAsync({ id: sub.id });
-      toast.success("Payment mark reversed");
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Could not reverse payment");
-    }
-  };
-
   const cancelled = sub.status === "CANCELLED";
   const accessState = sub.status === "CANCELLED" || sub.status === "SUSPENDED"
     ? null
@@ -614,53 +638,13 @@ function SubscriptionPanel({
         </div>
       )}
 
-      {/* Mark paid / Unmark paid */}
-      {!cancelled && (
-        <div className="flex gap-2">
-          {!sub.paid ? (
-            <Button
-              size="sm"
-              className="gap-1.5"
-              onClick={handleMarkPaid}
-              disabled={markPaid.isPending}
-            >
-              <CheckCircle2 className="size-4" />
-              Mark as paid
-            </Button>
-          ) : (
-            <>
-              <div className="flex items-center gap-1.5 rounded-md bg-green-50 border border-green-200 px-3 py-1.5 text-xs text-green-700 dark:bg-green-950/30 dark:border-green-800 dark:text-green-400">
-                <CheckCircle2 className="size-3.5" />
-                Paid
-                {sub.lastPaidAt && (
-                  <span className="text-green-500">
-                    · {new Date(sub.lastPaidAt).toLocaleDateString()}
-                  </span>
-                )}
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="gap-1 text-muted-foreground"
-                onClick={handleUnmarkPaid}
-                disabled={unmarkPaid.isPending}
-                title="Undo — reverse the mark-paid if it was clicked by mistake"
-              >
-                <RotateCcw className="size-3.5" />
-                Undo
-              </Button>
-            </>
-          )}
-        </div>
-      )}
-
       <PackageAndModulesFields
         modules={modules}
-        onModulesChange={setModules}
+        onModulesChange={onModulesChange}
         billingCycle={billingCycle}
-        onBillingCycleChange={setBillingCycle}
+        onBillingCycleChange={onBillingCycleChange}
         maxEntities={maxEntities}
-        onMaxEntitiesChange={setMaxEntities}
+        onMaxEntitiesChange={onMaxEntitiesChange}
         locked={cancelled}
         modulesLocked={cancelled}
       />
@@ -671,41 +655,19 @@ function SubscriptionPanel({
         </div>
       )}
 
-      <NegotiatedPriceField value={negotiatedPrice} onChange={setNegotiatedPrice} disabled={cancelled} />
+      <NegotiatedPriceField value={negotiatedPrice} onChange={onNegotiatedPriceChange} disabled={cancelled} />
 
-      {/* Footer: meta (left) + actions (right) — every section in this dialog
-          keeps its primary action(s) in this same bottom-right spot. */}
-      <div className="flex items-center justify-between gap-3 pt-1">
-        <div className="text-xs text-muted-foreground flex gap-3">
-          <span className="flex items-center gap-1">
-            <CalendarDays className="size-3.5" /> Started {sub.startDate}
+      {/* Meta only — paid status, mark-paid, cancel, and save all now live
+          together in the single action row at the bottom of ClientDetailBody. */}
+      <div className="text-xs text-muted-foreground flex gap-3 pt-1">
+        <span className="flex items-center gap-1">
+          <CalendarDays className="size-3.5" /> Started {sub.startDate}
+        </span>
+        {sub.endDate && <span>Ends {sub.endDate}</span>}
+        {cancelled && (
+          <span>
+            Cancelled{sub.cancelledAt ? ` ${new Date(sub.cancelledAt as unknown as string).toLocaleDateString()}` : ""}
           </span>
-          {sub.endDate && <span>Ends {sub.endDate}</span>}
-          {cancelled && (
-            <span>
-              Cancelled{sub.cancelledAt ? ` ${new Date(sub.cancelledAt as unknown as string).toLocaleDateString()}` : ""}
-            </span>
-          )}
-        </div>
-        {!cancelled && (
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="gap-1.5 text-destructive hover:text-destructive"
-              onClick={onCancelRequest}
-            >
-              <XCircle className="size-4" />
-              Cancel subscription
-            </Button>
-            <Button
-              onClick={save}
-              disabled={!isDirty || update.isPending}
-              size="sm"
-            >
-              Save changes
-            </Button>
-          </div>
         )}
       </div>
     </div>
