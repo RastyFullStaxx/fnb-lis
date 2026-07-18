@@ -61,12 +61,10 @@ export const PACKAGE_LABELS: Record<PackageType, string> = {
 };
 
 /**
- * Default maxEntities to pre-fill when an admin picks a package tier in a
- * form — a starting point, not an enforced ceiling. The actual maxEntities
- * on a Subscription is a directly-settable field (see admin.ts), so any
- * value can be typed in over this default; nothing recalculates it after
- * creation. (Fix Plan Phase B: billing cycle & entity count decoupled from
- * package tier — packageType alone no longer determines either.)
+ * Sensible starting values for a brand-new subscription form (Basic tier:
+ * Monthly billing, 1 location). Only used to seed initial form state — see
+ * derivePackageType() below for how the tier is actually determined once
+ * billing cycle and max locations are set.
  */
 export const PACKAGE_DEFAULT_MAX_ENTITIES: Record<PackageType, number> = {
   BASIC: 1,
@@ -74,18 +72,37 @@ export const PACKAGE_DEFAULT_MAX_ENTITIES: Record<PackageType, number> = {
   ONE_TIME: 0, // unlimited
 };
 
-/**
- * Default billingCycle to pre-fill when an admin picks a package tier in a
- * form — a starting point, not a derivation. The actual billingCycle on a
- * Subscription is a directly-settable field (see admin.ts); an admin can
- * sell "Basic, one-time payment" or "One-Time package, billed monthly" by
- * simply choosing a different value here. (Fix Plan Phase B.)
- */
+/** @see PACKAGE_DEFAULT_MAX_ENTITIES */
 export const PACKAGE_DEFAULT_BILLING_CYCLE: Record<PackageType, BillingCycle> = {
   BASIC: "MONTHLY",
   MEDIUM: "MONTHLY",
   ONE_TIME: "STANDALONE",
 };
+
+/**
+ * Derives the "Basic / Medium / One-Time Installation" package tier from the
+ * two fields that actually define it, per the client's spec:
+ *   - Basic:   1 account/entity only
+ *   - Medium:  1 to 5 accounts/entities
+ *   - One-Time Installation: unlimited accounts/entities
+ *
+ * packageType is NOT a separately-settable field anywhere in the app — it
+ * used to be, and could silently drift from the truth (e.g. a client badged
+ * "Basic" while actually licensed for unlimited locations). It's now always
+ * computed from billingCycle + maxEntities, both at write time (server) and
+ * for display (client), so the badge can never lie again.
+ *
+ *  - STANDALONE billing => "One-Time Installation", regardless of
+ *    maxEntities — the tier is defined by "pay once, no recurring bill",
+ *    not by the count.
+ *  - MONTHLY + exactly 1 location => "Basic".
+ *  - MONTHLY + 2 or more locations (including 0 = unlimited, an
+ *    intentionally-negotiated case outside the standard tiers) => "Medium".
+ */
+export function derivePackageType(billingCycle: BillingCycle, maxEntities: number): PackageType {
+  if (billingCycle === "STANDALONE") return "ONE_TIME";
+  return maxEntities === 1 ? "BASIC" : "MEDIUM";
+}
 
 export const MODULE_TYPE_LABELS: Record<ModuleType, string> = {
   BAR: "Bar",

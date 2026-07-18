@@ -138,13 +138,18 @@ model PlanModule {
 }
 
 // ───────────────────────── Subscription & Packages ─────────────────────────
-// packageType: BASIC | MEDIUM | ONE_TIME
-// billingCycle: STANDALONE | MONTHLY (independently settable — see admin.ts;
-//   no longer derived from packageType, per Fix Plan Phase B)
+// packageType: BASIC | MEDIUM | ONE_TIME — DERIVED, not independently settable.
+//   Computed server-side from (billingCycle, maxEntities) via
+//   derivePackageType() in @fnb/core on every create/update (see admin.ts).
+//   It used to be a separately-settable field and could drift from the truth
+//   (e.g. badged "Basic" while actually unlimited) — that's fixed now; it's
+//   stored (not computed on read) purely so it can be queried/filtered
+//   without joining, but the column always mirrors billingCycle+maxEntities.
+// billingCycle: STANDALONE | MONTHLY — directly settable; drives packageType above.
 // modules: SubscriptionModule rows, one per atomic module (BAR | KITCHEN | ASSET)
 //   the client is licensed for in total — the *ceiling* every location's own
 //   LocationModule set must stay within (Fix Plan Phase C §2.3/§2.2).
-// maxEntities: any admin-set number; 0 = unlimited
+// maxEntities: any admin-set number; 0 = unlimited — drives packageType above.
 // planId / plan: which sellable Plan this subscription was created from (Fix
 //   Plan Phase D §2.2) — billingCycle/maxEntities/modules above are snapshotted
 //   onto the Subscription at creation time (so later edits to the Plan, or the
@@ -165,9 +170,9 @@ model Subscription {
   client          Client    @relation(fields: [clientId], references: [id])
   planId          String?
   plan            Plan?     @relation(fields: [planId], references: [id])
-  packageType     String // BASIC | MEDIUM | ONE_TIME
+  packageType     String // BASIC | MEDIUM | ONE_TIME — derived, see note above
   billingCycle    String // STANDALONE | MONTHLY
-  maxEntities     Int       @default(1) // 1=BASIC, 5=MEDIUM, 0=unlimited
+  maxEntities     Int       @default(1) // 1=BASIC, 2+/0=MEDIUM (monthly), 0=unlimited (standalone/ONE_TIME)
   negotiatedPrice Float? // optional per-client deal price — see note above
   status          String    @default("ACTIVE") // ACTIVE | SUSPENDED | CANCELLED | TRIAL
   paid            Boolean   @default(false) // explicit paid flag for the CURRENT billing period

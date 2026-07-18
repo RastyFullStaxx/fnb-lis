@@ -1,6 +1,6 @@
 import { prisma } from "../src/db";
 import { hashPassword } from "../src/auth/password";
-import { allowedProductTypes } from "@fnb/core";
+import { allowedProductTypes, derivePackageType } from "@fnb/core";
 
 const PASSWORD = "Fnb!2026"; // documented demo password for all seeded roles
 
@@ -35,7 +35,7 @@ async function seedClients() {
   // KITCHEN only.
   const prime = await upsertClientWithSubscription(
     "Prime Hospitality Group",
-    { packageType: "MEDIUM", billingCycle: "MONTHLY", modules: ["BAR", "KITCHEN"], maxEntities: 5 },
+    { billingCycle: "MONTHLY", modules: ["BAR", "KITCHEN"], maxEntities: 5 },
     admin?.id,
   );
   // Prime legitimately splits one operation into two locations — "Main Bar"
@@ -48,7 +48,7 @@ async function seedClients() {
 
   const casa = await upsertClientWithSubscription(
     "Casa Verde Restaurant",
-    { packageType: "BASIC", billingCycle: "MONTHLY", modules: ["KITCHEN"], maxEntities: 1 },
+    { billingCycle: "MONTHLY", modules: ["KITCHEN"], maxEntities: 1 },
     admin?.id,
   );
   // Casa Verde is Basic tier (1 location) — its single "Main" location
@@ -104,7 +104,7 @@ async function findStarterPlan(
 
 async function upsertClientWithSubscription(
   name: string,
-  sub: { packageType: string; billingCycle: string; modules: readonly string[]; maxEntities: number },
+  sub: { billingCycle: "MONTHLY" | "STANDALONE"; modules: readonly string[]; maxEntities: number },
   createdById?: string,
 ) {
   const existing = await prisma.client.findFirst({ where: { name } });
@@ -116,7 +116,7 @@ async function upsertClientWithSubscription(
     data: {
       clientId: client.id,
       planId,
-      packageType: sub.packageType,
+      packageType: derivePackageType(sub.billingCycle, sub.maxEntities),
       billingCycle: sub.billingCycle,
       maxEntities: sub.maxEntities,
       status: "ACTIVE",

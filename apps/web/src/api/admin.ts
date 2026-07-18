@@ -17,6 +17,7 @@ export interface AdminSubscription {
   clientId: string;
   /** Which catalog Plan this was composed from (Fix Plan Phase D §2.2) — traceability only; fields below remain independently overridable. */
   planId: string | null;
+  /** Read-only — derived server-side from billingCycle + maxEntities (derivePackageType). Never sent as input. */
   packageType: string;
   billingCycle: string;
   /** The client's licensed ceiling (Fix Plan §2.2) — atomic modules, any non-empty subset. */
@@ -178,7 +179,7 @@ export interface CreateFullClientBody {
   subscription: {
     /** Which catalog Plan this was composed from (Fix Plan Phase D §2.2) — optional; kept for traceability only. */
     planId?: string | null;
-    packageType: string;
+    // packageType is NOT sent — the server derives it from billingCycle + maxEntities.
     billingCycle: string;
     modules: string[];
     maxEntities: number;
@@ -419,7 +420,7 @@ export interface CreateSubscriptionBody {
   clientId: string;
   /** Which catalog Plan this was composed from (Fix Plan Phase D §2.2) — optional; kept for traceability only. */
   planId?: string | null;
-  packageType: string;
+  // packageType is NOT sent — the server derives it from billingCycle + maxEntities.
   billingCycle: string;
   modules: string[];
   maxEntities: number;
@@ -445,7 +446,7 @@ export function useCreateSubscription() {
 export interface UpdateSubscriptionBody {
   /** Which catalog Plan this was composed from (Fix Plan Phase D §2.2) — optional; kept for traceability only. */
   planId?: string | null;
-  packageType?: string;
+  // packageType is NOT sent — the server derives it from billingCycle + maxEntities.
   billingCycle?: string;
   modules?: string[];
   maxEntities?: number;

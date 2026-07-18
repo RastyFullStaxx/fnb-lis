@@ -1,14 +1,13 @@
-import { AlertCircle, MapPin, Plus, X } from "lucide-react";
+import { AlertCircle, MapPin, Plus, Tag, X } from "lucide-react";
 import {
   BILLING_CYCLE_LABELS,
   BILLING_CYCLES,
   MODULE_TYPE_LABELS,
   MODULE_TYPES,
   PACKAGE_LABELS,
-  PACKAGE_TYPES,
+  derivePackageType,
   type BillingCycle,
   type ModuleType,
-  type PackageType,
 } from "@fnb/core";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -37,19 +36,15 @@ function ReadOnlyField({ children }: { children: React.ReactNode }) {
 }
 
 export function PackageAndModulesFields({
-  packageType,
-  onPackageTypeChange,
   modules,
   onModulesChange,
   billingCycle,
   onBillingCycleChange,
   maxEntities,
   onMaxEntitiesChange,
-  packageLocked = false,
+  locked = false,
   modulesLocked = false,
 }: {
-  packageType: PackageType;
-  onPackageTypeChange: (v: PackageType) => void;
   /** Atomic modules the CLIENT is licensed for (the ceiling — Fix Plan §2.2), any non-empty subset of MODULE_TYPES. */
   modules: ModuleType[];
   onModulesChange: (v: ModuleType[]) => void;
@@ -57,7 +52,7 @@ export function PackageAndModulesFields({
   onBillingCycleChange: (v: BillingCycle) => void;
   maxEntities: number;
   onMaxEntitiesChange: (v: number) => void;
-  packageLocked?: boolean;
+  locked?: boolean;
   modulesLocked?: boolean;
 }) {
   const toggleModule = (m: ModuleType, checked: boolean) => {
@@ -69,32 +64,21 @@ export function PackageAndModulesFields({
     }
   };
 
+  // There used to be a separate "Package" dropdown (Basic/Medium/One-Time)
+  // here, settable independently of billing cycle and max locations. It
+  // could drift from reality — e.g. badged "Basic" while actually licensed
+  // for unlimited locations — because nothing kept them in sync. It's been
+  // removed; the tier is now always computed from the two fields that
+  // actually define it (see derivePackageType), shown below as a read-only
+  // confirmation instead of a separately-set input.
+  const tier = derivePackageType(billingCycle, maxEntities);
+
   return (
     <>
-      <div className="space-y-2">
-        <Label>Package</Label>
-        {packageLocked ? (
-          <ReadOnlyField>{PACKAGE_LABELS[packageType] ?? packageType}</ReadOnlyField>
-        ) : (
-          <Select value={packageType} onValueChange={(v) => onPackageTypeChange(v as PackageType)}>
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {PACKAGE_TYPES.map((p) => (
-                <SelectItem key={p} value={p}>
-                  {PACKAGE_LABELS[p]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-      </div>
-
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-2">
           <Label>Billing cycle</Label>
-          {packageLocked ? (
+          {locked ? (
             <ReadOnlyField>{BILLING_CYCLE_LABELS[billingCycle] ?? billingCycle}</ReadOnlyField>
           ) : (
             <Select value={billingCycle} onValueChange={(v) => onBillingCycleChange(v as BillingCycle)}>
@@ -114,7 +98,7 @@ export function PackageAndModulesFields({
 
         <div className="space-y-2">
           <Label htmlFor="max-entities">Max locations</Label>
-          {packageLocked ? (
+          {locked ? (
             <ReadOnlyField>{maxEntities === 0 ? "Unlimited" : maxEntities}</ReadOnlyField>
           ) : (
             <Input
@@ -129,6 +113,12 @@ export function PackageAndModulesFields({
           )}
         </div>
       </div>
+
+      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Tag className="size-3.5 shrink-0" />
+        Resolves to the <strong className="font-medium text-foreground">{PACKAGE_LABELS[tier]}</strong> package
+        {tier === "MEDIUM" && " (1–5 locations)"}
+      </p>
 
       <div className="space-y-2">
         <Label>Inventory modules</Label>

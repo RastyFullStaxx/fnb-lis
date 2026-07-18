@@ -269,22 +269,10 @@ function CreateClientDialog({ open, onOpenChange }: { open: boolean; onOpenChang
   const [extraLocations, setExtraLocations] = useState<string[]>([]);
   const [newLocName, setNewLocName] = useState("");
   const [planId, setPlanId] = useState<string | null>(null);
-  const [packageType, setPackageType] = useState<PackageType>("BASIC");
   const [modules, setModules] = useState<ModuleType[]>(["BAR"]);
   const [billingCycle, setBillingCycle] = useState<BillingCycle>(PACKAGE_DEFAULT_BILLING_CYCLE.BASIC);
   const [maxEntities, setMaxEntities] = useState<number>(PACKAGE_DEFAULT_MAX_ENTITIES.BASIC);
   const [negotiatedPrice, setNegotiatedPrice] = useState<number | null>(null);
-
-  // Changing the package tier re-seeds billing cycle & max locations from
-  // that tier's defaults — but both remain independently editable afterwards
-  // (Fix Plan Phase B: billing cycle and entity count are not welded to
-  // package tier; this is just a convenient starting point).
-  const handlePackageTypeChange = (v: PackageType) => {
-    setPackageType(v);
-    setBillingCycle(PACKAGE_DEFAULT_BILLING_CYCLE[v]);
-    setMaxEntities(PACKAGE_DEFAULT_MAX_ENTITIES[v]);
-    setPlanId(null); // hand-editing the package moves this off the picked plan
-  };
 
   // Picking a catalog Plan pre-fills billing cycle, modules, and max
   // locations (Fix Plan Phase D §3) — all three remain editable afterwards;
@@ -306,7 +294,6 @@ function CreateClientDialog({ open, onOpenChange }: { open: boolean; onOpenChang
     setExtraLocations([]);
     setNewLocName("");
     setPlanId(null);
-    setPackageType("BASIC");
     setModules(["BAR"]);
     setBillingCycle(PACKAGE_DEFAULT_BILLING_CYCLE.BASIC);
     setMaxEntities(PACKAGE_DEFAULT_MAX_ENTITIES.BASIC);
@@ -336,7 +323,6 @@ function CreateClientDialog({ open, onOpenChange }: { open: boolean; onOpenChang
         extraLocationNames: extraLocations,
         subscription: {
           planId,
-          packageType,
           billingCycle,
           modules,
           maxEntities,
@@ -375,10 +361,8 @@ function CreateClientDialog({ open, onOpenChange }: { open: boolean; onOpenChang
         {/* ── Plan picker (Fix Plan Phase D) ── */}
         <PlanPickerField plans={planOptions} planId={planId} onApplyPlan={handleApplyPlan} />
 
-        {/* ── Subscription (Package + Billing + Max locations + Inventory modules) ── */}
+        {/* ── Subscription (Billing + Max locations + Inventory modules) — package tier is shown, computed from these, not set separately ── */}
         <PackageAndModulesFields
-          packageType={packageType}
-          onPackageTypeChange={handlePackageTypeChange}
           modules={modules}
           onModulesChange={setModules}
           billingCycle={billingCycle}
@@ -602,7 +586,6 @@ function SubscriptionPanel({
   const planOptions = usePlanOptions();
 
   const [planId, setPlanId] = useState<string | null>(sub.planId);
-  const [packageType, setPackageType] = useState<PackageType>(sub.packageType as PackageType);
   const [modules, setModules] = useState<ModuleType[]>(sub.modules as ModuleType[]);
   const [billingCycle, setBillingCycle] = useState<BillingCycle>(sub.billingCycle as BillingCycle);
   const [maxEntities, setMaxEntities] = useState<number>(sub.maxEntities);
@@ -610,7 +593,6 @@ function SubscriptionPanel({
 
   const isDirty =
     planId !== sub.planId ||
-    packageType !== sub.packageType ||
     JSON.stringify([...modules].sort()) !== JSON.stringify([...sub.modules].sort()) ||
     billingCycle !== sub.billingCycle ||
     maxEntities !== sub.maxEntities ||
@@ -634,7 +616,7 @@ function SubscriptionPanel({
 
   const save = async () => {
     try {
-      await update.mutateAsync({ id: sub.id, planId, packageType, billingCycle, modules, maxEntities, negotiatedPrice });
+      await update.mutateAsync({ id: sub.id, planId, billingCycle, modules, maxEntities, negotiatedPrice });
       toast.success("Subscription updated");
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not update subscription");
@@ -736,15 +718,13 @@ function SubscriptionPanel({
       )}
 
       <PackageAndModulesFields
-        packageType={packageType}
-        onPackageTypeChange={setPackageType}
         modules={modules}
         onModulesChange={setModules}
         billingCycle={billingCycle}
         onBillingCycleChange={setBillingCycle}
         maxEntities={maxEntities}
         onMaxEntitiesChange={setMaxEntities}
-        packageLocked={cancelled}
+        locked={cancelled}
         modulesLocked={cancelled}
       />
       {narrowing && (
@@ -801,18 +781,10 @@ function CreateSubscriptionPanel({ clientId, onDone }: { clientId: string; onDon
   const planOptions = usePlanOptions();
 
   const [planId, setPlanId] = useState<string | null>(null);
-  const [packageType, setPackageType] = useState<PackageType>("BASIC");
   const [modules, setModules] = useState<ModuleType[]>(["BAR"]);
   const [billingCycle, setBillingCycle] = useState<BillingCycle>(PACKAGE_DEFAULT_BILLING_CYCLE.BASIC);
   const [maxEntities, setMaxEntities] = useState<number>(PACKAGE_DEFAULT_MAX_ENTITIES.BASIC);
   const [negotiatedPrice, setNegotiatedPrice] = useState<number | null>(null);
-
-  const handlePackageTypeChange = (v: PackageType) => {
-    setPackageType(v);
-    setBillingCycle(PACKAGE_DEFAULT_BILLING_CYCLE[v]);
-    setMaxEntities(PACKAGE_DEFAULT_MAX_ENTITIES[v]);
-    setPlanId(null);
-  };
 
   const handleApplyPlan = (plan: PlanOption | null) => {
     setPlanId(plan?.id ?? null);
@@ -828,7 +800,6 @@ function CreateSubscriptionPanel({ clientId, onDone }: { clientId: string; onDon
       await create.mutateAsync({
         clientId,
         planId,
-        packageType,
         billingCycle,
         modules,
         maxEntities,
@@ -855,8 +826,6 @@ function CreateSubscriptionPanel({ clientId, onDone }: { clientId: string; onDon
       <PlanPickerField plans={planOptions} planId={planId} onApplyPlan={handleApplyPlan} />
 
       <PackageAndModulesFields
-        packageType={packageType}
-        onPackageTypeChange={handlePackageTypeChange}
         modules={modules}
         onModulesChange={setModules}
         billingCycle={billingCycle}

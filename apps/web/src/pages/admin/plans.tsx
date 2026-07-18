@@ -6,6 +6,8 @@ import {
   BILLING_CYCLES,
   MODULE_TYPE_LABELS,
   MODULE_TYPES,
+  PACKAGE_LABELS,
+  derivePackageType,
   type BillingCycle,
   type ModuleType,
 } from "@fnb/core";
@@ -120,6 +122,9 @@ export function AdminPlansPage() {
                   <span className="text-xs text-muted-foreground">
                     {plan.maxEntities === 0 ? "Unlimited locations" : `${plan.maxEntities} location${plan.maxEntities === 1 ? "" : "s"}`}
                   </span>
+                  <Badge variant="outline" className="gap-1 text-muted-foreground">
+                    {PACKAGE_LABELS[derivePackageType(plan.billingCycle as BillingCycle, plan.maxEntities)]}
+                  </Badge>
                 </div>
                 <Button variant="ghost" size="sm" className="shrink-0 gap-1.5" onClick={() => setEditing(plan)}>
                   <Pencil className="size-3.5" /> Edit

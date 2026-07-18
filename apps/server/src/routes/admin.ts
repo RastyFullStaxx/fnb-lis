@@ -3,7 +3,7 @@ import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
 import {
   role as roleSchema,
-  PACKAGE_TYPES,
+  derivePackageType,
   BILLING_CYCLES,
   MODULE_TYPES,
   SUBSCRIPTION_STATUSES,
@@ -103,10 +103,12 @@ const fullClientBody = z.object({
     // optional; kept for traceability only. The fields below are what's
     // actually snapshotted onto the Subscription and remain overridable.
     planId: z.string().min(1).optional().nullable(),
-    packageType: z.enum(PACKAGE_TYPES),
+    // packageType is NOT accepted from the client — it's derived from
+    // billingCycle + maxEntities below (derivePackageType), so the tier
+    // badge can never drift from the real subscription.
     billingCycle: z.enum(BILLING_CYCLES),
     modules: z.array(z.enum(MODULE_TYPES)).min(1, "Select at least one module"),
-    maxEntities: z.number().int().min(0), // 0 = unlimited; independently settable, not derived from packageType
+    maxEntities: z.number().int().min(0), // 0 = unlimited
     negotiatedPrice: z.number().min(0).optional().nullable(), // per-client deal price, if tracked at all
     startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
@@ -144,10 +146,11 @@ const subscriptionCreateBody = z.object({
   // optional; kept for traceability only. The fields below are what's
   // actually snapshotted onto the Subscription and remain overridable.
   planId: z.string().min(1).optional().nullable(),
-  packageType: z.enum(PACKAGE_TYPES),
+  // packageType is NOT accepted from the client — derived server-side, see
+  // derivePackageType() usage below.
   billingCycle: z.enum(BILLING_CYCLES),
   modules: z.array(z.enum(MODULE_TYPES)).min(1, "Select at least one module"),
-  maxEntities: z.number().int().min(0), // 0 = unlimited; independently settable, not derived from packageType
+  maxEntities: z.number().int().min(0), // 0 = unlimited
   negotiatedPrice: z.number().min(0).optional().nullable(), // per-client deal price, if tracked at all
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
@@ -155,7 +158,7 @@ const subscriptionCreateBody = z.object({
 });
 const subscriptionUpdateBody = z.object({
   planId: z.string().min(1).optional().nullable(),
-  packageType: z.enum(PACKAGE_TYPES).optional(),
+  // packageType is NOT accepted from the client — see subscriptionCreateBody above.
   billingCycle: z.enum(BILLING_CYCLES).optional(),
   modules: z.array(z.enum(MODULE_TYPES)).min(1, "Select at least one module").optional(),
   maxEntities: z.number().int().min(0).optional(), // 0 = unlimited; no longer recalculated from packageType
@@ -357,7 +360,7 @@ export const adminRoutes = new Hono<AppEnv>()
         data: {
           clientId: created.id,
           planId: subscription.planId ?? null,
-          packageType: subscription.packageType,
+          packageType: derivePackageType(subscription.billingCycle, maxEntities),
           billingCycle: subscription.billingCycle,
           maxEntities,
           negotiatedPrice: subscription.negotiatedPrice ?? null,
@@ -395,7 +398,7 @@ export const adminRoutes = new Hono<AppEnv>()
           action: "subscription.create",
           entity: "Subscription",
           entityId: sub.id,
-          summary: `Created ${subscription.packageType} subscription for client "${name}"`,
+          summary: `Created ${sub.packageType} subscription for client "${name}"`,
           details: subscription,
         },
         tx,
@@ -647,7 +650,7 @@ export const adminRoutes = new Hono<AppEnv>()
         data: {
           clientId: body.clientId,
           planId: body.planId ?? null,
-          packageType: body.packageType,
+          packageType: derivePackageType(body.billingCycle, body.maxEntities),
           billingCycle: body.billingCycle,
           maxEntities: body.maxEntities,
           negotiatedPrice: body.negotiatedPrice ?? null,
@@ -669,7 +672,7 @@ export const adminRoutes = new Hono<AppEnv>()
           action: "subscription.create",
           entity: "Subscription",
           entityId: created.id,
-          summary: `Created ${body.packageType} subscription for client "${created.client.name}"`,
+          summary: `Created ${created.packageType} subscription for client "${created.client.name}"`,
           details: body,
         },
         tx,
@@ -689,6 +692,15 @@ export const adminRoutes = new Hono<AppEnv>()
     if (body.endDate === null) data.endDate = null;
 
     const updated = await prisma.$transaction(async (tx) => {
+      // Fetch the current row first so packageType can be recomputed from
+      // whichever of billingCycle/maxEntities actually changed, merged with
+      // whichever didn't (both are optional on a partial update) — this is
+      // the one write path where the tier could otherwise go stale.
+      const existing = await tx.subscription.findUniqueOrThrow({ where: { id } });
+      const effectiveBillingCycle = body.billingCycle ?? existing.billingCycle;
+      const effectiveMaxEntities = body.maxEntities ?? existing.maxEntities;
+      data.packageType = derivePackageType(effectiveBillingCycle as (typeof BILLING_CYCLES)[number], effectiveMaxEntities);
+
       if (modules) {
         // Narrowing the ceiling must not silently leave a location holding a
         // module its client is no longer licensed for (Fix Plan §2.3: the
@@ -699,11 +711,10 @@ export const adminRoutes = new Hono<AppEnv>()
           where: { subscriptionId: id, module: { notIn: modules } },
         });
         if (dropped.length > 0) {
-          const sub = await tx.subscription.findUniqueOrThrow({ where: { id } });
           await tx.locationModule.deleteMany({
             where: {
               module: { in: dropped.map((d) => d.module) },
-              location: { clientId: sub.clientId },
+              location: { clientId: existing.clientId },
             },
           });
         }

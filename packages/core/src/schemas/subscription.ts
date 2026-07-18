@@ -14,10 +14,12 @@ export const subscriptionCreateBody = z.object({
   // actually snapshotted onto the Subscription, and remain independently
   // overridable even when a planId is set.
   planId: z.string().min(1).optional().nullable(),
-  packageType: packageType,
+  // packageType is NOT accepted here — it's derived server-side from
+  // billingCycle + maxEntities (see derivePackageType in constants.ts) so
+  // the tier badge can never drift from what the subscription actually is.
   billingCycle: billingCycle,
   modules: z.array(moduleType).min(1, "Select at least one module"),
-  maxEntities: z.number().int().min(0), // 0 = unlimited; independently settable, not derived from packageType
+  maxEntities: z.number().int().min(0), // 0 = unlimited
   negotiatedPrice: z.number().min(0).optional().nullable(), // per-client/per-deal price, if tracked at all
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD"),
   endDate: z
@@ -31,10 +33,10 @@ export type SubscriptionCreateBody = z.infer<typeof subscriptionCreateBody>;
 
 export const subscriptionUpdateBody = z.object({
   planId: z.string().min(1).optional().nullable(),
-  packageType: packageType.optional(),
+  // packageType is NOT accepted here — see subscriptionCreateBody above.
   billingCycle: billingCycle.optional(),
   modules: z.array(moduleType).min(1, "Select at least one module").optional(),
-  maxEntities: z.number().int().min(0).optional(), // no longer recalculated from packageType
+  maxEntities: z.number().int().min(0).optional(),
   negotiatedPrice: z.number().min(0).optional().nullable(),
   status: subscriptionStatus.optional(),
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
