@@ -1,3 +1,7 @@
+> **Read-only reference — this describes the LEGACY PHP system, not the rebuild.**
+> Use it to reproduce legacy behaviour and verify formula parity. For how the current system
+> works see [../architecture.md](../architecture.md) and [../PRODUCT.md](../PRODUCT.md).
+
 # FnB System — Database Keys Reference
 
 Extracted from the model files in `fnb-main`. Each section lists the table name, its primary key, and all columns used in queries, inserts, or updates throughout the codebase.

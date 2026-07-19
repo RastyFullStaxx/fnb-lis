@@ -1,3 +1,7 @@
+> **Read-only reference — this describes the LEGACY PHP system, not the rebuild.**
+> Use it to reproduce legacy behaviour and verify formula parity. For how the current system
+> works see [../architecture.md](../architecture.md) and [../PRODUCT.md](../PRODUCT.md).
+
 # FNB Legacy System Documentation
 
 **System name in database/settings:** Liquor Inventory Solution (LIS)  

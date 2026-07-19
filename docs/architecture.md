@@ -1,6 +1,6 @@
 # FNB/LIS — Architecture
 
-Companion docs: [PRODUCT.md](../PRODUCT.md) (what/why) · [DESIGN.md](../DESIGN.md) (look/feel) · [phases/](phases/) (build order) · [fnb_master_implementation_plan.md](fnb_master_implementation_plan.md) (index).
+Companion docs: [project-overview.md](project-overview.md) (start here) · [PRODUCT.md](PRODUCT.md) (what/why) · [DESIGN.md](DESIGN.md) (look/feel) · [golden-fixtures.md](golden-fixtures.md) (the sacred numbers) · [build-log.md](build-log.md) (what shipped when).
 
 ## 1. Shape of the system
 
@@ -87,7 +87,7 @@ Role matrix: ADMIN all · MANAGER ops+prices+menus+imports+void/correct (assigne
 
 ## 5. Frontend
 
-URL carries tenancy: `/l/:locationId/...` (the modern `?bta-client=`). Shell = shadcn Sidebar (Dashboard, Stock, Counts, Purchases ▸ Forfeits tab, Sales ▸ Non-Revenue/Production tabs, Recipes, Imports, Reports, Items, Suppliers, Settings; ADMIN: Clients, Users, Activity) + topbar switcher + Ctrl+K palette + Sonner. TanStack Query owns server state (no Redux); react-hook-form+zod owns forms; signature screens and interaction rules live in [DESIGN.md](../DESIGN.md).
+URL carries tenancy: `/l/:locationId/...` (the modern `?bta-client=`). Shell = shadcn Sidebar (Dashboard, Stock, Counts, Purchases ▸ Forfeits tab, Sales ▸ Non-Revenue/Production tabs, Recipes, Imports, Reports, Items, Suppliers, Settings; ADMIN: Clients, Users, Activity) + topbar switcher + Ctrl+K palette + Sonner. TanStack Query owns server state (no Redux); react-hook-form+zod owns forms; signature screens and interaction rules live in [DESIGN.md](DESIGN.md).
 
 ## 6. Formula appendix (verified against legacy PHP — reproduce EXACTLY)
 
@@ -150,7 +150,7 @@ Pipeline: upload (sha256, stored under `apps/server/data/uploads/`) → parse: C
 | 8 | Web first, Electron later | Proposal's desktop-primary | AGENTS.md directive; core/schemas/SPA architected for reuse |
 | 9 | No automated tests during initial build | Proposal §5.4 | AGENTS.md explicit instruction; verification = golden seeded cycle with hand-computed numbers + live checks |
 | 10 | PostHog/Sentry deferred to polish phase, env-gated | AGENTS.md tooling list | No keys exist yet; wiring is additive |
-| 11 | Inter-location transfers are greenfield (no legacy precedent) | Legacy had no transfer/requisition feature at all | Client reqs #10/#13; correctness rests on the hand-computed 10-sent/8-received fixture in docs/phases/phase-9 — flag for client sign-off before first live use |
+| 11 | Inter-location transfers are greenfield (no legacy precedent) | Legacy had no transfer/requisition feature at all | Client reqs #10/#13; correctness rests on the hand-computed 10-sent/8-received fixture in golden-fixtures.md §2 — flag for client sign-off before first live use |
 | 12 | Transfer window semantics: out on `businessDate` (source), in on `receiptDate` (destination) | — | Sent-vs-received gaps stay visible as the difference between the two locations' Transfer reports; that visibility is the audit point |
 | 13 | Cost Analysis uses 1.12 (12% VAT) uniformly; VAT row shows the amount | Legacy `food_downloadCA` divided some always-zero rows by 1.22 and put net-sales in the "VAT" cell | Dead cells and a mislabel, not formulas to preserve; under uniform 1.12, NET % ≡ GROSS % (legacy's differed only via the 1.22 quirk). Confirm with LIS before first client delivery |
 | 14 | CA revenue allocated per recipe share across product types | Legacy dumped a menu's whole gross into its own module's report | The CA now cross-foots exactly with the Full Audit revenue column for the same window |

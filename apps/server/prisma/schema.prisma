@@ -470,7 +470,7 @@ model Forfeit {
 // (Trans In). Sent vs received may differ — that gap is deliberate audit
 // signal, surfaced by comparing the two locations' Transfer reports.
 // Greenfield feature: no legacy PHP precedent — correctness rests on the
-// hand-computed fixture in docs/phases/phase-9 (10 sent vs 8 received).
+// hand-computed fixture in docs/golden-fixtures.md §2 (10 sent vs 8 received).
 //
 // Tenant guard: both locations MUST belong to the same client — enforced at
 // create in routes/transfers.ts (the DB can't express it).

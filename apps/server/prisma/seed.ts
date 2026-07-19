@@ -559,7 +559,7 @@ async function seedGoldenCycle() {
 }
 
 /**
- * Phase-9 transfer fixture (docs/phases/phase-9): Main Bar dispatches 10 San
+ * Phase-9 transfer fixture (docs/golden-fixtures.md §2): Main Bar dispatches 10 San
  * Miguel to a new "Depot" stockroom on 2026-06-10; the Depot confirms only 8
  * (2 broken in transit). All activity is dated ≥ 2026-06-10 so the sacred
  * phase-3 golden window [2026-06-01, 2026-06-08) is untouched.

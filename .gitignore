@@ -8,6 +8,7 @@ apps/server/src/generated/
 .DS_Store
 .claude
 .agents
+# Personal working instructions — local only, never project truth.
+# Anything the project actually needs lives in docs/ or README.md.
 CLAUDE.md
 AGENTS.md
-DESIGN.md

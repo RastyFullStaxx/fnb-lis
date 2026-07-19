@@ -1,3 +1,7 @@
+> **Read-only reference — this describes the LEGACY PHP system, not the rebuild.**
+> Use it to reproduce legacy behaviour and verify formula parity. For how the current system
+> works see [../architecture.md](../architecture.md) and [../PRODUCT.md](../PRODUCT.md).
+
 # FnB System — Full Workflow Documentation
 
 End-to-end process guide: from user login, through every sidebar page, to final report generation.
