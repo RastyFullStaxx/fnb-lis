@@ -59,3 +59,31 @@ export function useDashboard() {
     queryFn: () => api<DashboardData>(`/api/locations/${locationId}/dashboard`),
   });
 }
+
+export interface TrendPeriod {
+  begin: string;
+  end: string;
+  revenue: number;
+  usageCost: number;
+  varianceCost: number;
+  varianceRetail: number;
+  shortageCost: number;
+  surplusCost: number;
+  itemsShort: number;
+  itemsOver: number;
+}
+
+export interface TrendsData {
+  periods: TrendPeriod[]; // oldest → newest
+  totalPeriods: number;
+}
+
+export function useTrends(periods = 8, enabled = true) {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["dashboard-trends", locationId, periods],
+    queryFn: () => api<TrendsData>(`/api/locations/${locationId}/dashboard/trends?periods=${periods}`),
+    enabled,
+    staleTime: 60_000, // eight reconciliations per hit — don't refetch on every focus
+  });
+}

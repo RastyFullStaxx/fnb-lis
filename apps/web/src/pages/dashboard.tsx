@@ -17,8 +17,12 @@ import {
 } from "lucide-react";
 import { can, type Permission, type Role } from "@fnb/core";
 import { useMe } from "@/api/auth";
-import { useDashboard, type DashboardData } from "@/api/dashboard";
+import { useDashboard, useTrends, type DashboardData, type TrendPeriod } from "@/api/dashboard";
 import { formatMoney } from "@/lib/utils";
+import { pesoCompact, pesoFull, shortDate } from "@/components/charts/chart-kit";
+import { PeriodColumns } from "@/components/charts/period-columns";
+import { StatTile, type StatTileDelta } from "@/components/charts/stat-tile";
+import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -63,12 +67,8 @@ export function DashboardPage() {
   const to = (path: string) => `/l/${locationId}/${path}`;
 
   return (
-    <div className="space-y-6">
-      <header>
-        <h2 className="text-xl font-semibold tracking-tight">
-          {greeting()}, {firstName}
-        </h2>
-      </header>
+    <div>
+      <PageHeader title={`${greeting()}${firstName ? `, ${firstName}` : ""}`} />
 
       {dash.isPending ? (
         <DashboardSkeleton />
@@ -81,9 +81,14 @@ export function DashboardPage() {
                 We could not reach the inventory service. Check your connection and try again.
               </p>
             </div>
-            <Button size="sm" variant="outline" onClick={() => void dash.refetch()}>
-              <RefreshCw className="size-4" />
-              Try again
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void dash.refetch()}
+              disabled={dash.isRefetching}
+            >
+              <RefreshCw className={dash.isRefetching ? "size-4 animate-spin" : "size-4"} />
+              {dash.isRefetching ? "Retrying…" : "Try again"}
             </Button>
           </CardContent>
         </Card>
@@ -111,7 +116,7 @@ function DashboardContent({
   );
 
   return (
-    <>
+    <div className="space-y-6">
       <OperationalStatus data={data} stage={stage} unresolved={unresolved} />
 
       <Card>
@@ -121,6 +126,8 @@ function DashboardContent({
         </CardContent>
       </Card>
 
+      {data.period.canAudit ? <TrendsBand /> : null}
+
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.75fr)]">
         {stage === "SETUP" ? (
           <SetupChecklist data={data} role={role} to={to} />
@@ -129,7 +136,7 @@ function DashboardContent({
         )}
         <RecentActivity data={data} role={role} to={to} />
       </div>
-    </>
+    </div>
   );
 }
 
@@ -248,6 +255,120 @@ function getPrimaryAction(data: DashboardData, role: Role): DashboardAction {
   };
 }
 
+/**
+ * Audit trends: how the location is doing ACROSS periods — revenue and
+ * variance per closed audit window, with headline tiles for the latest one.
+ * Complements Variance leaders (item-level, latest period) with the
+ * period-level story: "are we getting better?"
+ */
+function TrendsBand() {
+  const trends = useTrends(8);
+
+  if (trends.isPending) {
+    return <Skeleton className="h-72" aria-label="Loading audit trends" />;
+  }
+  // Trends are supplementary — a load failure here shouldn't shout on the
+  // dashboard; the strip and leaders still carry the day-to-day story.
+  if (trends.isError || !trends.data || trends.data.periods.length < 2) return null;
+
+  const periods = trends.data.periods;
+  const latest = periods[periods.length - 1]!;
+  const prior = periods[periods.length - 2]!;
+
+  const revenueDelta = tileDelta(latest.revenue, prior.revenue, true);
+  // For variance, "better" means closer to zero — direction follows the raw
+  // move, goodness follows the magnitude.
+  const varianceDelta = tileDelta(latest.varianceCost, prior.varianceCost, null);
+  if (varianceDelta) varianceDelta.good = Math.abs(latest.varianceCost) < Math.abs(prior.varianceCost);
+
+  const varianceVsSales =
+    latest.revenue > 0 ? (latest.varianceRetail / latest.revenue) * 100 : null;
+  const priorVarianceVsSales =
+    prior.revenue > 0 ? (prior.varianceRetail / prior.revenue) * 100 : null;
+
+  const columns = (value: (p: TrendPeriod) => number) =>
+    periods.map((p) => ({
+      label: shortDate(p.end),
+      value: value(p),
+      tooltipLabel: `${shortDate(p.begin)} – ${shortDate(p.end)}`,
+    }));
+
+  return (
+    <Card>
+      <CardContent>
+        <div className="flex flex-wrap items-baseline justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <TrendingDown className="size-4 text-primary" />
+            <h2 className="text-base font-semibold">Audit trends</h2>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Last {periods.length} closed {periods.length === 1 ? "period" : "periods"}
+          </p>
+        </div>
+
+        <div className="mt-5 grid gap-6 border-b pb-5 sm:grid-cols-3">
+          <StatTile
+            label="Latest period sales"
+            value={pesoFull(latest.revenue)}
+            delta={revenueDelta ?? undefined}
+            spark={periods.map((p) => p.revenue)}
+          />
+          <StatTile
+            label="Latest period variance (cost)"
+            value={pesoFull(latest.varianceCost)}
+            valueClassName={latest.varianceCost < 0 ? "text-destructive" : undefined}
+            delta={varianceDelta ?? undefined}
+            spark={periods.map((p) => p.varianceCost)}
+          />
+          <StatTile
+            label="Variance vs sales (retail)"
+            value={varianceVsSales === null ? "—" : `${varianceVsSales.toFixed(1)}%`}
+            valueClassName={varianceVsSales !== null && varianceVsSales < 0 ? "text-destructive" : undefined}
+            delta={
+              varianceVsSales !== null && priorVarianceVsSales !== null
+                ? {
+                    text: `${Math.abs(varianceVsSales - priorVarianceVsSales).toFixed(1)} pts`,
+                    direction: varianceVsSales > priorVarianceVsSales ? "up" : varianceVsSales < priorVarianceVsSales ? "down" : "flat",
+                    good: Math.abs(varianceVsSales) < Math.abs(priorVarianceVsSales),
+                    vs: "vs prior period",
+                  }
+                : undefined
+            }
+            detail={varianceVsSales === null ? "No sales in the latest period" : undefined}
+          />
+        </div>
+
+        <div className="mt-5 grid gap-8 lg:grid-cols-2">
+          <section aria-label="Sales by audit period">
+            <h3 className="text-sm font-semibold">Sales by period</h3>
+            <div className="mt-3">
+              <PeriodColumns data={columns((p) => p.revenue)} name="Sales" height={200} />
+            </div>
+          </section>
+          <section aria-label="Variance by audit period">
+            <h3 className="text-sm font-semibold">Variance by period (cost)</h3>
+            <div className="mt-3">
+              <PeriodColumns data={columns((p) => p.varianceCost)} name="Variance" diverging height={200} />
+            </div>
+          </section>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Signed compact delta vs the prior period; null when there's no move. */
+function tileDelta(latest: number, prior: number, upIsGood: boolean | null): StatTileDelta | null {
+  const diff = latest - prior;
+  if (diff === 0) return null;
+  return {
+    text: `${diff > 0 ? "+" : ""}${pesoCompact(diff)}`,
+    direction: diff > 0 ? "up" : "down",
+    good: upIsGood === null ? null : diff > 0 === upIsGood,
+    vs: "vs prior period",
+  };
+}
+
 function OperationalStatus({
   data,
   stage,
@@ -302,7 +423,7 @@ function StatusItem({ label, value, detail }: { label: string; value: string; de
   return (
     <div className="min-w-0">
       <p className="text-xs font-medium text-muted-foreground">{label}</p>
-      <p className="mt-1 truncate text-sm font-semibold tnum" title={value}>{value}</p>
+      <p className="mt-1 truncate text-base font-semibold tnum" title={value}>{value}</p>
       <p className="mt-0.5 text-xs text-muted-foreground">{detail}</p>
     </div>
   );
@@ -372,7 +493,11 @@ function AttentionQueue({
   return (
     <section aria-labelledby="attention-heading" className="border-t pt-6 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6">
       <div className="flex items-center gap-2">
-        <AlertTriangle className="size-4 text-warning" />
+        {items.length > 0 ? (
+          <AlertTriangle className="size-4 text-warning" />
+        ) : (
+          <Check className="size-4 text-muted-foreground" />
+        )}
         <h2 id="attention-heading" className="text-sm font-semibold">Needs attention</h2>
       </div>
 
@@ -546,32 +671,39 @@ function VarianceLeaders({ data, to }: { data: DashboardData; to: (path: string)
             The latest period has no cost variance. Open the Full Audit to review the source records.
           </div>
         ) : (
-          <ol className="mt-5 divide-y" aria-label="Items ranked by absolute cost variance">
+          <ol className="mt-4 divide-y" aria-label="Items ranked by absolute cost variance">
             {leaders.map((item) => {
               const width = `${Math.max(4, Math.abs(item.varianceCost) / maxMagnitude * 100)}%`;
               return (
-                <li key={item.locationItemId} className="grid gap-3 py-3 first:pt-0 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium" title={item.itemName}>{item.itemName}</p>
-                    <div className="mt-2 h-0.5 max-w-72 overflow-hidden" aria-hidden="true">
-                      <div
-                        className={item.short ? "h-full bg-destructive" : "h-full bg-success"}
-                        style={{ width }}
-                      />
+                <li key={item.locationItemId}>
+                  <Link
+                    to={to(`reports/full-audit?drill=${item.locationItemId}`)}
+                    className="group grid gap-3 rounded-md px-2 py-3 -mx-2 transition-colors duration-150 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:grid-cols-[minmax(0,1fr)_auto_auto_auto] sm:items-center"
+                    aria-label={`Open ${item.itemName} in the Full Audit`}
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium" title={item.itemName}>{item.itemName}</p>
+                      <div className="mt-2 h-1 max-w-72 overflow-hidden rounded-full bg-muted" aria-hidden="true">
+                        <div
+                          className={item.short ? "h-full rounded-full bg-destructive" : "h-full rounded-full bg-success"}
+                          style={{ width }}
+                        />
+                      </div>
                     </div>
-                  </div>
-                  <div className="text-left sm:text-right">
-                    <p className={item.short ? "text-xs font-medium text-destructive" : "text-xs font-medium text-success"}>
-                      {item.short ? "Shortage" : "Surplus"}
-                    </p>
-                    <p className="mt-0.5 text-xs text-muted-foreground tnum">
-                      {item.variancePct === null ? "Percentage n/a" : `${Math.abs(item.variancePct).toFixed(1)}%`}
-                    </p>
-                  </div>
-                  <div className="text-left sm:min-w-32 sm:text-right">
-                    <p className="text-sm font-semibold tnum">{formatMoney(item.varianceCost)}</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground tnum">Retail {formatMoney(item.varianceRetail)}</p>
-                  </div>
+                    <div className="text-left sm:text-right">
+                      <p className={item.short ? "text-xs font-medium text-destructive" : "text-xs font-medium text-success"}>
+                        {item.short ? "Shortage" : "Surplus"}
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted-foreground tnum">
+                        {item.variancePct === null ? "Percentage n/a" : `${Math.abs(item.variancePct).toFixed(1)}%`}
+                      </p>
+                    </div>
+                    <div className="text-left sm:min-w-32 sm:text-right">
+                      <p className="text-sm font-semibold tnum">{formatMoney(item.varianceCost)}</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground tnum">Retail {formatMoney(item.varianceRetail)}</p>
+                    </div>
+                    <ArrowRight className="hidden size-3.5 shrink-0 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5 sm:block" />
+                  </Link>
                 </li>
               );
             })}
@@ -629,8 +761,8 @@ function RecentActivity({
 
 function DashboardSkeleton() {
   return (
-    <div className="space-y-4" aria-label="Loading dashboard">
-      <Skeleton className="h-24 rounded-none" />
+    <div className="space-y-6" aria-label="Loading dashboard">
+      <Skeleton className="h-[104px] rounded-none" />
       <Skeleton className="h-56" />
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.75fr)]">
         <Skeleton className="h-80" />

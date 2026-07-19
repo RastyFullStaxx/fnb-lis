@@ -1,6 +1,7 @@
 import type { ComponentType, ReactNode } from "react";
-import { Search } from "lucide-react";
+import { RefreshCw, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -42,7 +43,9 @@ export function TableSurface({
           // The inner shadcn table wrapper is its own scroll container, which would
           // trap the sticky header — flatten it so this body is the only scroller.
           "[&_[data-slot=table-container]]:overflow-visible",
-          "[&_thead]:sticky [&_thead]:top-0 [&_thead]:z-10",
+          // Opaque header background is part of the sticky guarantee — without
+          // it, rows bleed through the pinned labels while scrolling.
+          "[&_thead]:sticky [&_thead]:top-0 [&_thead]:z-10 [&_thead]:bg-muted",
           bodyClassName,
         )}
       >
@@ -90,6 +93,34 @@ export function TableLoading({ rows = 8 }: { rows?: number }) {
           <Skeleton className="h-5 w-full" />
         </div>
       ))}
+    </div>
+  );
+}
+
+/**
+ * Error fill for inside a TableSurface — a load failure must never render as
+ * an empty state ("No sales in this range" when the service is down misleads
+ * on an audit-grade tool). Says what happened and offers the way forward.
+ */
+export function TableError({
+  title = "Couldn't load this report",
+  description = "Check your connection and try again.",
+  onRetry,
+  retrying = false,
+}: {
+  title?: string;
+  description?: string;
+  onRetry: () => void;
+  retrying?: boolean;
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-2 px-6 py-16 text-center">
+      <p className="text-sm font-medium">{title}</p>
+      <p className="max-w-sm text-sm text-muted-foreground">{description}</p>
+      <Button size="sm" variant="outline" className="mt-2" onClick={onRetry} disabled={retrying}>
+        <RefreshCw className={cn("size-4", retrying && "animate-spin")} />
+        {retrying ? "Retrying…" : "Try again"}
+      </Button>
     </div>
   );
 }

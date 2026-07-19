@@ -32,10 +32,13 @@
 
   --success: oklch(0.55 0.15 155);
   --warning: oklch(0.62 0.15 75);
+  /* Text-safe warning: --warning is a tint/badge color that sits ~3.6:1 on
+     white; darken it for 12-14px text so amber labels clear the 4.5:1 floor. */
+  --warning-text: oklch(0.5 0.13 75);
 
   --border: oklch(0.916 0.008 264);
   --input: oklch(0.916 0.008 264);
-  --ring: oklch(0.6 0.15 264);
+  --ring: oklch(0.488 0.217 264); /* focus rings match --primary (DESIGN.md) */
 
   --chart-1: oklch(0.488 0.217 264);
   --chart-2: oklch(0.62 0.14 264);
@@ -81,6 +84,7 @@
   --color-destructive-foreground: var(--destructive-foreground);
   --color-success: var(--success);
   --color-warning: var(--warning);
+  --color-warning-text: var(--warning-text);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -123,19 +127,9 @@ html[data-font-size="x-large"] {
   font-size: 125%; /* 20px */
 }
 
-.dark {
-  --sidebar: hsl(240 5.9% 10%);
-  --sidebar-foreground: hsl(240 4.8% 95.9%);
-  --sidebar-primary: hsl(224.3 76.3% 48%);
-  --sidebar-primary-foreground: hsl(0 0% 100%);
-  --sidebar-accent: hsl(240 3.7% 15.9%);
-  --sidebar-accent-foreground: hsl(240 4.8% 95.9%);
-  --sidebar-border: hsl(240 3.7% 15.9%);
-  --sidebar-ring: hsl(217.2 91.2% 59.8%);
-}
-
-/* Top loading bar: indeterminate royal-blue slide (see components/top-progress.tsx).
-   Easing matches the app motion token in DESIGN.md. */
+/* Top loading bar: indeterminate royal-blue slide, then a finish sweep to
+   full width that fades out (see components/top-progress.tsx). Easing matches
+   the app motion token in DESIGN.md. */
 @keyframes progress-slide {
   0% {
     transform: translateX(-125%);
@@ -146,6 +140,36 @@ html[data-font-size="x-large"] {
 }
 .animate-progress-slide {
   animation: progress-slide 1.05s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+@keyframes progress-finish {
+  0% {
+    transform: translateX(-60%);
+    opacity: 1;
+  }
+  55% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(0);
+    opacity: 0;
+  }
+}
+.animate-progress-finish {
+  animation: progress-finish 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+/* Reduced motion: no translation loops — the bar simply appears and crossfades. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-progress-slide {
+    animation: none;
+    width: 100%;
+    transform: none;
+  }
+  .animate-progress-finish {
+    animation: none;
+    opacity: 0;
+    transition: opacity 0.2s linear;
+  }
 }
 
 /* Print: strip the app chrome, land reports on A4 landscape with a repeating

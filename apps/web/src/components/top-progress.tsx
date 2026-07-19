@@ -5,36 +5,38 @@ import { useIsFetching } from "@tanstack/react-query";
  * Slim royal-blue progress bar pinned to the top of the viewport. It rides React
  * Query's global fetching count, so any in-flight page or data load shows it and
  * it clears the moment the data lands — the "frictionless speed" cue on every
- * navigation. Indeterminate slide, no fake percentages. See DESIGN.md "Loading".
+ * navigation. Indeterminate slide while running; when the last fetch settles it
+ * sweeps to full width and fades — every load ends with a visible completion
+ * moment instead of an abrupt cut. Decorative only (in-place skeletons carry
+ * the accessible loading state), so it stays out of the accessibility tree.
  */
 export function TopProgress() {
   const active = useIsFetching() > 0;
-  // Stay mounted briefly after idle so the fade-out can play to completion.
-  const [visible, setVisible] = useState(false);
+  const [stage, setStage] = useState<"idle" | "running" | "finish">("idle");
   const timer = useRef<number | undefined>(undefined);
 
   useEffect(() => {
+    window.clearTimeout(timer.current);
     if (active) {
-      window.clearTimeout(timer.current);
-      setVisible(true);
-    } else if (visible) {
-      timer.current = window.setTimeout(() => setVisible(false), 250);
+      setStage("running");
+    } else if (stage === "running") {
+      setStage("finish");
+      timer.current = window.setTimeout(() => setStage("idle"), 450);
     }
     return () => window.clearTimeout(timer.current);
-  }, [active, visible]);
+  }, [active, stage]);
 
-  if (!visible) return null;
+  if (stage === "idle") return null;
 
   return (
     <div
       className="pointer-events-none fixed inset-x-0 top-0 z-50 h-0.5 overflow-hidden print:hidden"
-      role="progressbar"
       aria-hidden="true"
     >
-      {active ? (
+      {stage === "running" ? (
         <div className="animate-progress-slide h-full w-2/5 rounded-full bg-primary" />
       ) : (
-        <div className="h-full w-full bg-primary opacity-0 transition-opacity duration-200" />
+        <div className="animate-progress-finish h-full w-full bg-primary" />
       )}
     </div>
   );

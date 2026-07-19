@@ -11,7 +11,7 @@ import { Check, ChevronsUpDown, LogOut, Sparkles } from "lucide-react";
 import { LOCATION_KIND_LABELS, type LocationKind, type MeResponse } from "@fnb/core";
 import { useLogout, useMe } from "@/api/auth";
 import { ApiError } from "@/api/http";
-import { FullPageSpinner } from "@/components/full-page-spinner";
+import { BootError, BootSkeleton } from "@/components/full-page-spinner";
 import { ADMIN_NAV, CATALOG_NAV, MAIN_NAV, visibleNav, type NavItem } from "@/lib/nav";
 import {
   Sidebar,
@@ -50,14 +50,19 @@ export function AppShell() {
   const me = useMe();
   const { locationId } = useParams();
 
-  if (me.isPending) return <FullPageSpinner />;
+  if (me.isPending) return <BootSkeleton />;
   if (me.isError) {
     if (me.error instanceof ApiError && me.error.status === 401) {
       // ?expired=1 → the login page shows a calm "session ended" notice
       // instead of looking like the user was silently kicked out.
       return <Navigate to="/login?expired=1" replace />;
     }
-    return <FullPageSpinner error="Could not reach the server. Is the API running?" />;
+    return (
+      <BootError
+        message="Could not reach the inventory service. Check your connection and try again."
+        onRetry={() => void me.refetch()}
+      />
+    );
   }
 
   const allLocations = me.data.clients.flatMap((c) =>
@@ -67,7 +72,7 @@ export function AppShell() {
   if (!current) {
     const first = allLocations[0];
     return first ? <Navigate to={`/l/${first.id}/dashboard`} replace /> : (
-      <FullPageSpinner error="Your account has no assigned client locations yet." />
+      <BootError message="Your account has no assigned client locations yet. Ask your administrator to grant access." />
     );
   }
 
@@ -175,7 +180,7 @@ function LocationSwitcher({ me, current }: { me: MeResponse; current: CurrentLoc
           <DropdownMenuTrigger asChild>
             <SidebarMenuButton
               size="lg"
-              className="group/icon-hover data-[state=open]:bg-sidebar-accent group-data-[collapsible=icon]:hover:bg-transparent! group-data-[collapsible=icon]:data-[state=open]:bg-transparent! group-data-[collapsible=icon]:h-12! pl-[5px]"
+              className="group/icon-hover data-[state=open]:bg-sidebar-accent group-data-[collapsible=icon]:hover:bg-transparent! group-data-[collapsible=icon]:data-[state=open]:bg-transparent! group-data-[collapsible=icon]:h-12! pl-1"
             >
               <div className="flex size-8 shrink-0 items-center justify-center rounded-md transition-opacity group-data-[collapsible=icon]:group-hover/icon-hover:opacity-80 group-data-[collapsible=icon]:group-data-[state=open]/icon-hover:opacity-80">
                 <img src={lisLogo} alt="LIS" className="size-8 object-contain" />
@@ -196,7 +201,7 @@ function LocationSwitcher({ me, current }: { me: MeResponse; current: CurrentLoc
                   <DropdownMenuItem key={loc.id} onSelect={() => switchTo(loc.id)}>
                     <span className="flex-1">{loc.name}</span>
                     {loc.kind && (
-                      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                      <span className="text-xs text-muted-foreground">
                         {LOCATION_KIND_LABELS[loc.kind as LocationKind] ?? loc.kind}
                       </span>
                     )}
@@ -211,6 +216,15 @@ function LocationSwitcher({ me, current }: { me: MeResponse; current: CurrentLoc
     </SidebarMenu>
   );
 }
+
+/** Plain-language role names — the raw enum is jargon (DESIGN.md voice). */
+const ROLE_LABELS: Record<string, string> = {
+  ADMIN: "Administrator",
+  MANAGER: "Manager",
+  STAFF: "Staff",
+  ACCOUNTANT: "Accountant",
+  READONLY: "Read-only",
+};
 
 function UserMenu({ me }: { me: MeResponse }) {
   const logout = useLogout();
@@ -238,7 +252,9 @@ function UserMenu({ me }: { me: MeResponse }) {
                 <span className="truncate text-sm font-medium">
                   {me.user.firstName} {me.user.lastName}
                 </span>
-                <span className="truncate text-xs text-sidebar-foreground/70">{me.user.role}</span>
+                <span className="truncate text-xs text-sidebar-foreground/70">
+                  {ROLE_LABELS[me.user.role] ?? me.user.role}
+                </span>
               </div>
             </SidebarMenuButton>
           </DropdownMenuTrigger>
@@ -277,7 +293,7 @@ const PAGE_TITLES: Record<string, string> = {
 function Topbar({ current, navItems }: { current: CurrentLocation; navItems: NavItem[] }) {
   const { pathname } = useLocation();
   const segment = pathname.split("/")[3] ?? "dashboard";
-  const title = PAGE_TITLES[segment] ?? "";
+  const title = PAGE_TITLES[segment] ?? segment.charAt(0).toUpperCase() + segment.slice(1);
   const [stockyOpen, setStockyOpen] = useState(false);
 
   return (
@@ -293,7 +309,7 @@ function Topbar({ current, navItems }: { current: CurrentLocation; navItems: Nav
           onClick={() => setStockyOpen(true)}
           aria-label="Ask Stocky"
         >
-          <Sparkles className="size-3.5 text-primary" />
+          <Sparkles className="size-4 text-primary" />
           <span className="hidden sm:inline">Stocky</span>
         </Button>
         <CommandPalette current={current} navItems={navItems} />
