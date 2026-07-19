@@ -44,6 +44,12 @@ export async function getSessionUser(token: string): Promise<SessionUser | null>
     return null;
   }
   if (session.user.status !== "ACTIVE") return null;
+  // A user demoted to READONLY mid-session must not ride out a long session:
+  // clamp any pre-existing expiry down to the 20-minute cap on first read.
+  if (session.user.role === "READONLY" && session.expiresAt.getTime() - Date.now() > READONLY_SESSION_TTL_MS) {
+    const clamped = new Date(Date.now() + READONLY_SESSION_TTL_MS);
+    await prisma.authSession.update({ where: { id: session.id }, data: { expiresAt: clamped } }).catch(() => {});
+  }
   // Sliding expiry: extend once the session has aged past a day.
   // READONLY sessions never renew — their 20-minute window is absolute.
   if (session.user.role !== "READONLY" && session.expiresAt.getTime() - Date.now() < RENEW_WHEN_REMAINING_MS) {

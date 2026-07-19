@@ -49,6 +49,7 @@ export function TransferEditorPage() {
   const [qty, setQty] = useState("");
   const [voidingLine, setVoidingLine] = useState<TransferLine | null>(null);
   const [voidingTransfer, setVoidingTransfer] = useState(false);
+  const [voidingReceipt, setVoidingReceipt] = useState<{ receiptId: string; label: string } | null>(null);
   const comboRef = useRef<HTMLButtonElement>(null);
 
   if (transfer.isPending) return <FullPageSpinner />;
@@ -59,6 +60,13 @@ export function TransferEditorPage() {
   const isDraft = t.status === "DRAFT";
   const role = (me.data?.user.role ?? "READONLY") as Role;
   const canVoid = isSource && can(role, "entries.void") && t.status === "COMMITTED";
+  // Discarding one's own draft is entry-level work (the server agrees);
+  // voiding a committed document stays a manager action.
+  const canDiscard = isSource && isDraft && can(role, "entries.create");
+  // The destination owns its receipts — voiding one re-opens the line for a
+  // corrected receive, and is the required FIRST step before the source can
+  // void anything (receipt-first ordering).
+  const canVoidReceipt = !isSource && can(role, "entries.void");
   const activeLines = t.lines.filter((l) => l.status === "ACTIVE");
   const total = activeLines.reduce((s, l) => s + l.lineTotal, 0);
 
@@ -103,9 +111,9 @@ export function TransferEditorPage() {
           </p>
         </div>
         <div className="ml-auto flex items-center gap-2">
-          {canVoid && (
+          {(canVoid || canDiscard) && (
             <Button variant="outline" size="sm" onClick={() => setVoidingTransfer(true)}>
-              Void transfer
+              {isDraft ? "Discard draft" : "Void transfer"}
             </Button>
           )}
           <Badge variant={isDraft ? "default" : "secondary"}>
@@ -189,6 +197,19 @@ export function TransferEditorPage() {
                         <Button variant="ghost" size="sm" onClick={() => setVoidingLine(line)}>
                           Void
                         </Button>
+                      ) : canVoidReceipt && !voided && receipt ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            setVoidingReceipt({
+                              receiptId: receipt.id,
+                              label: `${line.locationItem.itemVariant.item.name} — ${receipt.qtyReceived} received`,
+                            })
+                          }
+                        >
+                          Void receipt
+                        </Button>
                       ) : null}
                     </TableCell>
                   </TableRow>
@@ -259,15 +280,30 @@ export function TransferEditorPage() {
       <VoidDialog
         open={voidingTransfer}
         onOpenChange={setVoidingTransfer}
-        title="Void this whole transfer?"
+        title={isDraft ? "Discard this draft transfer?" : "Void this whole transfer?"}
         pending={mutations.voidTransfer.isPending}
         onConfirm={async (reason) => {
           try {
             await mutations.voidTransfer.mutateAsync(reason);
-            toast.success("Transfer voided");
+            toast.success(isDraft ? "Draft discarded" : "Transfer voided");
             setVoidingTransfer(false);
           } catch (err) {
             toast.error(err instanceof ApiError ? err.message : "Could not void");
+          }
+        }}
+      />
+      <VoidDialog
+        open={voidingReceipt !== null}
+        onOpenChange={(open) => !open && setVoidingReceipt(null)}
+        title={`Void this receipt? (${voidingReceipt?.label ?? ""})`}
+        pending={mutations.voidReceipt.isPending}
+        onConfirm={async (reason) => {
+          try {
+            await mutations.voidReceipt.mutateAsync({ id: t.id, receiptId: voidingReceipt!.receiptId, reason });
+            toast.success("Receipt voided — the line can be received again");
+            setVoidingReceipt(null);
+          } catch (err) {
+            toast.error(err instanceof ApiError ? err.message : "Could not void the receipt");
           }
         }}
       />

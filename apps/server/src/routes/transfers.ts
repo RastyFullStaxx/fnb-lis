@@ -2,11 +2,13 @@ import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import {
   allowedProductTypes,
+  can,
   lineTotal,
   transferCreate,
   transferLineCreate,
   transferReceive,
   voidRequest,
+  type Role,
 } from "@fnb/core";
 import { prisma } from "../db";
 import { AppError } from "../lib/errors";
@@ -57,8 +59,12 @@ function requireDestinationSide(transfer: { toLocationId: string }, locationId: 
   }
 }
 
-async function activeReceiptCount(where: { transferId?: string; transferLineId?: string }): Promise<number> {
-  return prisma.transferReceiptLine.count({
+/** Runs inside the caller's $transaction so the guard and the void are atomic. */
+async function activeReceiptCount(
+  tx: { transferReceiptLine: { count: (args: object) => Promise<number> } },
+  where: { transferId?: string; transferLineId?: string },
+): Promise<number> {
+  return tx.transferReceiptLine.count({
     where: {
       status: "ACTIVE",
       ...(where.transferLineId
@@ -76,8 +82,13 @@ export const transferRoutes = new Hono<AppEnv>()
       where:
         direction === "out"
           ? { fromLocationId: location.id }
-          : // The destination only sees real documents, never the source's drafts.
-            { toLocationId: location.id, status: { in: ["COMMITTED", "VOID"] } },
+          : // The destination only sees real documents: committed transfers,
+            // plus voids that had actually been committed first. A draft the
+            // source discarded before committing never reaches this inbox.
+            {
+              toLocationId: location.id,
+              OR: [{ status: "COMMITTED" }, { status: "VOID", committedAt: { not: null } }],
+            },
       include: {
         fromLocation: { select: { id: true, name: true, kind: true } },
         toLocation: { select: { id: true, name: true, kind: true } },
@@ -154,6 +165,11 @@ export const transferRoutes = new Hono<AppEnv>()
     if (!transfer || (transfer.fromLocationId !== location.id && transfer.toLocationId !== location.id)) {
       throw new AppError(404, "Transfer not found");
     }
+    // The source's work-in-progress is private until commit — the destination
+    // only ever sees the document once it's real (mirrors the list filter).
+    if (transfer.status === "DRAFT" && transfer.fromLocationId !== location.id) {
+      throw new AppError(404, "Transfer not found");
+    }
     return c.json(transfer);
   })
 
@@ -205,7 +221,11 @@ export const transferRoutes = new Hono<AppEnv>()
     const transfer = await getOwnedTransfer(location.id, c.req.param("id"));
     requireSourceSide(transfer, location.id);
     if (transfer.status !== "DRAFT") throw new AppError(409, "Committed lines cannot be removed — void instead");
-    await prisma.transferLine.delete({ where: { id: c.req.param("lineId") } });
+    // The line must actually belong to THIS draft — a raw delete by id would
+    // reach any TransferLine in the database, including other clients'.
+    const line = await prisma.transferLine.findUnique({ where: { id: c.req.param("lineId") } });
+    if (!line || line.transferId !== transfer.id) throw new AppError(404, "Transfer line not found");
+    await prisma.transferLine.delete({ where: { id: line.id } });
     return c.json({ ok: true });
   })
 
@@ -264,19 +284,29 @@ export const transferRoutes = new Hono<AppEnv>()
     if (transfer.status !== "COMMITTED") throw new AppError(409, "Only committed transfers can be received");
     const body = c.req.valid("json");
 
-    const lines = await prisma.transferLine.findMany({
-      where: { id: { in: body.lines.map((l) => l.transferLineId) } },
-      include: { locationItem: true, receipts: { where: { status: "ACTIVE" }, select: { id: true } } },
-    });
-    const byId = new Map(lines.map((l) => [l.id, l]));
-    for (const entry of body.lines) {
-      const line = byId.get(entry.transferLineId);
-      if (!line || line.transferId !== transfer.id) throw new AppError(404, "Transfer line not found on this transfer");
-      if (line.status !== "ACTIVE") throw new AppError(409, "That line was voided by the sender");
-      if (line.receipts.length > 0) throw new AppError(409, "That line is already received — void or correct the existing receipt instead");
+    // One entry per line — duplicates would each pass the already-received
+    // check against the same pre-insert snapshot.
+    const lineIds = body.lines.map((l) => l.transferLineId);
+    if (new Set(lineIds).size !== lineIds.length) {
+      throw new AppError(400, "Duplicate transfer line in the receipt");
     }
 
     const created = await prisma.$transaction(async (tx) => {
+      // Validate INSIDE the transaction so a concurrent receive can't slip a
+      // second ACTIVE receipt past a stale snapshot (single-writer SQLite
+      // serializes the transactions; the check and the insert are now atomic).
+      const lines = await tx.transferLine.findMany({
+        where: { id: { in: lineIds } },
+        include: { locationItem: true, receipts: { where: { status: "ACTIVE" }, select: { id: true } } },
+      });
+      const byId = new Map(lines.map((l) => [l.id, l]));
+      for (const entry of body.lines) {
+        const line = byId.get(entry.transferLineId);
+        if (!line || line.transferId !== transfer.id) throw new AppError(404, "Transfer line not found on this transfer");
+        if (line.status !== "ACTIVE") throw new AppError(409, "That line was voided by the sender");
+        if (line.receipts.length > 0) throw new AppError(409, "That line is already received — void or correct the existing receipt instead");
+      }
+
       const receipts = [];
       const autoCreated: string[] = [];
       for (const entry of body.lines) {
@@ -414,17 +444,22 @@ export const transferRoutes = new Hono<AppEnv>()
   )
 
   // ── Source side: voids & corrections ──
-  .post("/transfers/:id/void", voidGuard, zValidator("json", voidRequest), async (c) => {
+  // createGuard, not voidGuard: discarding one's own DRAFT is entry-level
+  // work; voiding a COMMITTED document stays a manager action (checked below).
+  .post("/transfers/:id/void", createGuard, zValidator("json", voidRequest), async (c) => {
     const location = c.get("location");
     const user = c.get("user")!;
     const { reason } = c.req.valid("json");
     const transfer = await getOwnedTransfer(location.id, c.req.param("id"));
     requireSourceSide(transfer, location.id);
     if (transfer.status === "VOID") throw new AppError(409, "Already voided");
-    if ((await activeReceiptCount({ transferId: transfer.id })) > 0) {
-      throw new AppError(409, "The destination has active receipts against this transfer — they must void those first");
+    if (transfer.status !== "DRAFT" && !can(user.role as Role, "entries.void")) {
+      throw new AppError(403, "You don't have permission for this action");
     }
     const voided = await prisma.$transaction(async (tx) => {
+      if ((await activeReceiptCount(tx, { transferId: transfer.id })) > 0) {
+        throw new AppError(409, "The destination has active receipts against this transfer — they must void those first");
+      }
       const updated = await tx.transfer.update({
         where: { id: transfer.id },
         data: { status: "VOID", voidedAt: new Date(), voidedById: user.id, voidReason: reason },
@@ -452,10 +487,10 @@ export const transferRoutes = new Hono<AppEnv>()
     const line = await prisma.transferLine.findUnique({ where: { id: c.req.param("lineId") }, include: LI_INCLUDE });
     if (!line || line.transferId !== transfer.id) throw new AppError(404, "Transfer line not found");
     if (line.status === "VOID") throw new AppError(409, "Already voided");
-    if ((await activeReceiptCount({ transferLineId: line.id })) > 0) {
-      throw new AppError(409, "The destination has an active receipt for this line — they must void it first");
-    }
     const voided = await prisma.$transaction(async (tx) => {
+      if ((await activeReceiptCount(tx, { transferLineId: line.id })) > 0) {
+        throw new AppError(409, "The destination has an active receipt for this line — they must void it first");
+      }
       const updated = await tx.transferLine.update({
         where: { id: line.id },
         data: { status: "VOID", voidedAt: new Date(), voidedById: user.id, voidReason: reason },
@@ -488,11 +523,11 @@ export const transferRoutes = new Hono<AppEnv>()
       const line = await prisma.transferLine.findUnique({ where: { id: c.req.param("lineId") }, include: LI_INCLUDE });
       if (!line || line.transferId !== transfer.id) throw new AppError(404, "Transfer line not found");
       if (line.status === "VOID") throw new AppError(409, "Already voided — correct the replacement instead");
-      if ((await activeReceiptCount({ transferLineId: line.id })) > 0) {
-        throw new AppError(409, "The destination has an active receipt for this line — they must void it first");
-      }
       const unitCost = body.unitCost ?? line.unitCost;
       const replacement = await prisma.$transaction(async (tx) => {
+        if ((await activeReceiptCount(tx, { transferLineId: line.id })) > 0) {
+          throw new AppError(409, "The destination has an active receipt for this line — they must void it first");
+        }
         await tx.transferLine.update({
           where: { id: line.id },
           data: { status: "VOID", voidedAt: new Date(), voidedById: user.id, voidReason: body.reason },

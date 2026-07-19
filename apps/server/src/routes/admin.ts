@@ -503,6 +503,16 @@ export const adminRoutes = new Hono<AppEnv>()
       const effectiveMaxEntities = body.maxEntities ?? existing.maxEntities;
       data.packageType = derivePackageType(effectiveBillingCycle as BillingCycle, effectiveMaxEntities);
 
+      // Moving the startDate re-anchors every billing period, and the
+      // first-period rule would otherwise re-credit an arbitrarily old
+      // payment ("contract restart" showing ACTIVE off a January mark-paid).
+      // A new anchor means the current period is unpaid until someone
+      // explicitly records the payment again — audited, like every payment.
+      if (body.startDate !== undefined && body.startDate !== existing.startDate) {
+        data.paid = false;
+        data.lastPaidAt = null;
+      }
+
       if (modules) {
         // Narrowing the ceiling must not silently leave a location holding a
         // module its client is no longer licensed for (Fix Plan §2.3: the
@@ -644,6 +654,43 @@ export const adminRoutes = new Hono<AppEnv>()
           entity: "Subscription",
           entityId: id,
           summary: `Cancelled subscription for "${sub.client.name}"`,
+        },
+        tx,
+      );
+      return u;
+    });
+    return c.json(updated);
+  })
+
+  // Closes the cancel loop: a churned client who re-signs gets the SAME
+  // subscription row back (clientId is unique — a replacement row can't be
+  // created), reactivated explicitly and audibly. Payment state resets so the
+  // new engagement starts unpaid.
+  .post("/subscriptions/:id/reactivate", async (c) => {
+    const id = c.req.param("id");
+    const user = c.get("user")!;
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const sub = await tx.subscription.findUnique({
+        where: { id },
+        include: { client: { select: { id: true, name: true } } },
+      });
+      if (!sub) throw new AppError(404, "Subscription not found");
+      if (sub.status === "ACTIVE") throw new AppError(409, "Already active");
+
+      const u = await tx.subscription.update({
+        where: { id },
+        data: { status: "ACTIVE", cancelledAt: null, cancelledById: null, paid: false, lastPaidAt: null },
+        include: { client: { select: { id: true, name: true } } },
+      });
+      await logActivity(
+        {
+          user,
+          clientId: sub.clientId,
+          action: "subscription.reactivate",
+          entity: "Subscription",
+          entityId: id,
+          summary: `Reactivated subscription for "${sub.client.name}" (payment state reset)`,
         },
         tx,
       );

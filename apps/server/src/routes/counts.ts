@@ -3,7 +3,7 @@ import { zValidator } from "@hono/zod-validator";
 import {
   countLineCreate,
   countSessionCreate,
-  netWeight,
+  netQuantity,
   remainingContent,
   resolveDensityFactor,
   voidRequest,
@@ -28,8 +28,13 @@ const LINE_INCLUDE = {
  *   DENSITY (the bar open-bottle formula), else not weighable.
  */
 export function effectiveWeighMode(variant: { weighMode: string | null; contentTracked: boolean }): "DENSITY" | "NET" | null {
+  // Defense in depth: a content-tracked variant is ALWAYS density-weighed —
+  // NET would make reconciliation divide the net weight by the container
+  // size. master.ts rejects the combination at write time; this guards any
+  // row that predates that rule.
+  if (variant.contentTracked) return "DENSITY";
   if (variant.weighMode === "NET" || variant.weighMode === "DENSITY") return variant.weighMode;
-  return variant.contentTracked ? "DENSITY" : null;
+  return null;
 }
 
 /**
@@ -50,9 +55,12 @@ export async function netRemaining(
   }
   const scaleUnit = await prisma.unit.findUnique({ where: { name: scaleUnitName } });
   if (!scaleUnit || scaleUnit.kind !== "MASS") throw new AppError(400, `Unknown scale unit "${scaleUnitName}"`);
-  const net = netWeight({ scaleWeight, tareWeight: tare });
-  // Same arithmetic as core units.convert(), inlined over the raw DB rows.
-  return (net * scaleUnit.factorToBase) / variantUnit.factorToBase;
+  return netQuantity({
+    scaleWeight,
+    tareWeight: tare,
+    scaleFactorToBase: scaleUnit.factorToBase,
+    targetFactorToBase: variantUnit.factorToBase,
+  });
 }
 
 /** Resolves + validates a count line body into row data (shared by create/correct). */
@@ -202,10 +210,14 @@ export const countRoutes = new Hono<AppEnv>()
     const location = c.get("location");
     const session = await getOwnedSession(location.id, c.req.param("id"));
     if (session.status !== "OPEN") throw new AppError(409, "Committed count lines cannot be edited — void or correct instead");
+    // The line must belong to THIS session — a raw update by id would reach
+    // any CountLine in the database, including committed ones elsewhere.
+    const existing = await prisma.countLine.findUnique({ where: { id: c.req.param("lineId") } });
+    if (!existing || existing.countSessionId !== session.id) throw new AppError(404, "Count line not found");
     const body = c.req.valid("json");
     const { locationItem, data } = await buildLineData(location.id, body);
     const line = await prisma.countLine.update({
-      where: { id: c.req.param("lineId") },
+      where: { id: existing.id },
       data: { locationItemId: locationItem.id, ...data, unitCost: locationItem.cost, unitRetail: locationItem.retail },
       include: LINE_INCLUDE,
     });
@@ -216,7 +228,9 @@ export const countRoutes = new Hono<AppEnv>()
     const location = c.get("location");
     const session = await getOwnedSession(location.id, c.req.param("id"));
     if (session.status !== "OPEN") throw new AppError(409, "Committed count lines cannot be removed — void instead");
-    await prisma.countLine.delete({ where: { id: c.req.param("lineId") } });
+    const existing = await prisma.countLine.findUnique({ where: { id: c.req.param("lineId") } });
+    if (!existing || existing.countSessionId !== session.id) throw new AppError(404, "Count line not found");
+    await prisma.countLine.delete({ where: { id: existing.id } });
     return c.json({ ok: true });
   })
 

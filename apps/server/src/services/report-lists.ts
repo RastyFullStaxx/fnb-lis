@@ -430,6 +430,8 @@ export interface CostAnalysisRow {
   category: string;
   beginningCost: number;
   purchasesCost: number;
+  /** Received − dispatched, valued at the transfer lines' cost snapshots. */
+  transfersCost: number;
   endingCost: number;
   cost: number;
   costNet: number;
@@ -482,6 +484,39 @@ export async function costAnalysisReport(
     purchasesByCategory.set(cat, (purchasesByCategory.get(cat) ?? 0) + l.lineTotal);
   }
 
+  // Transfers move goods, not consumption: received stock joins the pool at
+  // the sender's cost snapshot, dispatched stock leaves it — exactly the
+  // terms the Full Audit's usage line carries, so Cost = B + P + Tin − Tout − E
+  // stays equal to "cost of what was actually consumed" and the two reports
+  // keep cross-footing (a window containing a transfer would otherwise show
+  // phantom cost at the source and negative cost at the destination).
+  const [transferOutLines, transferInReceipts] = await Promise.all([
+    prisma.transferLine.findMany({
+      where: {
+        status: "ACTIVE",
+        transfer: { fromLocationId: locationId, status: "COMMITTED", businessDate: { gte: begin, lt: end } },
+      },
+      include: { locationItem: { include: LI_INCLUDE } },
+    }),
+    prisma.transferReceiptLine.findMany({
+      where: {
+        status: "ACTIVE",
+        receiptDate: { gte: begin, lt: end },
+        transferLine: { status: "ACTIVE", transfer: { toLocationId: locationId, status: "COMMITTED" } },
+      },
+      include: { toLocationItem: { include: LI_INCLUDE }, transferLine: { select: { unitCost: true } } },
+    }),
+  ]);
+  const transfersByCategory = new Map<string, number>();
+  for (const l of transferOutLines) {
+    const cat = l.locationItem.itemVariant.item.category.name;
+    transfersByCategory.set(cat, (transfersByCategory.get(cat) ?? 0) - l.qty * l.unitCost);
+  }
+  for (const r of transferInReceipts) {
+    const cat = r.toLocationItem.itemVariant.item.category.name;
+    transfersByCategory.set(cat, (transfersByCategory.get(cat) ?? 0) + r.qtyReceived * r.transferLine.unitCost);
+  }
+
   // Gross sales per product type from the recon rows' revenue — menu revenue
   // is thereby allocated per-ingredient by the same legacy share math the
   // Full Audit uses, so the two reports always cross-foot.
@@ -505,18 +540,20 @@ export async function costAnalysisReport(
         grossSales: gross,
         netSales: netOfVat(gross),
         rows: [],
-        totals: { beginningCost: 0, purchasesCost: 0, endingCost: 0, cost: 0, costNet: 0, grossPct: null, netPct: null },
+        totals: { beginningCost: 0, purchasesCost: 0, transfersCost: 0, endingCost: 0, cost: 0, costNet: 0, grossPct: null, netPct: null },
       };
       sections.push(section);
     }
     const beginningCost = group.totals.beginCost;
     const endingCost = group.totals.endCost;
     const purchasesCost = purchasesByCategory.get(group.categoryName) ?? 0;
-    const { cost, costNet } = costLine(beginningCost, purchasesCost, endingCost);
+    const transfersCost = transfersByCategory.get(group.categoryName) ?? 0;
+    const { cost, costNet } = costLine(beginningCost, purchasesCost + transfersCost, endingCost);
     section.rows.push({
       category: group.categoryName,
       beginningCost,
       purchasesCost,
+      transfersCost,
       endingCost,
       cost,
       costNet,
@@ -529,6 +566,7 @@ export async function costAnalysisReport(
     for (const row of section.rows) {
       t.beginningCost += row.beginningCost;
       t.purchasesCost += row.purchasesCost;
+      t.transfersCost += row.transfersCost;
       t.endingCost += row.endingCost;
       t.cost += row.cost;
       t.costNet += row.costNet;

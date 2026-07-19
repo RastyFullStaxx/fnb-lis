@@ -67,6 +67,12 @@ Beginning 48×45 = 2,160 · Purchases 24×44 = 1,056 · Ending 39×45 = 1,755 �
 Note: under uniform 1.12, NET % ≡ GROSS % (the legacy's columns differed only via its dead-row
 1.22 quirk — deviation #13).
 
+The CA carries a **Transfers** column (received − dispatched at the lines' cost snapshots) so
+`Cost = B + P + T − E` mirrors the usage line — without it a transfer window would show phantom
+cost at the source and negative cost at the destination. Transfer-window checks (VERIFIED):
+Main Bar Beer [06-08 → 06-15): 1,755 + 0 **− 450** − 1,305 = **0** (nothing consumed);
+Depot Beer: 0 + 0 **+ 360** − 315 = **45** (exactly the one bottle sold).
+
 ## Billing fix case table (VERIFIED 2026-07-19, `@fnb/core/billing`)
 
 The shipped "mark as paid" fix accepted payments across a ~2-month window, so one payment displayed
@@ -83,12 +89,34 @@ period = `[due, nextDue)`, payment counts only for the period its timestamp fall
 
 - [x] Phase-3 golden table reproduces **byte-identically** with the transfer columns present (all zeros in that window)
 - [x] Transfer fixture reproduces the table above on both sides
-- [x] Cost Analysis matches the hand-computed Beer row and cross-foots with the Full Audit
+- [x] Cost Analysis matches the hand-computed Beer row (incl. transfer windows) and cross-foots with the Full Audit
 - [x] Billing case table passes (incl. the double-credit regression case)
 - [x] Cross-client transfer creation rejected (tenant guard); module-incompatible commit rejected with item names
-- [x] Receipt-first void ordering enforced (409 with instruction)
+- [x] Receipt-first void ordering enforced (409, checked inside the $transaction)
 - [x] Both workspaces typecheck clean
-- [ ] Live browser pass: transfers end-to-end, readonly 20-min expiry + watermark + export footer, NET weigh entry, per-user module 403 + switcher hiding, landing + login flyer fallback (tracked for the session's final verification)
+- [x] Live browser pass: transfers list/editor/receive, Full Audit "Variance vs Sold" + Transfers column, 19-column CSV with exporter footer, readonly 20-min TTL + watermark + export, per-user module 403 + switcher hiding, landing + login expired notice — zero console errors
+
+## Adversarial review round (2026-07-19)
+
+A five-dimension adversarial review of the full diff surfaced 25 findings; every confirmed one was
+fixed and re-verified the same day. Highlights:
+- **Cross-record reach**: draft line DELETE (transfers AND the pre-existing purchases/counts
+  routes) now verifies the line belongs to the URL's document before touching it
+- **Receive hardening**: duplicate line ids rejected; the already-received check moved INSIDE the
+  $transaction (no TOCTOU double-receipt); destination can no longer read a source's DRAFT
+- **Void loop closed in-app**: destination "Void receipt" button (receipt-first ordering is now
+  satisfiable from the UI); source can discard its own DRAFT (entry-level, server-agreed)
+- **Billing**: `/subscriptions/:id/reactivate` endpoint (cancel is no longer a dead end);
+  startDate changes reset the payment state (no first-period re-credit of stale payments);
+  Mark-as-paid button now keyed on the CURRENT period's derived state, not the stale `paid` flag;
+  demote-to-READONLY clamps existing sessions to 20 minutes
+- **NET weighing**: NET × contentTracked combination rejected everywhere (and inference is
+  contentTracked-first as defense); NET quantities round in base grams, not scale units (an
+  oz-scale no longer quantizes kitchen counts to whole ounces)
+- **Cost Analysis**: transfers valuation added (see fixture above)
+- **UI**: cleared receive field = error, not "receive everything"; negotiated-price decimals no
+  longer clobbered mid-keystroke; QuantityInput validates the post-selection value; day-0 due
+  copy unified ("Due today"); signed-in-but-unassigned users get an explicit notice on the landing
 
 **Client decisions still open** (surface at the next check-in): transfer design sign-off (no legacy
 precedent — deviation #11), CA VAT treatment sign-off (deviation #13), flyer/video/Facebook assets

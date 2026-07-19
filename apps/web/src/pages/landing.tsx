@@ -39,9 +39,18 @@ export function LandingPage() {
   const me = useMe();
   const firstLocation = me.data?.clients.flatMap((c) => c.locations)[0];
   if (firstLocation) return <Navigate to={`/l/${firstLocation.id}/dashboard`} replace />;
+  // Signed in, but no location to land on — say so instead of silently
+  // looping between the landing and the login form.
+  const signedInNoLocations = Boolean(me.data) && !firstLocation;
 
   return (
     <div className="min-h-dvh bg-sidebar text-sidebar-foreground">
+      {signedInNoLocations && (
+        <div role="status" className="bg-background px-6 py-2.5 text-center text-sm text-foreground">
+          You're signed in as {me.data!.user.username}, but no client locations are assigned to your account yet —
+          ask an administrator to assign you.
+        </div>
+      )}
       {/* Top bar */}
       <header className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
         <div className="-ml-3 flex items-center gap-2.5">

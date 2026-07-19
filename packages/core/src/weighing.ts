@@ -50,14 +50,22 @@ export function validateWeigh(
 }
 
 /**
- * Kitchen net-weight mode (client req #16): remaining = round(scale − tare) —
- * an integer in SCALE units (g/oz), same legacy phpRound as the density path.
- * No density conversion: for weighed Food items the net weight IS the
- * quantity; the caller converts scale units into the variant's counting unit
- * (e.g. 3500 g → 3.5 kg) via units.convert().
+ * Kitchen net-weight mode (client req #16): quantity = (scale − tare)
+ * converted to base grams, phpRounded to the INTEGER GRAM (the same
+ * "round in the base unit" parity as the density path's integer ml — an
+ * oz-scale reading is not quantized to whole ounces), then expressed in the
+ * variant's own counting unit (3500 g → 3.5 kg).
  */
-export function netWeight(input: { scaleWeight: number; tareWeight: number }): number {
-  return phpRound(input.scaleWeight - input.tareWeight);
+export function netQuantity(input: {
+  scaleWeight: number;
+  tareWeight: number;
+  /** The scale unit's factorToBase (g = 1, oz ≈ 28.35). */
+  scaleFactorToBase: number;
+  /** The variant counting unit's factorToBase (kg = 1000). */
+  targetFactorToBase: number;
+}): number {
+  const netGrams = phpRound((input.scaleWeight - input.tareWeight) * input.scaleFactorToBase);
+  return netGrams / input.targetFactorToBase;
 }
 
 /** validateWeigh's sibling for the NET path — same blocking rule, no density/size checks. */

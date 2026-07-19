@@ -235,6 +235,8 @@ function CreateTransferDialog({ open, onOpenChange }: { open: boolean; onOpenCha
 
 function IncomingTab() {
   const transfers = useTransfers("in");
+  const locationId = useLocationId();
+  const navigate = useNavigate();
   const [receivingId, setReceivingId] = useState<string | null>(null);
 
   return (
@@ -263,7 +265,11 @@ function IncomingTab() {
             {transfers.data!.map((t) => {
               const outstanding = t.status === "COMMITTED" && (t.receivedCount ?? 0) < (t.lineCount ?? 0);
               return (
-                <TableRow key={t.id} className={cn(t.status === "VOID" && "opacity-50")}>
+                <TableRow
+                  key={t.id}
+                  className={cn("cursor-pointer", t.status === "VOID" && "opacity-50")}
+                  onClick={() => navigate(`/l/${locationId}/transfers/${t.id}`)}
+                >
                   <TableCell className="tnum">{t.businessDate}</TableCell>
                   <TableCell>
                     <span className="font-medium">{t.fromLocation?.name}</span>
@@ -276,7 +282,13 @@ function IncomingTab() {
                   <TableCell className="tnum text-right">{formatMoney(t.total ?? 0)}</TableCell>
                   <TableCell className="text-right">
                     {outstanding && (
-                      <Button size="sm" onClick={() => setReceivingId(t.id)}>
+                      <Button
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setReceivingId(t.id);
+                        }}
+                      >
                         Receive
                       </Button>
                     )}
@@ -302,9 +314,19 @@ function ReceiveDialog({ transferId, onClose }: { transferId: string; onClose: (
   const pending = (transfer.data?.lines ?? []).filter((l) => l.status === "ACTIVE" && l.receipts.length === 0);
 
   const receive = async () => {
+    // A CLEARED field is invalid, not "receive everything" — the row styles
+    // '' as 0 and silently recording the full sent qty would contradict it.
+    if (
+      pending.some((l) => {
+        const raw = quantities[l.id];
+        return raw !== undefined && raw.trim() === "";
+      })
+    ) {
+      return toast.error("Enter a received quantity for every line (0 = nothing arrived)");
+    }
     const lines = pending.map((l) => ({
       transferLineId: l.id,
-      qtyReceived: quantities[l.id] === undefined || quantities[l.id] === "" ? l.qty : Number(quantities[l.id]),
+      qtyReceived: quantities[l.id] === undefined ? l.qty : Number(quantities[l.id]),
       note: notes[l.id]?.trim() || undefined,
     }));
     if (lines.some((l) => !Number.isFinite(l.qtyReceived) || l.qtyReceived < 0)) {

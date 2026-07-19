@@ -373,7 +373,7 @@ export function onHandCsv(report: OnHandReport): string {
 // cost table per product type. Not a flat table — hand-built, not the
 // column-spec helper.
 
-const COST_HEADERS = ["Category", "Beginning", "Purchases", "Ending", "Cost", "Cost Net", "GROSS %", "NET %"];
+const COST_HEADERS = ["Category", "Beginning", "Purchases", "Transfers", "Ending", "Cost", "Cost Net", "GROSS %", "NET %"];
 
 function pctCell(cell: Cell, value: number | null) {
   cell.value = value === null ? "—" : round2(value);
@@ -415,21 +415,23 @@ export async function costAnalysisWorkbook(report: CostAnalysisReport, meta: Rep
       const r = ws.addRow([row.category]);
       moneyCell(r.getCell(2), row.beginningCost, false);
       moneyCell(r.getCell(3), row.purchasesCost, false);
-      moneyCell(r.getCell(4), row.endingCost, false);
-      moneyCell(r.getCell(5), row.cost);
-      moneyCell(r.getCell(6), row.costNet);
-      pctCell(r.getCell(7), row.grossPct);
-      pctCell(r.getCell(8), row.netPct);
+      moneyCell(r.getCell(4), row.transfersCost);
+      moneyCell(r.getCell(5), row.endingCost, false);
+      moneyCell(r.getCell(6), row.cost);
+      moneyCell(r.getCell(7), row.costNet);
+      pctCell(r.getCell(8), row.grossPct);
+      pctCell(r.getCell(9), row.netPct);
     }
     const t = ws.addRow(["TOTAL"]);
     t.font = { bold: true };
     moneyCell(t.getCell(2), section.totals.beginningCost, false);
     moneyCell(t.getCell(3), section.totals.purchasesCost, false);
-    moneyCell(t.getCell(4), section.totals.endingCost, false);
-    moneyCell(t.getCell(5), section.totals.cost);
-    moneyCell(t.getCell(6), section.totals.costNet);
-    pctCell(t.getCell(7), section.totals.grossPct);
-    pctCell(t.getCell(8), section.totals.netPct);
+    moneyCell(t.getCell(4), section.totals.transfersCost);
+    moneyCell(t.getCell(5), section.totals.endingCost, false);
+    moneyCell(t.getCell(6), section.totals.cost);
+    moneyCell(t.getCell(7), section.totals.costNet);
+    pctCell(t.getCell(8), section.totals.grossPct);
+    pctCell(t.getCell(9), section.totals.netPct);
   }
 
   ws.getColumn(1).width = 28;
@@ -449,13 +451,13 @@ export function costAnalysisCsv(report: CostAnalysisReport): string {
     rows.push(COST_HEADERS);
     for (const row of section.rows) {
       rows.push([
-        row.category, round2(row.beginningCost), round2(row.purchasesCost), round2(row.endingCost),
+        row.category, round2(row.beginningCost), round2(row.purchasesCost), round2(row.transfersCost), round2(row.endingCost),
         round2(row.cost), round2(row.costNet),
         row.grossPct === null ? "" : round2(row.grossPct), row.netPct === null ? "" : round2(row.netPct),
       ]);
     }
     rows.push([
-      "TOTAL", round2(section.totals.beginningCost), round2(section.totals.purchasesCost), round2(section.totals.endingCost),
+      "TOTAL", round2(section.totals.beginningCost), round2(section.totals.purchasesCost), round2(section.totals.transfersCost), round2(section.totals.endingCost),
       round2(section.totals.cost), round2(section.totals.costNet),
       section.totals.grossPct === null ? "" : round2(section.totals.grossPct),
       section.totals.netPct === null ? "" : round2(section.totals.netPct),

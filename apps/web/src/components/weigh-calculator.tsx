@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Scale } from "lucide-react";
 import {
-  netWeight,
+  netQuantity,
   remainingContent,
   resolveDensityFactor,
   validateNetWeigh,
@@ -32,12 +32,13 @@ export function useWeighPreview(item: LocationItem | null, scaleText: string) {
   return useMemo(() => {
     if (!item) return null;
     const variant = item.itemVariant;
-    const mode =
-      variant.weighMode === "NET" || variant.weighMode === "DENSITY"
+    // Mirrors effectiveWeighMode in routes/counts.ts: contentTracked always
+    // means the density path; NET applies only to whole-count MASS variants.
+    const mode = variant.contentTracked
+      ? ("DENSITY" as const)
+      : variant.weighMode === "NET" || variant.weighMode === "DENSITY"
         ? variant.weighMode
-        : variant.contentTracked
-          ? ("DENSITY" as const)
-          : null;
+        : null;
     if (!mode) return null;
     const tare = variant.tareWeight;
 
@@ -50,13 +51,18 @@ export function useWeighPreview(item: LocationItem | null, scaleText: string) {
       }
       const warnings = validateNetWeigh({ scaleWeight: scale, tareWeight: tare });
       const blocking = warnings.some((w) => w.blocking);
-      const net = blocking ? 0 : netWeight({ scaleWeight: scale, tareWeight: tare });
-      // Same conversion the server does: net (scale units) → the counting unit.
+      // Same math as the server (core netQuantity): round in base grams, then
+      // express in the counting unit.
       const scaleUnitRow = units.data?.find((u) => u.name === unitName);
       const remaining =
-        scaleUnitRow && variant.unit.factorToBase > 0
-          ? (net * scaleUnitRow.factorToBase) / variant.unit.factorToBase
-          : net;
+        blocking || !scaleUnitRow || variant.unit.factorToBase <= 0
+          ? 0
+          : netQuantity({
+              scaleWeight: scale,
+              tareWeight: tare,
+              scaleFactorToBase: scaleUnitRow.factorToBase,
+              targetFactorToBase: variant.unit.factorToBase,
+            });
       return {
         ready: true as const,
         entered: true as const,

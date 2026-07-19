@@ -89,6 +89,7 @@ export interface CostAnalysisReport {
       category: string;
       beginningCost: number;
       purchasesCost: number;
+      transfersCost: number;
       endingCost: number;
       cost: number;
       costNet: number;
@@ -98,6 +99,7 @@ export interface CostAnalysisReport {
     totals: {
       beginningCost: number;
       purchasesCost: number;
+      transfersCost: number;
       endingCost: number;
       cost: number;
       costNet: number;

@@ -38,8 +38,10 @@ export function CostAnalysisPage() {
 
   const dates = countDates.data?.dates ?? [];
   const effectiveBegin = begin ?? (dates.length >= 2 ? dates[dates.length - 2] : undefined);
-  const effectiveEnd = end ?? (dates.length >= 2 ? dates[dates.length - 1] : undefined);
   const endOptions = useMemo(() => dates.filter((d) => !effectiveBegin || d > effectiveBegin), [dates, effectiveBegin]);
+  // Fall back to the latest count date AFTER the beginning — picking the
+  // newest date as "Beginning" must not silently fire a begin==end request.
+  const effectiveEnd = end ?? endOptions.at(-1);
 
   const report = useCostAnalysisReport(effectiveBegin, effectiveEnd);
 
@@ -96,9 +98,17 @@ export function CostAnalysisPage() {
         </Select>
       </div>
 
-      {report.isPending ? (
+      {!effectiveBegin || !effectiveEnd ? (
+        <p className="px-1 py-12 text-center text-sm text-muted-foreground">
+          Pick a beginning count and a LATER ending count to run the analysis.
+        </p>
+      ) : report.isPending ? (
         <TableLoading rows={8} />
-      ) : !report.data ? null : (
+      ) : !report.data ? (
+        <p className="px-1 py-12 text-center text-sm text-muted-foreground">
+          Could not build the report for this period — pick a different pair of count dates.
+        </p>
+      ) : (
         <div className="space-y-8">
           {/* Sales summary */}
           <div className="rounded-lg border">
@@ -153,6 +163,7 @@ export function CostAnalysisPage() {
                       <TableHead>Category</TableHead>
                       <TableHead className="text-right">Beginning</TableHead>
                       <TableHead className="text-right">Purchases</TableHead>
+                      <TableHead className="text-right">Transfers</TableHead>
                       <TableHead className="text-right">Ending</TableHead>
                       <TableHead className="text-right font-semibold">Cost</TableHead>
                       <TableHead className="text-right">Cost Net</TableHead>
@@ -166,6 +177,9 @@ export function CostAnalysisPage() {
                         <TableCell className="font-medium">{row.category}</TableCell>
                         <TableCell className="tnum text-right">{formatMoney(round2(row.beginningCost))}</TableCell>
                         <TableCell className="tnum text-right">{formatMoney(round2(row.purchasesCost))}</TableCell>
+                        <TableCell className="tnum text-right">
+                          {row.transfersCost === 0 ? "—" : formatMoney(round2(row.transfersCost))}
+                        </TableCell>
                         <TableCell className="tnum text-right">{formatMoney(round2(row.endingCost))}</TableCell>
                         <TableCell className="tnum text-right font-medium">{formatMoney(round2(row.cost))}</TableCell>
                         <TableCell className="tnum text-right">{formatMoney(round2(row.costNet))}</TableCell>
@@ -179,6 +193,9 @@ export function CostAnalysisPage() {
                       <TableCell className="font-medium">Total</TableCell>
                       <TableCell className="tnum text-right font-medium">{formatMoney(round2(section.totals.beginningCost))}</TableCell>
                       <TableCell className="tnum text-right font-medium">{formatMoney(round2(section.totals.purchasesCost))}</TableCell>
+                      <TableCell className="tnum text-right font-medium">
+                        {section.totals.transfersCost === 0 ? "—" : formatMoney(round2(section.totals.transfersCost))}
+                      </TableCell>
                       <TableCell className="tnum text-right font-medium">{formatMoney(round2(section.totals.endingCost))}</TableCell>
                       <TableCell className="tnum text-right font-semibold">{formatMoney(round2(section.totals.cost))}</TableCell>
                       <TableCell className="tnum text-right font-medium">{formatMoney(round2(section.totals.costNet))}</TableCell>

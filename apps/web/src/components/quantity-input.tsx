@@ -39,11 +39,19 @@ export function QuantityInput({ allowDecimal = true, onKeyDown, onPaste, ...prop
     timer.current = window.setTimeout(() => setRejected(false), 900);
   };
 
-  const isValidText = (text: string, current: string) => {
-    if (!/^[0-9.]*$/.test(text)) return false;
-    if (!allowDecimal && text.includes(".")) return false;
-    const dots = (current + text).split(".").length - 1;
-    return dots <= 1;
+  // Validate the PROSPECTIVE value — what the field would contain after the
+  // keystroke/paste replaces the current selection. Checking the raw
+  // concatenation would wrongly reject select-all-then-type over a value
+  // that already contains a decimal point.
+  const prospective = (el: HTMLInputElement, inserted: string) => {
+    const start = el.selectionStart ?? el.value.length;
+    const end = el.selectionEnd ?? el.value.length;
+    return el.value.slice(0, start) + inserted + el.value.slice(end);
+  };
+  const isValidValue = (value: string) => {
+    if (!/^[0-9.]*$/.test(value)) return false;
+    if (!allowDecimal && value.includes(".")) return false;
+    return value.split(".").length - 1 <= 1;
   };
 
   return (
@@ -56,7 +64,7 @@ export function QuantityInput({ allowDecimal = true, onKeyDown, onPaste, ...prop
         // Let through shortcuts (copy/paste/select-all) and control keys
         // (Backspace, Tab, Enter, arrows — all have multi-char key names).
         if (!(e.ctrlKey || e.metaKey || e.altKey || e.key.length > 1)) {
-          if (!isValidText(e.key, e.currentTarget.value)) {
+          if (!isValidValue(prospective(e.currentTarget, e.key))) {
             e.preventDefault();
             reject();
           }
@@ -65,7 +73,7 @@ export function QuantityInput({ allowDecimal = true, onKeyDown, onPaste, ...prop
       }}
       onPaste={(e) => {
         const text = e.clipboardData.getData("text");
-        if (!isValidText(text.trim(), e.currentTarget.value)) {
+        if (!isValidValue(prospective(e.currentTarget, text.trim()))) {
           e.preventDefault();
           reject();
         }

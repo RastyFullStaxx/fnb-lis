@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { MapPin, Plus, X } from "lucide-react";
 import {
   BILLING_CYCLE_LABELS,
@@ -196,6 +197,17 @@ export function NegotiatedPriceField({
   onChange: (v: number | null) => void;
   disabled?: boolean;
 }) {
+  // Local text state: parsing to a number on every keystroke would clobber an
+  // in-progress decimal ("12." re-rendering as "12" makes ₱12.50 untypeable
+  // in a controlled text input). The parsed value commits on every change,
+  // but the FIELD shows what was typed until it loses focus.
+  const [text, setText] = useState(value != null ? String(value) : "");
+  useEffect(() => {
+    // External resets (switching clients) re-sync the field.
+    setText(value != null ? String(value) : "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value == null ? "" : String(value)]);
+
   return (
     <div className="space-y-2">
       <Label htmlFor="negotiated-price">Negotiated price (optional)</Label>
@@ -204,8 +216,13 @@ export function NegotiatedPriceField({
       ) : (
         <QuantityInput
           id="negotiated-price"
-          value={value ?? ""}
-          onChange={(e) => onChange(e.target.value === "" ? null : Math.max(0, Number(e.target.value)))}
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            const parsed = Number(e.target.value);
+            onChange(e.target.value === "" || !Number.isFinite(parsed) ? null : Math.max(0, parsed));
+          }}
+          onBlur={() => setText(value != null ? String(value) : "")}
           placeholder="Not tracked here"
         />
       )}

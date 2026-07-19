@@ -17,6 +17,28 @@ import { requireAuth, requirePermission, type AppEnv } from "../middleware/auth"
 
 const writeGuard = requirePermission("master.write");
 
+/**
+ * NET weigh mode (client req #16) is only coherent when (a) the variant is
+ * NOT content-tracked — otherwise reconciliation would divide the net weight
+ * by the container size — and (b) the counting unit is itself a weight, so
+ * the g/oz net reading converts straight into it. Checked on every create
+ * AND on updates against the merged result.
+ */
+async function assertWeighModeValid(
+  weighMode: string | null,
+  contentTracked: boolean,
+  unitId: string,
+): Promise<void> {
+  if (weighMode !== "NET") return;
+  if (contentTracked) {
+    throw new AppError(400, "Net weight mode and open-content tracking are mutually exclusive — pick one");
+  }
+  const unit = await prisma.unit.findUnique({ where: { id: unitId } });
+  if (!unit || unit.kind !== "MASS") {
+    throw new AppError(400, `Net weight mode needs a weight-based counting unit — this variant counts in ${unit?.name ?? "an unknown unit"}`);
+  }
+}
+
 export const masterRoutes = new Hono<AppEnv>()
   .use(requireAuth)
 
@@ -155,6 +177,9 @@ export const masterRoutes = new Hono<AppEnv>()
     const user = c.get("user")!;
     const duplicate = await prisma.item.findFirst({ where: { name: { equals: body.name } } });
     if (duplicate) throw new AppError(409, `An item named "${body.name}" already exists`);
+    for (const v of body.variants) {
+      await assertWeighModeValid(v.weighMode ?? null, v.contentTracked, v.unitId);
+    }
     const item = await prisma.$transaction(async (tx) => {
       const created = await tx.item.create({
         data: {
@@ -211,6 +236,7 @@ export const masterRoutes = new Hono<AppEnv>()
       where: { itemId_size_unitId: { itemId, size: body.size, unitId: body.unitId } },
     });
     if (exists) throw new AppError(409, "This size/unit variant already exists for the item");
+    await assertWeighModeValid(body.weighMode ?? null, body.contentTracked, body.unitId);
     const variant = await prisma.$transaction(async (tx) => {
       const created = await tx.itemVariant.create({
         data: {
@@ -238,16 +264,16 @@ export const masterRoutes = new Hono<AppEnv>()
     const variantId = c.req.param("id");
     const body = c.req.valid("json");
     const user = c.get("user")!;
-    // NET weighing only makes sense when the counting unit is itself a
-    // weight — the net reading in g/oz converts straight into it.
-    if (body.weighMode === "NET") {
-      const current = await prisma.itemVariant.findUnique({ where: { id: variantId }, include: { unit: true } });
-      if (!current) throw new AppError(404, "Variant not found");
-      const unit = body.unitId ? await prisma.unit.findUnique({ where: { id: body.unitId } }) : current.unit;
-      if (!unit || unit.kind !== "MASS") {
-        throw new AppError(400, `Net weight mode needs a weight-based counting unit — this variant counts in ${unit?.name ?? "?"}`);
-      }
-    }
+    // Validate against the MERGED result — a PUT that changes only unitId or
+    // only contentTracked must not slip an existing NET variant into an
+    // invalid combination.
+    const current = await prisma.itemVariant.findUnique({ where: { id: variantId } });
+    if (!current) throw new AppError(404, "Variant not found");
+    await assertWeighModeValid(
+      body.weighMode !== undefined ? body.weighMode : current.weighMode,
+      body.contentTracked ?? current.contentTracked,
+      body.unitId ?? current.unitId,
+    );
     const variant = await prisma.$transaction(async (tx) => {
       const updated = await tx.itemVariant.update({
         where: { id: variantId },

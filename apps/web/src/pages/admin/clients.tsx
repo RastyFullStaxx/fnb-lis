@@ -105,6 +105,9 @@ function DueBadge({ sub }: { sub: AdminSubscription }) {
       </span>
     );
   }
+  if (days === 0) {
+    return <span className="text-xs text-amber-600 font-medium">Due today</span>;
+  }
   const overdue = Math.abs(days);
   return (
     <span className="text-xs text-destructive font-medium">
@@ -468,6 +471,14 @@ function ClientDetailBody({ client }: { client: AdminClient }) {
   };
 
   const cancelled = sub?.status === "CANCELLED";
+  // The paid flag alone lies after a monthly rollover (paid=true from LAST
+  // period while THIS period is unpaid) — gate the chip and the Mark-as-paid
+  // button on whether the CURRENT period is actually covered.
+  const currentPeriodPaid = sub
+    ? sub.billingCycle !== "MONTHLY" || sub.status === "SUSPENDED"
+      ? sub.paid
+      : deriveAccessState(sub) === "ACTIVE"
+    : false;
 
   return (
     <div className="space-y-5">
@@ -524,7 +535,7 @@ function ClientDetailBody({ client }: { client: AdminClient }) {
           (left) + Save (right) together on one row. ── */}
       {sub && !cancelled && (
         <div className="space-y-2 pt-1">
-          {sub.paid && (
+          {currentPeriodPaid && (
             <div className="flex items-center gap-1.5 rounded-md bg-green-50 border border-green-200 px-3 py-1.5 text-xs text-green-700 dark:bg-green-950/30 dark:border-green-800 dark:text-green-400 w-fit">
               <CheckCircle2 className="size-3.5" />
               Paid
@@ -537,7 +548,7 @@ function ClientDetailBody({ client }: { client: AdminClient }) {
           )}
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              {!sub.paid ? (
+              {!currentPeriodPaid ? (
                 <Button size="sm" className="gap-1.5" onClick={handleMarkPaid} disabled={markPaid.isPending}>
                   <CheckCircle2 className="size-4" />
                   Mark as paid
@@ -643,9 +654,11 @@ function SubscriptionPanel({
       {!cancelled && accessState === "GRACE" && sub.billingCycle === "MONTHLY" && days !== null && (
         <div className="flex items-center gap-2 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950/30 dark:border-amber-800 dark:text-amber-400">
           <CalendarDays className="size-3.5 shrink-0" />
-          {days >= 0
+          {days > 0
             ? `Payment due in ${days} day${days === 1 ? "" : "s"}.`
-            : `${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"} past due — within grace window.`}
+            : days === 0
+              ? "Payment is due today."
+              : `${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"} past due — within grace window.`}
         </div>
       )}
 

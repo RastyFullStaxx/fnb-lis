@@ -117,7 +117,11 @@ export const purchaseRoutes = new Hono<AppEnv>()
     const location = c.get("location");
     const purchase = await getOwnedPurchase(location.id, c.req.param("id"));
     if (purchase.status !== "DRAFT") throw new AppError(409, "Committed lines cannot be removed — void instead");
-    await prisma.purchaseLine.delete({ where: { id: c.req.param("lineId") } });
+    // The line must belong to THIS draft — a raw delete by id would reach any
+    // PurchaseLine in the database, including other clients'.
+    const line = await prisma.purchaseLine.findUnique({ where: { id: c.req.param("lineId") } });
+    if (!line || line.purchaseId !== purchase.id) throw new AppError(404, "Purchase line not found");
+    await prisma.purchaseLine.delete({ where: { id: line.id } });
     return c.json({ ok: true });
   })
 

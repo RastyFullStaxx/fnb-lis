@@ -151,7 +151,13 @@ async function buildMe(user: MeResponse["user"]): Promise<MeResponse> {
       id: cl.id,
       name: cl.name,
       locations: cl.locations.flatMap((l) => {
-        const modules = effectiveModules(l.modules.map((m) => m.module));
+        // Same rule as requireLocationAccess: a non-ACTIVE subscription
+        // (TRIAL/SUSPENDED/CANCELLED) falls back to an unrestricted location
+        // ceiling rather than hiding paid-for data — so the switcher and the
+        // middleware can never disagree about which locations exist.
+        const subscriptionActive = !cl.subscription || cl.subscription.status === "ACTIVE";
+        const locationModules = subscriptionActive ? l.modules.map((m) => m.module) : [];
+        const modules = effectiveModules(locationModules);
         if (modules === null) return [];
         return [
           {
