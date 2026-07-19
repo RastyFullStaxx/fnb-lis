@@ -32,6 +32,7 @@ Web application first; Electron desktop (offline SQLite + sync) as a later phase
 | [phases/phase-6-imports-ai.md](phases/phase-6-imports-ai.md) | File ingestion: deterministic + AI, review-before-commit, reversal |
 | [phases/phase-7-dashboard-polish.md](phases/phase-7-dashboard-polish.md) | Dashboard, admin, design pass, observability wiring |
 | [phases/phase-8-stocky.md](phases/phase-8-stocky.md) | Stocky read-only assistant (**last**, per AGENTS.md) |
+| [phases/phase-9-transfers-and-client-requests.md](phases/phase-9-transfers-and-client-requests.md) | Inter-location transfers + 2026-07 client request round (cost analysis, per-user modules, NET weighing, readonly hardening, landing) |
 
 Legacy references (read-only): `fnb_legacy_system_documentation.md`, `fnb-workflow.md`, `fnb-database-keys.md`, the project proposal PDF, and the prior rough plan `fnb_modernization_implementation_plan.md` (superseded by this plan).
 

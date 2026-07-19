@@ -3,6 +3,7 @@ import { zValidator } from "@hono/zod-validator";
 import {
   countLineCreate,
   countSessionCreate,
+  netWeight,
   remainingContent,
   resolveDensityFactor,
   voidRequest,
@@ -21,11 +22,44 @@ const LINE_INCLUDE = {
   correctionOf: true,
 } as const;
 
+/**
+ * The variant's effective weigh mode (client req #16):
+ *   explicit weighMode wins; legacy inference otherwise — contentTracked ⇒
+ *   DENSITY (the bar open-bottle formula), else not weighable.
+ */
+export function effectiveWeighMode(variant: { weighMode: string | null; contentTracked: boolean }): "DENSITY" | "NET" | null {
+  if (variant.weighMode === "NET" || variant.weighMode === "DENSITY") return variant.weighMode;
+  return variant.contentTracked ? "DENSITY" : null;
+}
+
+/**
+ * NET-mode conversion: net scale weight (integer, g/oz) → the variant's own
+ * counting unit (e.g. 3500 g → 3.5 kg). Because NET variants are not
+ * content-tracked, openEquivalent() passes the stored value through raw —
+ * the converted net weight IS the open quantity, and reconciliation needs no
+ * changes at all.
+ */
+export async function netRemaining(
+  scaleWeight: number,
+  tare: number,
+  scaleUnitName: string,
+  variantUnit: { name: string; kind: string; factorToBase: number },
+): Promise<number> {
+  if (variantUnit.kind !== "MASS") {
+    throw new AppError(400, `Net weighing needs a weight-based counting unit — this item counts in ${variantUnit.name}`);
+  }
+  const scaleUnit = await prisma.unit.findUnique({ where: { name: scaleUnitName } });
+  if (!scaleUnit || scaleUnit.kind !== "MASS") throw new AppError(400, `Unknown scale unit "${scaleUnitName}"`);
+  const net = netWeight({ scaleWeight, tareWeight: tare });
+  // Same arithmetic as core units.convert(), inlined over the raw DB rows.
+  return (net * scaleUnit.factorToBase) / variantUnit.factorToBase;
+}
+
 /** Resolves + validates a count line body into row data (shared by create/correct). */
 async function buildLineData(locationId: string, body: CountLineCreate) {
   const locationItem = await prisma.locationItem.findUnique({
     where: { id: body.locationItemId },
-    include: { itemVariant: { include: { item: { include: { category: true } } } } },
+    include: { itemVariant: { include: { unit: true, item: { include: { category: true } } } } },
   });
   if (!locationItem || locationItem.locationId !== locationId) {
     throw new AppError(404, "Item not found in this location's catalog");
@@ -33,23 +67,41 @@ async function buildLineData(locationId: string, body: CountLineCreate) {
 
   if (body.countType === "WEIGH") {
     const variant = locationItem.itemVariant;
-    if (!variant.contentTracked) {
-      throw new AppError(400, "This item is counted whole — it has no open-content tracking");
+    const mode = effectiveWeighMode(variant);
+    if (!mode) {
+      throw new AppError(400, "This item is counted whole — enable Liquid Weight or Net Weight on the variant to weigh it");
     }
+    const tare = body.tareWeight ?? variant.tareWeight;
+    if (tare === null || tare === undefined) throw new AppError(400, "No tare weight configured for this item");
+    if (body.scaleWeight! < tare) throw new AppError(400, "Scale reading is below the empty-container weight");
+    const scaleUnit = body.scaleUnit ?? variant.tareWeightUnit ?? "oz";
+
+    if (mode === "NET") {
+      return {
+        locationItem,
+        data: {
+          countType: "WEIGH",
+          qtyFull: 0,
+          scaleWeight: body.scaleWeight!,
+          scaleUnit,
+          tareWeight: tare,
+          densityFactor: null,
+          remainingContent: await netRemaining(body.scaleWeight!, tare, scaleUnit, variant.unit),
+        },
+      };
+    }
+
     const density =
       body.densityFactor ??
       resolveDensityFactor(variant.densityFactor, variant.item.category.defaultDensityFactor);
     if (!density) throw new AppError(400, "No density factor configured for this item or its category");
-    const tare = body.tareWeight ?? variant.tareWeight;
-    if (tare === null || tare === undefined) throw new AppError(400, "No tare weight configured for this item");
-    if (body.scaleWeight! < tare) throw new AppError(400, "Scale reading is below the empty-container weight");
     return {
       locationItem,
       data: {
         countType: "WEIGH",
         qtyFull: 0,
         scaleWeight: body.scaleWeight!,
-        scaleUnit: body.scaleUnit ?? variant.tareWeightUnit ?? "oz",
+        scaleUnit,
         tareWeight: tare,
         densityFactor: density,
         remainingContent: remainingContent({ scaleWeight: body.scaleWeight!, tareWeight: tare, densityFactor: density }),

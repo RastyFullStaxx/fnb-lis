@@ -167,6 +167,7 @@ export const masterRoutes = new Hono<AppEnv>()
               size: v.size,
               unitId: v.unitId,
               contentTracked: v.contentTracked,
+              weighMode: v.weighMode ?? null,
               tareWeight: v.tareWeight ?? null,
               tareWeightUnit: v.tareWeightUnit ?? null,
               densityFactor: v.densityFactor ?? null,
@@ -217,6 +218,7 @@ export const masterRoutes = new Hono<AppEnv>()
           size: body.size,
           unitId: body.unitId,
           contentTracked: body.contentTracked,
+          weighMode: body.weighMode ?? null,
           tareWeight: body.tareWeight ?? null,
           tareWeightUnit: body.tareWeightUnit ?? null,
           densityFactor: body.densityFactor ?? null,
@@ -236,6 +238,16 @@ export const masterRoutes = new Hono<AppEnv>()
     const variantId = c.req.param("id");
     const body = c.req.valid("json");
     const user = c.get("user")!;
+    // NET weighing only makes sense when the counting unit is itself a
+    // weight — the net reading in g/oz converts straight into it.
+    if (body.weighMode === "NET") {
+      const current = await prisma.itemVariant.findUnique({ where: { id: variantId }, include: { unit: true } });
+      if (!current) throw new AppError(404, "Variant not found");
+      const unit = body.unitId ? await prisma.unit.findUnique({ where: { id: body.unitId } }) : current.unit;
+      if (!unit || unit.kind !== "MASS") {
+        throw new AppError(400, `Net weight mode needs a weight-based counting unit — this variant counts in ${unit?.name ?? "?"}`);
+      }
+    }
     const variant = await prisma.$transaction(async (tx) => {
       const updated = await tx.itemVariant.update({
         where: { id: variantId },

@@ -23,6 +23,8 @@ export interface ItemVariant {
   size: number;
   unitId: string;
   contentTracked: boolean;
+  /** null = legacy inference (contentTracked ⇒ DENSITY); NET = kitchen net-weight counting. */
+  weighMode: "DENSITY" | "NET" | null;
   tareWeight: number | null;
   tareWeightUnit: "g" | "oz" | null;
   densityFactor: number | null;
@@ -135,6 +137,42 @@ export interface PurchaseLine extends AuditFields {
   unitCost: number;
   lineTotal: number;
   locationItem: LocationItem;
+}
+
+export interface Transfer {
+  id: string;
+  fromLocationId: string;
+  toLocationId: string;
+  fromLocation?: { id: string; name: string; kind: string | null };
+  toLocation?: { id: string; name: string; kind: string | null };
+  businessDate: string;
+  status: "DRAFT" | "COMMITTED" | "VOID";
+  note: string | null;
+  createdByName: string;
+  createdAt: string;
+  voidReason: string | null;
+  lineCount?: number;
+  total?: number;
+  /** Active lines that already have an active receipt (list endpoint only). */
+  receivedCount?: number;
+}
+
+export interface TransferReceipt {
+  id: string;
+  qtyReceived: number;
+  receiptDate: string;
+  note: string | null;
+}
+
+export interface TransferLine extends AuditFields {
+  id: string;
+  transferId: string;
+  locationItemId: string;
+  qty: number;
+  unitCost: number;
+  lineTotal: number;
+  locationItem: LocationItem;
+  receipts: TransferReceipt[];
 }
 
 export interface SaleRecord extends AuditFields {

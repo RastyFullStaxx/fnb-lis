@@ -72,8 +72,63 @@ export interface OnHandReport {
   totals: { costValue: number; retailValue: number };
 }
 
+export interface CostAnalysisReport {
+  begin: string;
+  end: string;
+  sales: {
+    byType: Array<{ productType: string; gross: number; net: number }>;
+    totalGross: number;
+    totalNet: number;
+    vatAmount: number;
+  };
+  sections: Array<{
+    productType: string;
+    grossSales: number;
+    netSales: number;
+    rows: Array<{
+      category: string;
+      beginningCost: number;
+      purchasesCost: number;
+      endingCost: number;
+      cost: number;
+      costNet: number;
+      grossPct: number | null;
+      netPct: number | null;
+    }>;
+    totals: {
+      beginningCost: number;
+      purchasesCost: number;
+      endingCost: number;
+      cost: number;
+      costNet: number;
+      grossPct: number | null;
+      netPct: number | null;
+    };
+  }>;
+}
+
+export interface TransferReport {
+  from: string;
+  to: string;
+  direction: "in" | "out";
+  rows: Array<{
+    date: string;
+    counterparty: string;
+    counterpartyKind: string | null;
+    name: string;
+    category: string;
+    qtySent: number;
+    qtyReceived: number | null;
+    unitCost: number;
+    costValue: number;
+    retailValue: number;
+  }>;
+  byCounterparty: Array<{ counterparty: string; qty: number; cost: number }>;
+  totals: { qty: number; cost: number; retail: number };
+}
+
 export interface DrillRecord {
-  kind: "COUNT" | "PURCHASE" | "SALE" | "NON_REVENUE" | "PRODUCTION" | "FORFEIT";
+  kind: "COUNT" | "PURCHASE" | "SALE" | "NON_REVENUE" | "PRODUCTION" | "FORFEIT" | "TRANSFER_IN" | "TRANSFER_OUT";
   date: string;
   detail: string;
   qty: number | null;
@@ -109,6 +164,25 @@ export function useNonRevenueReport(from: string, to: string, enabled = true) {
   });
 }
 
+export function useCostAnalysisReport(begin?: string, end?: string) {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["report", "cost-analysis", locationId, begin, end],
+    queryFn: () => api<CostAnalysisReport>(`${base(locationId)}/reports/cost-analysis?begin=${begin}&end=${end}`),
+    enabled: Boolean(begin && end),
+  });
+}
+
+export function useTransferReport(from: string, to: string, direction: "in" | "out", enabled = true) {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["report", "transfers", locationId, from, to, direction],
+    queryFn: () =>
+      api<TransferReport>(`${base(locationId)}/reports/transfers?from=${from}&to=${to}&direction=${direction}`),
+    enabled: enabled && Boolean(from && to),
+  });
+}
+
 export function useOnHandReport() {
   const locationId = useLocationId();
   return useQuery({
@@ -132,7 +206,7 @@ export function useFullAuditDrill(begin: string, end: string, locationItemId: st
 /** Export URL builder — used with downloadFile(). */
 export function exportUrl(
   locationId: string,
-  report: "full-audit" | "sales" | "purchases" | "non-revenue" | "on-hand",
+  report: "full-audit" | "sales" | "purchases" | "non-revenue" | "on-hand" | "transfers" | "cost-analysis",
   format: "xlsx" | "csv",
   params: Record<string, string> = {},
 ): string {

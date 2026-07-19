@@ -8,7 +8,7 @@ import {
   useParams,
 } from "react-router";
 import { Check, ChevronsUpDown, LogOut, Sparkles } from "lucide-react";
-import type { MeResponse } from "@fnb/core";
+import { LOCATION_KIND_LABELS, type LocationKind, type MeResponse } from "@fnb/core";
 import { useLogout, useMe } from "@/api/auth";
 import { ApiError } from "@/api/http";
 import { FullPageSpinner } from "@/components/full-page-spinner";
@@ -38,6 +38,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { CommandPalette } from "@/components/command-palette";
+import { ReadonlyWatermark } from "@/components/readonly-watermark";
 import { StockySheet } from "@/components/stocky/stocky-sheet";
 import { TopProgress } from "@/components/top-progress";
 import { Button } from "@/components/ui/button";
@@ -52,7 +53,9 @@ export function AppShell() {
   if (me.isPending) return <FullPageSpinner />;
   if (me.isError) {
     if (me.error instanceof ApiError && me.error.status === 401) {
-      return <Navigate to="/login" replace />;
+      // ?expired=1 → the login page shows a calm "session ended" notice
+      // instead of looking like the user was silently kicked out.
+      return <Navigate to="/login?expired=1" replace />;
     }
     return <FullPageSpinner error="Could not reach the server. Is the API running?" />;
   }
@@ -113,6 +116,7 @@ function ShellLayout({ me, current }: { me: MeResponse; current: CurrentLocation
         <div data-slot="page-content" className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4 sm:p-6">
           <Outlet />
         </div>
+        <ReadonlyWatermark role={role} name={`${me.user.firstName} ${me.user.lastName}`} />
       </SidebarInset>
       <Toaster position="top-center" />
     </SidebarProvider>
@@ -191,6 +195,11 @@ function LocationSwitcher({ me, current }: { me: MeResponse; current: CurrentLoc
                 {client.locations.map((loc) => (
                   <DropdownMenuItem key={loc.id} onSelect={() => switchTo(loc.id)}>
                     <span className="flex-1">{loc.name}</span>
+                    {loc.kind && (
+                      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                        {LOCATION_KIND_LABELS[loc.kind as LocationKind] ?? loc.kind}
+                      </span>
+                    )}
                     {loc.id === current.id && <Check className="size-4" />}
                   </DropdownMenuItem>
                 ))}
@@ -254,6 +263,7 @@ const PAGE_TITLES: Record<string, string> = {
   stock: "Stock",
   counts: "Counts",
   purchases: "Purchases",
+  transfers: "Transfers",
   sales: "Sales",
   recipes: "Recipes",
   imports: "Imports",

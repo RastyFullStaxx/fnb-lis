@@ -1,5 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Role } from "@fnb/core";
+import {
+  deriveAccessState as deriveAccessStateCore,
+  daysUntilDue as daysUntilDueCore,
+  type AccessState,
+  type Role,
+} from "@fnb/core";
 import { api, post, put } from "./http";
 
 // ── Shapes (mirror apps/server/src/routes/admin.ts) ──
@@ -7,6 +12,8 @@ import { api, post, put } from "./http";
 export interface AdminLocation {
   id: string;
   name: string;
+  /** Grouping label (MAIN | SATELLITE | STOCKROOM) or null — display only. */
+  kind: string | null;
   status: string;
   /** This location's OWN modules (Fix Plan §2.3) — the enforced reality, must be a subset of the client's subscription modules. */
   modules: string[];
@@ -29,6 +36,7 @@ export interface AdminSubscription {
   startDate: string;
   endDate: string | null;
   note: string | null;
+  cancelledAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -92,78 +100,23 @@ export interface AdminUser {
   role: Role;
   status: "ACTIVE" | "DISABLED";
   createdAt: string;
+  /** Per-user module restriction (client req #9): empty = unrestricted. */
+  modules: string[];
   clientAccess: AdminUserClientAccess[];
 }
 
-// ── Access state (compute-on-load mirror of server deriveAccessState) ─────────
-// Returns the derived effective access state for display.
+// ── Access state (thin wrappers over @fnb/core/billing — the single source
+// of truth shared with the server; only `now` injection happens here) ─────────
 // Callers should check sub.status first — CANCELLED/SUSPENDED override this.
-export function deriveAccessState(sub: Pick<AdminSubscription, "billingCycle" | "paid" | "lastPaidAt" | "startDate">): "ACTIVE" | "GRACE" | "VIEW_ONLY" {
-  const now = new Date();
-
-  if (sub.billingCycle !== "MONTHLY") {
-    return sub.paid ? "ACTIVE" : "GRACE";
-  }
-
-  // Compute current period due date (same anchor logic as server)
-  const anchor = new Date(sub.startDate + "T00:00:00Z");
-  const anchorDay = anchor.getUTCDate();
-  const year = now.getUTCFullYear();
-  const month = now.getUTCMonth();
-  const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
-  const due =
-    anchorDay <= daysInMonth
-      ? new Date(Date.UTC(year, month, anchorDay))
-      : new Date(Date.UTC(year, month + 1, 1));
-
-  const periodStart = new Date(due);
-  periodStart.setUTCMonth(periodStart.getUTCMonth() - 1);
-
-  // nextDue is the end of the accepted payment window: the due date of the
-  // *next* billing cycle. A payment made after this cycle's due date but
-  // before the next one still counts as paying for the current period (it
-  // just means the client paid late). End-of-day (23:59:59.999 UTC) covers
-  // same-day payments whose timestamp exceeds the midnight due date.
-  const nextDueSeed = new Date(due.getTime() + 32 * 24 * 60 * 60 * 1000);
-  const nextDueSeedYear = nextDueSeed.getUTCFullYear();
-  const nextDueSeedMonth = nextDueSeed.getUTCMonth();
-  const nextDueDaysInMonth = new Date(Date.UTC(nextDueSeedYear, nextDueSeedMonth + 1, 0)).getUTCDate();
-  const nextDue =
-    anchorDay <= nextDueDaysInMonth
-      ? new Date(Date.UTC(nextDueSeedYear, nextDueSeedMonth, anchorDay))
-      : new Date(Date.UTC(nextDueSeedYear, nextDueSeedMonth + 1, 1));
-  const nextDueEndOfDay = new Date(nextDue.getTime() + 24 * 60 * 60 * 1000 - 1);
-
-  const lastPaid = sub.lastPaidAt ? new Date(sub.lastPaidAt) : null;
-  const paidInPeriod =
-    sub.paid &&
-    lastPaid !== null &&
-    lastPaid >= periodStart &&
-    lastPaid <= nextDueEndOfDay;
-
-  if (paidInPeriod) return "ACTIVE";
-
-  const msOverdue = now.getTime() - due.getTime();
-  const daysOverdue = msOverdue / (1000 * 60 * 60 * 24);
-
-  if (daysOverdue <= 7) return "GRACE";
-  return "VIEW_ONLY";
+export function deriveAccessState(
+  sub: Pick<AdminSubscription, "billingCycle" | "paid" | "lastPaidAt" | "startDate">,
+): AccessState {
+  return deriveAccessStateCore(sub, new Date());
 }
 
-/** Days until due (negative = overdue). Only meaningful for MONTHLY plans. */
+/** Signed days for the current due (positive = upcoming, negative = overdue). MONTHLY only. */
 export function daysUntilDue(sub: Pick<AdminSubscription, "startDate">): number {
-  const now = new Date();
-  const anchor = new Date(sub.startDate + "T00:00:00Z");
-  const anchorDay = anchor.getUTCDate();
-  const year = now.getUTCFullYear();
-  const month = now.getUTCMonth();
-  const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
-  const due =
-    anchorDay <= daysInMonth
-      ? new Date(Date.UTC(year, month, anchorDay))
-      : new Date(Date.UTC(year, month + 1, 1));
-
-  return Math.round((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  return daysUntilDueCore(sub.startDate, new Date());
 }
 
 // ── Clients & locations ────────────────────────────────────────────────────
@@ -240,6 +193,19 @@ export function useAddLocation() {
   });
 }
 
+// Rename / relabel a location (kind = main/satellite/stockroom grouping tag).
+export function useUpdateLocation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ locationId, ...body }: { locationId: string; name?: string; kind?: string | null }) =>
+      put<AdminLocationWire>(`/api/admin/locations/${locationId}`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "clients"] });
+      qc.invalidateQueries({ queryKey: ["me"] });
+    },
+  });
+}
+
 // Sets a single location's own module set (Fix Plan §2.3) — server enforces
 // it stays a subset of the client's current subscription modules.
 export function useUpdateLocationModules() {
@@ -261,13 +227,15 @@ interface AdminUserClientAccessWire extends Omit<AdminUserClientAccess, "client"
     subscription: (Pick<AdminSubscription, "packageType" | "billingCycle" | "status"> & { modules?: ModuleRow[] }) | null;
   };
 }
-interface AdminUserWire extends Omit<AdminUser, "clientAccess"> {
+interface AdminUserWire extends Omit<AdminUser, "clientAccess" | "modules"> {
+  modules?: ModuleRow[];
   clientAccess: AdminUserClientAccessWire[];
 }
 
 function normalizeUser(user: AdminUserWire): AdminUser {
   return {
     ...user,
+    modules: toModuleList(user.modules),
     clientAccess: user.clientAccess.map((a) => ({
       ...a,
       client: {
@@ -295,6 +263,8 @@ export interface CreateUserBody {
   email?: string;
   role: Role;
   clientIds: string[];
+  /** Per-user module restriction: empty = unrestricted. */
+  modules?: string[];
 }
 
 export function useCreateUser() {
@@ -312,6 +282,8 @@ export interface UpdateUserBody {
   firstName?: string;
   lastName?: string;
   email?: string;
+  /** Per-user module restriction: empty = unrestricted. */
+  modules?: string[];
 }
 
 export function useUpdateUser() {

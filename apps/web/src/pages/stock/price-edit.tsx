@@ -5,7 +5,7 @@ import type { LocationItem } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { formatMoney } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { QuantityInput } from "@/components/quantity-input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
@@ -67,11 +67,8 @@ export function PriceEdit({ row, canEdit }: { row: LocationItem; canEdit: boolea
           <Label htmlFor={`cost-${row.id}`} className="text-xs">
             Cost
           </Label>
-          <Input
+          <QuantityInput
             id={`cost-${row.id}`}
-            type="number"
-            step="any"
-            min="0"
             className="tnum h-8"
             value={cost}
             autoFocus
@@ -83,11 +80,8 @@ export function PriceEdit({ row, canEdit }: { row: LocationItem; canEdit: boolea
           <Label htmlFor={`retail-${row.id}`} className="text-xs">
             Retail
           </Label>
-          <Input
+          <QuantityInput
             id={`retail-${row.id}`}
-            type="number"
-            step="any"
-            min="0"
             className="tnum h-8"
             value={retail}
             onChange={(e) => setRetail(e.target.value)}
@@ -98,11 +92,8 @@ export function PriceEdit({ row, canEdit }: { row: LocationItem; canEdit: boolea
           <Label htmlFor={`par-${row.id}`} className="text-xs">
             Par level (optional)
           </Label>
-          <Input
+          <QuantityInput
             id={`par-${row.id}`}
-            type="number"
-            step="any"
-            min="0"
             className="tnum h-8"
             value={par}
             onChange={(e) => setPar(e.target.value)}

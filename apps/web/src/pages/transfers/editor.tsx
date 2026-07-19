@@ -5,8 +5,8 @@ import { toast } from "sonner";
 import { can, type Role } from "@fnb/core";
 import { useMe } from "@/api/auth";
 import { useLocationId } from "@/api/location";
-import { usePurchase, usePurchaseMutations } from "@/api/ops";
-import { variantLabel, type LocationItem, type PurchaseLine } from "@/api/types";
+import { useTransfer, useTransferMutations } from "@/api/ops";
+import { variantLabel, type LocationItem, type TransferLine } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { formatMoney } from "@/lib/utils";
 import { ItemCombobox } from "@/components/item-combobox";
@@ -38,45 +38,38 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 
-export function PurchaseEditorPage() {
-  const { purchaseId } = useParams();
-  const purchase = usePurchase(purchaseId!);
+export function TransferEditorPage() {
+  const { transferId } = useParams();
+  const transfer = useTransfer(transferId!);
   const me = useMe();
-  const mutations = usePurchaseMutations(purchaseId);
+  const mutations = useTransferMutations(transferId);
   const locationId = useLocationId();
 
   const [item, setItem] = useState<LocationItem | null>(null);
   const [qty, setQty] = useState("");
-  const [cost, setCost] = useState("");
-  const [voidingLine, setVoidingLine] = useState<PurchaseLine | null>(null);
+  const [voidingLine, setVoidingLine] = useState<TransferLine | null>(null);
+  const [voidingTransfer, setVoidingTransfer] = useState(false);
   const comboRef = useRef<HTMLButtonElement>(null);
 
-  if (purchase.isPending) return <FullPageSpinner />;
-  if (purchase.isError) return <FullPageSpinner error="Purchase not found." />;
+  if (transfer.isPending) return <FullPageSpinner />;
+  if (transfer.isError) return <FullPageSpinner error="Transfer not found." />;
 
-  const p = purchase.data;
-  const isDraft = p.status === "DRAFT";
+  const t = transfer.data;
+  const isSource = t.fromLocationId === locationId;
+  const isDraft = t.status === "DRAFT";
   const role = (me.data?.user.role ?? "READONLY") as Role;
-  const canVoid = can(role, "entries.void") && p.status === "COMMITTED";
-  const activeLines = p.lines.filter((l) => l.status === "ACTIVE");
+  const canVoid = isSource && can(role, "entries.void") && t.status === "COMMITTED";
+  const activeLines = t.lines.filter((l) => l.status === "ACTIVE");
   const total = activeLines.reduce((s, l) => s + l.lineTotal, 0);
-
-  const pickItem = (li: LocationItem) => {
-    setItem(li);
-    if (cost === "") setCost(String(li.cost || ""));
-  };
 
   const addLine = async () => {
     if (!item) return;
     const q = Number(qty);
-    const c = Number(cost);
-    if (!q || q <= 0) return toast.error("Enter the quantity received");
-    if (!Number.isFinite(c) || c < 0) return toast.error("Enter the unit cost");
+    if (!q || q <= 0) return toast.error("Enter the quantity to send");
     try {
-      await mutations.addLine.mutateAsync({ locationItemId: item.id, qty: q, unitCost: c });
+      await mutations.addLine.mutateAsync({ locationItemId: item.id, qty: q });
       setItem(null);
       setQty("");
-      setCost("");
       comboRef.current?.focus();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not add the line");
@@ -86,7 +79,7 @@ export function PurchaseEditorPage() {
   const commit = async () => {
     try {
       await mutations.commit.mutateAsync();
-      toast.success("Delivery committed — stock pool updated");
+      toast.success("Transfer committed — awaiting the destination's receipt");
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not commit");
     }
@@ -95,37 +88,41 @@ export function PurchaseEditorPage() {
   return (
     <div>
       <div className="mb-4 flex items-center gap-3">
-        <Button asChild variant="ghost" size="icon" aria-label="Back to purchases">
-          <Link to={`/l/${locationId}/purchases`}>
+        <Button asChild variant="ghost" size="icon" aria-label="Back to transfers">
+          <Link to={`/l/${locationId}/transfers`}>
             <ArrowLeft className="size-4" />
           </Link>
         </Button>
         <div>
-          <h2 className="text-lg font-semibold tracking-tight tnum">Delivery · {p.purchaseDate}</h2>
+          <h2 className="text-lg font-semibold tracking-tight tnum">
+            Transfer · {t.businessDate}
+          </h2>
           <p className="text-sm text-muted-foreground">
-            {p.supplier?.name ?? "No supplier"}
-            {p.refNo && ` · ${p.refNo}`}
-            {p.status === "VOID" && ` · void: ${p.voidReason}`}
+            {t.fromLocation?.name} → {t.toLocation?.name}
+            {t.status === "VOID" && ` · void: ${t.voidReason}`}
           </p>
         </div>
-        <Badge className="ml-auto" variant={isDraft ? "default" : "secondary"}>
-          {isDraft ? "Draft" : p.status === "COMMITTED" ? "Committed" : "Void"}
-        </Badge>
+        <div className="ml-auto flex items-center gap-2">
+          {canVoid && (
+            <Button variant="outline" size="sm" onClick={() => setVoidingTransfer(true)}>
+              Void transfer
+            </Button>
+          )}
+          <Badge variant={isDraft ? "default" : "secondary"}>
+            {isDraft ? "Draft" : t.status === "COMMITTED" ? "Committed" : "Void"}
+          </Badge>
+        </div>
       </div>
 
-      {isDraft && (
-        <div className="mb-4 grid grid-cols-[minmax(0,1fr)_7rem_8rem_auto] items-end gap-2 rounded-lg border p-4">
+      {isDraft && isSource && (
+        <div className="mb-4 grid grid-cols-[minmax(0,1fr)_7rem_auto] items-end gap-2 rounded-lg border p-4">
           <div className="space-y-2">
-            <Label>Item</Label>
-            <ItemCombobox ref={comboRef} value={item} onSelect={pickItem} autoFocus />
+            <Label>Item (from this location's catalog)</Label>
+            <ItemCombobox ref={comboRef} value={item} onSelect={setItem} autoFocus />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="pl-qty">Qty</Label>
-            <QuantityInput id="pl-qty" className="tnum" value={qty} onChange={(e) => setQty(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addLine()} />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="pl-cost">Unit cost</Label>
-            <QuantityInput id="pl-cost" className="tnum" value={cost} onChange={(e) => setCost(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addLine()} />
+            <Label htmlFor="tl-qty">Qty</Label>
+            <QuantityInput id="tl-qty" className="tnum" value={qty} onChange={(e) => setQty(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addLine()} />
           </div>
           <Button onClick={addLine} disabled={!item || mutations.addLine.isPending}>
             Add
@@ -138,22 +135,25 @@ export function PurchaseEditorPage() {
           <TableHeader>
             <TableRow className="bg-muted hover:bg-muted">
               <TableHead>Item</TableHead>
-              <TableHead className="text-right">Qty</TableHead>
+              <TableHead className="text-right">Sent</TableHead>
+              <TableHead className="text-right">Received</TableHead>
               <TableHead className="text-right">Unit cost</TableHead>
               <TableHead className="text-right">Total</TableHead>
               <TableHead className="w-16" />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {p.lines.length === 0 ? (
+            {t.lines.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
-                  No lines yet — add the delivered items above.
+                <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
+                  No lines yet — add the items to send above.
                 </TableCell>
               </TableRow>
             ) : (
-              p.lines.map((line) => {
+              t.lines.map((line) => {
                 const voided = line.status === "VOID";
+                const receipt = line.receipts[0];
+                const short = receipt !== undefined && receipt.qtyReceived < line.qty;
                 return (
                   <TableRow key={line.id} className={cn(voided && "opacity-50")}>
                     <TableCell className={cn(voided && "line-through")}>
@@ -166,10 +166,13 @@ export function PurchaseEditorPage() {
                       )}
                     </TableCell>
                     <TableCell className="tnum text-right">{line.qty}</TableCell>
+                    <TableCell className={cn("tnum text-right", short && "font-medium text-destructive")}>
+                      {voided ? "—" : receipt ? receipt.qtyReceived : <span className="text-muted-foreground">pending</span>}
+                    </TableCell>
                     <TableCell className="tnum text-right">{formatMoney(line.unitCost)}</TableCell>
                     <TableCell className="tnum text-right">{formatMoney(line.lineTotal)}</TableCell>
                     <TableCell className="text-right">
-                      {isDraft ? (
+                      {isDraft && isSource ? (
                         <Button
                           variant="ghost"
                           size="icon"
@@ -200,6 +203,9 @@ export function PurchaseEditorPage() {
                 <TableCell className="tnum text-right font-medium">
                   {activeLines.reduce((s, l) => s + l.qty, 0)}
                 </TableCell>
+                <TableCell className="tnum text-right font-medium">
+                  {activeLines.reduce((s, l) => s + (l.receipts[0]?.qtyReceived ?? 0), 0) || ""}
+                </TableCell>
                 <TableCell />
                 <TableCell className="tnum text-right font-semibold">{formatMoney(total)}</TableCell>
                 <TableCell />
@@ -209,20 +215,21 @@ export function PurchaseEditorPage() {
         </Table>
       </div>
 
-      {isDraft && (
+      {isDraft && isSource && (
         <div className="mt-4 flex justify-end">
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button disabled={activeLines.length === 0}>
-                <Check className="size-4" /> Commit delivery
+                <Check className="size-4" /> Commit transfer
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>Commit this delivery?</AlertDialogTitle>
+                <AlertDialogTitle>Commit this transfer?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  {activeLines.length} line{activeLines.length === 1 ? "" : "s"}, {formatMoney(total)} total.
-                  Committed deliveries count into reports; fixes then go through void &amp; correct.
+                  {activeLines.length} line{activeLines.length === 1 ? "" : "s"}, {formatMoney(total)} at cost, to{" "}
+                  {t.toLocation?.name}. Committed transfers leave this location's stock pool on {t.businessDate}; the
+                  destination then confirms what arrived.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -237,13 +244,28 @@ export function PurchaseEditorPage() {
       <VoidDialog
         open={voidingLine !== null}
         onOpenChange={(open) => !open && setVoidingLine(null)}
-        title="Void this purchase line?"
+        title="Void this transfer line?"
         pending={mutations.voidLine.isPending}
         onConfirm={async (reason) => {
           try {
             await mutations.voidLine.mutateAsync({ lineId: voidingLine!.id, reason });
             toast.success("Line voided — reports updated");
             setVoidingLine(null);
+          } catch (err) {
+            toast.error(err instanceof ApiError ? err.message : "Could not void");
+          }
+        }}
+      />
+      <VoidDialog
+        open={voidingTransfer}
+        onOpenChange={setVoidingTransfer}
+        title="Void this whole transfer?"
+        pending={mutations.voidTransfer.isPending}
+        onConfirm={async (reason) => {
+          try {
+            await mutations.voidTransfer.mutateAsync(reason);
+            toast.success("Transfer voided");
+            setVoidingTransfer(false);
           } catch (err) {
             toast.error(err instanceof ApiError ? err.message : "Could not void");
           }

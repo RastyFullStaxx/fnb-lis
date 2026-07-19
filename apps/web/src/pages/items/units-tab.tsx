@@ -8,6 +8,7 @@ import { ApiError } from "@/api/http";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { QuantityInput } from "@/components/quantity-input";
 import { Label } from "@/components/ui/label";
 import {
   Dialog,
@@ -145,11 +146,8 @@ function UnitDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open
           </div>
           <div className="space-y-2">
             <Label htmlFor="unit-factor">Factor to base ({KIND_LABELS[kind]?.base})</Label>
-            <Input
+            <QuantityInput
               id="unit-factor"
-              type="number"
-              step="any"
-              min="0"
               className="tnum"
               {...form.register("factorToBase", { valueAsNumber: true })}
             />

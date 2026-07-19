@@ -30,7 +30,8 @@ export interface UserPreferences {
   unitSystem: "metric" | "imperial";
 }
 
-export const DEFAULT_PREFERENCES: UserPreferences = { fontSize: "default", unitSystem: "metric" };
+// "large" (18px) is the starting size per client req #1 — mirrors the server default.
+export const DEFAULT_PREFERENCES: UserPreferences = { fontSize: "large", unitSystem: "metric" };
 
 export function usePreferences(enabled = true) {
   return useQuery({

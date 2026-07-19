@@ -558,6 +558,145 @@ async function seedGoldenCycle() {
   console.log("Golden cycle seeded (2026-06-01 → 2026-06-08 at Main Bar).");
 }
 
+/**
+ * Phase-9 transfer fixture (docs/phases/phase-9): Main Bar dispatches 10 San
+ * Miguel to a new "Depot" stockroom on 2026-06-10; the Depot confirms only 8
+ * (2 broken in transit). All activity is dated ≥ 2026-06-10 so the sacred
+ * phase-3 golden window [2026-06-01, 2026-06-08) is untouched.
+ *
+ * Hand-computed expectations (re-derive before trusting):
+ *   Main Bar [06-08 → 06-15): usage(beer) = 39 + 0 + 0 + 0 + 0 − 10 − 29 = 0;
+ *     expected 0 → variance 0. Other items counted identically → variance 0.
+ *   Depot   [06-08 → 06-15): usage(beer) = 0 + 0 + 0 + 8 − 0 − 7 = 1;
+ *     expected 1 (one sale @120) → variance 0, revenue 120.
+ *   Transfer Out (Main Bar): 10 units, 450 at cost (10 × 45), 1,200 at retail.
+ *   Transfer In  (Depot):     8 units, 360 at cost,             960 at retail.
+ *   The 2-unit / ₱90-at-cost gap appears ONLY as Out(10) vs In(8) — deliberately
+ *   unexplained anywhere else; that visibility is the point of the linked design.
+ */
+async function seedTransferFixture() {
+  const prime = await prisma.client.findFirst({ where: { name: "Prime Hospitality Group" } });
+  const mainBar = await prisma.location.findFirst({ where: { name: "Main Bar", clientId: prime?.id } });
+  const staff = await prisma.user.findUnique({ where: { username: "staff" } });
+  const manager = await prisma.user.findUnique({ where: { username: "manager" } });
+  if (!prime || !mainBar || !staff || !manager) return;
+
+  const depot = await upsertLocationWithModules(prime.id, "Depot", ["BAR"]);
+  if (depot.kind !== "STOCKROOM") {
+    await prisma.location.update({ where: { id: depot.id }, data: { kind: "STOCKROOM" } });
+  }
+  await seedLocationCatalog("Prime Hospitality Group", "Depot", [
+    ["San Miguel Pale Pilsen", 330, "ml", 45, 120],
+  ]);
+  await assertLocationCatalogWithinModules("Prime Hospitality Group", "Depot");
+
+  const existing = await prisma.transfer.findFirst({
+    where: { fromLocationId: mainBar.id, toLocationId: depot.id, businessDate: "2026-06-10" },
+  });
+  if (existing) return;
+
+  const encoder = { createdById: staff.id, createdByName: "Paolo Reyes" };
+  const li = async (locationId: string, itemName: string, size: number) => {
+    const row = await prisma.locationItem.findFirst({
+      where: { locationId, itemVariant: { size, item: { name: itemName } } },
+    });
+    if (!row) throw new Error(`Transfer fixture: missing location item ${itemName} ${size}`);
+    return row;
+  };
+  const barBeer = await li(mainBar.id, "San Miguel Pale Pilsen", 330);
+  const depotBeer = await li(depot.id, "San Miguel Pale Pilsen", 330);
+
+  // The transfer: committed at the source, then received short at the Depot.
+  const transfer = await prisma.transfer.create({
+    data: {
+      fromLocationId: mainBar.id,
+      toLocationId: depot.id,
+      businessDate: "2026-06-10",
+      status: "COMMITTED",
+      committedAt: new Date(),
+      committedById: manager.id,
+      ...encoder,
+    },
+  });
+  const line = await prisma.transferLine.create({
+    data: {
+      transferId: transfer.id,
+      locationItemId: barBeer.id,
+      qty: 10,
+      unitCost: barBeer.cost,
+      lineTotal: 10 * barBeer.cost,
+      ...encoder,
+    },
+  });
+  await prisma.transferReceiptLine.create({
+    data: {
+      transferLineId: line.id,
+      toLocationItemId: depotBeer.id,
+      qtyReceived: 8,
+      receiptDate: "2026-06-10",
+      note: "2 bottles broken in transit",
+      ...encoder,
+    },
+  });
+
+  // Depot boundary counts: a zero opening count on 06-08 (new location) and
+  // the 06-15 closing count of 7 after one sale.
+  const depotCount = async (countDate: string, qtyFull: number) => {
+    const session = await prisma.countSession.create({
+      data: { locationId: depot.id, countDate, status: "COMMITTED", committedAt: new Date(), committedById: manager.id, ...encoder },
+    });
+    await prisma.countLine.create({
+      data: {
+        countSessionId: session.id, locationItemId: depotBeer.id, countType: "FULL",
+        qtyFull, unitCost: depotBeer.cost, unitRetail: depotBeer.retail, ...encoder,
+      },
+    });
+  };
+  await depotCount("2026-06-08", 0);
+  await prisma.saleRecord.create({
+    data: {
+      locationId: depot.id, saleDate: "2026-06-12", kind: "SALE",
+      locationItemId: depotBeer.id, qty: 1, unitPrice: 120, ...encoder,
+    },
+  });
+  await depotCount("2026-06-15", 7);
+
+  // Main Bar closing count on 06-15: beer down by the 10 transferred; every
+  // other golden-cycle item repeats its 06-08 value → zero variance across
+  // the board for the [06-08 → 06-15) window.
+  const absolut = await li(mainBar.id, "Absolut Vodka", 700);
+  const jd = await li(mainBar.id, "Jack Daniel's Old No. 7", 700);
+  const tonic = await li(mainBar.id, "Tonic Water", 200);
+  const weigh = (scale: number, tare: number, density: number) => {
+    const scaled = Number(((scale - tare) * density).toPrecision(15));
+    return scaled >= 0 ? Math.floor(scaled + 0.5) : Math.ceil(scaled - 0.5);
+  };
+  const session = await prisma.countSession.create({
+    data: { locationId: mainBar.id, countDate: "2026-06-15", status: "COMMITTED", committedAt: new Date(), committedById: manager.id, ...encoder },
+  });
+  const full = (item: { id: string; cost: number; retail: number }, qtyFull: number) =>
+    prisma.countLine.create({
+      data: { countSessionId: session.id, locationItemId: item.id, countType: "FULL", qtyFull, unitCost: item.cost, unitRetail: item.retail, ...encoder },
+    });
+  const weighLine = (item: { id: string; cost: number; retail: number }, scale: number, tare: number, density: number) =>
+    prisma.countLine.create({
+      data: {
+        countSessionId: session.id, locationItemId: item.id, countType: "WEIGH",
+        scaleWeight: scale, scaleUnit: "oz", tareWeight: tare, densityFactor: density,
+        remainingContent: weigh(scale, tare, density),
+        unitCost: item.cost, unitRetail: item.retail, ...encoder,
+      },
+    });
+  await full(absolut, 14);
+  await weighLine(absolut, 22.6, 16.9, 30.12);
+  await full(jd, 6);
+  await weighLine(jd, 21.3, 17.2, 30.86);
+  await full(barBeer, 29);
+  await full(tonic, 8);
+
+  console.log("Transfer fixture seeded (Main Bar → Depot, 10 sent / 8 received, 2026-06-10).");
+}
+
 function normalizeAlias(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
@@ -800,6 +939,7 @@ async function main() {
   await seedAliases();
   await seedOpenWork();
   await seedImportBatches();
+  await seedTransferFixture();
   await seedKitchenCycle();
   await seedActivity();
   console.log(`Seed complete. Logins: admin / manager / staff / accountant / readonly — password ${PASSWORD}`);

@@ -13,6 +13,7 @@ import { masterRoutes } from "./routes/master";
 import { locationItemRoutes } from "./routes/location-items";
 import { countRoutes } from "./routes/counts";
 import { purchaseRoutes } from "./routes/purchases";
+import { transferRoutes } from "./routes/transfers";
 import { saleRoutes } from "./routes/sales";
 import { menuRoutes } from "./routes/menus";
 import { importRoutes } from "./routes/imports";
@@ -43,6 +44,7 @@ export function createApp() {
     .route("/", locationItemRoutes)
     .route("/", countRoutes)
     .route("/", purchaseRoutes)
+    .route("/", transferRoutes)
     .route("/", saleRoutes)
     .route("/", menuRoutes)
     .route("/", importRoutes)

@@ -4,13 +4,17 @@ import { AppError } from "../lib/errors";
 import { requirePermission, type AppEnv } from "../middleware/auth";
 import { buildFullAudit, committedCountDates } from "../services/report-assembly";
 import {
+  costAnalysisReport,
   fullAuditDrill,
   nonRevenueReport,
   onHandReport,
   purchaseReport,
   salesReport,
+  transferReport,
 } from "../services/report-lists";
 import {
+  costAnalysisCsv,
+  costAnalysisWorkbook,
   fullAuditCsv,
   fullAuditWorkbook,
   nonRevenueCsv,
@@ -21,6 +25,9 @@ import {
   purchaseWorkbook,
   salesCsv,
   salesWorkbook,
+  transferCsv,
+  transferWorkbook,
+  exportStamp,
   type ReportMeta,
 } from "../services/exports";
 import { getCompanyInfo } from "./settings";
@@ -39,13 +46,19 @@ function xlsxResponse(buffer: Buffer, filename: string): Response {
   });
 }
 
-function csvResponse(text: string, filename: string): Response {
-  return new Response(text, {
+function csvResponse(text: string, filename: string, exportedBy?: string): Response {
+  // Traceability trailer — same fact the xlsx print footer carries.
+  const trailer = exportedBy ? `\r\n"Exported by ${exportedBy.replace(/"/g, '""')} · ${exportStamp()}"` : "";
+  return new Response(text + trailer, {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition": `attachment; filename="${filename}.csv"`,
     },
   });
+}
+
+function fullName(user: { firstName: string; lastName: string }): string {
+  return `${user.firstName} ${user.lastName}`.trim();
 }
 
 function requireRange(c: { req: { query: (k: string) => string | undefined } }): { from: string; to: string } {
@@ -94,9 +107,34 @@ export const reportRoutes = new Hono<AppEnv>()
     const productType = c.req.query("productType") || undefined;
     const allowed = allowedProductTypes(c.get("locationModules"));
     const report = await buildFullAudit(location.id, begin, end, productType, allowed);
+    const user = c.get("user")!;
     const name = `full-audit_${location.name}_${begin}_${end}`.replace(/[^\w.-]+/g, "-");
-    if (c.req.query("format") === "csv") return csvResponse(fullAuditCsv(report), name);
-    return xlsxResponse(await fullAuditWorkbook(report, await meta(client, location.name)), name);
+    if (c.req.query("format") === "csv") return csvResponse(fullAuditCsv(report), name, fullName(user));
+    return xlsxResponse(await fullAuditWorkbook(report, await meta(client, location.name, user)), name);
+  })
+
+  // ── Cost Analysis (combined bar+kitchen, beverage/food cost %) ──
+  .get("/reports/cost-analysis", async (c) => {
+    const location = c.get("location");
+    const begin = c.req.query("begin") ?? "";
+    const end = c.req.query("end") ?? "";
+    if (!DATE_RE.test(begin) || !DATE_RE.test(end)) throw new AppError(400, "begin and end must be YYYY-MM-DD");
+    if (end <= begin) throw new AppError(400, "The ending count date must be after the beginning date");
+    const allowed = allowedProductTypes(c.get("locationModules"));
+    return c.json(await costAnalysisReport(location.id, begin, end, allowed));
+  })
+  .get("/reports/cost-analysis/export", exportGuard, async (c) => {
+    const location = c.get("location");
+    const client = c.get("client");
+    const begin = c.req.query("begin") ?? "";
+    const end = c.req.query("end") ?? "";
+    if (!DATE_RE.test(begin) || !DATE_RE.test(end) || end <= begin) throw new AppError(400, "Valid begin < end required");
+    const allowed = allowedProductTypes(c.get("locationModules"));
+    const report = await costAnalysisReport(location.id, begin, end, allowed);
+    const user = c.get("user")!;
+    const name = `cost-analysis_${location.name}_${begin}_${end}`.replace(/[^\w.-]+/g, "-");
+    if (c.req.query("format") === "csv") return csvResponse(costAnalysisCsv(report), name, fullName(user));
+    return xlsxResponse(await costAnalysisWorkbook(report, await meta(client, location.name, user)), name);
   })
 
   // ── Sales ──
@@ -112,9 +150,10 @@ export const reportRoutes = new Hono<AppEnv>()
     const { from, to } = requireRange(c);
     const allowed = allowedProductTypes(c.get("locationModules"));
     const report = await salesReport(location.id, from, to, allowed);
+    const user = c.get("user")!;
     const name = `sales_${location.name}_${from}_${to}`.replace(/[^\w.-]+/g, "-");
-    if (c.req.query("format") === "csv") return csvResponse(salesCsv(report), name);
-    return xlsxResponse(await salesWorkbook(report, await meta(client, location.name)), name);
+    if (c.req.query("format") === "csv") return csvResponse(salesCsv(report), name, fullName(user));
+    return xlsxResponse(await salesWorkbook(report, await meta(client, location.name, user)), name);
   })
 
   // ── Purchases ──
@@ -130,9 +169,10 @@ export const reportRoutes = new Hono<AppEnv>()
     const { from, to } = requireRange(c);
     const allowed = allowedProductTypes(c.get("locationModules"));
     const report = await purchaseReport(location.id, from, to, allowed);
+    const user = c.get("user")!;
     const name = `purchases_${location.name}_${from}_${to}`.replace(/[^\w.-]+/g, "-");
-    if (c.req.query("format") === "csv") return csvResponse(purchaseCsv(report), name);
-    return xlsxResponse(await purchaseWorkbook(report, await meta(client, location.name)), name);
+    if (c.req.query("format") === "csv") return csvResponse(purchaseCsv(report), name, fullName(user));
+    return xlsxResponse(await purchaseWorkbook(report, await meta(client, location.name, user)), name);
   })
 
   // ── Non-revenue ──
@@ -148,9 +188,31 @@ export const reportRoutes = new Hono<AppEnv>()
     const { from, to } = requireRange(c);
     const allowed = allowedProductTypes(c.get("locationModules"));
     const report = await nonRevenueReport(location.id, from, to, allowed);
+    const user = c.get("user")!;
     const name = `non-revenue_${location.name}_${from}_${to}`.replace(/[^\w.-]+/g, "-");
-    if (c.req.query("format") === "csv") return csvResponse(nonRevenueCsv(report), name);
-    return xlsxResponse(await nonRevenueWorkbook(report, await meta(client, location.name)), name);
+    if (c.req.query("format") === "csv") return csvResponse(nonRevenueCsv(report), name, fullName(user));
+    return xlsxResponse(await nonRevenueWorkbook(report, await meta(client, location.name, user)), name);
+  })
+
+  // ── Transfers (in/out at cost & retail) ──
+  .get("/reports/transfers", async (c) => {
+    const location = c.get("location");
+    const { from, to } = requireRange(c);
+    const direction = c.req.query("direction") === "in" ? "in" : "out";
+    const allowed = allowedProductTypes(c.get("locationModules"));
+    return c.json(await transferReport(location.id, from, to, direction, allowed));
+  })
+  .get("/reports/transfers/export", exportGuard, async (c) => {
+    const location = c.get("location");
+    const client = c.get("client");
+    const { from, to } = requireRange(c);
+    const direction = c.req.query("direction") === "in" ? "in" : "out";
+    const allowed = allowedProductTypes(c.get("locationModules"));
+    const report = await transferReport(location.id, from, to, direction, allowed);
+    const user = c.get("user")!;
+    const name = `transfers-${direction}_${location.name}_${from}_${to}`.replace(/[^\w.-]+/g, "-");
+    if (c.req.query("format") === "csv") return csvResponse(transferCsv(report), name, fullName(user));
+    return xlsxResponse(await transferWorkbook(report, await meta(client, location.name, user)), name);
   })
 
   // ── Inventory on hand ──
@@ -164,9 +226,10 @@ export const reportRoutes = new Hono<AppEnv>()
     const client = c.get("client");
     const allowed = allowedProductTypes(c.get("locationModules"));
     const report = await onHandReport(location.id, allowed);
+    const user = c.get("user")!;
     const name = `on-hand_${location.name}_${report.lastCountDate ?? "current"}`.replace(/[^\w.-]+/g, "-");
-    if (c.req.query("format") === "csv") return csvResponse(onHandCsv(report), name);
-    return xlsxResponse(await onHandWorkbook(report, await meta(client, location.name)), name);
+    if (c.req.query("format") === "csv") return csvResponse(onHandCsv(report), name, fullName(user));
+    return xlsxResponse(await onHandWorkbook(report, await meta(client, location.name, user)), name);
   })
 
   // Back-compat: the stock page reads on-hand quantities here.
@@ -177,7 +240,11 @@ export const reportRoutes = new Hono<AppEnv>()
     return c.json(report.rows.map((r) => ({ locationItemId: r.locationItemId, onHand: r.onHand, lastCountDate: report.lastCountDate })));
   });
 
-async function meta(client: { id: string; name: string }, locationName: string): Promise<ReportMeta> {
+async function meta(
+  client: { id: string; name: string },
+  locationName: string,
+  user?: { firstName: string; lastName: string },
+): Promise<ReportMeta> {
   const company = await getCompanyInfo(client.id);
   return {
     clientName: client.name,
@@ -185,5 +252,6 @@ async function meta(client: { id: string; name: string }, locationName: string):
     legalName: company.legalName || undefined,
     address: company.address || undefined,
     footer: company.reportFooter || undefined,
+    exportedBy: user ? fullName(user) : undefined,
   };
 }

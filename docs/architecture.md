@@ -33,12 +33,13 @@ Prisma 6 + SQLite. **Portability rules (load-bearing, do not violate):**
 | Business dates are `String` `'YYYY-MM-DD'` | Machine is UTC+8; DateTime invites off-by-one-day; lexicographic compare gives half-open windows for free. Timestamps (`createdAt`…) stay `DateTime` |
 | Boot pragmas: `journal_mode=WAL`, `busy_timeout=5000` | Concurrency sanity; single Node process only |
 
-### Model inventory (25)
+### Model inventory (33)
 
-- **Identity**: `User` (role, scrypt hash, lockout counters) · `AuthSession` (tokenHash) · `Client` · `Location` · `UserClientAccess` (@@id user+client; ADMIN bypasses)
-- **Master**: `Unit` (kind VOLUME|MASS|COUNT, factorToBase → ml|g|1) · `Category` (productType string, defaultDensityFactor) · `Item` · `ItemVariant` (size+unit, **contentTracked**, tareWeight, densityFactor override; @@unique(itemId,size,unitId))
+- **Identity**: `User` (role, scrypt hash, lockout counters) · `AuthSession` (tokenHash; per-role TTL — READONLY 20-min absolute) · `Client` · `Location` (kind MAIN|SATELLITE|STOCKROOM label) · `UserClientAccess` (@@id user+client; ADMIN bypasses) · `UserModule` (per-user BAR|KITCHEN|ASSET restriction; no rows = unrestricted)
+- **Subscription**: `Subscription` (packageType derived from billingCycle+maxEntities; paid/lastPaidAt with compute-on-load access state in `@fnb/core/billing`) · `SubscriptionModule` (client ceiling) · `LocationModule` (per-location enforced subset, Fix Plan §2.3)
+- **Master**: `Unit` (kind VOLUME|MASS|COUNT, factorToBase → ml|g|1) · `Category` (productType string, defaultDensityFactor) · `Item` · `ItemVariant` (size+unit, **contentTracked**, **weighMode DENSITY|NET**, tareWeight, densityFactor override; @@unique(itemId,size,unitId))
 - **Per-location**: `LocationItem` (cost, retail, parLevel; @@unique(location,variant)) · `Supplier` · `ItemAlias` (normalized, @@unique(client,alias)) — import mapping memory
-- **Transactions** (immutability pattern below): `CountSession`+`CountLine` (FULL qty | WEIGH scale/tare/factor → remainingContent; **cost+retail snapshots**) · `Purchase`+`PurchaseLine` (DRAFT→COMMITTED) · `SaleRecord` (kind SALE|NON_REVENUE|PRODUCTION; item XOR menu; **recipeVersionId snapshot**; contentOverride only on NON_REVENUE) · `Forfeit` (weighed content re-entering stock)
+- **Transactions** (immutability pattern below): `CountSession`+`CountLine` (FULL qty | WEIGH scale/tare/factor → remainingContent; **cost+retail snapshots**) · `Purchase`+`PurchaseLine` (DRAFT→COMMITTED) · `SaleRecord` (kind SALE|NON_REVENUE|PRODUCTION; item XOR menu; **recipeVersionId snapshot**; contentOverride only on NON_REVENUE) · `Forfeit` (weighed content re-entering stock) · `Transfer`+`TransferLine`+`TransferReceiptLine` (linked two-location movement: source dispatches on businessDate, destination confirms on receiptDate; same-client tenant guard; receipts void before lines)
 - **Recipes**: `MenuItem` · `RecipeVersion` (immutable, versionNo, srp, costAtPublish) · `RecipeLine`
 - **Imports**: `ImportBatch` (sha256, extractor DETERMINISTIC|AI, status …|COMMITTED|REVERSED) · `ImportRow` (rawJson, match method+confidence, resultType/resultId backlink → precise reversal)
 - **System**: `ActivityLog` (append-only, detailsJson TEXT) · `Setting` (clientId?+key; holds `productTypes` list — product types are data, not schema)
@@ -53,7 +54,9 @@ Pure TS, no I/O, no Prisma imports. The server assembles inputs from the DB; the
 
 - `rounding.ts` — `phpRound(v, p)` half-away-from-zero (PHP `round(-2.5) = -3`, JS `Math.round(-2.5) = -2`; negative variances make this load-bearing). No `toFixed`/`Math.round` in domain code.
 - `units.ts` — `toBase`, `convert` (throws on kind mismatch), `formatQty`.
-- `weighing.ts` — `remainingContent({scale, tare, densityFactor})`; `validateWeigh` → `SCALE_BELOW_TARE` (blocking, legacy behavior) / `CONTENT_EXCEEDS_SIZE` (warning); `resolveDensityFactor(variant, categoryDefault)`; `openEquivalent(content, size, contentTracked)`.
+- `weighing.ts` — `remainingContent({scale, tare, densityFactor})`; `validateWeigh` → `SCALE_BELOW_TARE` (blocking, legacy behavior) / `CONTENT_EXCEEDS_SIZE` (warning); `resolveDensityFactor(variant, categoryDefault)`; `openEquivalent(content, size, contentTracked)`; `netWeight({scale, tare})` + `validateNetWeigh` — kitchen NET mode (phase 9, deviation #15).
+- `billing.ts` — subscription access-state derivation (`currentPeriod`, `deriveAccessState`, `daysUntilDue`); pure, `now` injected; single source shared by server routes and the web client (deviation #17).
+- `cost-analysis.ts` — `VAT_RATE`, `netOfVat`, `costLine(B, P, E)`, `pctOf` — legacy `*_downloadCA` formulas (deviations #13/#14).
 - `reconciliation.ts` — `reconcile(items: ReconItemInput[], period)` → rows + category groups + grand totals. The crown jewel; formulas in §6.
 - `pricing.ts` — cost basis `end-count snapshot → begin-count snapshot → current LocationItem.cost`; `saleRevenue`, `menuRevenueShare`, `recipeCost`.
 - `schemas/` — zod: entity shapes, API DTOs, and the AI-extraction output schema (shared with the Anthropic structured-output call).
@@ -96,6 +99,7 @@ openEquiv(content, size, contentTracked) = contentTracked ? content / size : con
 usage = (beginFull + openEquiv(beginOpenContent))
       + purchasedQty
       + openEquiv(forfeitContent) + forfeitCountQty          // forfeits ADD BACK (returned bottles)
+      + transferInQty − transferOutQty                       // phase 9: received joins the pool, dispatched leaves it (0 when absent)
       − (endFull + openEquiv(endOpenContent))
 
 weigh: remainingContent = phpRound((scaleWeight − tareWeight) × densityFactor)   // integer ml
@@ -146,6 +150,13 @@ Pipeline: upload (sha256, stored under `apps/server/data/uploads/`) → parse: C
 | 8 | Web first, Electron later | Proposal's desktop-primary | AGENTS.md directive; core/schemas/SPA architected for reuse |
 | 9 | No automated tests during initial build | Proposal §5.4 | AGENTS.md explicit instruction; verification = golden seeded cycle with hand-computed numbers + live checks |
 | 10 | PostHog/Sentry deferred to polish phase, env-gated | AGENTS.md tooling list | No keys exist yet; wiring is additive |
+| 11 | Inter-location transfers are greenfield (no legacy precedent) | Legacy had no transfer/requisition feature at all | Client reqs #10/#13; correctness rests on the hand-computed 10-sent/8-received fixture in docs/phases/phase-9 — flag for client sign-off before first live use |
+| 12 | Transfer window semantics: out on `businessDate` (source), in on `receiptDate` (destination) | — | Sent-vs-received gaps stay visible as the difference between the two locations' Transfer reports; that visibility is the audit point |
+| 13 | Cost Analysis uses 1.12 (12% VAT) uniformly; VAT row shows the amount | Legacy `food_downloadCA` divided some always-zero rows by 1.22 and put net-sales in the "VAT" cell | Dead cells and a mislabel, not formulas to preserve; under uniform 1.12, NET % ≡ GROSS % (legacy's differed only via the 1.22 quirk). Confirm with LIS before first client delivery |
+| 14 | CA revenue allocated per recipe share across product types | Legacy dumped a menu's whole gross into its own module's report | The CA now cross-foots exactly with the Full Audit revenue column for the same window |
+| 15 | Kitchen NET weigh mode (`weighMode=NET`: qty = scale − tare, converted to the counting unit) | Legacy weighed only density-tracked bottles | Client req #16; DENSITY path untouched; NET rows are not content-tracked so reconciliation is structurally unchanged |
+| 16 | Per-role session TTL: READONLY 20-min absolute, others 7-day sliding | Single global TTL | Client reqs #4/#12 (3rd-party audit-service viewers); report screens watermark the viewer's name, exports carry an "Exported by" footer |
+| 17 | Billing paid-state window = current period `[due, nextDue)` only | JjByteX's fix accepted `[prevDue, nextDue+EOD]` (~2 months) | One payment must never mark two months paid; logic hoisted to `@fnb/core/billing` (shared server+web), month-adds are calendar-true (no `+32 days`) |
 
 ## 9. Security posture
 

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { UNIT_KINDS } from "../constants";
+import { UNIT_KINDS, WEIGH_MODES } from "../constants";
 import { id, nonNegative, positive } from "./common";
 
 export const unitCreate = z.object({
@@ -21,7 +21,12 @@ export const variantCreate = z.object({
   size: positive,
   unitId: id,
   contentTracked: z.boolean(),
-  tareWeight: positive.nullable().optional(),
+  // null = legacy inference (contentTracked ⇒ DENSITY); NET = kitchen
+  // net-weight counting (client req #16), MASS-unit variants only.
+  weighMode: z.enum(WEIGH_MODES).nullable().optional(),
+  // nonNegative, not positive: NET items weighed directly on the scale plate
+  // legitimately have tare 0.
+  tareWeight: nonNegative.nullable().optional(),
   tareWeightUnit: z.enum(["g", "oz"]).nullable().optional(),
   densityFactor: positive.nullable().optional(),
   barcode: z.string().trim().max(64).nullable().optional(),

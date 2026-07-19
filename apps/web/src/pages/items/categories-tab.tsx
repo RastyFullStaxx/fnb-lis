@@ -9,6 +9,7 @@ import type { Category } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { QuantityInput } from "@/components/quantity-input";
 import { Label } from "@/components/ui/label";
 import {
   Dialog,
@@ -175,11 +176,8 @@ function CategoryDialog({
           </div>
           <div className="space-y-2">
             <Label htmlFor="cat-density">Liquid Weight — default density factor (optional)</Label>
-            <Input
+            <QuantityInput
               id="cat-density"
-              type="number"
-              step="any"
-              min="0"
               className="tnum"
               placeholder="ml per weight unit"
               {...form.register("defaultDensityFactor", {

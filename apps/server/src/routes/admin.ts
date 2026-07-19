@@ -4,9 +4,13 @@ import { zValidator } from "@hono/zod-validator";
 import {
   role as roleSchema,
   derivePackageType,
-  BILLING_CYCLES,
-  MODULE_TYPES,
-  SUBSCRIPTION_STATUSES,
+  deriveAccessState,
+  subscriptionCreateBody,
+  subscriptionUpdateBody,
+  locationModulesBody,
+  moduleType,
+  LOCATION_KINDS,
+  type BillingCycle,
 } from "@fnb/core";
 import { prisma } from "../db";
 import { AppError } from "../lib/errors";
@@ -14,90 +18,18 @@ import { hashPassword } from "../auth/password";
 import { logActivity } from "../services/activity";
 import { requireAuth, requirePermission, type AppEnv } from "../middleware/auth";
 
-// ── Billing helpers (compute-on-load; no background job needed) ──────────────
-
-/**
- * Given a subscription's startDate anchor and "today", compute the due date
- * for the current billing month.
- *
- * Rule: pin to the same day-of-month as startDate. If the target month is
- * shorter than that day (e.g. started on the 31st, now in February), roll
- * over to the 1st of the following month.
- */
-function currentDueDate(startDate: string, now: Date): Date {
-  const anchor = new Date(startDate + "T00:00:00Z");
-  const anchorDay = anchor.getUTCDate();
-
-  // Try pinning anchorDay into the current month
-  const year = now.getUTCFullYear();
-  const month = now.getUTCMonth(); // 0-based
-
-  const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
-  if (anchorDay <= daysInMonth) {
-    return new Date(Date.UTC(year, month, anchorDay));
-  }
-  // Roll over: 1st of next month
-  return new Date(Date.UTC(year, month + 1, 1));
-}
-
-/**
- * Derived effective access state for a monthly subscription.
- * Returns one of: "ACTIVE" | "GRACE" | "VIEW_ONLY"
- *
- * "GRACE"     = unpaid but within 7-day window after due date
- * "VIEW_ONLY" = unpaid and more than 7 days past due date
- *
- * For ONE_TIME (STANDALONE) subs, paid just needs to be true once — returns
- * "ACTIVE" if paid, "GRACE" otherwise (no time pressure).
- *
- * Manual status overrides (CANCELLED, SUSPENDED) are respected by callers
- * before consulting this function.
- */
-export function deriveAccessState(sub: {
-  billingCycle: string;
-  paid: boolean;
-  lastPaidAt: Date | null;
-  startDate: string;
-}): "ACTIVE" | "GRACE" | "VIEW_ONLY" {
-  const now = new Date();
-
-  if (sub.billingCycle !== "MONTHLY") {
-    // ONE_TIME / STANDALONE — pay once, access forever once paid
-    return sub.paid ? "ACTIVE" : "GRACE";
-  }
-
-  // Monthly — compute current period
-  const due = currentDueDate(sub.startDate, now);
-  const periodStart = new Date(due);
-  periodStart.setUTCMonth(periodStart.getUTCMonth() - 1);
-
-  // nextDue is the end of the accepted payment window: the due date of the
-  // *next* billing cycle. A payment made after this cycle's due date but
-  // before the next one still counts as paying for the current period (it
-  // just means the client paid late). End-of-day (23:59:59.999 UTC) covers
-  // same-day payments whose timestamp exceeds the midnight due date.
-  const nextDue = currentDueDate(sub.startDate, new Date(due.getTime() + 32 * 24 * 60 * 60 * 1000));
-  const nextDueEndOfDay = new Date(nextDue.getTime() + 24 * 60 * 60 * 1000 - 1);
-
-  const paidInPeriod =
-    sub.paid &&
-    sub.lastPaidAt !== null &&
-    sub.lastPaidAt >= periodStart &&
-    sub.lastPaidAt <= nextDueEndOfDay;
-
-  if (paidInPeriod) return "ACTIVE";
-
-  const msOverdue = now.getTime() - due.getTime();
-  const daysOverdue = msOverdue / (1000 * 60 * 60 * 24);
-
-  if (daysOverdue <= 7) return "GRACE";
-  return "VIEW_ONLY";
-}
+// Billing-state derivation (deriveAccessState / currentPeriod / daysUntilDue)
+// lives in @fnb/core/billing — one source of truth shared with the web client.
 
 // ── Zod schemas ──────────────────────────────────────────────────────────────
 
 const clientBody = z.object({ name: z.string().trim().min(1) });
 const locationBody = z.object({ name: z.string().trim().min(1) });
+// kind is a grouping label (main bar / satellite / stockroom) — display only.
+const locationUpdateBody = z.object({
+  name: z.string().trim().min(1).optional(),
+  kind: z.enum(LOCATION_KINDS).nullable().optional(),
+});
 
 // One-shot "New client" creation: client + extra locations + subscription,
 // all in a single transaction. The starter "Main" location is always added
@@ -106,18 +38,10 @@ const locationBody = z.object({ name: z.string().trim().min(1) });
 const fullClientBody = z.object({
   name: z.string().trim().min(1),
   extraLocationNames: z.array(z.string().trim().min(1)).default([]),
-  subscription: z.object({
-    // packageType is NOT accepted from the client — it's derived from
-    // billingCycle + maxEntities below (derivePackageType), so the tier
-    // badge can never drift from the real subscription.
-    billingCycle: z.enum(BILLING_CYCLES),
-    modules: z.array(z.enum(MODULE_TYPES)).min(1, "Select at least one module"),
-    maxEntities: z.number().int().min(0), // 0 = unlimited
-    negotiatedPrice: z.number().min(0).optional().nullable(), // per-client deal price, if tracked at all
-    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-    endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
-    note: z.string().optional().nullable(),
-  }),
+  // packageType is NOT accepted from the client — it's derived from
+  // billingCycle + maxEntities (derivePackageType), so the tier badge can
+  // never drift from the real subscription.
+  subscription: subscriptionCreateBody.omit({ clientId: true }),
 });
 const userCreateBody = z.object({
   username: z
@@ -132,6 +56,8 @@ const userCreateBody = z.object({
   email: z.string().email().optional().or(z.literal("")),
   role: roleSchema,
   clientIds: z.array(z.string()).default([]),
+  // Per-user module restriction (client req #9): empty = unrestricted.
+  modules: z.array(moduleType).default([]),
 });
 const userUpdateBody = z.object({
   role: roleSchema.optional(),
@@ -140,39 +66,14 @@ const userUpdateBody = z.object({
   firstName: z.string().trim().min(1).optional(),
   lastName: z.string().trim().min(1).optional(),
   email: z.string().email().optional().or(z.literal("")),
+  modules: z.array(moduleType).optional(),
 });
 const accessBody = z.object({ clientIds: z.array(z.string()) });
 
-// Subscription schemas
-const subscriptionCreateBody = z.object({
-  clientId: z.string().min(1),
-  // packageType is NOT accepted from the client — derived server-side, see
-  // derivePackageType() usage below.
-  billingCycle: z.enum(BILLING_CYCLES),
-  modules: z.array(z.enum(MODULE_TYPES)).min(1, "Select at least one module"),
-  maxEntities: z.number().int().min(0), // 0 = unlimited
-  negotiatedPrice: z.number().min(0).optional().nullable(), // per-client deal price, if tracked at all
-  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
-  note: z.string().optional().nullable(),
-});
-const subscriptionUpdateBody = z.object({
-  // packageType is NOT accepted from the client — see subscriptionCreateBody above.
-  billingCycle: z.enum(BILLING_CYCLES).optional(),
-  modules: z.array(z.enum(MODULE_TYPES)).min(1, "Select at least one module").optional(),
-  maxEntities: z.number().int().min(0).optional(), // 0 = unlimited; no longer recalculated from packageType
-  negotiatedPrice: z.number().min(0).optional().nullable(),
-  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
-  note: z.string().optional().nullable(),
-});
-
-// A location's own module set (Fix Plan §2.3) — must be a non-empty subset
-// of its client's current SubscriptionModule ceiling; enforced in the
+// Subscription/location-module request bodies come from @fnb/core
+// (schemas/subscription.ts) — the same shapes the web client types against.
+// The location-modules subset rule (Fix Plan §2.3) is enforced in the
 // handler below since Prisma/SQLite can't express a cross-table constraint.
-const locationModulesBody = z.object({
-  modules: z.array(z.enum(MODULE_TYPES)).min(1, "Select at least one module"),
-});
 
 export const adminRoutes = new Hono<AppEnv>()
   .use(requireAuth, requirePermission("admin.manage"))
@@ -265,6 +166,33 @@ export const adminRoutes = new Hono<AppEnv>()
       return created;
     });
     return c.json(location, 201);
+  })
+
+  // Rename / relabel a single location (kind = main/satellite/stockroom tag).
+  .put("/locations/:id", zValidator("json", locationUpdateBody), async (c) => {
+    const locationId = c.req.param("id");
+    const body = c.req.valid("json");
+    const user = c.get("user")!;
+    const location = await prisma.location.findUnique({ where: { id: locationId } });
+    if (!location) throw new AppError(404, "Location not found");
+    const updated = await prisma.$transaction(async (tx) => {
+      const u = await tx.location.update({ where: { id: locationId }, data: body, include: { modules: true } });
+      await logActivity(
+        {
+          user,
+          clientId: location.clientId,
+          locationId,
+          action: "location.update",
+          entity: "Location",
+          entityId: locationId,
+          summary: `Updated location "${u.name}"${body.kind !== undefined ? ` (kind: ${body.kind ?? "none"})` : ""}`,
+          details: body,
+        },
+        tx,
+      );
+      return u;
+    });
+    return c.json(updated);
   })
 
   // Sets a single location's OWN module set — the enforced reality per Fix
@@ -402,6 +330,7 @@ export const adminRoutes = new Hono<AppEnv>()
       select: {
         id: true, username: true, firstName: true, lastName: true, email: true,
         role: true, status: true, createdAt: true,
+        modules: { select: { module: true } },
         clientAccess: {
           include: {
             client: {
@@ -442,6 +371,7 @@ export const adminRoutes = new Hono<AppEnv>()
           email: body.email || null,
           role: body.role,
           clientAccess: { create: body.clientIds.map((clientId) => ({ clientId })) },
+          modules: { create: body.modules.map((module) => ({ module })) },
         },
       });
       await logActivity(
@@ -460,10 +390,15 @@ export const adminRoutes = new Hono<AppEnv>()
     const actor = c.get("user")!;
     const data: Record<string, unknown> = { ...body };
     delete data.password;
+    delete data.modules;
     if (body.password) data.passwordHash = await hashPassword(body.password);
     if (body.email === "") data.email = null;
     const updated = await prisma.$transaction(async (tx) => {
       const u = await tx.user.update({ where: { id }, data });
+      if (body.modules !== undefined) {
+        await tx.userModule.deleteMany({ where: { userId: id } });
+        await tx.userModule.createMany({ data: body.modules.map((module) => ({ userId: id, module })) });
+      }
       await logActivity(
         {
           user: actor, action: "user.update", entity: "User", entityId: id,
@@ -566,7 +501,7 @@ export const adminRoutes = new Hono<AppEnv>()
       const existing = await tx.subscription.findUniqueOrThrow({ where: { id } });
       const effectiveBillingCycle = body.billingCycle ?? existing.billingCycle;
       const effectiveMaxEntities = body.maxEntities ?? existing.maxEntities;
-      data.packageType = derivePackageType(effectiveBillingCycle as (typeof BILLING_CYCLES)[number], effectiveMaxEntities);
+      data.packageType = derivePackageType(effectiveBillingCycle as BillingCycle, effectiveMaxEntities);
 
       if (modules) {
         // Narrowing the ceiling must not silently leave a location holding a
@@ -624,6 +559,9 @@ export const adminRoutes = new Hono<AppEnv>()
         include: { client: { select: { id: true, name: true } } },
       });
       if (!sub) throw new AppError(404, "Subscription not found");
+      if (sub.status === "CANCELLED" || sub.status === "SUSPENDED") {
+        throw new AppError(409, `This subscription is ${sub.status.toLowerCase()} — reactivate it before recording a payment.`);
+      }
 
       const u = await tx.subscription.update({
         where: { id },
@@ -656,6 +594,9 @@ export const adminRoutes = new Hono<AppEnv>()
         include: { client: { select: { id: true, name: true } } },
       });
       if (!sub) throw new AppError(404, "Subscription not found");
+      if (sub.status === "CANCELLED") {
+        throw new AppError(409, "This subscription is cancelled — its payment record is frozen.");
+      }
 
       const u = await tx.subscription.update({
         where: { id },
@@ -717,6 +658,6 @@ export const adminRoutes = new Hono<AppEnv>()
     if (!sub) return c.json({ hasSubscription: false, canAddEntity: true });
     const locationCount = await prisma.location.count({ where: { clientId, status: "ACTIVE" } });
     const canAddEntity = sub.maxEntities === 0 || locationCount < sub.maxEntities;
-    const accessState = deriveAccessState(sub);
+    const accessState = deriveAccessState(sub, new Date());
     return c.json({ hasSubscription: true, subscription: sub, locationCount, canAddEntity, accessState });
   });

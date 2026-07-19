@@ -6,7 +6,7 @@ import { ApiError } from "@/api/http";
 import { defaultWeighUnit, useUnitSystem } from "@/lib/preferences";
 import type { ItemVariant } from "@/api/types";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { QuantityInput } from "@/components/quantity-input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -127,11 +127,8 @@ export function VariantQuickEditDialog({
             <Label htmlFor="qe-tare" className="text-xs">
               Tare weight
             </Label>
-            <Input
+            <QuantityInput
               id="qe-tare"
-              type="number"
-              step="any"
-              min="0"
               autoFocus
               className="tnum"
               placeholder="empty container"
@@ -153,10 +150,7 @@ export function VariantQuickEditDialog({
           </div>
           <div className="col-span-2 space-y-1.5 sm:col-span-1">
             <Label className="text-xs">Liquid Weight</Label>
-            <Input
-              type="number"
-              step="any"
-              min="0"
+            <QuantityInput
               className="tnum"
               placeholder={
                 categoryDefaultDensity

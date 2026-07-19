@@ -47,12 +47,15 @@ export async function getCompanyInfo(clientId: string): Promise<CompanyInfo> {
  * uses. Stored one row per user in Setting(clientId: "", key: "prefs:<userId>").
  */
 const userPreferences = z.object({
-  fontSize: z.enum(["default", "large", "x-large"]).default("default"),
+  // "large" (18px) is the starting size per client req #1 — readable for
+  // users with poor eyesight. Anyone who explicitly saved a preference
+  // (including "default"/16px) keeps their choice.
+  fontSize: z.enum(["default", "large", "x-large"]).default("large"),
   unitSystem: z.enum(["metric", "imperial"]).default("metric"),
 });
 export type UserPreferences = z.infer<typeof userPreferences>;
 
-const DEFAULT_PREFERENCES: UserPreferences = { fontSize: "default", unitSystem: "metric" };
+const DEFAULT_PREFERENCES: UserPreferences = { fontSize: "large", unitSystem: "metric" };
 
 export const preferencesRoutes = new Hono<AppEnv>()
   .use(requireAuth)

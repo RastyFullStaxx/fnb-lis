@@ -56,6 +56,15 @@ export interface ReconItemInput {
   purchasedQty: number;
   purchasedCost: number; // Σ qty × unitCost over the window
 
+  /**
+   * Inter-location transfers (phase 9). OPTIONAL by design: absent ⇒ 0, so
+   * every pre-transfer caller — and the phase-3 golden fixture — produces
+   * bit-identical output. In at the destination (received qty), out at the
+   * source (dispatched qty).
+   */
+  transferInQty?: number;
+  transferOutQty?: number;
+
   forfeitContent: number; // weighed content returned to stock
   forfeitCountQty: number; // count-item path
 
@@ -85,6 +94,8 @@ export interface ReconRow {
   beginCost: number;
   purchased: number;
   forfeited: number;
+  transferIn: number;
+  transferOut: number;
   endFull: number;
   endOpenEquiv: number;
   endCost: number;
@@ -115,9 +126,14 @@ export function reconcileItem(input: ReconItemInput): ReconRow {
   const endOpenEquiv = openEquivalent(input.endOpenContent, size, contentTracked);
   // Forfeits ADD BACK into the pool (returned partial bottles are a stock-in).
   const forfeited = openEquivalent(input.forfeitContent, size, contentTracked) + input.forfeitCountQty;
+  // Transfers: received stock joins the pool like purchases; dispatched stock
+  // leaves it. Both default to 0 — untouched rows reconcile exactly as before.
+  const transferIn = input.transferInQty ?? 0;
+  const transferOut = input.transferOutQty ?? 0;
 
   const usage =
-    input.beginFullQty + beginOpenEquiv + input.purchasedQty + forfeited - (input.endFullQty + endOpenEquiv);
+    input.beginFullQty + beginOpenEquiv + input.purchasedQty + forfeited + transferIn - transferOut -
+    (input.endFullQty + endOpenEquiv);
 
   const costBasis = resolveCostBasis(input.endUnitCost, input.beginUnitCost, input.currentCost);
   const beginCost =
@@ -162,6 +178,8 @@ export function reconcileItem(input: ReconItemInput): ReconRow {
     beginCost,
     purchased: input.purchasedQty,
     forfeited,
+    transferIn,
+    transferOut,
     endFull: input.endFullQty,
     endOpenEquiv,
     endCost,

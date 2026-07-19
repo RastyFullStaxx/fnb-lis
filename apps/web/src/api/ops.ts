@@ -7,10 +7,13 @@ import type {
   PurchaseLineCreate,
   ReconReport,
   SaleCreate,
+  TransferCreate,
+  TransferLineCreate,
+  TransferReceive,
 } from "@fnb/core";
 import { api, post, put } from "./http";
 import { useLocationId } from "./location";
-import type { CountLine, CountSession, Forfeit, Purchase, PurchaseLine, SaleRecord } from "./types";
+import type { CountLine, CountSession, Forfeit, Purchase, PurchaseLine, SaleRecord, Transfer, TransferLine } from "./types";
 
 const base = (locationId: string) => `/api/locations/${locationId}`;
 
@@ -153,6 +156,76 @@ export function useForfeitMutations() {
     voidForfeit: useMutation({
       mutationFn: ({ id, reason }: { id: string; reason: string }) =>
         post<Forfeit>(`${base(locationId)}/forfeits/${id}/void`, { reason }),
+      onSuccess: invalidate,
+    }),
+  };
+}
+
+// ── Transfers ──
+
+export function useTransfers(direction: "out" | "in") {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["transfers", locationId, direction],
+    queryFn: () => api<Transfer[]>(`${base(locationId)}/transfers?direction=${direction}`),
+  });
+}
+
+export function useTransfer(transferId: string) {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["transfers", locationId, transferId],
+    queryFn: () => api<Transfer & { lines: TransferLine[] }>(`${base(locationId)}/transfers/${transferId}`),
+  });
+}
+
+export function useTransferMutations(transferId?: string) {
+  const locationId = useLocationId();
+  const qc = useQueryClient();
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["transfers"] }); // both sides + both directions
+    qc.invalidateQueries({ queryKey: ["report"] });
+  };
+  return {
+    create: useMutation({
+      mutationFn: (body: TransferCreate) => post<Transfer>(`${base(locationId)}/transfers`, body),
+      onSuccess: invalidate,
+    }),
+    update: useMutation({
+      mutationFn: (body: Partial<TransferCreate>) => put<Transfer>(`${base(locationId)}/transfers/${transferId}`, body),
+      onSuccess: invalidate,
+    }),
+    addLine: useMutation({
+      mutationFn: (body: TransferLineCreate) =>
+        post<TransferLine>(`${base(locationId)}/transfers/${transferId}/lines`, body),
+      onSuccess: invalidate,
+    }),
+    removeLine: useMutation({
+      mutationFn: (lineId: string) =>
+        api<{ ok: boolean }>(`${base(locationId)}/transfers/${transferId}/lines/${lineId}`, { method: "DELETE" }),
+      onSuccess: invalidate,
+    }),
+    commit: useMutation({
+      mutationFn: () => post<Transfer>(`${base(locationId)}/transfers/${transferId}/commit`),
+      onSuccess: invalidate,
+    }),
+    voidTransfer: useMutation({
+      mutationFn: (reason: string) => post<Transfer>(`${base(locationId)}/transfers/${transferId}/void`, { reason }),
+      onSuccess: invalidate,
+    }),
+    voidLine: useMutation({
+      mutationFn: ({ lineId, reason }: { lineId: string; reason: string }) =>
+        post<TransferLine>(`${base(locationId)}/transfers/${transferId}/lines/${lineId}/void`, { reason }),
+      onSuccess: invalidate,
+    }),
+    receive: useMutation({
+      mutationFn: ({ id, ...body }: TransferReceive & { id: string }) =>
+        post(`${base(locationId)}/transfers/${id}/receive`, body),
+      onSuccess: invalidate,
+    }),
+    voidReceipt: useMutation({
+      mutationFn: ({ id, receiptId, reason }: { id: string; receiptId: string; reason: string }) =>
+        post(`${base(locationId)}/transfers/${id}/receipts/${receiptId}/void`, { reason }),
       onSuccess: invalidate,
     }),
   };

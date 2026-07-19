@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowLeft, Eye, EyeOff, KeyRound } from "lucide-react";
@@ -13,9 +13,21 @@ import { Label } from "@/components/ui/label";
 import { InventoryIllustration } from "@/components/brand/inventory-illustration";
 import lisLogo from "@/assets/lis-logo.png";
 
+// ── Per-module login flyers (client reqs #6/#7) ──────────────────────────────
+// ponytail: placeholder map until the client sends the flyer files. When they
+// arrive, drop them in src/assets/flyers/ and register them here, e.g.:
+//   import barFlyer from "@/assets/flyers/bar.png";
+//   const FLYERS: Record<string, string> = { bar: barFlyer, kitchen: kitchenFlyer };
+// Deep links then select them: /login?m=bar or /login?m=kitchen. Unknown or
+// missing keys fall back to the built-in illustration.
+const FLYERS: Record<string, string> = {};
+
 export function LoginPage() {
   const navigate = useNavigate();
   const login = useLogin();
+  const [searchParams] = useSearchParams();
+  const sessionExpired = searchParams.get("expired") === "1";
+  const flyer = FLYERS[searchParams.get("m") ?? ""] ?? null;
   const [serverError, setServerError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
@@ -72,6 +84,11 @@ export function LoginPage() {
               </div>
             ) : (
               <>
+                {sessionExpired && (
+                  <p role="status" className="mb-6 rounded-md bg-white/95 px-3 py-2.5 text-sm font-medium text-foreground">
+                    Your session ended — sign in again to continue.
+                  </p>
+                )}
                 <div className="mb-8">
                   <h1 className="text-xl font-semibold tracking-tight text-balance text-sidebar-foreground">
                     Welcome back
@@ -182,18 +199,24 @@ export function LoginPage() {
         </p>
       </div>
 
-      {/* Brand panel — now white */}
+      {/* Brand panel — white; shows the module flyer when one is configured */}
       <div className="relative hidden flex-col items-center justify-center gap-10 overflow-hidden bg-background px-12 py-16 lg:flex">
-        <InventoryIllustration className="w-full max-w-md shrink-0 -mt-5" />
+        {flyer ? (
+          <img src={flyer} alt="" className="max-h-full w-full max-w-lg rounded-xl object-contain shadow-md" />
+        ) : (
+          <>
+            <InventoryIllustration className="w-full max-w-md shrink-0 -mt-5" />
 
-        <div className="-mt-9 max-w-sm text-center">
-          <h2 className="text-xl font-semibold tracking-tight text-foreground text-balance">
-            Know what changed between counts.
-          </h2>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Count, review, reconcile, and trace every variance to its source.
-          </p>
-        </div>
+            <div className="-mt-9 max-w-sm text-center">
+              <h2 className="text-xl font-semibold tracking-tight text-foreground text-balance">
+                Know what changed between counts.
+              </h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Count, review, reconcile, and trace every variance to its source.
+              </p>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

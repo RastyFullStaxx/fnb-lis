@@ -4,7 +4,7 @@ import { useAttachLocationItem, useAvailableVariants } from "@/api/location";
 import { variantLabel, type AvailableVariant } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { QuantityInput } from "@/components/quantity-input";
 import { Label } from "@/components/ui/label";
 import {
   Command,
@@ -114,11 +114,8 @@ export function AttachItemDialog({
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="attach-cost">Cost</Label>
-                <Input
+                <QuantityInput
                   id="attach-cost"
-                  type="number"
-                  step="any"
-                  min="0"
                   className="tnum"
                   autoFocus
                   value={cost}
@@ -127,11 +124,8 @@ export function AttachItemDialog({
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="attach-retail">Retail</Label>
-                <Input
+                <QuantityInput
                   id="attach-retail"
-                  type="number"
-                  step="any"
-                  min="0"
                   className="tnum"
                   value={retail}
                   onChange={(e) => setRetail(e.target.value)}

@@ -316,6 +316,42 @@ function ClientCheckboxes({
   );
 }
 
+/**
+ * Per-user module restriction (client req #9): the 5 packages the client
+ * listed — Bar only / Kitchen only / Asset only / Bar+Kitchen / all three —
+ * are just subsets of these checkboxes. None checked = unrestricted.
+ */
+function ModuleCheckboxes({
+  selected,
+  onToggle,
+}: {
+  selected: Set<ModuleType>;
+  onToggle: (m: ModuleType) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <div className="flex flex-wrap gap-4 rounded-md border p-2.5">
+        {MODULE_TYPES.map((m) => (
+          <label key={m} className="flex cursor-pointer items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="size-4 accent-primary"
+              checked={selected.has(m)}
+              onChange={() => onToggle(m)}
+            />
+            {MODULE_TYPE_LABELS[m]}
+          </label>
+        ))}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {selected.size === 0
+          ? "No restriction — this user works in every module their locations have."
+          : `Restricted to ${[...selected].map((m) => MODULE_TYPE_LABELS[m]).join(" + ")} — locations outside that disappear from their switcher.`}
+      </p>
+    </div>
+  );
+}
+
 function RoleSelect({ value, onChange }: { value: Role; onChange: (r: Role) => void }) {
   return (
     <Select value={value} onValueChange={(v) => onChange(v as Role)}>
@@ -344,6 +380,7 @@ function CreateUserDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
   const [role, setRole] = useState<Role>("STAFF");
   const [password, setPassword] = useState(generatePassword());
   const [clientIds, setClientIds] = useState<Set<string>>(new Set());
+  const [modules, setModules] = useState<Set<ModuleType>>(new Set());
 
   useEffect(() => {
     if (!usernameEdited) {
@@ -363,12 +400,20 @@ function CreateUserDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
     setRole("STAFF");
     setPassword(generatePassword());
     setClientIds(new Set());
+    setModules(new Set());
   };
 
   const toggle = (id: string) =>
     setClientIds((prev) => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+
+  const toggleModule = (m: ModuleType) =>
+    setModules((prev) => {
+      const next = new Set(prev);
+      next.has(m) ? next.delete(m) : next.add(m);
       return next;
     });
 
@@ -382,6 +427,7 @@ function CreateUserDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
         role,
         password,
         clientIds: role === "ADMIN" ? [] : [...clientIds],
+        modules: role === "ADMIN" ? [] : [...modules],
       });
       toast.success(`User @${username.trim()} created`, {
         description: `Temporary password: ${password} — share it securely.`,
@@ -473,6 +519,12 @@ function CreateUserDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
               <ClientCheckboxes selected={clientIds} onToggle={toggle} />
             </div>
           )}
+          {role !== "ADMIN" && (
+            <div className="space-y-2">
+              <Label>Module access</Label>
+              <ModuleCheckboxes selected={modules} onToggle={toggleModule} />
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button onClick={submit} disabled={!valid || create.isPending}>
@@ -490,11 +542,13 @@ function EditUserDialog({ user, onClose }: { user: AdminUser | null; onClose: ()
   const [role, setRole] = useState<Role>("STAFF");
   const [resetPw, setResetPw] = useState<string | null>(null);
   const [clientIds, setClientIds] = useState<Set<string>>(new Set());
+  const [modules, setModules] = useState<Set<ModuleType>>(new Set());
 
   useEffect(() => {
     if (user) {
       setRole(user.role);
       setClientIds(new Set(user.clientAccess.map((a) => a.clientId)));
+      setModules(new Set(user.modules as ModuleType[]));
       setResetPw(null);
     }
   }, [user]);
@@ -503,6 +557,13 @@ function EditUserDialog({ user, onClose }: { user: AdminUser | null; onClose: ()
     setClientIds((prev) => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+
+  const toggleModule = (m: ModuleType) =>
+    setModules((prev) => {
+      const next = new Set(prev);
+      next.has(m) ? next.delete(m) : next.add(m);
       return next;
     });
 
@@ -516,7 +577,7 @@ function EditUserDialog({ user, onClose }: { user: AdminUser | null; onClose: ()
 
   const saveRole = async () => {
     try {
-      await update.mutateAsync({ id: user.id, role });
+      await update.mutateAsync({ id: user.id, role, modules: role === "ADMIN" ? [] : [...modules] });
       if (dirtyAccess && role !== "ADMIN") {
         await updateAccess.mutateAsync({ id: user.id, clientIds: [...clientIds] });
       }
@@ -573,6 +634,13 @@ function EditUserDialog({ user, onClose }: { user: AdminUser | null; onClose: ()
                 Package badges show each client's subscription tier.
               </p>
               <ClientCheckboxes selected={clientIds} onToggle={toggle} />
+            </div>
+          )}
+
+          {role !== "ADMIN" && (
+            <div className="space-y-2">
+              <Label>Module access</Label>
+              <ModuleCheckboxes selected={modules} onToggle={toggleModule} />
             </div>
           )}
 

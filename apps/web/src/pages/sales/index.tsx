@@ -24,6 +24,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { QuantityInput } from "@/components/quantity-input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -241,11 +242,8 @@ function QuickEntry({ kind }: { kind: SaleKind }) {
       <div className="grid grid-cols-3 gap-2">
         <div className="space-y-2">
           <Label htmlFor="s-qty">Quantity</Label>
-          <Input
+          <QuantityInput
             id="s-qty"
-            type="number"
-            step="any"
-            min="0"
             className="tnum"
             value={qty}
             onChange={(e) => setQty(e.target.value)}
@@ -256,11 +254,8 @@ function QuickEntry({ kind }: { kind: SaleKind }) {
           <>
             <div className="space-y-2">
               <Label htmlFor="s-price">Price</Label>
-              <Input
+              <QuantityInput
                 id="s-price"
-                type="number"
-                step="any"
-                min="0"
                 className="tnum"
                 value={price}
                 onChange={(e) => setPrice(e.target.value)}
@@ -269,12 +264,8 @@ function QuickEntry({ kind }: { kind: SaleKind }) {
             </div>
             <div className="space-y-2">
               <Label htmlFor="s-disc">Discount %</Label>
-              <Input
+              <QuantityInput
                 id="s-disc"
-                type="number"
-                step="any"
-                min="0"
-                max="100"
                 className="tnum"
                 placeholder="0"
                 value={discount}
@@ -304,11 +295,8 @@ function QuickEntry({ kind }: { kind: SaleKind }) {
             {target?.type !== "menu" && (
               <div className="space-y-2">
                 <Label htmlFor="s-content">Content per unit</Label>
-                <Input
+                <QuantityInput
                   id="s-content"
-                  type="number"
-                  step="any"
-                  min="0"
                   className="tnum"
                   placeholder={item?.itemVariant.contentTracked ? `e.g. 350 ${item.itemVariant.unit.name}` : "whole units"}
                   value={content}

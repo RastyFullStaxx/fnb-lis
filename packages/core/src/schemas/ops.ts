@@ -33,9 +33,8 @@ export const countLineCreate = z
       if (val.tareWeight === undefined) {
         ctx.addIssue({ code: "custom", path: ["tareWeight"], message: "Tare weight is required" });
       }
-      if (val.densityFactor === undefined) {
-        ctx.addIssue({ code: "custom", path: ["densityFactor"], message: "Density factor is required" });
-      }
+      // densityFactor is mode-dependent (DENSITY needs one, NET must not) —
+      // the server enforces it per the variant's weighMode.
       if (
         val.scaleWeight !== undefined &&
         val.tareWeight !== undefined &&
@@ -102,6 +101,38 @@ export const saleCreate = z
   });
 export type SaleCreate = z.infer<typeof saleCreate>;
 
+// ── Inter-location transfers ──
+
+export const transferCreate = z.object({
+  toLocationId: id,
+  businessDate: dateString,
+  note: z.string().trim().max(500).nullable().optional(),
+});
+export type TransferCreate = z.infer<typeof transferCreate>;
+
+export const transferLineCreate = z.object({
+  locationItemId: id, // source-catalog row
+  qty: positive,
+  /** Optional override; defaults server-side to the source LocationItem.cost snapshot. */
+  unitCost: nonNegative.optional(),
+});
+export type TransferLineCreate = z.infer<typeof transferLineCreate>;
+
+/** Destination-side receive: what actually arrived, per dispatched line. */
+export const transferReceive = z.object({
+  receiptDate: dateString,
+  lines: z
+    .array(
+      z.object({
+        transferLineId: id,
+        qtyReceived: nonNegative, // 0 = nothing arrived (still an explicit receipt)
+        note: z.string().trim().max(500).nullable().optional(),
+      }),
+    )
+    .min(1, "Receive at least one line"),
+});
+export type TransferReceive = z.infer<typeof transferReceive>;
+
 // ── Forfeits (returned bottles) ──
 
 export const forfeitCreate = z
@@ -121,9 +152,7 @@ export const forfeitCreate = z
       if (val.tareWeight === undefined) {
         ctx.addIssue({ code: "custom", path: ["tareWeight"], message: "Tare weight is required when weighing" });
       }
-      if (val.densityFactor === undefined) {
-        ctx.addIssue({ code: "custom", path: ["densityFactor"], message: "Density factor is required when weighing" });
-      }
+      // densityFactor is mode-dependent (server enforces per weighMode).
       if (val.tareWeight !== undefined && val.scaleWeight! < val.tareWeight) {
         ctx.addIssue({ code: "custom", path: ["scaleWeight"], message: "Scale reading is below the tare weight" });
       }

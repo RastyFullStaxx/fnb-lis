@@ -9,6 +9,7 @@ import { formatMoney } from "@/lib/utils";
 import { ItemCombobox } from "@/components/item-combobox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { QuantityInput } from "@/components/quantity-input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -137,11 +138,8 @@ export function RecipeBuilderSheet({
                     <Label className="text-xs" htmlFor={`serv-${i}`}>
                       Serving{variant.contentTracked ? ` (${variant.unit.name})` : " (units)"}
                     </Label>
-                    <Input
+                    <QuantityInput
                       id={`serv-${i}`}
-                      type="number"
-                      step="any"
-                      min="0"
                       className="tnum"
                       value={line.servingQty}
                       onChange={(e) =>
@@ -176,11 +174,8 @@ export function RecipeBuilderSheet({
           <div className="grid grid-cols-3 items-end gap-3">
             <div className="space-y-2">
               <Label htmlFor="menu-srp">SRP</Label>
-              <Input
+              <QuantityInput
                 id="menu-srp"
-                type="number"
-                step="any"
-                min="0"
                 className="tnum"
                 value={srp}
                 onChange={(e) => setSrp(e.target.value)}

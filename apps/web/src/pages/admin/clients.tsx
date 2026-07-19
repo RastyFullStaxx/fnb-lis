@@ -26,6 +26,7 @@ import {
   daysUntilDue,
   useAddLocation,
   useAdminClients,
+  useUpdateLocation,
   useCancelSubscription,
   useCreateFullClient,
   useCreateSubscription,
@@ -66,7 +67,10 @@ import {
 // ── Access state helpers ────────────────────────────────────────────────────
 
 function today(): string {
-  return new Date().toISOString().slice(0, 10);
+  // Local calendar date, not toISOString() (UTC) — for a UTC+8 user near
+  // midnight the UTC date is still "yesterday".
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function AccessStateBadge({ sub }: { sub: AdminSubscription }) {
@@ -379,6 +383,7 @@ function ClientDetailBody({ client }: { client: AdminClient }) {
   const updateClient = useUpdateClient();
   const updateSub = useUpdateSubscription();
   const addLocation = useAddLocation();
+  const updateLocation = useUpdateLocation();
   const markPaid = useMarkPaid();
   const unmarkPaid = useUnmarkPaid();
   const [name, setName] = useState(client.name);
@@ -500,6 +505,12 @@ function ClientDetailBody({ client }: { client: AdminClient }) {
         locations={client.locations.map((loc) => ({
           key: loc.id,
           name: loc.name,
+          kind: loc.kind,
+          onKindChange: (kind: string | null) =>
+            updateLocation
+              .mutateAsync({ locationId: loc.id, kind })
+              .then(() => toast.success(`"${loc.name}" labeled ${kind ? kind.toLowerCase() : "none"}`))
+              .catch((err) => toast.error(err instanceof ApiError ? err.message : "Could not update location")),
           inactive: loc.status !== "ACTIVE",
         }))}
         newLocName={newLocName}

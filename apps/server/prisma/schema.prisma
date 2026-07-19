@@ -33,6 +33,19 @@ model User {
 
   sessions     AuthSession[]
   clientAccess UserClientAccess[]
+  modules      UserModule[]
+}
+
+// Per-user module restriction (client req #9): which of BAR/KITCHEN/ASSET
+// this user may work in. NO rows = unrestricted (backward compatible, and
+// what most staff get); ADMIN always bypasses. Enforced in one choke point —
+// requireLocationAccess intersects these with the location's own modules.
+model UserModule {
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+  module String // BAR | KITCHEN | ASSET
+
+  @@id([userId, module])
 }
 
 model AuthSession {
@@ -66,6 +79,9 @@ model Location {
   clientId  String
   client    Client   @relation(fields: [clientId], references: [id])
   name      String
+  // ponytail: kind is a LABEL for grouping/pickers (main bar vs satellites vs
+  // stockroom, client req #13) — no behavior branches on it. Null = unlabeled.
+  kind      String? // MAIN | SATELLITE | STOCKROOM
   status    String   @default("ACTIVE")
   createdAt DateTime @default(now())
 
@@ -77,6 +93,8 @@ model Location {
   forfeits      Forfeit[]
   menuItems     MenuItem[]
   importBatches ImportBatch[]
+  transfersOut  Transfer[]       @relation("TransferFrom")
+  transfersIn   Transfer[]       @relation("TransferTo")
 
   @@index([clientId])
 }
@@ -206,6 +224,13 @@ model ItemVariant {
   unitId         String
   unit           Unit    @relation(fields: [unitId], references: [id])
   contentTracked Boolean @default(false) // true: open amounts divide by size (bottles); false: raw counts
+  // How this variant is weighed on a scale (client req #16):
+  //   null    → legacy inference: contentTracked ⇒ DENSITY, else not weighable
+  //   DENSITY → (scale − tare) × densityFactor ⇒ content in ml (bar bottles;
+  //             also Food items sold by liquid content)
+  //   NET     → (scale − tare) converted to the variant's unit ⇒ quantity
+  //             directly (kitchen: net weight IS the count; MASS units only)
+  weighMode      String? // DENSITY | NET
   tareWeight     Float?
   tareWeightUnit String? // g | oz
   densityFactor  Float? // per-item override of Category.defaultDensityFactor
@@ -233,12 +258,14 @@ model LocationItem {
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
-  countLines    CountLine[]
-  purchaseLines PurchaseLine[]
-  sales         SaleRecord[]
-  forfeits      Forfeit[]
-  recipeLines   RecipeLine[]
-  aliases       ItemAlias[]
+  countLines       CountLine[]
+  purchaseLines    PurchaseLine[]
+  sales            SaleRecord[]
+  forfeits         Forfeit[]
+  recipeLines      RecipeLine[]
+  aliases          ItemAlias[]
+  transferLines    TransferLine[]
+  transferReceipts TransferReceiptLine[]
 
   @@unique([locationId, itemVariantId])
 }
@@ -435,6 +462,99 @@ model Forfeit {
   createdAt        DateTime     @default(now())
 
   @@index([locationId, forfeitDate])
+}
+
+// ───────────────────────── Inter-location transfers ─────────────────────────
+// Linked two-location stock movement (client reqs #10/#13): the source
+// dispatches (Trans Out), the destination confirms what actually arrived
+// (Trans In). Sent vs received may differ — that gap is deliberate audit
+// signal, surfaced by comparing the two locations' Transfer reports.
+// Greenfield feature: no legacy PHP precedent — correctness rests on the
+// hand-computed fixture in docs/phases/phase-9 (10 sent vs 8 received).
+//
+// Tenant guard: both locations MUST belong to the same client — enforced at
+// create in routes/transfers.ts (the DB can't express it).
+// Void ordering: a Transfer/TransferLine cannot be voided while an ACTIVE
+// receipt line exists against it — the destination voids its receipt first,
+// so both locations' books always move in cause→effect order.
+
+model Transfer {
+  id             String    @id @default(cuid())
+  fromLocationId String
+  fromLocation   Location  @relation("TransferFrom", fields: [fromLocationId], references: [id])
+  toLocationId   String
+  toLocation     Location  @relation("TransferTo", fields: [toLocationId], references: [id])
+  businessDate   String // YYYY-MM-DD — the day stock left the source
+  status         String    @default("DRAFT") // DRAFT | COMMITTED | VOID
+  note           String?
+  createdById    String
+  createdByName  String
+  createdAt      DateTime  @default(now())
+  committedAt    DateTime?
+  committedById  String?
+  voidedAt       DateTime?
+  voidedById     String?
+  voidReason     String?
+
+  lines TransferLine[]
+
+  @@index([fromLocationId, businessDate])
+  @@index([toLocationId, businessDate])
+}
+
+model TransferLine {
+  id             String         @id @default(cuid())
+  transferId     String
+  transfer       Transfer       @relation(fields: [transferId], references: [id])
+  locationItemId String // the SOURCE location's catalog row
+  locationItem   LocationItem   @relation(fields: [locationItemId], references: [id])
+  qty            Float
+  unitCost       Float // snapshot of the source LocationItem.cost at entry
+  lineTotal      Float
+  status         String         @default("ACTIVE") // ACTIVE | VOID
+  voidedAt       DateTime?
+  voidedById     String?
+  voidReason     String?
+  correctionOfId String?
+  correctionOf   TransferLine?  @relation("TransferLineCorrection", fields: [correctionOfId], references: [id])
+  corrections    TransferLine[] @relation("TransferLineCorrection")
+  createdById    String
+  createdByName  String
+  createdAt      DateTime       @default(now())
+
+  receipts TransferReceiptLine[]
+
+  @@index([transferId])
+  @@index([locationItemId])
+}
+
+// What the destination actually received against one dispatched line. At most
+// one ACTIVE receipt per transfer line (app-enforced 409); a wrong entry is
+// corrected the same way as every other leaf record — void + replacement
+// linked via correctionOfId.
+model TransferReceiptLine {
+  id               String                @id @default(cuid())
+  transferLineId   String
+  transferLine     TransferLine          @relation(fields: [transferLineId], references: [id])
+  toLocationItemId String // the DESTINATION location's catalog row
+  toLocationItem   LocationItem          @relation(fields: [toLocationItemId], references: [id])
+  qtyReceived      Float
+  receiptDate      String // YYYY-MM-DD — the day stock arrived (may lag businessDate)
+  note             String?
+  status           String                @default("ACTIVE") // ACTIVE | VOID
+  voidedAt         DateTime?
+  voidedById       String?
+  voidReason       String?
+  correctionOfId   String?
+  correctionOf     TransferReceiptLine?  @relation("TransferReceiptCorrection", fields: [correctionOfId], references: [id])
+  corrections      TransferReceiptLine[] @relation("TransferReceiptCorrection")
+  createdById      String
+  createdByName    String
+  createdAt        DateTime              @default(now())
+
+  @@index([transferLineId])
+  @@index([toLocationItemId])
+  @@index([receiptDate])
 }
 
 // ───────────────────────── Menus & versioned recipes ─────────────────────────

@@ -9,6 +9,7 @@ import { defaultWeighUnit, useUnitSystem } from "@/lib/preferences";
 import { ApiError } from "@/api/http";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { QuantityInput } from "@/components/quantity-input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -32,6 +33,7 @@ const EMPTY_VARIANT = {
   size: 0,
   unitId: "",
   contentTracked: false,
+  weighMode: null,
   tareWeight: null,
   tareWeightUnit: null,
   densityFactor: null,
@@ -143,15 +145,16 @@ export function ItemFormSheet({
 
             {variants.fields.map((field, i) => {
               const contentTracked = form.watch(`variants.${i}.contentTracked`);
+              const weighMode = form.watch(`variants.${i}.weighMode`);
+              const unitId = form.watch(`variants.${i}.unitId`);
+              const unitIsMass = units.data?.find((u) => u.id === unitId)?.kind === "MASS";
+              const netMode = !contentTracked && weighMode === "NET";
               return (
                 <div key={field.id} className="space-y-3 rounded-lg border p-3">
                   <div className="flex items-end gap-2">
                     <div className="w-28 space-y-1.5">
                       <Label className="text-xs">Size</Label>
-                      <Input
-                        type="number"
-                        step="any"
-                        min="0"
+                      <QuantityInput
                         className="tnum"
                         {...form.register(`variants.${i}.size`, { valueAsNumber: true })}
                       />
@@ -196,18 +199,65 @@ export function ItemFormSheet({
                     </div>
                     <Switch
                       checked={contentTracked}
-                      onCheckedChange={(v) => form.setValue(`variants.${i}.contentTracked`, v)}
+                      onCheckedChange={(v) => {
+                        form.setValue(`variants.${i}.contentTracked`, v);
+                        if (v) form.setValue(`variants.${i}.weighMode`, null);
+                      }}
                     />
                   </div>
+
+                  {!contentTracked && unitIsMass && (
+                    <div className="flex items-center justify-between rounded-md bg-muted px-3 py-2">
+                      <div>
+                        <p className="text-sm font-medium">Weigh by net weight</p>
+                        <p className="text-xs text-muted-foreground">
+                          Kitchen counting: scale reading − tare = quantity in {units.data?.find((u) => u.id === unitId)?.name ?? "the unit"}. No density conversion.
+                        </p>
+                      </div>
+                      <Switch
+                        checked={netMode}
+                        onCheckedChange={(v) => form.setValue(`variants.${i}.weighMode`, v ? "NET" : null)}
+                      />
+                    </div>
+                  )}
+
+                  {netMode && (
+                    <div className="grid grid-cols-2 items-end gap-2">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Tare weight</Label>
+                        <QuantityInput
+                          className="tnum"
+                          placeholder="empty container (0 = none)"
+                          {...form.register(`variants.${i}.tareWeight`, {
+                            setValueAs: (v) => (v === "" || v === null ? null : Number(v)),
+                          })}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Tare unit</Label>
+                        <Select
+                          value={form.watch(`variants.${i}.tareWeightUnit`) ?? ""}
+                          onValueChange={(v) =>
+                            form.setValue(`variants.${i}.tareWeightUnit`, (v || null) as "g" | "oz" | null)
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="g / oz" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="g">g</SelectItem>
+                            <SelectItem value="oz">oz</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  )}
 
                   {contentTracked && (
                     <div className="grid grid-cols-2 items-end gap-2 sm:grid-cols-3">
                       <div className="space-y-1.5">
                         <Label className="text-xs">Tare weight</Label>
-                        <Input
-                          type="number"
-                          step="any"
-                          min="0"
+                        <QuantityInput
                           className="tnum"
                           placeholder="empty container"
                           {...form.register(`variants.${i}.tareWeight`, {
@@ -236,10 +286,7 @@ export function ItemFormSheet({
                         <Label className="flex items-center gap-1 text-xs">
                           <Scale className="size-3" /> Liquid Weight
                         </Label>
-                        <Input
-                          type="number"
-                          step="any"
-                          min="0"
+                        <QuantityInput
                           className="tnum"
                           placeholder={
                             category?.defaultDensityFactor

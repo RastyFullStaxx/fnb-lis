@@ -21,7 +21,10 @@ export const authRoutes = new Hono<AppEnv>()
   .post("/login", zValidator("json", loginRequest), async (c) => {
     const { username, password, rememberMe } = c.req.valid("json");
 
-    const user = await prisma.user.findUnique({ where: { username: username.toLowerCase() } });
+    const user = await prisma.user.findUnique({
+      where: { username: username.toLowerCase() },
+      include: { modules: true },
+    });
     const failMessage = "Incorrect username or password";
     if (!user || user.status !== "ACTIVE") throw new AppError(401, failMessage);
 
@@ -51,7 +54,7 @@ export const authRoutes = new Hono<AppEnv>()
     }
 
     const ip = c.req.header("x-forwarded-for") ?? "";
-    const { token, expiresAt } = await createSession(user.id, ip, c.req.header("user-agent"));
+    const { token, expiresAt } = await createSession(user.id, user.role, ip, c.req.header("user-agent"));
     setCookie(c, SESSION_COOKIE, token, {
       httpOnly: true,
       sameSite: "Lax",
@@ -68,6 +71,7 @@ export const authRoutes = new Hono<AppEnv>()
       firstName: user.firstName,
       lastName: user.lastName,
       role: user.role,
+      modules: user.role === "ADMIN" || user.modules.length === 0 ? null : user.modules.map((m) => m.module),
     };
     await logActivity({
       user: sessionUser as MeResponse["user"],
@@ -128,23 +132,46 @@ async function buildMe(user: MeResponse["user"]): Promise<MeResponse> {
           .map((a) => a.client)
           .sort((a, b) => a.name.localeCompare(b.name));
 
-  const meClients: MeClient[] = clients.map((cl) => ({
-    id: cl.id,
-    name: cl.name,
-    locations: cl.locations.map((l) => ({
-      id: l.id,
-      name: l.name,
-      clientId: l.clientId,
-      modules: l.modules.map((m) => m.module),
-    })),
-    subscription: cl.subscription
-      ? {
-          packageType: cl.subscription.packageType,
-          status: cl.subscription.status,
-          modules: cl.subscription.modules.map((m) => m.module),
-        }
-      : null,
-  }));
+  // Per-user module restriction (client req #9): each location's advertised
+  // module set is PRE-INTERSECTED with the user's own, and locations whose
+  // intersection is empty are hidden from the switcher entirely — the same
+  // rule requireLocationAccess enforces with a 403 on direct URLs. The nav
+  // and catalog UI need zero further changes; they already consume these
+  // per-location module lists.
+  const userModules = user.role === "ADMIN" ? null : (user.modules ?? null);
+  const effectiveModules = (locationModules: string[]): string[] | null => {
+    if (!userModules || userModules.length === 0) return locationModules;
+    if (locationModules.length === 0) return userModules;
+    const overlap = locationModules.filter((m) => userModules.includes(m));
+    return overlap.length > 0 ? overlap : null; // null = hide this location
+  };
+
+  const meClients: MeClient[] = clients
+    .map((cl) => ({
+      id: cl.id,
+      name: cl.name,
+      locations: cl.locations.flatMap((l) => {
+        const modules = effectiveModules(l.modules.map((m) => m.module));
+        if (modules === null) return [];
+        return [
+          {
+            id: l.id,
+            name: l.name,
+            clientId: l.clientId,
+            kind: l.kind ?? null,
+            modules,
+          },
+        ];
+      }),
+      subscription: cl.subscription
+        ? {
+            packageType: cl.subscription.packageType,
+            status: cl.subscription.status,
+            modules: cl.subscription.modules.map((m) => m.module),
+          }
+        : null,
+    }))
+    .filter((cl) => cl.locations.length > 0);
 
   return {
     user,

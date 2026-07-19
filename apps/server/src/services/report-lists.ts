@@ -1,3 +1,4 @@
+import { costLine, netOfVat, pctOf } from "@fnb/core";
 import { buildFullAudit, committedCountDates } from "./report-assembly";
 import { prisma } from "../db";
 
@@ -274,7 +275,7 @@ export async function onHandReport(
   const rows: OnHandRow[] = report.rows.map((row) => {
     const price = priceMap.get(row.locationItemId);
     const onHand =
-      row.beginFull + row.beginOpenEquiv + row.purchased + row.forfeited -
+      row.beginFull + row.beginOpenEquiv + row.purchased + row.forfeited + row.transferIn - row.transferOut -
       (row.soldDirect + row.soldPortion + row.nonRevenue + row.production);
     const cost = price?.cost ?? row.costBasis;
     const retail = price?.retail ?? 0;
@@ -299,10 +300,256 @@ export async function onHandReport(
   return { lastCountDate: lastDate, rows, totals };
 }
 
+// ── Transfer report (in/out at cost & retail — client req #10) ──
+
+export interface TransferReportRow {
+  date: string; // businessDate (out) / receiptDate (in)
+  counterparty: string; // the other location's name
+  counterpartyKind: string | null;
+  name: string;
+  category: string;
+  qtySent: number;
+  /** null until the destination confirms receipt (out direction only). */
+  qtyReceived: number | null;
+  unitCost: number;
+  costValue: number;
+  retailValue: number;
+}
+export interface TransferReport {
+  from: string;
+  to: string;
+  direction: "in" | "out";
+  rows: TransferReportRow[];
+  byCounterparty: Array<{ counterparty: string; qty: number; cost: number }>;
+  totals: { qty: number; cost: number; retail: number };
+}
+
+export async function transferReport(
+  locationId: string,
+  from: string,
+  to: string,
+  direction: "in" | "out",
+  allowedProductTypes?: readonly string[] | null,
+): Promise<TransferReport> {
+  const productTypeFilter = allowedProductTypes
+    ? { itemVariant: { item: { category: { productType: { in: [...allowedProductTypes] } } } } }
+    : {};
+
+  let rows: TransferReportRow[];
+  if (direction === "out") {
+    // Source view: dispatched lines, valued at the line's cost snapshot and
+    // the source catalog's current retail.
+    const lines = await prisma.transferLine.findMany({
+      where: {
+        status: "ACTIVE",
+        transfer: { fromLocationId: locationId, status: "COMMITTED", businessDate: { gte: from, lte: to } },
+        locationItem: productTypeFilter,
+      },
+      include: {
+        locationItem: { include: LI_INCLUDE },
+        transfer: { include: { toLocation: { select: { name: true, kind: true } } } },
+        receipts: { where: { status: "ACTIVE" }, select: { qtyReceived: true } },
+      },
+      orderBy: { transfer: { businessDate: "asc" } },
+    });
+    rows = lines.map((l) => ({
+      date: l.transfer.businessDate,
+      counterparty: l.transfer.toLocation.name,
+      counterpartyKind: l.transfer.toLocation.kind,
+      name: itemLabel(l.locationItem),
+      category: l.locationItem.itemVariant.item.category.name,
+      qtySent: l.qty,
+      qtyReceived: l.receipts.length > 0 ? l.receipts.reduce((s, r) => s + r.qtyReceived, 0) : null,
+      unitCost: l.unitCost,
+      costValue: l.qty * l.unitCost,
+      retailValue: l.qty * l.locationItem.retail,
+    }));
+  } else {
+    // Destination view: confirmed receipts, valued at the sender's cost
+    // snapshot and the destination catalog's current retail.
+    const receipts = await prisma.transferReceiptLine.findMany({
+      where: {
+        status: "ACTIVE",
+        receiptDate: { gte: from, lte: to },
+        transferLine: { status: "ACTIVE", transfer: { toLocationId: locationId, status: "COMMITTED" } },
+        toLocationItem: productTypeFilter,
+      },
+      include: {
+        toLocationItem: { include: LI_INCLUDE },
+        transferLine: {
+          include: { transfer: { include: { fromLocation: { select: { name: true, kind: true } } } } },
+        },
+      },
+      orderBy: { receiptDate: "asc" },
+    });
+    rows = receipts.map((r) => ({
+      date: r.receiptDate,
+      counterparty: r.transferLine.transfer.fromLocation.name,
+      counterpartyKind: r.transferLine.transfer.fromLocation.kind,
+      name: itemLabel(r.toLocationItem),
+      category: r.toLocationItem.itemVariant.item.category.name,
+      qtySent: r.transferLine.qty,
+      qtyReceived: r.qtyReceived,
+      unitCost: r.transferLine.unitCost,
+      costValue: r.qtyReceived * r.transferLine.unitCost,
+      retailValue: r.qtyReceived * r.toLocationItem.retail,
+    }));
+  }
+
+  const counterpartyMap = new Map<string, { qty: number; cost: number }>();
+  for (const r of rows) {
+    const agg = counterpartyMap.get(r.counterparty) ?? { qty: 0, cost: 0 };
+    agg.qty += direction === "out" ? r.qtySent : (r.qtyReceived ?? 0);
+    agg.cost += r.costValue;
+    counterpartyMap.set(r.counterparty, agg);
+  }
+  const byCounterparty = [...counterpartyMap.entries()]
+    .map(([counterparty, v]) => ({ counterparty, ...v }))
+    .sort((a, b) => b.cost - a.cost);
+
+  const totals = rows.reduce(
+    (acc, r) => ({
+      qty: acc.qty + (direction === "out" ? r.qtySent : (r.qtyReceived ?? 0)),
+      cost: acc.cost + r.costValue,
+      retail: acc.retail + r.retailValue,
+    }),
+    { qty: 0, cost: 0, retail: 0 },
+  );
+  return { from, to, direction, rows, byCounterparty, totals };
+}
+
+// ── Cost Analysis (client req #3 — legacy food/beverage_downloadCA) ──
+// One combined bar+kitchen report: a sales summary block plus one cost
+// section per product type present. Formula precedents live in
+// @fnb/core/cost-analysis.ts; window semantics are the audit half-open
+// [begin, end) with counts ON each boundary, same as the Full Audit — the
+// begin/end inventory costs come straight from its recon rows, so this
+// report can never disagree with the Full Audit for the same window.
+
+export interface CostAnalysisRow {
+  category: string;
+  beginningCost: number;
+  purchasesCost: number;
+  endingCost: number;
+  cost: number;
+  costNet: number;
+  grossPct: number | null;
+  netPct: number | null;
+}
+export interface CostAnalysisSection {
+  productType: string;
+  grossSales: number;
+  netSales: number;
+  rows: CostAnalysisRow[];
+  totals: Omit<CostAnalysisRow, "category">;
+}
+export interface CostAnalysisReport {
+  begin: string;
+  end: string;
+  sales: {
+    byType: Array<{ productType: string; gross: number; net: number }>;
+    totalGross: number;
+    totalNet: number;
+    vatAmount: number;
+  };
+  sections: CostAnalysisSection[];
+}
+
+export async function costAnalysisReport(
+  locationId: string,
+  begin: string,
+  end: string,
+  allowedProductTypes?: readonly string[] | null,
+): Promise<CostAnalysisReport> {
+  const audit = await buildFullAudit(locationId, begin, end, undefined, allowedProductTypes);
+
+  // Purchases cost per category over the same half-open window — from the
+  // committed purchase lines directly (their lineTotal snapshots), not from
+  // the recon rows, which don't carry per-row purchase cost.
+  const purchaseLines = await prisma.purchaseLine.findMany({
+    where: {
+      status: "ACTIVE",
+      purchase: { locationId, status: "COMMITTED", purchaseDate: { gte: begin, lt: end } },
+      ...(allowedProductTypes
+        ? { locationItem: { itemVariant: { item: { category: { productType: { in: [...allowedProductTypes] } } } } } }
+        : {}),
+    },
+    include: { locationItem: { include: LI_INCLUDE } },
+  });
+  const purchasesByCategory = new Map<string, number>();
+  for (const l of purchaseLines) {
+    const cat = l.locationItem.itemVariant.item.category.name;
+    purchasesByCategory.set(cat, (purchasesByCategory.get(cat) ?? 0) + l.lineTotal);
+  }
+
+  // Gross sales per product type from the recon rows' revenue — menu revenue
+  // is thereby allocated per-ingredient by the same legacy share math the
+  // Full Audit uses, so the two reports always cross-foot.
+  const grossByType = new Map<string, number>();
+  for (const row of audit.rows) {
+    grossByType.set(row.productType, (grossByType.get(row.productType) ?? 0) + row.revenue);
+  }
+  const byType = [...grossByType.entries()]
+    .map(([productType, gross]) => ({ productType, gross, net: netOfVat(gross) }))
+    .sort((a, b) => a.productType.localeCompare(b.productType));
+  const totalGross = byType.reduce((s, t) => s + t.gross, 0);
+  const totalNet = netOfVat(totalGross);
+
+  const sections: CostAnalysisSection[] = [];
+  for (const group of audit.categories) {
+    let section = sections.find((s) => s.productType === group.productType);
+    if (!section) {
+      const gross = grossByType.get(group.productType) ?? 0;
+      section = {
+        productType: group.productType,
+        grossSales: gross,
+        netSales: netOfVat(gross),
+        rows: [],
+        totals: { beginningCost: 0, purchasesCost: 0, endingCost: 0, cost: 0, costNet: 0, grossPct: null, netPct: null },
+      };
+      sections.push(section);
+    }
+    const beginningCost = group.totals.beginCost;
+    const endingCost = group.totals.endCost;
+    const purchasesCost = purchasesByCategory.get(group.categoryName) ?? 0;
+    const { cost, costNet } = costLine(beginningCost, purchasesCost, endingCost);
+    section.rows.push({
+      category: group.categoryName,
+      beginningCost,
+      purchasesCost,
+      endingCost,
+      cost,
+      costNet,
+      grossPct: pctOf(cost, section.grossSales),
+      netPct: pctOf(costNet, section.netSales),
+    });
+  }
+  for (const section of sections) {
+    const t = section.totals;
+    for (const row of section.rows) {
+      t.beginningCost += row.beginningCost;
+      t.purchasesCost += row.purchasesCost;
+      t.endingCost += row.endingCost;
+      t.cost += row.cost;
+      t.costNet += row.costNet;
+    }
+    t.grossPct = pctOf(t.cost, section.grossSales);
+    t.netPct = pctOf(t.costNet, section.netSales);
+  }
+  sections.sort((a, b) => a.productType.localeCompare(b.productType));
+
+  return {
+    begin,
+    end,
+    sales: { byType, totalGross, totalNet, vatAmount: totalGross - totalNet },
+    sections,
+  };
+}
+
 // ── Full Audit drill-down: the source records behind one item's row ──
 
 export interface DrillRecord {
-  kind: "COUNT" | "PURCHASE" | "SALE" | "NON_REVENUE" | "PRODUCTION" | "FORFEIT";
+  kind: "COUNT" | "PURCHASE" | "SALE" | "NON_REVENUE" | "PRODUCTION" | "FORFEIT" | "TRANSFER_IN" | "TRANSFER_OUT";
   date: string;
   detail: string;
   qty: number | null;
@@ -315,7 +562,7 @@ export async function fullAuditDrill(
   begin: string,
   end: string,
 ): Promise<DrillRecord[]> {
-  const [counts, purchaseLines, forfeits, directSales, menuSales] = await Promise.all([
+  const [counts, purchaseLines, forfeits, directSales, menuSales, transferOutLines, transferReceipts] = await Promise.all([
     prisma.countLine.findMany({
       where: {
         status: "ACTIVE",
@@ -348,6 +595,25 @@ export async function fullAuditDrill(
         recipeVersion: { lines: { some: { locationItemId } } },
       },
       include: { menuItem: true, recipeVersion: { include: { lines: true } } },
+    }),
+    prisma.transferLine.findMany({
+      where: {
+        status: "ACTIVE",
+        locationItemId,
+        transfer: { fromLocationId: locationId, status: "COMMITTED", businessDate: { gte: begin, lt: end } },
+      },
+      include: { transfer: { include: { toLocation: { select: { name: true } } } } },
+    }),
+    prisma.transferReceiptLine.findMany({
+      where: {
+        status: "ACTIVE",
+        toLocationItemId: locationItemId,
+        receiptDate: { gte: begin, lt: end },
+        transferLine: { status: "ACTIVE", transfer: { toLocationId: locationId, status: "COMMITTED" } },
+      },
+      include: {
+        transferLine: { include: { transfer: { include: { fromLocation: { select: { name: true } } } } } },
+      },
     }),
   ]);
 
@@ -394,6 +660,24 @@ export async function fullAuditDrill(
       detail: `${m.menuItem?.name ?? "Menu"} ×${m.qty} · ${line?.servingQty ?? "?"}/serving`,
       qty: m.qty,
       amount: m.kind === "SALE" ? m.unitPrice * m.qty : null,
+    });
+  }
+  for (const t of transferOutLines) {
+    records.push({
+      kind: "TRANSFER_OUT",
+      date: t.transfer.businessDate,
+      detail: `Transferred ×${t.qty} to ${t.transfer.toLocation.name}`,
+      qty: t.qty,
+      amount: t.lineTotal,
+    });
+  }
+  for (const r of transferReceipts) {
+    records.push({
+      kind: "TRANSFER_IN",
+      date: r.receiptDate,
+      detail: `Received ×${r.qtyReceived} of ${r.transferLine.qty} sent from ${r.transferLine.transfer.fromLocation.name}`,
+      qty: r.qtyReceived,
+      amount: r.qtyReceived * r.transferLine.unitCost,
     });
   }
 

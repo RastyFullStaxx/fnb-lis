@@ -1,11 +1,14 @@
 import { useMemo } from "react";
 import { Scale } from "lucide-react";
 import {
+  netWeight,
   remainingContent,
   resolveDensityFactor,
+  validateNetWeigh,
   validateWeigh,
   openEquivalent,
 } from "@fnb/core";
+import { useUnits } from "@/api/master";
 import type { LocationItem } from "@/api/types";
 import { cn } from "@/lib/utils";
 import { defaultWeighUnit, useUnitSystem } from "@/lib/preferences";
@@ -13,9 +16,14 @@ import { defaultWeighUnit, useUnitSystem } from "@/lib/preferences";
 /**
  * The live weigh strip — the SAME core math the server uses, running in the
  * browser as the user types. Screen math can never disagree with report math.
+ *
+ * Two modes (client req #16):
+ *   DENSITY — bar open-bottle: (scale − tare) × density ⇒ content (ml)
+ *   NET     — kitchen: (scale − tare) converted to the counting unit ⇒ qty
  */
 export function useWeighPreview(item: LocationItem | null, scaleText: string) {
   const unitSystem = useUnitSystem();
+  const units = useUnits();
   // Fallback only for items that have no tare unit configured yet — a
   // properly set-up item always carries its own real tareWeightUnit, since
   // that reflects how the container was actually weighed, not a display
@@ -24,12 +32,50 @@ export function useWeighPreview(item: LocationItem | null, scaleText: string) {
   return useMemo(() => {
     if (!item) return null;
     const variant = item.itemVariant;
-    if (!variant.contentTracked) return null;
+    const mode =
+      variant.weighMode === "NET" || variant.weighMode === "DENSITY"
+        ? variant.weighMode
+        : variant.contentTracked
+          ? ("DENSITY" as const)
+          : null;
+    if (!mode) return null;
+    const tare = variant.tareWeight;
+
+    if (mode === "NET") {
+      if (tare === null) return { ready: false as const, missing: "tare weight" };
+      const unitName = variant.tareWeightUnit ?? fallbackUnit;
+      const scale = Number(scaleText);
+      if (scaleText === "" || !Number.isFinite(scale)) {
+        return { ready: true as const, entered: false as const, mode, tare, density: null, unit: unitName };
+      }
+      const warnings = validateNetWeigh({ scaleWeight: scale, tareWeight: tare });
+      const blocking = warnings.some((w) => w.blocking);
+      const net = blocking ? 0 : netWeight({ scaleWeight: scale, tareWeight: tare });
+      // Same conversion the server does: net (scale units) → the counting unit.
+      const scaleUnitRow = units.data?.find((u) => u.name === unitName);
+      const remaining =
+        scaleUnitRow && variant.unit.factorToBase > 0
+          ? (net * scaleUnitRow.factorToBase) / variant.unit.factorToBase
+          : net;
+      return {
+        ready: true as const,
+        entered: true as const,
+        mode,
+        tare,
+        density: null,
+        unit: unitName,
+        scale,
+        remaining,
+        equivalent: remaining,
+        warnings,
+        blocking,
+      };
+    }
+
     const density = resolveDensityFactor(
       variant.densityFactor,
       variant.item.category.defaultDensityFactor,
     );
-    const tare = variant.tareWeight;
     if (!density || tare === null) {
       return { ready: false as const, missing: !density ? "liquid weight formula" : "tare weight" };
     }
@@ -38,6 +84,7 @@ export function useWeighPreview(item: LocationItem | null, scaleText: string) {
       return {
         ready: true as const,
         entered: false as const,
+        mode,
         tare,
         density,
         unit: variant.tareWeightUnit ?? fallbackUnit,
@@ -50,6 +97,7 @@ export function useWeighPreview(item: LocationItem | null, scaleText: string) {
     return {
       ready: true as const,
       entered: true as const,
+      mode,
       tare,
       density,
       unit: variant.tareWeightUnit ?? fallbackUnit,
@@ -59,7 +107,7 @@ export function useWeighPreview(item: LocationItem | null, scaleText: string) {
       warnings,
       blocking,
     };
-  }, [item, scaleText, fallbackUnit]);
+  }, [item, scaleText, fallbackUnit, units.data]);
 }
 
 export function WeighPreviewStrip({
@@ -82,7 +130,9 @@ export function WeighPreviewStrip({
   if (!preview.entered) {
     return (
       <p className="text-sm text-muted-foreground tnum">
-        Tare {preview.tare} {preview.unit} · Liquid Weight ×{preview.density} — type the scale reading.
+        {preview.mode === "NET"
+          ? `Tare ${preview.tare} ${preview.unit} · net weight mode — type the scale reading.`
+          : `Tare ${preview.tare} ${preview.unit} · Liquid Weight ×${preview.density} — type the scale reading.`}
       </p>
     );
   }
@@ -98,6 +148,13 @@ export function WeighPreviewStrip({
         <Scale className="size-4 shrink-0 text-primary" />
         {preview.blocking ? (
           <span className="text-sm text-destructive">{warning?.message}</span>
+        ) : preview.mode === "NET" ? (
+          <span className="tnum text-sm">
+            scale {preview.scale} − tare {preview.tare} {preview.unit} →{" "}
+            <span className="font-semibold">
+              {preview.remaining} {contentUnit}
+            </span>
+          </span>
         ) : (
           <span className="tnum text-sm">
             (scale {preview.scale} − tare {preview.tare}) × Liquid Weight {preview.density} →{" "}

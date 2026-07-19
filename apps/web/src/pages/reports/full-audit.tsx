@@ -186,20 +186,21 @@ export function FullAuditPage() {
               description="Pick different boundary dates, or check that the counts were committed."
             />
           ) : (
-            <Table className="min-w-[72rem]">
+            <Table className="min-w-[78rem]">
               <TableHeader className="sticky top-0 z-10">
                 <TableRow className="bg-muted hover:bg-muted">
                   <TableHead className="min-w-48">Item</TableHead>
                   <TableHead className="text-right">Begin (full + open)</TableHead>
                   <TableHead className="text-right">Purchased</TableHead>
                   <TableHead className="text-right">Returns</TableHead>
+                  <TableHead className="text-right">Transfers (in − out)</TableHead>
                   <TableHead className="text-right">End (full + open)</TableHead>
                   <TableHead className="text-right font-semibold">Usage</TableHead>
                   <TableHead className="text-right">Sold (direct + recipe)</TableHead>
                   <TableHead className="text-right">Non-rev</TableHead>
                   <TableHead className="text-right">Prod</TableHead>
                   <TableHead className="text-right">Revenue</TableHead>
-                  <TableHead className="text-right font-semibold">Variance</TableHead>
+                  <TableHead className="text-right font-semibold">Variance vs Sold</TableHead>
                   <TableHead className="text-right">%</TableHead>
                   <TableHead className="text-right">At cost</TableHead>
                   <TableHead className="text-right">At retail</TableHead>
@@ -211,7 +212,7 @@ export function FullAuditPage() {
                 ))}
                 <TableRow className="border-t-2 bg-muted/60 font-semibold hover:bg-muted/60">
                   <TableCell>Grand total</TableCell>
-                  <TableCell colSpan={8} />
+                  <TableCell colSpan={9} />
                   <TableCell className="tnum text-right">{formatMoney(round2(report.data.totals.revenue))}</TableCell>
                   <TableCell colSpan={2} />
                   <TableCell className={cn("tnum text-right", report.data.totals.varianceCost < 0 && "text-destructive")}>
@@ -238,7 +239,7 @@ function CategoryRows({ group, onDrill }: { group: Group; onDrill: (item: { id: 
   return (
     <>
       <TableRow className="bg-secondary/60 hover:bg-secondary/60">
-        <TableCell colSpan={14} className="py-1.5 text-xs font-semibold uppercase tracking-wide text-secondary-foreground">
+        <TableCell colSpan={15} className="py-1.5 text-xs font-semibold uppercase tracking-wide text-secondary-foreground">
           {group.categoryName}
         </TableCell>
       </TableRow>
@@ -262,6 +263,17 @@ function CategoryRows({ group, onDrill }: { group: Group; onDrill: (item: { id: 
           </TableCell>
           <TableCell className="tnum text-right">{row.purchased > 0 ? n2(row.purchased) : "—"}</TableCell>
           <TableCell className="tnum text-right">{row.forfeited > 0 ? n2(row.forfeited) : "—"}</TableCell>
+          <TableCell className="tnum text-right">
+            {row.transferIn === 0 && row.transferOut === 0 ? (
+              "—"
+            ) : (
+              <>
+                {row.transferIn > 0 && `+${n2(row.transferIn)}`}
+                {row.transferIn > 0 && row.transferOut > 0 && " "}
+                {row.transferOut > 0 && <span className="text-muted-foreground">−{n2(row.transferOut)}</span>}
+              </>
+            )}
+          </TableCell>
           <TableCell className="tnum text-right">
             {n2(row.endFull)}
             {row.endOpenEquiv > 0 && <span className="text-muted-foreground"> + {n2(row.endOpenEquiv)}</span>}
@@ -305,6 +317,8 @@ const DRILL_LABELS: Record<string, string> = {
   NON_REVENUE: "Non-revenue",
   PRODUCTION: "Production",
   FORFEIT: "Return",
+  TRANSFER_IN: "Transfer in",
+  TRANSFER_OUT: "Transfer out",
 };
 
 function DrillDialog({

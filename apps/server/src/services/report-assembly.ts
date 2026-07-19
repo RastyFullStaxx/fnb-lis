@@ -19,7 +19,7 @@ export async function buildFullAudit(
   productType?: string,
   allowedProductTypes?: readonly string[] | null,
 ): Promise<ReconReport> {
-  const [beginLines, endLines, purchaseLines, forfeits, sales] = await Promise.all([
+  const [beginLines, endLines, purchaseLines, forfeits, sales, transferOutLines, transferReceipts] = await Promise.all([
     prisma.countLine.findMany({
       where: {
         status: "ACTIVE",
@@ -48,6 +48,26 @@ export async function buildFullAudit(
         menuItem: true,
       },
     }),
+    // Transfers OUT: dispatched qty leaves this location's pool on the day it
+    // was sent (businessDate, source side).
+    prisma.transferLine.findMany({
+      where: {
+        status: "ACTIVE",
+        transfer: { fromLocationId: locationId, status: "COMMITTED", businessDate: { gte: beginDate, lt: endDate } },
+      },
+      select: { locationItemId: true, qty: true },
+    }),
+    // Transfers IN: what this location actually CONFIRMED receiving, on the
+    // day it arrived (receiptDate, destination side). Sent-vs-received gaps
+    // stay visible as the difference between the two locations' reports.
+    prisma.transferReceiptLine.findMany({
+      where: {
+        status: "ACTIVE",
+        receiptDate: { gte: beginDate, lt: endDate },
+        transferLine: { status: "ACTIVE", transfer: { toLocationId: locationId, status: "COMMITTED" } },
+      },
+      select: { toLocationItemId: true, qtyReceived: true },
+    }),
   ]);
 
   type Agg = {
@@ -59,6 +79,8 @@ export async function buildFullAudit(
     endUnitCost: number | null;
     purchasedQty: number;
     purchasedCost: number;
+    transferInQty: number;
+    transferOutQty: number;
     forfeitContent: number;
     forfeitCountQty: number;
     directSalesQty: number;
@@ -76,6 +98,7 @@ export async function buildFullAudit(
         beginFullQty: 0, beginOpenContent: 0, endFullQty: 0, endOpenContent: 0,
         beginUnitCost: null, endUnitCost: null,
         purchasedQty: 0, purchasedCost: 0,
+        transferInQty: 0, transferOutQty: 0,
         forfeitContent: 0, forfeitCountQty: 0,
         directSalesQty: 0, directRevenue: 0, productionQty: 0,
         nonRevenueDirectQty: 0, nonRevenueContentLines: [], menuSales: [],
@@ -106,6 +129,12 @@ export async function buildFullAudit(
     const agg = touch(forfeit.locationItemId);
     agg.forfeitContent += forfeit.remainingContent;
     agg.forfeitCountQty += forfeit.qty;
+  }
+  for (const line of transferOutLines) {
+    touch(line.locationItemId).transferOutQty += line.qty;
+  }
+  for (const receipt of transferReceipts) {
+    touch(receipt.toLocationItemId).transferInQty += receipt.qtyReceived;
   }
 
   for (const sale of sales) {
@@ -203,11 +232,12 @@ export async function stockOnHand(
   const FUTURE = "9999-12-31";
   if (!lastDate) return [];
   const report = await buildFullAudit(locationId, lastDate, FUTURE, undefined, allowedProductTypes);
-  // usage = begin + purchases + forfeits − end; with no end counts, on-hand = begin + purchases + forfeits − expected consumption
+  // usage = begin + purchases + forfeits + transfers in − transfers out − end;
+  // with no end counts, on-hand = pool-ins − expected consumption.
   return report.rows.map((row) => ({
     locationItemId: row.locationItemId,
     onHand:
-      row.beginFull + row.beginOpenEquiv + row.purchased + row.forfeited -
+      row.beginFull + row.beginOpenEquiv + row.purchased + row.forfeited + row.transferIn - row.transferOut -
       (row.soldDirect + row.soldPortion + row.nonRevenue + row.production),
     lastCountDate: lastDate,
   }));

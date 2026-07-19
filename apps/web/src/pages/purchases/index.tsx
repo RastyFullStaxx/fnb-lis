@@ -17,6 +17,7 @@ import { useWeighPreview, WeighPreviewStrip } from "@/components/weigh-calculato
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { QuantityInput } from "@/components/quantity-input";
 import { Label } from "@/components/ui/label";
 import {
   Dialog,
@@ -233,7 +234,7 @@ function ForfeitsTab() {
 
   const role = (me.data?.user.role ?? "READONLY") as Role;
   const canVoid = can(role, "entries.void");
-  const weighable = item?.itemVariant.contentTracked ?? false;
+  const weighable = (item?.itemVariant.contentTracked || item?.itemVariant.weighMode === "NET") ?? false;
   const preview = useWeighPreview(item, scale);
 
   const save = async () => {
@@ -249,7 +250,7 @@ function ForfeitsTab() {
           scaleWeight: preview.scale,
           scaleUnit: preview.unit as "g" | "oz",
           tareWeight: preview.tare,
-          densityFactor: preview.density,
+          densityFactor: preview.density ?? undefined,
         });
       } else {
         const n = Number(qty);
@@ -286,11 +287,8 @@ function ForfeitsTab() {
         {weighable ? (
           <div className="space-y-2">
             <Label htmlFor="f-scale">Scale reading{preview?.ready ? ` (${preview.unit})` : ""}</Label>
-            <Input
+            <QuantityInput
               id="f-scale"
-              type="number"
-              step="any"
-              min="0"
               className="tnum h-11 text-lg"
               value={scale}
               onChange={(e) => setScale(e.target.value)}
@@ -306,11 +304,8 @@ function ForfeitsTab() {
           item && (
             <div className="space-y-2">
               <Label htmlFor="f-qty">Quantity returned</Label>
-              <Input
+              <QuantityInput
                 id="f-qty"
-                type="number"
-                step="any"
-                min="0"
                 className="tnum h-11 text-lg"
                 value={qty}
                 onChange={(e) => setQty(e.target.value)}

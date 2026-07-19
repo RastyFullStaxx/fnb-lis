@@ -111,9 +111,28 @@ export const requireLocationAccess = createMiddleware<AppEnv>(async (c, next) =>
   // own modules are the enforced reality"). A location with no LocationModule
   // rows (unassigned/legacy) stays unrestricted.
   const subscriptionActive = !location.client.subscription || location.client.subscription.status === "ACTIVE";
-  c.set(
-    "locationModules",
-    subscriptionActive && location.modules.length > 0 ? location.modules.map((m) => m.module) : null,
-  );
+  const locationSet =
+    subscriptionActive && location.modules.length > 0 ? location.modules.map((m) => m.module) : null;
+
+  // Per-user module restriction (client req #9): the effective set is the
+  // intersection of the location's modules and the user's own — computed once
+  // here, so everything downstream (reports, catalog, imports, nav via /me)
+  // is scoped through the existing allowedProductTypes(locationModules) path
+  // with no further changes. ADMIN and unrestricted users pass through.
+  let effective = locationSet;
+  if (user.role !== "ADMIN" && user.modules && user.modules.length > 0) {
+    if (locationSet) {
+      effective = locationSet.filter((m) => user.modules!.includes(m));
+      if (effective.length === 0) {
+        throw new AppError(
+          403,
+          `Your account doesn't cover this location's modules (${locationSet.join(", ")}). Ask an administrator to widen your module access.`,
+        );
+      }
+    } else {
+      effective = user.modules;
+    }
+  }
+  c.set("locationModules", effective);
   await next();
 });

@@ -49,6 +49,31 @@ export function validateWeigh(
   return warnings;
 }
 
+/**
+ * Kitchen net-weight mode (client req #16): remaining = round(scale − tare) —
+ * an integer in SCALE units (g/oz), same legacy phpRound as the density path.
+ * No density conversion: for weighed Food items the net weight IS the
+ * quantity; the caller converts scale units into the variant's counting unit
+ * (e.g. 3500 g → 3.5 kg) via units.convert().
+ */
+export function netWeight(input: { scaleWeight: number; tareWeight: number }): number {
+  return phpRound(input.scaleWeight - input.tareWeight);
+}
+
+/** validateWeigh's sibling for the NET path — same blocking rule, no density/size checks. */
+export function validateNetWeigh(input: { scaleWeight: number; tareWeight: number }): WeighWarning[] {
+  if (input.scaleWeight < input.tareWeight) {
+    return [
+      {
+        code: "SCALE_BELOW_TARE",
+        blocking: true,
+        message: "Scale reading is below the empty-container weight — check the tare weight or the reading.",
+      },
+    ];
+  }
+  return [];
+}
+
 /** Per-item density factor beats the category default (legacy behavior). */
 export function resolveDensityFactor(
   variantFactor: number | null | undefined,

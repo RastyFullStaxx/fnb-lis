@@ -16,12 +16,21 @@ export interface SessionUser {
   firstName: string;
   lastName: string;
   role: z.infer<typeof role>;
+  /**
+   * Per-user module restriction (client req #9): which of BAR/KITCHEN/ASSET
+   * this user may work in. Null = unrestricted (no UserModule rows, or ADMIN).
+   * Enforced server-side in requireLocationAccess by intersecting with the
+   * location's own module set.
+   */
+  modules: string[] | null;
 }
 
 export interface MeLocation {
   id: string;
   name: string;
   clientId: string;
+  /** Grouping label (MAIN | SATELLITE | STOCKROOM) or null — display only. */
+  kind: string | null;
   /** This location's OWN modules (Fix Plan §2.3) — the enforced reality, not the client's ceiling. */
   modules: string[];
 }

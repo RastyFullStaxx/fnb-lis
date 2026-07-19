@@ -2,6 +2,8 @@ import { MapPin, Plus, X } from "lucide-react";
 import {
   BILLING_CYCLE_LABELS,
   BILLING_CYCLES,
+  LOCATION_KIND_LABELS,
+  LOCATION_KINDS,
   MODULE_TYPE_LABELS,
   MODULE_TYPES,
   PACKAGE_LABELS,
@@ -13,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { QuantityInput } from "@/components/quantity-input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -199,11 +202,8 @@ export function NegotiatedPriceField({
       {disabled ? (
         <ReadOnlyField>{value != null ? value.toLocaleString(undefined, { style: "currency", currency: "PHP" }) : "—"}</ReadOnlyField>
       ) : (
-        <Input
+        <QuantityInput
           id="negotiated-price"
-          type="number"
-          min={0}
-          step={0.01}
           value={value ?? ""}
           onChange={(e) => onChange(e.target.value === "" ? null : Math.max(0, Number(e.target.value)))}
           placeholder="Not tracked here"
@@ -270,8 +270,36 @@ export function LocationModulesField({
 export interface LocationChip {
   key: string;
   name: string;
+  /** MAIN | SATELLITE | STOCKROOM | null — grouping label (client req #13). */
+  kind?: string | null;
+  /** When present, the chip shows a compact kind selector (persisted locations only). */
+  onKindChange?: (kind: string | null) => void;
   inactive?: boolean;
   onRemove?: () => void;
+}
+
+const KIND_NONE = "__none__";
+
+function KindSelect({ value, onChange }: { value: string | null; onChange: (v: string | null) => void }) {
+  return (
+    <Select value={value ?? KIND_NONE} onValueChange={(v) => onChange(v === KIND_NONE ? null : v)}>
+      <SelectTrigger
+        size="sm"
+        className="h-6 gap-1 border-0 bg-transparent px-1 text-[10px] uppercase tracking-wide text-muted-foreground shadow-none hover:text-foreground"
+        aria-label="Location kind"
+      >
+        <SelectValue placeholder="No label" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={KIND_NONE}>No label</SelectItem>
+        {LOCATION_KINDS.map((k) => (
+          <SelectItem key={k} value={k}>
+            {LOCATION_KIND_LABELS[k]}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
 }
 
 export function LocationsField({
@@ -308,6 +336,7 @@ export function LocationsField({
           >
             <MapPin className="size-3.5 text-muted-foreground" />
             {loc.name}
+            {loc.onKindChange && <KindSelect value={loc.kind ?? null} onChange={loc.onKindChange} />}
             {loc.inactive && <span className="text-xs text-muted-foreground">(inactive)</span>}
             {loc.onRemove && (
               <button

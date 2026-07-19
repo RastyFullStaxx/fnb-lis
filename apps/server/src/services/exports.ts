@@ -1,6 +1,13 @@
 import ExcelJS from "exceljs";
-import { round2, toCsv, type CsvValue, type ReconReport } from "@fnb/core";
-import type { NonRevenueReport, OnHandReport, PurchaseReport, SalesReport } from "./report-lists";
+import { round2, toCsv, type CsvValue, type ReconReport, type ReconRow, type ReconTotals } from "@fnb/core";
+import type {
+  CostAnalysisReport,
+  NonRevenueReport,
+  OnHandReport,
+  PurchaseReport,
+  SalesReport,
+  TransferReport,
+} from "./report-lists";
 
 // Palette (ARGB). Royal blue header, light-blue group rows, red negatives.
 const BLUE = "FF3A56E4";
@@ -16,15 +23,27 @@ export interface ReportMeta {
   legalName?: string;
   address?: string;
   footer?: string;
+  /** "First Last" of the user who requested the export — audit traceability. */
+  exportedBy?: string;
 }
 
 type Cell = ExcelJS.Cell;
+
+/** UTC timestamp for export traceability lines, e.g. "2026-07-19 06:32 UTC". */
+export function exportStamp(): string {
+  return `${new Date().toISOString().replace("T", " ").slice(0, 16)} UTC`;
+}
 
 /** Branded print footer — company on the left, generated note on the right.
  *  Set on the sheet's headerFooter so it never disturbs the on-sheet layout. */
 function brandFooter(ws: ExcelJS.Worksheet, meta: ReportMeta) {
   const left = [meta.legalName || meta.clientName, meta.address].filter(Boolean).join(" · ");
-  const right = meta.footer || "Prepared with Liquor Inventory Solution";
+  const right = [
+    meta.footer || "Prepared with Liquor Inventory Solution",
+    meta.exportedBy ? `Exported by ${meta.exportedBy} · ${exportStamp()}` : null,
+  ]
+    .filter(Boolean)
+    .join(" — ");
   ws.headerFooter.oddFooter = `&L&8${left}&R&8${right}`;
 }
 
@@ -69,12 +88,55 @@ async function toBuffer(wb: ExcelJS.Workbook): Promise<Buffer> {
 }
 
 // ───────────────────────── Full Audit ─────────────────────────
+// One declarative column spec drives the header row, every data cell, the
+// grand-total row, AND the CSV — the workbook and CSV can never disagree, and
+// adding/renaming/moving a column is a single-array edit (the old builders
+// addressed cells by hardcoded index, which made any insertion a hazard).
 
-const FULL_AUDIT_HEADERS = [
-  "Item", "Begin full", "Begin open", "Purchased", "Returns", "End full", "End open",
-  "Usage", "Sold direct", "Sold recipe", "Non-rev", "Production", "Revenue", "Variance",
-  "%", "At cost", "At retail",
+interface FullAuditColumn {
+  header: string;
+  kind: "qty" | "qtyRed" | "money" | "moneyPlain" | "pct";
+  value: (r: ReconRow) => number | null;
+  /** Present only on columns that appear in the grand-total row. */
+  total?: (t: ReconTotals) => number;
+}
+
+const FULL_AUDIT_COLUMNS: FullAuditColumn[] = [
+  { header: "Begin full", kind: "qty", value: (r) => r.beginFull },
+  { header: "Begin open", kind: "qty", value: (r) => r.beginOpenEquiv },
+  { header: "Purchased", kind: "qty", value: (r) => r.purchased },
+  { header: "Returns", kind: "qty", value: (r) => r.forfeited },
+  { header: "Transferred in", kind: "qty", value: (r) => r.transferIn },
+  { header: "Transferred out", kind: "qty", value: (r) => r.transferOut },
+  { header: "End full", kind: "qty", value: (r) => r.endFull },
+  { header: "End open", kind: "qty", value: (r) => r.endOpenEquiv },
+  { header: "Usage", kind: "qty", value: (r) => r.usage },
+  { header: "Sold direct", kind: "qty", value: (r) => r.soldDirect },
+  { header: "Sold recipe", kind: "qty", value: (r) => r.soldPortion },
+  { header: "Non-rev", kind: "qty", value: (r) => r.nonRevenue },
+  { header: "Production", kind: "qty", value: (r) => r.production },
+  { header: "Revenue", kind: "moneyPlain", value: (r) => r.revenue, total: (t) => t.revenue },
+  // "Variance vs Sold", not "Variance" — client req #2: the label must say
+  // what the number is (expected-sold minus usage) on every module's report.
+  { header: "Variance vs Sold", kind: "qtyRed", value: (r) => r.variance },
+  { header: "%", kind: "pct", value: (r) => r.variancePct },
+  { header: "At cost", kind: "money", value: (r) => r.varianceCost, total: (t) => t.varianceCost },
+  { header: "At retail", kind: "money", value: (r) => r.varianceRetail, total: (t) => t.varianceRetail },
 ];
+
+function fullAuditCell(cell: Cell, kind: FullAuditColumn["kind"], value: number | null) {
+  if (kind === "pct") {
+    cell.value = value === null ? "—" : round2(value);
+    if (value !== null) cell.numFmt = '0.00"%"';
+    cell.alignment = { horizontal: "right" };
+    if (value !== null && value < 0) cell.font = { color: { argb: RED } };
+    return;
+  }
+  const v = value ?? 0;
+  if (kind === "money") moneyCell(cell, v);
+  else if (kind === "moneyPlain") moneyCell(cell, v, false);
+  else qtyCell(cell, v, kind === "qtyRed");
+}
 
 export async function fullAuditWorkbook(report: ReconReport, meta: ReportMeta): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
@@ -82,15 +144,16 @@ export async function fullAuditWorkbook(report: ReconReport, meta: ReportMeta): 
     views: [{ state: "frozen", ySplit: 4 }],
     pageSetup: { orientation: "landscape", paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: 0.3, right: 0.3, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } },
   });
+  const colCount = FULL_AUDIT_COLUMNS.length + 1; // + Item column
 
   titleBlock(
     ws,
     "Full Audit Report",
     `${meta.clientName} · ${meta.locationName} · ${report.period.beginDate} → ${report.period.endDate} (activity up to, not including, the ending date)`,
-    FULL_AUDIT_HEADERS.length,
+    colCount,
     meta,
   );
-  styleHeaderRow(ws.addRow(FULL_AUDIT_HEADERS));
+  styleHeaderRow(ws.addRow(["Item", ...FULL_AUDIT_COLUMNS.map((c) => c.header)]));
 
   for (const group of report.categories) {
     const groupRow = ws.addRow([group.categoryName]);
@@ -100,60 +163,45 @@ export async function fullAuditWorkbook(report: ReconReport, meta: ReportMeta): 
     });
     for (const row of group.rows) {
       const r = ws.addRow([row.itemName]);
-      qtyCell(r.getCell(2), row.beginFull);
-      qtyCell(r.getCell(3), row.beginOpenEquiv);
-      qtyCell(r.getCell(4), row.purchased);
-      qtyCell(r.getCell(5), row.forfeited);
-      qtyCell(r.getCell(6), row.endFull);
-      qtyCell(r.getCell(7), row.endOpenEquiv);
-      qtyCell(r.getCell(8), row.usage);
-      qtyCell(r.getCell(9), row.soldDirect);
-      qtyCell(r.getCell(10), row.soldPortion);
-      qtyCell(r.getCell(11), row.nonRevenue);
-      qtyCell(r.getCell(12), row.production);
-      moneyCell(r.getCell(13), row.revenue, false);
-      qtyCell(r.getCell(14), row.variance, true);
-      const pct = r.getCell(15);
-      pct.value = row.variancePct === null ? "—" : round2(row.variancePct);
-      if (row.variancePct !== null) pct.numFmt = '0.00"%"';
-      pct.alignment = { horizontal: "right" };
-      if (row.variancePct !== null && row.variancePct < 0) pct.font = { color: { argb: RED } };
-      moneyCell(r.getCell(16), row.varianceCost);
-      moneyCell(r.getCell(17), row.varianceRetail);
+      FULL_AUDIT_COLUMNS.forEach((col, i) => fullAuditCell(r.getCell(i + 2), col.kind, col.value(row)));
     }
   }
 
   const totalRow = ws.addRow(["Grand total"]);
   totalRow.font = { bold: true };
-  moneyCell(totalRow.getCell(13), report.totals.revenue, false);
-  totalRow.getCell(13).font = { bold: true };
   const INK = "FF111827";
-  moneyCell(totalRow.getCell(16), report.totals.varianceCost);
-  totalRow.getCell(16).font = { bold: true, color: { argb: report.totals.varianceCost < 0 ? RED : INK } };
-  moneyCell(totalRow.getCell(17), report.totals.varianceRetail);
-  totalRow.getCell(17).font = { bold: true, color: { argb: report.totals.varianceRetail < 0 ? RED : INK } };
+  FULL_AUDIT_COLUMNS.forEach((col, i) => {
+    if (!col.total) return;
+    const value = col.total(report.totals);
+    const cell = totalRow.getCell(i + 2);
+    fullAuditCell(cell, col.kind, value);
+    cell.font = { bold: true, color: { argb: col.kind === "money" && value < 0 ? RED : INK } };
+  });
 
   ws.getColumn(1).width = 30;
-  for (let i = 2; i <= FULL_AUDIT_HEADERS.length; i++) ws.getColumn(i).width = 11;
+  for (let i = 2; i <= colCount; i++) ws.getColumn(i).width = 11;
 
   return toBuffer(wb);
 }
 
 export function fullAuditCsv(report: ReconReport): string {
-  const rows: CsvValue[][] = [FULL_AUDIT_HEADERS];
+  const rows: CsvValue[][] = [["Item", ...FULL_AUDIT_COLUMNS.map((c) => c.header)]];
   for (const group of report.categories) {
     rows.push([group.categoryName]);
     for (const row of group.rows) {
       rows.push([
-        row.itemName, round2(row.beginFull), round2(row.beginOpenEquiv), round2(row.purchased),
-        round2(row.forfeited), round2(row.endFull), round2(row.endOpenEquiv), round2(row.usage),
-        round2(row.soldDirect), round2(row.soldPortion), round2(row.nonRevenue), round2(row.production),
-        round2(row.revenue), round2(row.variance),
-        row.variancePct === null ? "" : round2(row.variancePct), round2(row.varianceCost), round2(row.varianceRetail),
+        row.itemName,
+        ...FULL_AUDIT_COLUMNS.map((col): CsvValue => {
+          const v = col.value(row);
+          return v === null ? "" : round2(v);
+        }),
       ]);
     }
   }
-  rows.push(["Grand total", "", "", "", "", "", "", "", "", "", "", "", round2(report.totals.revenue), "", "", round2(report.totals.varianceCost), round2(report.totals.varianceRetail)]);
+  rows.push([
+    "Grand total",
+    ...FULL_AUDIT_COLUMNS.map((col): CsvValue => (col.total ? round2(col.total(report.totals)) : "")),
+  ]);
   return toCsv(rows);
 }
 
@@ -317,5 +365,161 @@ export function onHandCsv(report: OnHandReport): string {
     rows.push([row.name, row.category, row.productType, round2(row.onHand), round2(row.cost), round2(row.retail), round2(row.costValue), round2(row.retailValue)]);
   }
   rows.push(["Total", "", "", "", "", "", round2(report.totals.costValue), round2(report.totals.retailValue)]);
+  return toCsv(rows);
+}
+
+// ───────────────────────── Cost Analysis ─────────────────────────
+// Two-block layout like the legacy CA sheet: sales summary on top, then one
+// cost table per product type. Not a flat table — hand-built, not the
+// column-spec helper.
+
+const COST_HEADERS = ["Category", "Beginning", "Purchases", "Ending", "Cost", "Cost Net", "GROSS %", "NET %"];
+
+function pctCell(cell: Cell, value: number | null) {
+  cell.value = value === null ? "—" : round2(value);
+  if (value !== null) cell.numFmt = '0.00"%"';
+  cell.alignment = { horizontal: "right" };
+}
+
+export async function costAnalysisWorkbook(report: CostAnalysisReport, meta: ReportMeta): Promise<Buffer> {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Cost Analysis");
+  titleBlock(
+    ws,
+    "Cost Analysis Report",
+    `${meta.clientName} · ${meta.locationName} · ${report.begin} → ${report.end} (activity up to, not including, the ending date)`,
+    COST_HEADERS.length,
+    meta,
+  );
+
+  // Sales summary block.
+  styleHeaderRow(ws.addRow(["Sales", "Gross", "Net (÷1.12)"]));
+  for (const t of report.sales.byType) {
+    const r = ws.addRow([`${t.productType} gross sales`]);
+    moneyCell(r.getCell(2), t.gross, false);
+    moneyCell(r.getCell(3), t.net, false);
+  }
+  const totalRow = ws.addRow(["Total sales"]);
+  totalRow.font = { bold: true };
+  moneyCell(totalRow.getCell(2), report.sales.totalGross, false);
+  moneyCell(totalRow.getCell(3), report.sales.totalNet, false);
+  const vatRow = ws.addRow(["VAT amount (gross − net)"]);
+  moneyCell(vatRow.getCell(2), report.sales.vatAmount, false);
+
+  for (const section of report.sections) {
+    ws.addRow([]);
+    const sh = ws.addRow([`${section.productType.toUpperCase()} COST ANALYSIS — ${meta.clientName}`]);
+    sh.font = { bold: true, color: { argb: BLUE } };
+    styleHeaderRow(ws.addRow(COST_HEADERS));
+    for (const row of section.rows) {
+      const r = ws.addRow([row.category]);
+      moneyCell(r.getCell(2), row.beginningCost, false);
+      moneyCell(r.getCell(3), row.purchasesCost, false);
+      moneyCell(r.getCell(4), row.endingCost, false);
+      moneyCell(r.getCell(5), row.cost);
+      moneyCell(r.getCell(6), row.costNet);
+      pctCell(r.getCell(7), row.grossPct);
+      pctCell(r.getCell(8), row.netPct);
+    }
+    const t = ws.addRow(["TOTAL"]);
+    t.font = { bold: true };
+    moneyCell(t.getCell(2), section.totals.beginningCost, false);
+    moneyCell(t.getCell(3), section.totals.purchasesCost, false);
+    moneyCell(t.getCell(4), section.totals.endingCost, false);
+    moneyCell(t.getCell(5), section.totals.cost);
+    moneyCell(t.getCell(6), section.totals.costNet);
+    pctCell(t.getCell(7), section.totals.grossPct);
+    pctCell(t.getCell(8), section.totals.netPct);
+  }
+
+  ws.getColumn(1).width = 28;
+  for (let i = 2; i <= COST_HEADERS.length; i++) ws.getColumn(i).width = 13;
+  return toBuffer(wb);
+}
+
+export function costAnalysisCsv(report: CostAnalysisReport): string {
+  const rows: CsvValue[][] = [];
+  rows.push(["Sales", "Gross", "Net (/1.12)"]);
+  for (const t of report.sales.byType) rows.push([`${t.productType} gross sales`, round2(t.gross), round2(t.net)]);
+  rows.push(["Total sales", round2(report.sales.totalGross), round2(report.sales.totalNet)]);
+  rows.push(["VAT amount (gross - net)", round2(report.sales.vatAmount)]);
+  for (const section of report.sections) {
+    rows.push([]);
+    rows.push([`${section.productType.toUpperCase()} COST ANALYSIS`]);
+    rows.push(COST_HEADERS);
+    for (const row of section.rows) {
+      rows.push([
+        row.category, round2(row.beginningCost), round2(row.purchasesCost), round2(row.endingCost),
+        round2(row.cost), round2(row.costNet),
+        row.grossPct === null ? "" : round2(row.grossPct), row.netPct === null ? "" : round2(row.netPct),
+      ]);
+    }
+    rows.push([
+      "TOTAL", round2(section.totals.beginningCost), round2(section.totals.purchasesCost), round2(section.totals.endingCost),
+      round2(section.totals.cost), round2(section.totals.costNet),
+      section.totals.grossPct === null ? "" : round2(section.totals.grossPct),
+      section.totals.netPct === null ? "" : round2(section.totals.netPct),
+    ]);
+  }
+  return toCsv(rows);
+}
+
+// ───────────────────────── Transfers ─────────────────────────
+
+const TRANSFER_HEADERS = ["Date", "Location", "Item", "Category", "Sent", "Received", "Unit cost", "At cost", "At retail"];
+
+export async function transferWorkbook(report: TransferReport, meta: ReportMeta): Promise<Buffer> {
+  const wb = new ExcelJS.Workbook();
+  const title = report.direction === "out" ? "Transfer Out Report" : "Transfer In Report";
+  const ws = wb.addWorksheet(report.direction === "out" ? "Transfers out" : "Transfers in", {
+    views: [{ state: "frozen", ySplit: 4 }],
+  });
+  titleBlock(ws, title, `${meta.clientName} · ${meta.locationName} · ${report.from} → ${report.to}`, TRANSFER_HEADERS.length, meta);
+  styleHeaderRow(ws.addRow(TRANSFER_HEADERS));
+  for (const row of report.rows) {
+    const r = ws.addRow([row.date, row.counterparty, row.name, row.category]);
+    qtyCell(r.getCell(5), row.qtySent);
+    if (row.qtyReceived === null) {
+      r.getCell(6).value = "—"; // dispatched, not yet confirmed by the destination
+      r.getCell(6).alignment = { horizontal: "right" };
+    } else {
+      qtyCell(r.getCell(6), row.qtyReceived, row.qtyReceived < row.qtySent);
+    }
+    moneyCell(r.getCell(7), row.unitCost, false);
+    moneyCell(r.getCell(8), row.costValue, false);
+    moneyCell(r.getCell(9), row.retailValue, false);
+  }
+  const t = ws.addRow(["Total", "", "", ""]);
+  t.font = { bold: true };
+  qtyCell(t.getCell(report.direction === "out" ? 5 : 6), report.totals.qty);
+  moneyCell(t.getCell(8), report.totals.cost, false);
+  moneyCell(t.getCell(9), report.totals.retail, false);
+
+  ws.addRow([]);
+  const ch = ws.addRow([report.direction === "out" ? "By destination" : "By source", "", "", "", "Qty", "", "", "At cost"]);
+  styleHeaderRow(ch);
+  for (const g of report.byCounterparty) {
+    const r = ws.addRow([g.counterparty, "", "", ""]);
+    qtyCell(r.getCell(5), g.qty);
+    moneyCell(r.getCell(8), g.cost, false);
+  }
+  ws.getColumn(1).width = 12;
+  ws.getColumn(2).width = 20;
+  ws.getColumn(3).width = 30;
+  ws.getColumn(4).width = 18;
+  for (const i of [5, 6, 7, 8, 9]) ws.getColumn(i).width = 12;
+  return toBuffer(wb);
+}
+
+export function transferCsv(report: TransferReport): string {
+  const rows: CsvValue[][] = [TRANSFER_HEADERS];
+  for (const row of report.rows) {
+    rows.push([
+      row.date, row.counterparty, row.name, row.category,
+      round2(row.qtySent), row.qtyReceived === null ? "" : round2(row.qtyReceived),
+      round2(row.unitCost), round2(row.costValue), round2(row.retailValue),
+    ]);
+  }
+  rows.push(["Total", "", "", "", report.direction === "out" ? round2(report.totals.qty) : "", report.direction === "in" ? round2(report.totals.qty) : "", "", round2(report.totals.cost), round2(report.totals.retail)]);
   return toCsv(rows);
 }

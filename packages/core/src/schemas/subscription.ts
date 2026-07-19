@@ -27,11 +27,12 @@ export type SubscriptionCreateBody = z.infer<typeof subscriptionCreateBody>;
 
 export const subscriptionUpdateBody = z.object({
   // packageType is NOT accepted here — see subscriptionCreateBody above.
+  // status is NOT accepted either: status changes go through the dedicated,
+  // individually-audited endpoints (cancel, mark-paid, unmark-paid).
   billingCycle: billingCycle.optional(),
   modules: z.array(moduleType).min(1, "Select at least one module").optional(),
   maxEntities: z.number().int().min(0).optional(),
   negotiatedPrice: z.number().min(0).optional().nullable(),
-  status: subscriptionStatus.optional(),
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   endDate: z
     .string()

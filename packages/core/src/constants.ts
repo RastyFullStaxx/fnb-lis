@@ -5,7 +5,19 @@ export const USER_STATUSES = ["ACTIVE", "DISABLED"] as const;
 export const RECORD_STATUSES = ["ACTIVE", "VOID"] as const;
 export const SESSION_STATUSES = ["OPEN", "COMMITTED", "VOID"] as const;
 export const PURCHASE_STATUSES = ["DRAFT", "COMMITTED", "VOID"] as const;
+export const TRANSFER_STATUSES = ["DRAFT", "COMMITTED", "VOID"] as const;
 export const COUNT_TYPES = ["FULL", "WEIGH"] as const;
+export const WEIGH_MODES = ["DENSITY", "NET"] as const;
+export type WeighMode = (typeof WEIGH_MODES)[number];
+
+/** Location kind is a grouping label (main bar / satellites / stockroom) — no behavior branches on it. */
+export const LOCATION_KINDS = ["MAIN", "SATELLITE", "STOCKROOM"] as const;
+export type LocationKind = (typeof LOCATION_KINDS)[number];
+export const LOCATION_KIND_LABELS: Record<LocationKind, string> = {
+  MAIN: "Main",
+  SATELLITE: "Satellite",
+  STOCKROOM: "Stockroom",
+};
 export const SALE_KINDS = ["SALE", "NON_REVENUE", "PRODUCTION"] as const;
 export type SaleKind = (typeof SALE_KINDS)[number];
 export const UNIT_KINDS = ["VOLUME", "MASS", "COUNT"] as const;
@@ -43,11 +55,6 @@ export type BillingCycle = (typeof BILLING_CYCLES)[number];
  */
 export const MODULE_TYPES = ["BAR", "KITCHEN", "ASSET"] as const;
 export type ModuleType = (typeof MODULE_TYPES)[number];
-
-/** @deprecated Renamed to `MODULE_TYPES` now that modules are atomic (Phase C). Kept as an alias during migration. */
-export const INVENTORY_MODULES = MODULE_TYPES;
-/** @deprecated Renamed to `ModuleType`. Kept as an alias during migration. */
-export type InventoryModule = ModuleType;
 
 /** Subscription statuses */
 export const SUBSCRIPTION_STATUSES = ["ACTIVE", "SUSPENDED", "CANCELLED", "TRIAL"] as const;
@@ -110,9 +117,6 @@ export const MODULE_TYPE_LABELS: Record<ModuleType, string> = {
   ASSET: "Asset",
 };
 
-/** @deprecated Renamed to `MODULE_TYPE_LABELS`. Kept as an alias during migration. */
-export const INVENTORY_MODULE_LABELS = MODULE_TYPE_LABELS;
-
 /**
  * Which master `Category.productType` values ("Beverage" | "Food" | "Supplies" |
  * "Asset" — see Setting "productTypes") a single atomic module unlocks.
@@ -135,9 +139,6 @@ export const MODULE_PRODUCT_TYPES: Record<ModuleType, readonly string[]> = {
   ASSET: ["Asset"],
 };
 
-/** @deprecated Renamed to `MODULE_PRODUCT_TYPES`. Kept as an alias during migration. */
-export const INVENTORY_MODULE_PRODUCT_TYPES = MODULE_PRODUCT_TYPES;
-
 /**
  * Product types allowed for a given set of modules (null/undefined/empty =
  * unrestricted — legacy/unassigned clients, or callers that pass through the
@@ -153,7 +154,9 @@ export function allowedProductTypes(
   modules: readonly string[] | string | null | undefined,
 ): readonly string[] | null {
   if (!modules) return null; // nothing on record -> don't restrict (legacy/unassigned clients)
-  const list = Array.isArray(modules) ? modules : splitLegacyModuleCombo(modules);
+  // typeof-narrowing rather than Array.isArray: isArray doesn't narrow
+  // `readonly string[]` unions, which trips the strict typecheck.
+  const list = typeof modules === "string" ? splitLegacyModuleCombo(modules) : modules;
   if (list.length === 0) return null;
   const types = new Set<string>();
   for (const m of list) {
@@ -201,7 +204,9 @@ export const PERMISSIONS = {
   "imports.upload": ["ADMIN", "MANAGER"],
   "imports.commit": ["ADMIN", "MANAGER"],
   "reports.view": ["ADMIN", "MANAGER", "STAFF", "ACCOUNTANT", "READONLY"],
-  "reports.export": ["ADMIN", "MANAGER", "ACCOUNTANT"],
+  // READONLY included per client request: 3rd-party audit-service viewers may
+  // view AND download reports — their exports carry the exporter footer.
+  "reports.export": ["ADMIN", "MANAGER", "ACCOUNTANT", "READONLY"],
   "activity.view": ["ADMIN", "MANAGER"],
 } as const satisfies Record<string, readonly Role[]>;
 

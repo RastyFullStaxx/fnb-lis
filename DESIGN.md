@@ -82,7 +82,7 @@ Signature patterns:
 
 The dashboard never shows four equal launch cards or an unqualified "All clear." Its next-action precedence is open count → unmatched import → purchase draft → empty catalog → beginning count → missing prices → Full Audit → next count → read-only reports. Variance leaders expose direction, percentage, cost, and retail values as semantic text; magnitude bars are supplementary only.
 
-The authenticated entry surface remains `/login`; no public marketing route is planned until LIS has an approved sales workflow and public proof assets. Its permanent copy is "Welcome back" / "Sign in to continue to your assigned inventory locations" on the form side and "Know what changed between counts" / "Count, review, reconcile, and trace every variance to its source" on the brand side. Remember-me defaults off for shared workplace devices.
+The authenticated entry surface remains `/login`. A public marketing landing now lives at `/` (client request, 2026-07: tagline "Your partner in inventory management", Facebook link + promo-video slots as placeholders until LIS sends the assets); signed-in visitors hitting `/` are bounced to their dashboard. The login page's brand panel can show a per-module flyer via `/login?m=bar|kitchen` once the flyer files land in `src/assets/flyers/`. Its permanent copy is "Welcome back" / "Sign in to continue to your assigned inventory locations" on the form side and "Know what changed between counts" / "Count, review, reconcile, and trace every variance to its source" on the brand side. Remember-me defaults off for shared workplace devices.
 
 ## Voice
 

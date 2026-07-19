@@ -12,6 +12,7 @@ import {
 import { prisma } from "../db";
 import { AppError } from "../lib/errors";
 import { logActivity } from "../services/activity";
+import { effectiveWeighMode, netRemaining } from "./counts";
 import { requirePermission, type AppEnv } from "../middleware/auth";
 
 const createGuard = requirePermission("entries.create");
@@ -202,7 +203,7 @@ export const purchaseRoutes = new Hono<AppEnv>()
     const body = c.req.valid("json");
     const locationItem = await prisma.locationItem.findUnique({
       where: { id: body.locationItemId },
-      include: { itemVariant: { include: { item: { include: { category: true } } } } },
+      include: { itemVariant: { include: { unit: true, item: { include: { category: true } } } } },
     });
     if (!locationItem || locationItem.locationId !== location.id) throw new AppError(404, "Item not found in this catalog");
 
@@ -216,19 +217,32 @@ export const purchaseRoutes = new Hono<AppEnv>()
 
     if (body.scaleWeight !== undefined) {
       const variant = locationItem.itemVariant;
-      const density =
-        body.densityFactor ?? resolveDensityFactor(variant.densityFactor, variant.item.category.defaultDensityFactor);
-      if (!density) throw new AppError(400, "No density factor configured for this item or its category");
+      const mode = effectiveWeighMode(variant);
+      if (!mode) throw new AppError(400, "This item is counted whole — enable Liquid Weight or Net Weight on the variant to weigh it");
       const tare = body.tareWeight ?? variant.tareWeight;
       if (tare === null || tare === undefined) throw new AppError(400, "No tare weight configured for this item");
       if (body.scaleWeight < tare) throw new AppError(400, "Scale reading is below the empty-container weight");
-      weighFields = {
-        scaleWeight: body.scaleWeight,
-        scaleUnit: body.scaleUnit ?? variant.tareWeightUnit ?? "oz",
-        tareWeight: tare,
-        densityFactor: density,
-        remainingContent: remainingContent({ scaleWeight: body.scaleWeight, tareWeight: tare, densityFactor: density }),
-      };
+      const scaleUnit = body.scaleUnit ?? variant.tareWeightUnit ?? "oz";
+      if (mode === "NET") {
+        weighFields = {
+          scaleWeight: body.scaleWeight,
+          scaleUnit,
+          tareWeight: tare,
+          densityFactor: null,
+          remainingContent: await netRemaining(body.scaleWeight, tare, scaleUnit, variant.unit),
+        };
+      } else {
+        const density =
+          body.densityFactor ?? resolveDensityFactor(variant.densityFactor, variant.item.category.defaultDensityFactor);
+        if (!density) throw new AppError(400, "No density factor configured for this item or its category");
+        weighFields = {
+          scaleWeight: body.scaleWeight,
+          scaleUnit,
+          tareWeight: tare,
+          densityFactor: density,
+          remainingContent: remainingContent({ scaleWeight: body.scaleWeight, tareWeight: tare, densityFactor: density }),
+        };
+      }
     }
 
     const forfeit = await prisma.$transaction(async (tx) => {

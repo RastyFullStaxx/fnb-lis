@@ -1,5 +1,6 @@
 import {
   Activity,
+  ArrowLeftRight,
   BadgeCheck,
   Boxes,
   ClipboardList,
@@ -38,6 +39,7 @@ export const MAIN_NAV: NavItem[] = [
   { title: "Stock", path: "stock", icon: Boxes },
   { title: "Counts", path: "counts", icon: ClipboardList, permission: "entries.create" },
   { title: "Purchases", path: "purchases", icon: ShoppingCart, permission: "entries.create" },
+  { title: "Transfers", path: "transfers", icon: ArrowLeftRight, permission: "entries.create" },
   { title: "Sales", path: "sales", icon: Receipt, permission: "entries.create" },
   {
     title: "Recipes",

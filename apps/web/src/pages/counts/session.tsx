@@ -14,7 +14,7 @@ import { useWeighPreview, WeighPreviewStrip } from "@/components/weigh-calculato
 import { FullPageSpinner } from "@/components/full-page-spinner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { QuantityInput } from "@/components/quantity-input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -81,7 +81,7 @@ function OpenSession({ session }: { session: SessionWithLines }) {
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
   const comboRef = useRef<HTMLButtonElement>(null);
 
-  const weighable = item?.itemVariant.contentTracked ?? false;
+  const weighable = (item?.itemVariant.contentTracked || item?.itemVariant.weighMode === "NET") ?? false;
   const activeMode = weighable ? mode : "FULL";
   const preview = useWeighPreview(item, scale);
 
@@ -126,7 +126,7 @@ function OpenSession({ session }: { session: SessionWithLines }) {
           scaleWeight: preview.scale,
           scaleUnit: preview.unit as "g" | "oz",
           tareWeight: preview.tare,
-          densityFactor: preview.density,
+          densityFactor: preview.density ?? undefined,
         });
       }
       const wasEditing = editingLineId !== null;
@@ -187,11 +187,8 @@ function OpenSession({ session }: { session: SessionWithLines }) {
           {activeMode === "FULL" ? (
             <div className="space-y-2">
               <Label htmlFor="count-qty">Counted quantity</Label>
-              <Input
+              <QuantityInput
                 id="count-qty"
-                type="number"
-                step="any"
-                min="0"
                 className="tnum h-11 text-lg"
                 placeholder="0"
                 value={qty}
@@ -202,11 +199,8 @@ function OpenSession({ session }: { session: SessionWithLines }) {
           ) : (
             <div className="space-y-2">
               <Label htmlFor="count-scale">Scale reading{preview?.ready ? ` (${preview.unit})` : ""}</Label>
-              <Input
+              <QuantityInput
                 id="count-scale"
-                type="number"
-                step="any"
-                min="0"
                 className="tnum h-11 text-lg"
                 placeholder="put the bottle on the scale"
                 value={scale}
