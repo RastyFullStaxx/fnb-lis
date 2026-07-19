@@ -36,7 +36,7 @@ export interface NavItem {
 
 export const MAIN_NAV: NavItem[] = [
   { title: "Dashboard", path: "dashboard", icon: LayoutDashboard },
-  { title: "Stock", path: "stock", icon: Boxes },
+  { title: "Local Database", path: "stock", icon: Boxes },
   { title: "Counts", path: "counts", icon: ClipboardList, permission: "entries.create" },
   { title: "Purchases", path: "purchases", icon: ShoppingCart, permission: "entries.create" },
   { title: "Transfers", path: "transfers", icon: ArrowLeftRight, permission: "entries.create" },
@@ -53,7 +53,7 @@ export const MAIN_NAV: NavItem[] = [
 ];
 
 export const CATALOG_NAV: NavItem[] = [
-  { title: "Local Database", path: "items", icon: Package, permission: "master.write" },
+  { title: "Main Database", path: "items", icon: Package, permission: "master.write" },
   { title: "Suppliers", path: "suppliers", icon: Truck, permission: "master.write" },
   { title: "Settings", path: "settings", icon: Settings, permission: "master.write" },
 ];
