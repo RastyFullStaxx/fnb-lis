@@ -119,12 +119,27 @@ export function deriveAccessState(sub: Pick<AdminSubscription, "billingCycle" | 
   const periodStart = new Date(due);
   periodStart.setUTCMonth(periodStart.getUTCMonth() - 1);
 
+  // nextDue is the end of the accepted payment window: the due date of the
+  // *next* billing cycle. A payment made after this cycle's due date but
+  // before the next one still counts as paying for the current period (it
+  // just means the client paid late). End-of-day (23:59:59.999 UTC) covers
+  // same-day payments whose timestamp exceeds the midnight due date.
+  const nextDueSeed = new Date(due.getTime() + 32 * 24 * 60 * 60 * 1000);
+  const nextDueSeedYear = nextDueSeed.getUTCFullYear();
+  const nextDueSeedMonth = nextDueSeed.getUTCMonth();
+  const nextDueDaysInMonth = new Date(Date.UTC(nextDueSeedYear, nextDueSeedMonth + 1, 0)).getUTCDate();
+  const nextDue =
+    anchorDay <= nextDueDaysInMonth
+      ? new Date(Date.UTC(nextDueSeedYear, nextDueSeedMonth, anchorDay))
+      : new Date(Date.UTC(nextDueSeedYear, nextDueSeedMonth + 1, 1));
+  const nextDueEndOfDay = new Date(nextDue.getTime() + 24 * 60 * 60 * 1000 - 1);
+
   const lastPaid = sub.lastPaidAt ? new Date(sub.lastPaidAt) : null;
   const paidInPeriod =
     sub.paid &&
     lastPaid !== null &&
     lastPaid >= periodStart &&
-    lastPaid <= due;
+    lastPaid <= nextDueEndOfDay;
 
   if (paidInPeriod) return "ACTIVE";
 
