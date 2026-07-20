@@ -1,21 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
-/** In-page fallback for detail loaders (purchase, transfer, import, count). */
-export function FullPageSpinner({ error }: { error?: string }) {
-  return (
-    <div className="flex min-h-dvh items-center justify-center bg-background p-6">
-      {error ? (
-        <div className="max-w-md text-center">
-          <p className="text-sm text-destructive">{error}</p>
-        </div>
-      ) : (
-        <div className="h-6 w-6 animate-pulse rounded-full bg-primary/30" aria-label="Loading" />
-      )}
-    </div>
-  );
-}
-
 /**
  * Boot state: paint the app frame instantly — deep-royal rail, topbar
  * hairline, content skeletons shaped like the dashboard — so the shell reads

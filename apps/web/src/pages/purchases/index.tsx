@@ -10,7 +10,7 @@ import { variantLabel, type Forfeit, type LocationItem } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { formatMoney } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
-import { TableSurface, TableLoading, TableEmpty } from "@/components/table-surface";
+import { TableSurface, TableLoading, TableEmpty, ToolbarSearch } from "@/components/table-surface";
 import { ItemCombobox } from "@/components/item-combobox";
 import { VoidDialog } from "@/components/void-dialog";
 import { useWeighPreview, WeighPreviewStrip } from "@/components/weigh-calculator";
@@ -51,6 +51,13 @@ const NONE = "__none__";
 export function PurchasesPage() {
   const [tab, setTab] = useState("purchases");
   const [createOpen, setCreateOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("ALL");
+
+  const clearFilters = () => {
+    setSearch("");
+    setStatus("ALL");
+  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -61,20 +68,47 @@ export function PurchasesPage() {
             <Button onClick={() => setCreateOpen(true)}>
               <Plus className="size-4" /> Receive delivery
             </Button>
-          ) : undefined
+          ) : (
+            // Stable-height placeholder so the title row never jumps when the action leaves.
+            <div aria-hidden="true" className="h-9" />
+          )
         }
       />
       <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col">
         <TableSurface
           filters={
-            <TabsList>
-              <TabsTrigger value="purchases">Deliveries</TabsTrigger>
-              <TabsTrigger value="forfeits">Returned bottles</TabsTrigger>
-            </TabsList>
+            <>
+              <TabsList>
+                <TabsTrigger value="purchases">Deliveries</TabsTrigger>
+                <TabsTrigger value="forfeits">Returned bottles</TabsTrigger>
+              </TabsList>
+              {tab === "purchases" && (
+                <>
+                  <ToolbarSearch value={search} onChange={setSearch} placeholder="Search date, supplier, or ref…" />
+                  <Select value={status} onValueChange={setStatus}>
+                    <SelectTrigger className="w-40 bg-background">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ALL">All statuses</SelectItem>
+                      <SelectItem value="DRAFT">Draft</SelectItem>
+                      <SelectItem value="COMMITTED">Committed</SelectItem>
+                      <SelectItem value="VOID">Void</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </>
+              )}
+            </>
           }
         >
           <TabsContent value="purchases" className="m-0">
-            <PurchasesTab createOpen={createOpen} setCreateOpen={setCreateOpen} />
+            <PurchasesTab
+              createOpen={createOpen}
+              setCreateOpen={setCreateOpen}
+              search={search}
+              status={status}
+              onClearFilters={clearFilters}
+            />
           </TabsContent>
           <TabsContent value="forfeits" className="m-0 p-4">
             <ForfeitsTab />
@@ -88,26 +122,55 @@ export function PurchasesPage() {
 function PurchasesTab({
   createOpen,
   setCreateOpen,
+  search,
+  status,
+  onClearFilters,
 }: {
   createOpen: boolean;
   setCreateOpen: (open: boolean) => void;
+  search: string;
+  status: string;
+  onClearFilters: () => void;
 }) {
   const purchases = usePurchases();
   const locationId = useLocationId();
+
+  const q = search.trim().toLowerCase();
+  const filtered = (purchases.data ?? []).filter((p) => {
+    const matchesStatus = status === "ALL" || p.status === status;
+    const matchesSearch =
+      !q ||
+      p.purchaseDate.includes(q) ||
+      (p.supplier?.name ?? "").toLowerCase().includes(q) ||
+      (p.refNo ?? "").toLowerCase().includes(q);
+    return matchesStatus && matchesSearch;
+  });
 
   return (
     <>
       {purchases.isPending ? (
         <TableLoading />
-      ) : (purchases.data ?? []).length === 0 ? (
+      ) : filtered.length === 0 ? (
         <TableEmpty
           icon={ShoppingCart}
-          title="No purchases yet"
-          description="Record deliveries here — committed purchases add into the period's stock pool."
+          title={
+            (purchases.data ?? []).length === 0 ? "No purchases yet" : "Nothing matches the current filter"
+          }
+          description={
+            (purchases.data ?? []).length === 0
+              ? "Record deliveries here — committed purchases add into the period's stock pool."
+              : "Clear the search or status filter to see everything."
+          }
           action={
-            <Button onClick={() => setCreateOpen(true)}>
-              <Plus className="size-4" /> Receive delivery
-            </Button>
+            (purchases.data ?? []).length === 0 ? (
+              <Button onClick={() => setCreateOpen(true)}>
+                <Plus className="size-4" /> Receive delivery
+              </Button>
+            ) : (
+              <Button variant="outline" onClick={onClearFilters}>
+                Clear filters
+              </Button>
+            )
           }
         />
       ) : (
@@ -123,7 +186,7 @@ function PurchasesTab({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {purchases.data!.map((p) => (
+            {filtered.map((p) => (
               <TableRow key={p.id} className={p.status === "VOID" ? "opacity-50" : undefined}>
                 <TableCell className="tnum font-medium">{p.purchaseDate}</TableCell>
                 <TableCell className="text-muted-foreground">
@@ -190,9 +253,9 @@ function NewPurchaseDialog({ open, onOpenChange }: { open: boolean; onOpenChange
             <Input id="p-date" type="date" className="tnum" value={purchaseDate} onChange={(e) => setPurchaseDate(e.target.value)} />
           </div>
           <div className="space-y-2">
-            <Label>Supplier (optional)</Label>
+            <Label htmlFor="p-supplier">Supplier (optional)</Label>
             <Select value={supplierId} onValueChange={setSupplierId}>
-              <SelectTrigger>
+              <SelectTrigger id="p-supplier">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -269,15 +332,10 @@ function ForfeitsTab() {
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
       <div className="space-y-4">
-        <p className="text-sm text-muted-foreground">
-          A customer leaves an unfinished bottle — weigh it and its content returns to stock. This is the
-          legacy "forfeited bottle": it <span className="font-medium text-foreground">adds into</span> the
-          usage pool.
-        </p>
         <div className="grid grid-cols-[1fr_auto] gap-2">
           <div className="space-y-2">
-            <Label>Item</Label>
-            <ItemCombobox value={item} onSelect={setItem} />
+            <Label htmlFor="f-item">Item</Label>
+            <ItemCombobox id="f-item" value={item} onSelect={setItem} />
           </div>
           <div className="space-y-2">
             <Label htmlFor="f-date">Date</Label>
@@ -290,6 +348,7 @@ function ForfeitsTab() {
             <QuantityInput
               id="f-scale"
               className="tnum h-11 text-lg"
+              placeholder="Put the bottle on the scale"
               value={scale}
               onChange={(e) => setScale(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && save()}
@@ -323,11 +382,21 @@ function ForfeitsTab() {
 
       <div className="lg:border-l lg:pl-6">
         <div className="mb-2 text-sm font-medium">Recent returns</div>
-        <div className="max-h-[26rem] divide-y overflow-y-auto">
+        <div aria-live="polite" className="max-h-[28rem] divide-y overflow-y-auto">
           {forfeits.isPending ? (
-            <Skeleton className="m-4 h-24" />
+            <div className="divide-y">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="space-y-1.5 px-4 py-2.5">
+                  <Skeleton className="h-4 w-3/5" />
+                  <Skeleton className="h-3 w-2/5" />
+                </div>
+              ))}
+            </div>
           ) : (forfeits.data ?? []).length === 0 ? (
-            <p className="p-4 text-sm text-muted-foreground">No returned bottles recorded.</p>
+            <p className="p-4 text-sm text-muted-foreground">
+              No returned bottles yet — when a customer leaves an unfinished bottle, weigh it here and its
+              content returns to the period's stock pool.
+            </p>
           ) : (
             forfeits.data!.map((f) => {
               const variant = f.locationItem.itemVariant;
@@ -335,7 +404,10 @@ function ForfeitsTab() {
               return (
                 <div key={f.id} className={cn("flex items-center gap-3 px-4 py-2.5", voided && "opacity-50")}>
                   <div className="min-w-0 flex-1">
-                    <p className={cn("truncate text-sm font-medium", voided && "line-through")}>
+                    <p
+                      title={`${variant.item.name} ${variantLabel(variant)}`}
+                      className={cn("truncate text-sm font-medium", voided && "line-through")}
+                    >
                       {variant.item.name}
                       <span className="ml-1.5 font-normal text-muted-foreground">{variantLabel(variant)}</span>
                     </p>

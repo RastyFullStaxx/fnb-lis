@@ -130,6 +130,48 @@ ounces.
 
 ---
 
+## Phase 10 — UI/UX overhaul & data visualization (2026-07-20)
+
+Full-app design pass driven by a 153-finding audit (6 parallel reviewers against DESIGN.md), then
+fixes applied across every page group. The headline pieces:
+
+- **Chart layer** (`apps/web/src/components/charts/`): shared mark vocabulary (bars ≤ 24px, 4px
+  rounded data-ends square at the baseline via a custom shape, solid hairline grids, tabular-nums
+  ticks), `StatTile` with hand-rolled sparkline, `PeriodColumns` (time/period columns, diverging by
+  sign), `MagnitudeBars` (horizontal category bars with end labels). Palette validated with the
+  dataviz six-checks tool: the red↔blue diverging pair clears CVD ΔE 27, the blue ramp is a legal
+  ordinal ramp — **no theme tokens changed**. Two real chart bugs caught live in the DOM: missing
+  `fill` (black bars) and a diverging domain that dropped the zero baseline when all values were
+  negative.
+- **Trends endpoint** — `GET …/dashboard/trends?periods=N` (`services/trends.ts`): per-audit-period
+  rollups computed by re-running `buildFullAudit` over consecutive committed count dates. No new
+  math; the golden period reproduces byte-identical totals. Serial execution, capped at 12 periods.
+- **Dashboard** — "Audit trends" band (three stat tiles + Sales-by-period / Variance-by-period
+  small multiples), variance leaders became drill-through links (`?drill=` opens the Full Audit
+  dialog), status-strip hierarchy fixed, boot spinner replaced by a shell-shaped skeleton.
+- **Full Audit density redesign** — verdict strip (period variance at cost/retail + items short +
+  variance-by-category diverging bars) lands the answer before the 15-column table; two-tier
+  grouped headers (Stock movement | Usage | Sold & used | Variance); sticky Item column; toolbar
+  search + "Variance only" filter with an honest "n rows hidden — exports include every row" note;
+  keyboard-accessible drill rows.
+- **Report pages** — every report got its correct chart form per the data's job (sales revenue by
+  day, purchases cost by supplier with "Other" fold, non-revenue cost by reason, on-hand value by
+  category, cost-analysis net-% bars per section); error states (`TableError`) so an outage never
+  reads as "no data"; hub cards carry live latest-period pulses. Listing reports now default to the
+  **open period** (last count → today) so new entries are visible on first paint.
+- **Landing page** — royal-ink drench, the hero imagery is a truthful Full Audit verdict card
+  (golden-fixture numbers), reconciliation formula typeset as the centerpiece. Entrance animation
+  keeps a readable from-state (a paused renderer must never show a blank hero).
+- **Simulation pass (all roles)** — a 19-check role×endpoint matrix now fully green. Fixed in the
+  process: cross-tenant location probes returned 403 (an existence oracle; now 404, matching the
+  transfers convention), readonly dashboards told viewers to "finish setup" they can't touch, and
+  a delivery-draft hint showed to roles that can't act on it. READONLY watermark, export stamp,
+  and staff export-block re-verified live.
+- **Subagent fix wave** — 100+ audited fixes across entry/master/admin pages, including a real P0
+  (menu sales couldn't save: the button gated on the wrong state variable) and a data-loss-shaped
+  P1 (count line edits deleted before re-adding; now add-first). `--warning-text` token added for
+  AA-safe amber text; global `prefers-reduced-motion` rule added.
+
 ## Contributor history
 
 | Window | Who | What |

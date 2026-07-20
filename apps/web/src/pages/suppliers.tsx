@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
@@ -69,11 +70,11 @@ export function SuppliersPage() {
           <>
             <ToolbarSearch value={search} onChange={setSearch} placeholder="Search suppliers…" />
             <Select value={status} onValueChange={setStatus}>
-              <SelectTrigger className="w-36 bg-background">
+              <SelectTrigger className="w-36 bg-background" aria-label="Filter by status">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ALL">All</SelectItem>
+                <SelectItem value="ALL">All statuses</SelectItem>
                 <SelectItem value="ACTIVE">Active</SelectItem>
                 <SelectItem value="INACTIVE">Inactive</SelectItem>
               </SelectContent>
@@ -114,7 +115,7 @@ export function SuppliersPage() {
               {filtered.map((s) => (
                 <TableRow key={s.id}>
                   <TableCell className="font-medium">{s.name}</TableCell>
-                  <TableCell className="max-w-md truncate text-muted-foreground">
+                  <TableCell className="max-w-md truncate text-muted-foreground" title={s.contactInfo || undefined}>
                     {s.contactInfo || "—"}
                   </TableCell>
                   <TableCell className="text-right">
@@ -203,6 +204,21 @@ function SupplierDialog({
             <Label htmlFor="sup-contact">Contact info (optional)</Label>
             <Textarea id="sup-contact" rows={3} {...form.register("contactInfo")} />
           </div>
+          {supplier && (
+            <div className="flex items-center justify-between gap-4 border-t pt-4">
+              <div className="space-y-1">
+                <Label htmlFor="sup-active">Active</Label>
+                <p className="text-xs text-muted-foreground">
+                  Inactive suppliers are hidden from purchase entry; their past deliveries stay on record.
+                </p>
+              </div>
+              <Switch
+                id="sup-active"
+                checked={form.watch("isActive") ?? true}
+                onCheckedChange={(v) => form.setValue("isActive", v, { shouldDirty: true })}
+              />
+            </div>
+          )}
           <DialogFooter>
             <Button type="submit" disabled={create.isPending || update.isPending}>
               {supplier ? "Save changes" : "Add supplier"}

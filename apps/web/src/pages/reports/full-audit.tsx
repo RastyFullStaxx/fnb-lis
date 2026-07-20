@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { BarChart3, Info } from "lucide-react";
 import { round2 } from "@fnb/core";
@@ -11,8 +11,10 @@ import { exportUrl, useFullAuditDrill } from "@/api/reports";
 import { formatMoney } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
-import { TableLoading, TableEmpty } from "@/components/table-surface";
+import { TableLoading, TableEmpty, TableError, ToolbarSearch } from "@/components/table-surface";
 import { ExportButtons } from "@/components/report-toolbar";
+import { Toggle } from "@/components/toggle-chip";
+import { MagnitudeBars } from "@/components/charts/magnitude-bars";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -46,6 +48,10 @@ const n2 = (v: number) => round2(v).toLocaleString("en-US", { maximumFractionDig
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+/** Solid tint for sticky cells on short rows — translucent destructive/5 would
+    let scrolled columns bleed through a pinned cell. */
+const SHORT_ROW_STICKY_BG = "bg-[oklch(0.977_0.011_25)]";
+
 export function FullAuditPage() {
   const me = useMe();
   const locationId = useLocationId();
@@ -59,6 +65,8 @@ export function FullAuditPage() {
   const [end, setEnd] = useState<string | undefined>(urlEnd && DATE_RE.test(urlEnd) ? urlEnd : undefined);
   const [productType, setProductType] = useState(params.get("productType") || ALL);
   const [drill, setDrill] = useState<{ id: string; name: string } | null>(null);
+  const [query, setQuery] = useState("");
+  const [varianceOnly, setVarianceOnly] = useState(false);
 
   const location = me.data?.clients.flatMap((c) => c.locations.map((l) => ({ ...l, clientName: c.name }))).find((l) => l.id === locationId);
   const company = useCompanyInfo(location?.clientId ?? "");
@@ -71,7 +79,54 @@ export function FullAuditPage() {
 
   const endOptions = useMemo(() => dates.filter((d) => !effectiveBegin || d > effectiveBegin), [dates, effectiveBegin]);
 
-  if (countDates.isPending) return <Skeleton className="h-96 w-full" />;
+  // Dashboard variance leaders deep-link here with ?drill=<locationItemId>:
+  // open that item's source records as soon as the report identifies it.
+  const drillParam = params.get("drill");
+  const consumedDrill = useRef(false);
+  useEffect(() => {
+    if (!drillParam || consumedDrill.current || !report.data) return;
+    const row = report.data.rows.find((r) => r.locationItemId === drillParam);
+    if (row) {
+      consumedDrill.current = true;
+      setDrill({ id: row.locationItemId, name: row.itemName });
+    }
+  }, [drillParam, report.data]);
+
+  // Density controls: search + "variance only" collapse a 200-row catalog to
+  // the rows under review. Category groups with no surviving rows drop out.
+  const visibleGroups = useMemo(() => {
+    if (!report.data) return [];
+    const q = query.trim().toLowerCase();
+    return report.data.categories
+      .map((group) => ({
+        ...group,
+        rows: group.rows.filter(
+          (row) =>
+            (!q || row.itemName.toLowerCase().includes(q)) &&
+            (!varianceOnly || row.variance !== 0),
+        ),
+      }))
+      .filter((group) => group.rows.length > 0);
+  }, [report.data, query, varianceOnly]);
+
+  const filteredOut =
+    report.data ? report.data.rows.length - visibleGroups.reduce((n, g) => n + g.rows.length, 0) : 0;
+
+  if (countDates.isPending) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <PageHeader title="Full Audit" />
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border">
+          <div className="flex shrink-0 items-center gap-2 border-b bg-muted/30 px-3 py-2.5">
+            <Skeleton className="h-9 w-40" />
+            <Skeleton className="h-9 w-40" />
+            <Skeleton className="h-9 w-36" />
+          </div>
+          <TableLoading rows={10} />
+        </div>
+      </div>
+    );
+  }
 
   if (dates.length < 2) {
     return (
@@ -162,19 +217,26 @@ export function FullAuditPage() {
               ))}
             </SelectContent>
           </Select>
+          <ToolbarSearch
+            value={query}
+            onChange={setQuery}
+            placeholder="Find an item…"
+            className="w-48"
+          />
+          <Toggle pressed={varianceOnly} onPressedChange={setVarianceOnly}>
+            Variance only
+          </Toggle>
         </div>
 
-        {effectiveBegin && effectiveEnd && (
-          <p className="flex shrink-0 items-center gap-1.5 border-b px-3 py-2 text-xs text-muted-foreground print:hidden">
-            <Info className="size-3.5" />
-            Activity from {effectiveBegin} up to — not including — {effectiveEnd} (your ending count day).
-            Counts are read on each boundary date.
-          </p>
-        )}
+        {report.data && report.data.rows.length > 0 && effectiveBegin && effectiveEnd ? (
+          <VerdictStrip report={report.data} begin={effectiveBegin} end={effectiveEnd} />
+        ) : null}
 
         <div className="min-h-0 flex-1 overflow-auto [&_[data-slot=table-container]]:overflow-visible print:overflow-visible">
           {report.isPending && effectiveBegin && effectiveEnd ? (
             <TableLoading rows={10} />
+          ) : report.isError ? (
+            <TableError onRetry={() => void report.refetch()} retrying={report.isRefetching} />
           ) : !report.data ? (
             <div className="px-4 py-16 text-center text-sm text-muted-foreground">
               Pick a beginning and ending count to run the reconciliation.
@@ -185,33 +247,57 @@ export function FullAuditPage() {
               title="No activity or counts in this period"
               description="Pick different boundary dates, or check that the counts were committed."
             />
+          ) : visibleGroups.length === 0 ? (
+            <TableEmpty
+              icon={BarChart3}
+              title="No rows match the current filters"
+              description={
+                varianceOnly
+                  ? "Every remaining item reconciled cleanly. Clear the filters to see the full report."
+                  : "Try a different search term."
+              }
+            />
           ) : (
             <Table className="min-w-[78rem]">
-              <TableHeader className="sticky top-0 z-10">
+              <TableHeader className="sticky top-0 z-20">
+                {/* Column groups halve the scan: movement → usage → sold → verdict. */}
                 <TableRow className="bg-muted hover:bg-muted">
-                  <TableHead className="min-w-48">Item</TableHead>
-                  <TableHead className="text-right">Begin (full + open)</TableHead>
+                  <TableHead className="sticky left-0 z-10 bg-muted" aria-label="Item column group" />
+                  <TableHead colSpan={5} className="border-l text-center text-xs font-medium text-muted-foreground">
+                    Stock movement
+                  </TableHead>
+                  <TableHead className="border-l" aria-label="Usage column group" />
+                  <TableHead colSpan={4} className="border-l text-center text-xs font-medium text-muted-foreground">
+                    Sold &amp; used
+                  </TableHead>
+                  <TableHead colSpan={4} className="border-l text-center text-xs font-medium text-muted-foreground">
+                    Variance
+                  </TableHead>
+                </TableRow>
+                <TableRow className="bg-muted hover:bg-muted">
+                  <TableHead className="sticky left-0 z-10 min-w-48 bg-muted">Item</TableHead>
+                  <TableHead className="border-l text-right">Begin (full + open)</TableHead>
                   <TableHead className="text-right">Purchased</TableHead>
                   <TableHead className="text-right">Returns</TableHead>
                   <TableHead className="text-right">Transfers (in − out)</TableHead>
                   <TableHead className="text-right">End (full + open)</TableHead>
-                  <TableHead className="text-right font-semibold">Usage</TableHead>
-                  <TableHead className="text-right">Sold (direct + recipe)</TableHead>
-                  <TableHead className="text-right">Non-rev</TableHead>
-                  <TableHead className="text-right">Prod</TableHead>
+                  <TableHead className="border-l text-right font-semibold">Usage</TableHead>
+                  <TableHead className="border-l text-right">Sold (direct + recipe)</TableHead>
+                  <TableHead className="text-right">Non-revenue</TableHead>
+                  <TableHead className="text-right">Production</TableHead>
                   <TableHead className="text-right">Revenue</TableHead>
-                  <TableHead className="text-right font-semibold">Variance vs Sold</TableHead>
+                  <TableHead className="border-l text-right font-semibold">Variance vs Sold</TableHead>
                   <TableHead className="text-right">%</TableHead>
                   <TableHead className="text-right">At cost</TableHead>
                   <TableHead className="text-right">At retail</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {report.data.categories.map((group) => (
+                {visibleGroups.map((group) => (
                   <CategoryRows key={group.categoryName} group={group} onDrill={setDrill} />
                 ))}
                 <TableRow className="border-t-2 bg-muted/60 font-semibold hover:bg-muted/60">
-                  <TableCell>Grand total</TableCell>
+                  <TableCell className="sticky left-0 bg-muted">Grand total</TableCell>
                   <TableCell colSpan={9} />
                   <TableCell className="tnum text-right">{formatMoney(round2(report.data.totals.revenue))}</TableCell>
                   <TableCell colSpan={2} />
@@ -226,6 +312,12 @@ export function FullAuditPage() {
             </Table>
           )}
         </div>
+
+        {filteredOut > 0 && report.data ? (
+          <p className="shrink-0 border-t px-3 py-1.5 text-xs text-muted-foreground print:hidden">
+            {filteredOut} of {report.data.rows.length} rows hidden by filters — exports always include every row.
+          </p>
+        ) : null}
       </div>
 
       <DrillDialog item={drill} begin={effectiveBegin} end={effectiveEnd} onClose={() => setDrill(null)} />
@@ -233,31 +325,99 @@ export function FullAuditPage() {
   );
 }
 
-type Group = NonNullable<ReturnType<typeof useFullAudit>["data"]>["categories"][number];
+type Report = NonNullable<ReturnType<typeof useFullAudit>["data"]>;
+type Group = Report["categories"][number];
+
+/**
+ * The verdict before the evidence: period variance at cost and retail, how
+ * many items missed, and which categories drive it — so the reader knows the
+ * answer before scrolling 15 columns. Screen-only; print keeps the pure table.
+ */
+function VerdictStrip({ report, begin, end }: { report: Report; begin: string; end: string }) {
+  const itemsShort = report.rows.filter((r) => r.variance < 0).length;
+  const itemsOver = report.rows.filter((r) => r.variance > 0).length;
+  const categories = report.categories
+    .filter((g) => g.totals.varianceCost !== 0)
+    .map((g) => ({ label: g.categoryName, value: round2(g.totals.varianceCost) }))
+    .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
+    .slice(0, 6);
+
+  return (
+    <div className="shrink-0 border-b bg-muted/20 px-4 py-4 print:hidden">
+      <div className="grid gap-6 lg:grid-cols-[minmax(200px,240px)_minmax(0,1fr)]">
+        <div className="space-y-4">
+          <div>
+            <p className="text-xs font-medium text-muted-foreground">Period variance at cost</p>
+            <p
+              className={cn(
+                "mt-0.5 text-[28px] font-semibold leading-[34px] tracking-tight",
+                report.totals.varianceCost < 0 && "text-destructive",
+              )}
+            >
+              {formatMoney(round2(report.totals.varianceCost))}
+            </p>
+            <p className={cn("mt-0.5 text-xs text-muted-foreground", report.totals.varianceRetail < 0 && "text-destructive")}>
+              {formatMoney(round2(report.totals.varianceRetail))} at retail
+            </p>
+          </div>
+          <p className="text-xs leading-5 text-muted-foreground">
+            {itemsShort === 0 && itemsOver === 0
+              ? "Every item reconciled cleanly this period."
+              : `${itemsShort} ${itemsShort === 1 ? "item" : "items"} short · ${itemsOver} over expectation · ${begin} to ${end}`}
+          </p>
+        </div>
+        {categories.length > 0 ? (
+          <div className="min-w-0">
+            <p className="text-xs font-medium text-muted-foreground">Variance by category (cost)</p>
+            <div className="mt-2">
+              <MagnitudeBars data={categories} name="Variance" diverging />
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center rounded-md bg-success/10 px-4 text-sm">
+            No category carries a cost variance in this period.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function CategoryRows({ group, onDrill }: { group: Group; onDrill: (item: { id: string; name: string }) => void }) {
   return (
     <>
       <TableRow className="bg-secondary/60 hover:bg-secondary/60">
-        <TableCell colSpan={15} className="py-1.5 text-xs font-semibold uppercase tracking-wide text-secondary-foreground">
+        <TableCell className="sticky left-0 bg-secondary py-1.5 text-xs font-semibold uppercase tracking-wide text-secondary-foreground">
           {group.categoryName}
         </TableCell>
+        <TableCell colSpan={14} className="py-1.5" />
       </TableRow>
       {group.rows.map((row) => (
         <TableRow
           key={row.locationItemId}
-          className={cn("cursor-pointer", row.flags.short ? "bg-destructive/5 hover:bg-destructive/10" : "hover:bg-muted/40")}
+          tabIndex={0}
+          className={cn(
+            "cursor-pointer focus-visible:outline-2 focus-visible:outline-primary focus-visible:-outline-offset-2",
+            row.flags.short ? "bg-destructive/5 hover:bg-destructive/10" : "hover:bg-muted/40",
+          )}
           onClick={() => onDrill({ id: row.locationItemId, name: row.itemName })}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              onDrill({ id: row.locationItemId, name: row.itemName });
+            }
+          }}
+          aria-label={`Open source records for ${row.itemName}`}
         >
-          <TableCell>
+          <TableCell className={cn("sticky left-0", row.flags.short ? SHORT_ROW_STICKY_BG : "bg-background")}>
             <span className="font-medium">{row.itemName}</span>
             {row.flags.missingPrice && (
-              <Badge variant="destructive" className="ml-2 print:hidden">
+              <Badge variant="outline" className="ml-2 border-warning-text/40 text-warning-text print:hidden">
                 no price
               </Badge>
             )}
           </TableCell>
-          <TableCell className="tnum text-right">
+          <TableCell className="tnum border-l text-right">
             {n2(row.beginFull)}
             {row.beginOpenEquiv > 0 && <span className="text-muted-foreground"> + {n2(row.beginOpenEquiv)}</span>}
           </TableCell>
@@ -278,8 +438,8 @@ function CategoryRows({ group, onDrill }: { group: Group; onDrill: (item: { id: 
             {n2(row.endFull)}
             {row.endOpenEquiv > 0 && <span className="text-muted-foreground"> + {n2(row.endOpenEquiv)}</span>}
           </TableCell>
-          <TableCell className="tnum text-right font-medium">{n2(row.usage)}</TableCell>
-          <TableCell className="tnum text-right">
+          <TableCell className="tnum border-l text-right font-medium">{n2(row.usage)}</TableCell>
+          <TableCell className="tnum border-l text-right">
             {row.soldDirect + row.soldPortion > 0 ? (
               <>
                 {n2(row.soldDirect)}
@@ -292,7 +452,7 @@ function CategoryRows({ group, onDrill }: { group: Group; onDrill: (item: { id: 
           <TableCell className="tnum text-right">{row.nonRevenue > 0 ? n2(row.nonRevenue) : "—"}</TableCell>
           <TableCell className="tnum text-right">{row.production > 0 ? n2(row.production) : "—"}</TableCell>
           <TableCell className="tnum text-right">{row.revenue > 0 ? formatMoney(round2(row.revenue)) : "—"}</TableCell>
-          <TableCell className={cn("tnum text-right font-medium", row.flags.short && "text-destructive")}>
+          <TableCell className={cn("tnum border-l text-right font-medium", row.flags.short && "text-destructive")}>
             {n2(row.variance)}
           </TableCell>
           <TableCell className={cn("tnum text-right", row.flags.short && "text-destructive")}>
@@ -344,7 +504,15 @@ function DrillDialog({
           </DialogDescription>
         </DialogHeader>
         {drill.isPending ? (
-          <Skeleton className="h-40 w-full" />
+          <div className="divide-y rounded-lg border" aria-label="Loading source records">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-3 px-3 py-2.5">
+                <Skeleton className="h-5 w-16 shrink-0" />
+                <Skeleton className="h-4 flex-1" />
+                <Skeleton className="h-4 w-14 shrink-0" />
+              </div>
+            ))}
+          </div>
         ) : (drill.data?.records.length ?? 0) === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">No source records in this period.</p>
         ) : (

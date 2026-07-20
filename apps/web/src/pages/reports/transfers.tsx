@@ -6,7 +6,7 @@ import { useCountDates } from "@/api/ops";
 import { exportUrl, useTransferReport } from "@/api/reports";
 import { formatMoney } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
-import { TableSurface, TableLoading, TableEmpty } from "@/components/table-surface";
+import { TableSurface, TableLoading, TableEmpty, TableError } from "@/components/table-surface";
 import { DateRangeControl, ExportButtons } from "@/components/report-toolbar";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -33,7 +33,7 @@ export function TransferReportPage() {
   return (
     <div>
       <PageHeader
-        title={direction === "out" ? "Transfer Out Report" : "Transfer In Report"}
+        title="Transfers Report"
         actions={
           <ExportButtons
             xlsxUrl={exportUrl(locationId, "transfers", "xlsx", { from, to, direction })}
@@ -44,6 +44,7 @@ export function TransferReportPage() {
       />
 
       <TableSurface
+        className="max-h-[70vh]"
         filters={
           <div className="flex flex-wrap items-center gap-3">
             <Tabs value={direction} onValueChange={(v) => setDirection(v as "out" | "in")}>
@@ -58,6 +59,8 @@ export function TransferReportPage() {
       >
         {report.isPending ? (
           <TableLoading />
+        ) : report.isError ? (
+          <TableError onRetry={() => void report.refetch()} retrying={report.isRefetching} />
         ) : !report.data || report.data.rows.length === 0 ? (
           <TableEmpty
             icon={ArrowLeftRight}

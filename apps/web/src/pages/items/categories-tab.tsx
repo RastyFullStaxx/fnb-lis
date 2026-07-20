@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Tags } from "lucide-react";
+import { Plus, Tags } from "lucide-react";
 import { toast } from "sonner";
 import { categoryUpsert, type CategoryUpsert } from "@fnb/core";
 import { useCategories, useCreateCategory, useProductTypes, useUpdateCategory } from "@/api/master";
@@ -51,7 +51,16 @@ export function CategoriesTab({
       {categories.isPending ? (
         <TableLoading />
       ) : (categories.data ?? []).length === 0 ? (
-        <TableEmpty icon={Tags} title="No categories yet" description="Add a category to group items for reports and count sheets." />
+        <TableEmpty
+          icon={Tags}
+          title="No categories yet"
+          description="Add a category to group items for reports and count sheets."
+          action={
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus className="size-4" /> New category
+            </Button>
+          }
+        />
       ) : (
         <Table>
           <TableHeader>
@@ -154,12 +163,12 @@ function CategoryDialog({
             )}
           </div>
           <div className="space-y-2">
-            <Label>Product type</Label>
+            <Label htmlFor="cat-type">Product type</Label>
             <Select
               value={form.watch("productType")}
               onValueChange={(v) => form.setValue("productType", v, { shouldValidate: true })}
             >
-              <SelectTrigger>
+              <SelectTrigger id="cat-type">
                 <SelectValue placeholder="Choose a type" />
               </SelectTrigger>
               <SelectContent>

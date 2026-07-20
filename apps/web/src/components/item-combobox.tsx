@@ -22,8 +22,10 @@ export const ItemCombobox = forwardRef<
     onSelect: (item: LocationItem) => void;
     placeholder?: string;
     autoFocus?: boolean;
+    /** Forwarded to the trigger button so a <Label htmlFor> can name it. */
+    id?: string;
   }
->(function ItemCombobox({ value, onSelect, placeholder = "Pick an item…", autoFocus }, ref) {
+>(function ItemCombobox({ value, onSelect, placeholder = "Pick an item…", autoFocus, id }, ref) {
   const [open, setOpen] = useState(false);
   const items = useLocationItems();
 
@@ -40,6 +42,7 @@ export const ItemCombobox = forwardRef<
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
+          id={id}
           ref={ref}
           variant="outline"
           role="combobox"
@@ -48,7 +51,7 @@ export const ItemCombobox = forwardRef<
           className="w-full justify-between font-normal"
         >
           {value ? (
-            <span className="truncate">
+            <span className="truncate" title={`${value.itemVariant.item.name} ${variantLabel(value.itemVariant)}`}>
               {value.itemVariant.item.name}
               <span className="ml-1.5 text-muted-foreground">{variantLabel(value.itemVariant)}</span>
             </span>

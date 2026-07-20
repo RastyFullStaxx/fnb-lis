@@ -35,11 +35,18 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 
-const KIND_LABELS: Record<string, string> = {
+export const KIND_LABELS: Record<string, string> = {
   SALES: "Sales",
   PURCHASES: "Purchases",
   NON_REVENUE: "Non-revenue",
   COUNTS: "Counts",
+};
+
+export const SOURCE_LABELS: Record<string, string> = {
+  CSV: "CSV",
+  XLSX: "Excel",
+  PDF: "PDF",
+  IMAGE: "Image",
 };
 
 const STATUS_BADGE: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
@@ -106,9 +113,19 @@ export function ImportsPage() {
                 : "Clear the search or type filter to see everything."
             }
             action={
-              (batches.data ?? []).length === 0 && (
+              (batches.data ?? []).length === 0 ? (
                 <Button onClick={() => setUploadOpen(true)}>
                   <Upload className="size-4" /> Import
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setSearch("");
+                    setKind("ALL");
+                  }}
+                >
+                  Clear filters
                 </Button>
               )
             }
@@ -118,6 +135,7 @@ export function ImportsPage() {
             <TableHeader>
               <TableRow className="bg-muted hover:bg-muted">
                 <TableHead>File</TableHead>
+                <TableHead>Uploaded</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>Source</TableHead>
                 <TableHead>Status</TableHead>
@@ -129,10 +147,11 @@ export function ImportsPage() {
             <TableBody>
               {filtered.map((b) => (
                 <TableRow key={b.id} className={cn(b.status === "REVERSED" && "opacity-60")}>
-                  <TableCell className="max-w-56 truncate font-medium">{b.fileName}</TableCell>
+                  <TableCell className="max-w-56 truncate font-medium" title={b.fileName}>{b.fileName}</TableCell>
+                  <TableCell className="tnum text-muted-foreground">{b.createdAt.slice(0, 10)}</TableCell>
                   <TableCell className="text-muted-foreground">{KIND_LABELS[b.kind] ?? b.kind}</TableCell>
                   <TableCell className="text-muted-foreground">
-                    {b.sourceType}
+                    {SOURCE_LABELS[b.sourceType] ?? b.sourceType}
                     {b.extractor === "AI" && <Badge variant="outline" className="ml-1.5">AI</Badge>}
                   </TableCell>
                   <TableCell>
@@ -214,8 +233,9 @@ function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (op
       <div
         role="button"
         tabIndex={0}
-        onClick={() => inputRef.current?.click()}
-        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && inputRef.current?.click()}
+        aria-disabled={upload.isPending}
+        onClick={() => !upload.isPending && inputRef.current?.click()}
+        onKeyDown={(e) => !upload.isPending && (e.key === "Enter" || e.key === " ") && inputRef.current?.click()}
         onDragOver={(e) => {
           e.preventDefault();
           setDragOver(true);
@@ -224,12 +244,14 @@ function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (op
         onDrop={(e) => {
           e.preventDefault();
           setDragOver(false);
+          if (upload.isPending) return;
           const file = e.dataTransfer.files[0];
           if (file) doUpload(file);
         }}
         className={cn(
           "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed py-10 text-center transition-colors",
           dragOver ? "border-primary bg-primary/5" : "border-muted-foreground/25 hover:border-primary/40",
+          upload.isPending && "pointer-events-none opacity-60",
         )}
       >
         <Upload className="size-6 text-muted-foreground" />
@@ -253,8 +275,17 @@ function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (op
       {!aiEnabled && (
         <p className="mt-3 flex items-start gap-1.5 text-xs text-muted-foreground">
           <Info className="mt-0.5 size-3.5 shrink-0" />
-          PDF and image import needs the AI extractor. Add <code className="mx-1 rounded bg-muted px-1 font-mono">ANTHROPIC_API_KEY</code>
-          to the server to enable it — CSV and Excel work without it.
+          <span>
+            PDF and image import needs the AI extractor — ask your administrator to enable it. CSV and Excel
+            work now.
+            {me.data?.user.role === "ADMIN" && (
+              <>
+                {" "}
+                Server setup: add <code className="mx-1 rounded bg-muted px-1 font-mono">ANTHROPIC_API_KEY</code>
+                to the server environment.
+              </>
+            )}
+          </span>
         </p>
       )}
       </div>

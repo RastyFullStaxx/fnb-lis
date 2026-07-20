@@ -7,9 +7,12 @@ import { useMenus } from "@/api/menus";
 import { useImportBatch, useImportRowMutations, type ImportRow } from "@/api/imports";
 import { variantLabel } from "@/api/types";
 import { ApiError } from "@/api/http";
-import { FullPageSpinner } from "@/components/full-page-spinner";
+import { formatMoney } from "@/lib/utils";
+import { TableSurface, TableLoading } from "@/components/table-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { KIND_LABELS, SOURCE_LABELS } from "./index";
 import {
   Command,
   CommandEmpty,
@@ -43,9 +46,19 @@ import { cn } from "@/lib/utils";
 const METHOD_BADGE: Record<string, { label: string; className: string }> = {
   EXACT: { label: "Exact", className: "border-primary text-primary" },
   ALIAS: { label: "Alias", className: "border-primary/60 text-primary" },
-  FUZZY: { label: "Fuzzy", className: "border-warning text-warning" },
+  FUZZY: { label: "Fuzzy", className: "border-warning text-warning-text" },
   MANUAL: { label: "Manual", className: "border-primary text-primary" },
 };
+
+const ROW_STATUS_LABELS: Record<string, string> = {
+  PENDING: "Pending",
+  APPROVED: "Approved",
+  REJECTED: "Rejected",
+  COMMITTED: "Committed",
+};
+
+/** Peso-formatted money cell value; em dash when the file carried none. */
+const money = (value: number | null) => (value == null ? "—" : formatMoney(value));
 
 export function ImportReviewPage() {
   const { batchId } = useParams();
@@ -63,8 +76,45 @@ export function ImportReviewPage() {
     return m;
   }, [items.data, menus.data]);
 
-  if (batch.isPending) return <FullPageSpinner />;
-  if (batch.isError || !batch.data) return <FullPageSpinner error="Import batch not found." />;
+  // Bulk approve/reject runs one request per row — surface progress and lock
+  // the header actions so a large batch doesn't look dead mid-run.
+  const [bulk, setBulk] = useState<{ verb: string; done: number; total: number } | null>(null);
+
+  if (batch.isPending) {
+    // Skeleton shaped like the final layout: back-button header + review surface.
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="mb-4 flex items-center gap-3">
+          <Button asChild variant="ghost" size="icon" aria-label="Back to imports">
+            <Link to={`/l/${locationId}/imports`}>
+              <ArrowLeft className="size-4" />
+            </Link>
+          </Button>
+          <div className="space-y-1.5">
+            <Skeleton className="h-5 w-56" />
+            <Skeleton className="h-4 w-72" />
+          </div>
+        </div>
+        <TableSurface>
+          <TableLoading />
+        </TableSurface>
+      </div>
+    );
+  }
+  if (batch.isError || !batch.data) {
+    return (
+      <div className="flex flex-1 items-center justify-center p-6">
+        <div className="flex max-w-md flex-col items-center gap-3 text-center">
+          <p className="text-sm text-foreground">
+            This import batch couldn't be found — it may have been removed, or the link is out of date.
+          </p>
+          <Button asChild variant="outline" size="sm">
+            <Link to={`/l/${locationId}/imports`}>Back to imports</Link>
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   const b = batch.data;
   const editable = b.status === "NEEDS_REVIEW";
@@ -84,20 +134,32 @@ export function ImportReviewPage() {
       })
       .catch((e) => toast.error(e instanceof ApiError ? e.message : "Failed"));
 
-  const approveAllMatched = async () => {
-    for (const row of rows) {
-      if (row.status !== "REJECTED" && (row.matchedLocationItemId || row.matchedMenuItemId) && row.status !== "APPROVED") {
-        await setStatus(row, "APPROVED");
+  const runBulk = async (verb: string, targets: ImportRow[], status: "APPROVED" | "REJECTED") => {
+    if (targets.length === 0 || bulk) return;
+    setBulk({ verb, done: 0, total: targets.length });
+    try {
+      for (const row of targets) {
+        await setStatus(row, status);
+        setBulk((prev) => (prev ? { ...prev, done: prev.done + 1 } : prev));
       }
+    } finally {
+      setBulk(null);
     }
   };
-  const rejectUnmatched = async () => {
-    for (const row of rows) {
-      if (!row.matchedLocationItemId && !row.matchedMenuItemId && row.status !== "REJECTED") {
-        await setStatus(row, "REJECTED");
-      }
-    }
-  };
+  const approveAllMatched = () =>
+    runBulk(
+      "Approving",
+      rows.filter(
+        (r) => r.status !== "REJECTED" && r.status !== "APPROVED" && Boolean(r.matchedLocationItemId || r.matchedMenuItemId),
+      ),
+      "APPROVED",
+    );
+  const rejectUnmatched = () =>
+    runBulk(
+      "Rejecting",
+      rows.filter((r) => !r.matchedLocationItemId && !r.matchedMenuItemId && r.status !== "REJECTED"),
+      "REJECTED",
+    );
 
   const commit = async () => {
     try {
@@ -117,7 +179,7 @@ export function ImportReviewPage() {
   };
 
   return (
-    <div>
+    <div className="flex min-h-0 flex-1 flex-col">
       <div className="mb-4 flex items-center gap-3">
         <Button asChild variant="ghost" size="icon" aria-label="Back to imports">
           <Link to={`/l/${locationId}/imports`}>
@@ -125,24 +187,24 @@ export function ImportReviewPage() {
           </Link>
         </Button>
         <div className="min-w-0">
-          <h2 className="truncate text-lg font-semibold tracking-tight">{b.fileName}</h2>
+          <h2 className="truncate text-xl font-semibold tracking-tight">{b.fileName}</h2>
           <p className="text-sm text-muted-foreground">
-            {b.kind} · {b.sourceType}
+            {KIND_LABELS[b.kind] ?? b.kind} · {SOURCE_LABELS[b.sourceType] ?? b.sourceType}
             {b.extractor === "AI" && " · AI-extracted"} · {rows.length} rows
           </p>
         </div>
         <div className="ml-auto flex items-center gap-2">
           {editable && (
             <>
-              <Button variant="outline" size="sm" onClick={approveAllMatched}>
-                Approve matched
+              <Button variant="outline" size="sm" onClick={approveAllMatched} disabled={bulk !== null}>
+                {bulk?.verb === "Approving" ? `Approving ${bulk.done}/${bulk.total}…` : "Approve matched"}
               </Button>
-              <Button variant="outline" size="sm" onClick={rejectUnmatched}>
-                Reject unmatched
+              <Button variant="outline" size="sm" onClick={rejectUnmatched} disabled={bulk !== null}>
+                {bulk?.verb === "Rejecting" ? `Rejecting ${bulk.done}/${bulk.total}…` : "Reject unmatched"}
               </Button>
               <AlertDialog>
                 <AlertDialogTrigger asChild>
-                  <Button size="sm" disabled={approvedCount === 0}>
+                  <Button size="sm" disabled={approvedCount === 0 || bulk !== null}>
                     <Check className="size-4" /> Commit ({approvedCount})
                   </Button>
                 </AlertDialogTrigger>
@@ -188,7 +250,7 @@ export function ImportReviewPage() {
         </div>
       </div>
 
-      <div className="rounded-lg border">
+      <TableSurface>
         <Table>
           <TableHeader>
             <TableRow className="bg-muted hover:bg-muted">
@@ -205,7 +267,7 @@ export function ImportReviewPage() {
               <TableRow key={row.id} className={cn(row.status === "REJECTED" && "opacity-45")}>
                 <TableCell>
                   <span className="font-medium">{row.itemText}</span>
-                  {row.warning && <p className="text-xs text-warning">{row.warning}</p>}
+                  {row.warning && <p className="text-xs text-warning-text">{row.warning}</p>}
                 </TableCell>
                 <TableCell>
                   {editable ? (
@@ -221,26 +283,36 @@ export function ImportReviewPage() {
                 </TableCell>
                 <TableCell className="tnum text-right">{row.qty ?? "—"}</TableCell>
                 <TableCell className="tnum text-right">
-                  {b.kind === "PURCHASES" ? (row.unitCost ?? "—") : (row.unitPrice ?? "—")}
+                  {money(b.kind === "PURCHASES" ? row.unitCost : row.unitPrice)}
                 </TableCell>
                 <TableCell className="tnum text-muted-foreground">{row.rowDate ?? "—"}</TableCell>
                 <TableCell className="text-right">
                   {editable ? (
                     <div className="flex items-center justify-end gap-1">
-                      <Button
-                        variant={row.status === "APPROVED" ? "default" : "ghost"}
-                        size="icon"
-                        className="size-7"
-                        aria-label="Approve"
-                        disabled={!row.matchedLocationItemId && !row.matchedMenuItemId}
-                        onClick={() => setStatus(row, row.status === "APPROVED" ? "PENDING" : "APPROVED")}
+                      {/* Disabled buttons don't fire tooltips — the span carries the why. */}
+                      <span
+                        className="inline-flex"
+                        title={
+                          !row.matchedLocationItemId && !row.matchedMenuItemId
+                            ? "Match this row to an item first"
+                            : undefined
+                        }
                       >
-                        <Check className="size-4" />
-                      </Button>
+                        <Button
+                          variant={row.status === "APPROVED" ? "default" : "ghost"}
+                          size="icon"
+                          className="size-8"
+                          aria-label="Approve"
+                          disabled={!row.matchedLocationItemId && !row.matchedMenuItemId}
+                          onClick={() => setStatus(row, row.status === "APPROVED" ? "PENDING" : "APPROVED")}
+                        >
+                          <Check className="size-4" />
+                        </Button>
+                      </span>
                       <Button
                         variant={row.status === "REJECTED" ? "destructive" : "ghost"}
                         size="icon"
-                        className="size-7"
+                        className="size-8"
                         aria-label="Reject"
                         onClick={() => setStatus(row, row.status === "REJECTED" ? "PENDING" : "REJECTED")}
                       >
@@ -248,14 +320,16 @@ export function ImportReviewPage() {
                       </Button>
                     </div>
                   ) : (
-                    <Badge variant={row.status === "COMMITTED" ? "secondary" : "outline"}>{row.status}</Badge>
+                    <Badge variant={row.status === "COMMITTED" ? "secondary" : "outline"}>
+                      {ROW_STATUS_LABELS[row.status] ?? row.status}
+                    </Badge>
                   )}
                 </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
-      </div>
+      </TableSurface>
     </div>
   );
 }
@@ -297,7 +371,13 @@ function MatchPicker({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" role="combobox" className="h-8 max-w-72 justify-between font-normal">
+        <Button
+          variant="outline"
+          size="sm"
+          role="combobox"
+          className="h-8 max-w-72 justify-between font-normal"
+          title={currentId ? labelMap.get(currentId) : undefined}
+        >
           <span className="flex items-center gap-1.5 truncate">
             {currentId ? (
               <>

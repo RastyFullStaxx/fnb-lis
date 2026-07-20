@@ -11,11 +11,12 @@ import { ApiError } from "@/api/http";
 import { formatMoney } from "@/lib/utils";
 import { ItemCombobox } from "@/components/item-combobox";
 import { VoidDialog } from "@/components/void-dialog";
-import { FullPageSpinner } from "@/components/full-page-spinner";
+import { TableSurface, TableLoading } from "@/components/table-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { QuantityInput } from "@/components/quantity-input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -52,8 +53,41 @@ export function TransferEditorPage() {
   const [voidingReceipt, setVoidingReceipt] = useState<{ receiptId: string; label: string } | null>(null);
   const comboRef = useRef<HTMLButtonElement>(null);
 
-  if (transfer.isPending) return <FullPageSpinner />;
-  if (transfer.isError) return <FullPageSpinner error="Transfer not found." />;
+  if (transfer.isPending) {
+    // Skeleton shaped like the final layout: back-button header + lines surface.
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="mb-4 flex items-center gap-3">
+          <Button asChild variant="ghost" size="icon" aria-label="Back to transfers">
+            <Link to={`/l/${locationId}/transfers`}>
+              <ArrowLeft className="size-4" />
+            </Link>
+          </Button>
+          <div className="space-y-1.5">
+            <Skeleton className="h-5 w-56" />
+            <Skeleton className="h-4 w-72" />
+          </div>
+        </div>
+        <TableSurface>
+          <TableLoading rows={6} />
+        </TableSurface>
+      </div>
+    );
+  }
+  if (transfer.isError) {
+    return (
+      <div className="flex flex-1 items-center justify-center p-6">
+        <div className="flex max-w-md flex-col items-center gap-3 text-center">
+          <p className="text-sm text-foreground">
+            This transfer couldn't be found — it may have been removed, or the link is out of date.
+          </p>
+          <Button asChild variant="outline" size="sm">
+            <Link to={`/l/${locationId}/transfers`}>Back to transfers</Link>
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   const t = transfer.data;
   const isSource = t.fromLocationId === locationId;
@@ -94,7 +128,7 @@ export function TransferEditorPage() {
   };
 
   return (
-    <div>
+    <div className="flex min-h-0 flex-1 flex-col">
       <div className="mb-4 flex items-center gap-3">
         <Button asChild variant="ghost" size="icon" aria-label="Back to transfers">
           <Link to={`/l/${locationId}/transfers`}>
@@ -102,7 +136,7 @@ export function TransferEditorPage() {
           </Link>
         </Button>
         <div>
-          <h2 className="text-lg font-semibold tracking-tight tnum">
+          <h2 className="text-xl font-semibold tracking-tight tnum">
             Transfer · {t.businessDate}
           </h2>
           <p className="text-sm text-muted-foreground">
@@ -116,29 +150,54 @@ export function TransferEditorPage() {
               {isDraft ? "Discard draft" : "Void transfer"}
             </Button>
           )}
+          {isDraft && isSource && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button size="sm" disabled={activeLines.length === 0}>
+                  <Check className="size-4" /> Commit transfer
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Commit this transfer?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    {activeLines.length} line{activeLines.length === 1 ? "" : "s"}, {formatMoney(total)} at cost, to{" "}
+                    {t.toLocation?.name}. Committed transfers leave this location's stock pool on {t.businessDate}; the
+                    destination then confirms what arrived.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Keep drafting</AlertDialogCancel>
+                  <AlertDialogAction onClick={commit}>Commit</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
           <Badge variant={isDraft ? "default" : "secondary"}>
             {isDraft ? "Draft" : t.status === "COMMITTED" ? "Committed" : "Void"}
           </Badge>
         </div>
       </div>
 
-      {isDraft && isSource && (
-        <div className="mb-4 grid grid-cols-[minmax(0,1fr)_7rem_auto] items-end gap-2 rounded-lg border p-4">
-          <div className="space-y-2">
-            <Label>Item (from this location's catalog)</Label>
-            <ItemCombobox ref={comboRef} value={item} onSelect={setItem} autoFocus />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="tl-qty">Qty</Label>
-            <QuantityInput id="tl-qty" className="tnum" value={qty} onChange={(e) => setQty(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addLine()} />
-          </div>
-          <Button onClick={addLine} disabled={!item || mutations.addLine.isPending}>
-            Add
-          </Button>
-        </div>
-      )}
-
-      <div className="rounded-lg border">
+      <TableSurface
+        filters={
+          isDraft && isSource ? (
+            <div className="grid w-full grid-cols-[minmax(0,1fr)_7rem_auto] items-end gap-2">
+              <div className="space-y-2">
+                <Label>Item (from this location's catalog)</Label>
+                <ItemCombobox ref={comboRef} value={item} onSelect={setItem} autoFocus />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="tl-qty">Qty</Label>
+                <QuantityInput id="tl-qty" className="tnum" value={qty} onChange={(e) => setQty(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addLine()} />
+              </div>
+              <Button onClick={addLine} disabled={!item || mutations.addLine.isPending}>
+                Add
+              </Button>
+            </div>
+          ) : undefined
+        }
+      >
         <Table>
           <TableHeader>
             <TableRow className="bg-muted hover:bg-muted">
@@ -225,7 +284,9 @@ export function TransferEditorPage() {
                   {activeLines.reduce((s, l) => s + l.qty, 0)}
                 </TableCell>
                 <TableCell className="tnum text-right font-medium">
-                  {activeLines.reduce((s, l) => s + (l.receipts[0]?.qtyReceived ?? 0), 0) || ""}
+                  {activeLines.some((l) => l.receipts[0])
+                    ? activeLines.reduce((s, l) => s + (l.receipts[0]?.qtyReceived ?? 0), 0)
+                    : "—"}
                 </TableCell>
                 <TableCell />
                 <TableCell className="tnum text-right font-semibold">{formatMoney(total)}</TableCell>
@@ -234,33 +295,7 @@ export function TransferEditorPage() {
             </TableFooter>
           )}
         </Table>
-      </div>
-
-      {isDraft && isSource && (
-        <div className="mt-4 flex justify-end">
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button disabled={activeLines.length === 0}>
-                <Check className="size-4" /> Commit transfer
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Commit this transfer?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  {activeLines.length} line{activeLines.length === 1 ? "" : "s"}, {formatMoney(total)} at cost, to{" "}
-                  {t.toLocation?.name}. Committed transfers leave this location's stock pool on {t.businessDate}; the
-                  destination then confirms what arrived.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Keep drafting</AlertDialogCancel>
-                <AlertDialogAction onClick={commit}>Commit</AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </div>
-      )}
+      </TableSurface>
 
       <VoidDialog
         open={voidingLine !== null}

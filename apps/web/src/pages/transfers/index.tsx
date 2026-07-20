@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { useMemo, useState, type KeyboardEvent } from "react";
+import { useNavigate } from "react-router";
 import { ArrowLeftRight, Inbox, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { LOCATION_KIND_LABELS, can, type LocationKind, type Role } from "@fnb/core";
@@ -57,12 +57,33 @@ function StatusBadge({ transfer }: { transfer: Transfer }) {
   if (transfer.status === "VOID") return <Badge variant="destructive">Void</Badge>;
   const received = transfer.receivedCount ?? 0;
   const lines = transfer.lineCount ?? 0;
-  if (lines > 0 && received >= lines) return <Badge variant="secondary">Received</Badge>;
+  if (lines > 0 && received >= lines) {
+    return (
+      <Badge variant="outline" className="border-success/40 bg-success/10 text-success">
+        Received
+      </Badge>
+    );
+  }
   return (
-    <Badge variant="outline" className="border-amber-400 text-amber-600">
+    <Badge variant="outline" className="border-warning text-warning-text">
       {received > 0 ? `${received}/${lines} received` : "Awaiting receipt"}
     </Badge>
   );
+}
+
+/** Row-level keyboard access for click-to-open table rows (Enter/Space opens). */
+function rowLinkProps(open: () => void) {
+  return {
+    tabIndex: 0,
+    role: "link" as const,
+    onClick: open,
+    onKeyDown: (e: KeyboardEvent<HTMLTableRowElement>) => {
+      if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+        e.preventDefault();
+        open();
+      }
+    },
+  };
 }
 
 export function TransfersPage() {
@@ -141,8 +162,11 @@ function OutgoingTab({ createOpen, setCreateOpen }: { createOpen: boolean; setCr
             {transfers.data!.map((t) => (
               <TableRow
                 key={t.id}
-                className={cn("cursor-pointer", t.status === "VOID" && "opacity-50")}
-                onClick={() => navigate(`/l/${locationId}/transfers/${t.id}`)}
+                className={cn(
+                  "cursor-pointer focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary",
+                  t.status === "VOID" && "opacity-50",
+                )}
+                {...rowLinkProps(() => navigate(`/l/${locationId}/transfers/${t.id}`))}
               >
                 <TableCell className="tnum">{t.businessDate}</TableCell>
                 <TableCell>
@@ -253,7 +277,7 @@ function IncomingTab() {
         <Table>
           <TableHeader>
             <TableRow className="bg-muted hover:bg-muted">
-              <TableHead>Sent</TableHead>
+              <TableHead>Sent on</TableHead>
               <TableHead>From</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Lines</TableHead>
@@ -267,8 +291,11 @@ function IncomingTab() {
               return (
                 <TableRow
                   key={t.id}
-                  className={cn("cursor-pointer", t.status === "VOID" && "opacity-50")}
-                  onClick={() => navigate(`/l/${locationId}/transfers/${t.id}`)}
+                  className={cn(
+                    "cursor-pointer focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary",
+                    t.status === "VOID" && "opacity-50",
+                  )}
+                  {...rowLinkProps(() => navigate(`/l/${locationId}/transfers/${t.id}`))}
                 >
                   <TableCell className="tnum">{t.businessDate}</TableCell>
                   <TableCell>
@@ -394,7 +421,7 @@ function ReceiveDialog({ transferId, onClose }: { transferId: string; onClose: (
                         <TableCell className="tnum text-right">{line.qty}</TableCell>
                         <TableCell>
                           <QuantityInput
-                            className={cn("tnum h-8", differs && "border-amber-400")}
+                            className={cn("tnum h-8", differs && "border-warning")}
                             value={value}
                             onChange={(e) => setQuantities((q) => ({ ...q, [line.id]: e.target.value }))}
                           />

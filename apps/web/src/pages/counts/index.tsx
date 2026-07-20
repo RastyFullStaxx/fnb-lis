@@ -35,7 +35,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-const STATUS_BADGE: Record<string, "secondary" | "default" | "outline"> = {
+/** One badge vocabulary for count-session status — the session page reuses it. */
+export const STATUS_BADGE: Record<string, "secondary" | "default" | "outline"> = {
   OPEN: "default",
   COMMITTED: "secondary",
   VOID: "outline",
@@ -99,9 +100,19 @@ export function CountsPage() {
                 : "Clear the search or status filter to see everything."
             }
             action={
-              (sessions.data ?? []).length === 0 && (
+              (sessions.data ?? []).length === 0 ? (
                 <Button onClick={() => setCreateOpen(true)}>
                   <Plus className="size-4" /> Start a count
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setSearch("");
+                    setStatus("ALL");
+                  }}
+                >
+                  Clear filters
                 </Button>
               )
             }

@@ -121,7 +121,7 @@ function DashboardContent({
 
       <Card>
         <CardContent className="grid gap-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.85fr)]">
-          <NextAction action={primary} secondary={secondary} data={data} to={to} />
+          <NextAction action={primary} secondary={secondary} data={data} to={to} role={role} />
           <AttentionQueue data={data} role={role} to={to} />
         </CardContent>
       </Card>
@@ -434,11 +434,13 @@ function NextAction({
   secondary,
   data,
   to,
+  role,
 }: {
   action: DashboardAction;
   secondary: SecondaryAction[];
   data: DashboardData;
   to: (path: string) => string;
+  role: Role;
 }) {
   return (
     <section aria-labelledby="next-action-heading">
@@ -468,7 +470,8 @@ function NextAction({
         </div>
       ) : null}
 
-      {data.openWork.latestPurchase && action.kind !== "purchase" ? (
+      {/* Only worth mentioning to people who can actually continue the draft. */}
+      {data.openWork.latestPurchase && action.kind !== "purchase" && can(role, "entries.create") ? (
         <p className="mt-3 text-xs text-muted-foreground">
           A delivery draft was last updated {relativeTime(data.openWork.latestPurchase.updatedAt)}.
         </p>
@@ -521,9 +524,15 @@ function AttentionQueue({
           <Check className="mt-0.5 size-4 shrink-0 text-success" />
           <p>No pricing, import, delivery, or count work needs review right now.</p>
         </div>
-      ) : (
+      ) : data.readiness.activeItems === 0 || data.period.countDates === 0 ? (
         <p className="mt-4 text-sm leading-6 text-muted-foreground">
           Finish the location setup before this dashboard can confirm that all operational checks are clear.
+        </p>
+      ) : (
+        // Setup is done and the remaining unresolved work belongs to another
+        // role — don't tell a viewer to "finish setup" they can't touch.
+        <p className="mt-4 text-sm leading-6 text-muted-foreground">
+          Nothing here needs your attention right now.
         </p>
       )}
 

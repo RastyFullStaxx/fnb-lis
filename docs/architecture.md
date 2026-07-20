@@ -157,6 +157,9 @@ Pipeline: upload (sha256, stored under `apps/server/data/uploads/`) → parse: C
 | 15 | Kitchen NET weigh mode (`weighMode=NET`: qty = scale − tare, converted to the counting unit) | Legacy weighed only density-tracked bottles | Client req #16; DENSITY path untouched; NET rows are not content-tracked so reconciliation is structurally unchanged |
 | 16 | Per-role session TTL: READONLY 20-min absolute, others 7-day sliding | Single global TTL | Client reqs #4/#12 (3rd-party audit-service viewers); report screens watermark the viewer's name, exports carry an "Exported by" footer |
 | 17 | Billing paid-state window = current period `[due, nextDue)` only | JjByteX's fix accepted `[prevDue, nextDue+EOD]` (~2 months) | One payment must never mark two months paid; logic hoisted to `@fnb/core/billing` (shared server+web), month-adds are calendar-true (no `+32 days`) |
+| 18 | Trends rollups (`GET …/dashboard/trends`, `services/trends.ts`) re-run `buildFullAudit` per period instead of storing aggregates | — | No second source of truth for the sacred math: every charted number is the same one the Full Audit shows for that window. Serial, capped at 12 periods (~8 queries each); revisit with a cache only if a location's history makes it slow |
+| 19 | Cross-tenant location probes return 404, not 403 | Middleware originally threw 403 "No access to this client" | Another client's location must be indistinguishable from a nonexistent one (existence oracle); matches the transfers tenant-guard convention |
+| 20 | Listing reports default to the open period (last count → today) | First seed was first→last count date (whole history), then briefly the last closed period | The whole ledger on first paint is slow and overwhelming; the last *closed* period hides everything entered since the last count. The open period always shows the newest entries; count-anchored reports (Full Audit, CA) keep their closed-period defaults |
 
 ## 9. Security posture
 

@@ -12,6 +12,14 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 
+// Same "Jun 8, 2026" style the dashboard uses for dates, kept local until a
+// shared formatter lands in lib/utils.
+const DATE = new Intl.DateTimeFormat("en-PH", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+});
+
 /** Version history — every published recipe stays readable forever. */
 export function MenuDetailSheet({
   menu,
@@ -35,7 +43,20 @@ export function MenuDetailSheet({
 
         <div className="space-y-6 px-4 pb-6">
           {detail.isPending ? (
-            <Skeleton className="h-40 w-full" />
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Skeleton className="h-5 w-16" />
+                <Skeleton className="h-4 w-48" />
+                <Skeleton className="ml-auto h-4 w-20" />
+              </div>
+              <div className="divide-y rounded-lg border">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="px-3 py-2.5">
+                    <Skeleton className="h-4 w-full" />
+                  </div>
+                ))}
+              </div>
+            </div>
           ) : (
             detail.data?.versions.map((version, i) => (
               <div key={version.id}>
@@ -49,7 +70,7 @@ export function MenuDetailSheet({
                     SRP {formatMoney(version.srp)} · cost {formatMoney(version.costAtPublish)}
                   </span>
                   <span className="tnum ml-auto text-xs text-muted-foreground">
-                    {new Date(version.publishedAt).toLocaleDateString()}
+                    {DATE.format(new Date(version.publishedAt))}
                   </span>
                 </div>
                 {version.note && <p className="mb-2 text-sm text-muted-foreground">{version.note}</p>}
@@ -63,7 +84,12 @@ export function MenuDetailSheet({
                           <span className="ml-1.5 text-muted-foreground">{variantLabel(variant)}</span>
                         </span>
                         <span className="tnum">
-                          {line.servingQty} {variant.contentTracked ? variant.unit.name : "unit(s)"}
+                          {line.servingQty}{" "}
+                          {variant.contentTracked
+                            ? variant.unit.name
+                            : line.servingQty === 1
+                              ? "unit"
+                              : "units"}
                         </span>
                       </div>
                     );

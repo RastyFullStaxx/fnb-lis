@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { recipeCost } from "@fnb/core";
 import { useMenu, useMenuMutations, type MenuSummary } from "@/api/menus";
 import { variantLabel, type LocationItem } from "@/api/types";
 import { ApiError } from "@/api/http";
-import { formatMoney } from "@/lib/utils";
+import { cn, formatMoney } from "@/lib/utils";
 import { ItemCombobox } from "@/components/item-combobox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,21 +43,43 @@ export function RecipeBuilderSheet({
   const [lines, setLines] = useState<BuilderLine[]>([]);
   const [picking, setPicking] = useState<LocationItem | null>(null);
 
-  // Prefill from the current version when creating a new version of an existing menu.
+  // Prefill from the current version when creating a new version of an existing
+  // menu — exactly once per open, so a detail response landing after the sheet
+  // opened can never wipe SRP/lines the user has already started editing.
+  const seeded = useRef(false);
+  const awaitedDetail = useRef(false);
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      seeded.current = false;
+      awaitedDetail.current = false;
+      return;
+    }
+    if (seeded.current) return;
     setName(menu?.name ?? "");
-    const current = detail.data?.versions[0];
-    if (menu && current) {
-      setSrp(String(current.srp));
-      setLines(
-        current.lines.map((l) => ({ item: l.locationItem, servingQty: String(l.servingQty) })),
-      );
+    if (menu && detail.isPending) {
+      // Clear leftovers from a previous open; seeding happens when the version lands.
+      awaitedDetail.current = true;
+      setSrp("");
+      setLines([]);
+      return;
+    }
+    seeded.current = true;
+    const current = menu ? detail.data?.versions[0] : undefined;
+    if (current) {
+      // If the detail arrived after the sheet opened, don't clobber anything
+      // the user typed while it loaded; a cached detail seeds unconditionally.
+      if (!awaitedDetail.current || (srp === "" && lines.length === 0)) {
+        setSrp(String(current.srp));
+        setLines(
+          current.lines.map((l) => ({ item: l.locationItem, servingQty: String(l.servingQty) })),
+        );
+      }
     } else {
       setSrp("");
       setLines([]);
     }
-  }, [open, menu, detail.data]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, menu, detail.data, detail.isPending]);
 
   const cost = useMemo(
     () =>
@@ -159,14 +181,7 @@ export function RecipeBuilderSheet({
               );
             })}
 
-            <div className="flex items-end gap-2">
-              <div className="flex-1">
-                <ItemCombobox value={picking} onSelect={addLine} placeholder="Add an ingredient…" />
-              </div>
-              <Button variant="outline" size="icon" aria-label="Add ingredient" disabled>
-                <Plus className="size-4" />
-              </Button>
-            </div>
+            <ItemCombobox value={picking} onSelect={addLine} placeholder="Add an ingredient…" />
           </div>
 
           <Separator />
@@ -181,13 +196,32 @@ export function RecipeBuilderSheet({
                 onChange={(e) => setSrp(e.target.value)}
               />
             </div>
-            <div>
+            <div aria-live="polite">
               <p className="text-xs text-muted-foreground">Estimated cost</p>
-              <p className="tnum text-lg font-semibold">{formatMoney(cost)}</p>
+              <p className="tnum text-lg font-semibold">
+                <span
+                  key={cost}
+                  className="inline-block duration-150 animate-in fade-in slide-in-from-bottom-1 motion-reduce:animate-none"
+                >
+                  {formatMoney(cost)}
+                </span>
+              </p>
             </div>
-            <div>
+            <div aria-live="polite">
               <p className="text-xs text-muted-foreground">Margin</p>
-              <p className="tnum text-lg font-semibold">{margin === null ? "—" : `${margin.toFixed(0)}%`}</p>
+              <p
+                className={cn(
+                  "tnum text-lg font-semibold",
+                  margin !== null && margin < 0 && "text-destructive",
+                )}
+              >
+                <span
+                  key={margin === null ? "none" : margin.toFixed(0)}
+                  className="inline-block duration-150 animate-in fade-in slide-in-from-bottom-1 motion-reduce:animate-none"
+                >
+                  {margin === null ? "—" : `${margin.toFixed(0)}%`}
+                </span>
+              </p>
             </div>
           </div>
           <p className="text-xs text-muted-foreground">

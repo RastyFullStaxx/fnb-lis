@@ -59,6 +59,9 @@ export function PeriodColumns({
           tick={{ ...TICK, className: "tnum" } as never}
           tickFormatter={tickFormatter}
           width={52}
+          // Zero stays in the domain so the baseline is honest even when every
+          // period lands on the same side of it.
+          domain={[(dataMin: number) => Math.min(0, dataMin), (dataMax: number) => Math.max(0, dataMax)]}
         />
         {diverging ? <ReferenceLine y={0} stroke="var(--color-border)" strokeWidth={1} /> : null}
         <ChartTooltip

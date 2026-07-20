@@ -58,7 +58,7 @@ export function ItemsPage() {
                 <>
                   <ToolbarSearch value={search} onChange={setSearch} placeholder="Search items…" />
                   <Select value={productType} onValueChange={setProductType}>
-                    <SelectTrigger className="w-40 bg-background">
+                    <SelectTrigger className="w-40 bg-background" aria-label="Filter by product type">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>

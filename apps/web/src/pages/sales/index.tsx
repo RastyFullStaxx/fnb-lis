@@ -37,21 +37,24 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
-const KIND_COPY: Record<SaleKind, { title: string; hint: string; button: string }> = {
+const KIND_COPY: Record<SaleKind, { title: string; hint: string; button: string; saved: string }> = {
   SALE: {
     title: "Record a sale",
     hint: "Revenue sales — price prefills from the item's retail.",
     button: "Save sale",
+    saved: "Sale recorded",
   },
   NON_REVENUE: {
     title: "Record non-revenue use",
     hint: "Comps, spillage, staff use… consumed but not sold. For a partial pour, enter the content amount per unit.",
     button: "Save non-revenue",
+    saved: "Non-revenue use recorded",
   },
   PRODUCTION: {
     title: "Record production use",
     hint: "Ingredients consumed by prep/production — counted as usage, no revenue.",
     button: "Save production",
+    saved: "Production use recorded",
   },
 };
 
@@ -76,6 +79,12 @@ export function SalesPage() {
   const role = (me.data?.user.role ?? "READONLY") as Role;
   const canVoid = can(role, "entries.void");
 
+  const activeEntries = (sales.data ?? []).filter((s) => s.status !== "VOID");
+  const netTotal = activeEntries.reduce(
+    (sum, s) => sum + s.unitPrice * s.qty * (1 - s.discountPct / 100),
+    0,
+  );
+
   return (
     <div>
       <PageHeader title="Sales" />
@@ -95,9 +104,16 @@ export function SalesPage() {
 
           <div className="lg:border-l lg:pl-6">
             <div className="mb-2 text-sm font-medium">Recent entries</div>
-            <div className="max-h-[30rem] divide-y overflow-y-auto">
+            <div aria-live="polite" className="max-h-[28rem] divide-y overflow-y-auto">
             {sales.isPending ? (
-              <Skeleton className="m-4 h-24" />
+              <div className="divide-y">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="space-y-1.5 px-4 py-2.5">
+                    <Skeleton className="h-4 w-3/5" />
+                    <Skeleton className="h-3 w-2/5" />
+                  </div>
+                ))}
+              </div>
             ) : (sales.data ?? []).length === 0 ? (
               <div className="p-6 text-center">
                 <Receipt className="mx-auto mb-2 size-6 text-muted-foreground/50" />
@@ -112,7 +128,7 @@ export function SalesPage() {
                 return (
                   <div key={sale.id} className={cn("flex items-center gap-3 px-4 py-2.5", voided && "opacity-50")}>
                     <div className="min-w-0 flex-1">
-                      <p className={cn("truncate text-sm font-medium", voided && "line-through")}>{name}</p>
+                      <p title={name} className={cn("truncate text-sm font-medium", voided && "line-through")}>{name}</p>
                       <p className="tnum text-xs text-muted-foreground">
                         {sale.saleDate} · ×{sale.qty}
                         {sale.kind === "SALE" && ` @ ${formatMoney(sale.unitPrice)}`}
@@ -146,6 +162,12 @@ export function SalesPage() {
               })
             )}
           </div>
+          {!sales.isPending && activeEntries.length > 0 && (
+            <div className="tnum border-t px-4 py-2 text-sm text-muted-foreground">
+              {activeEntries.length} {activeEntries.length === 1 ? "entry" : "entries"}
+              {kind === "SALE" && ` · ${formatMoney(netTotal)} net`}
+            </div>
+          )}
           </div>
         </TableSurface>
       </Tabs>
@@ -196,6 +218,9 @@ function QuickEntry({ kind }: { kind: SaleKind }) {
     if (!target) return;
     const q = Number(qty);
     if (!q || q <= 0) return toast.error("Enter a quantity");
+    // An empty price would silently record ₱0.00 revenue — block it; an explicitly typed 0 is allowed.
+    if (kind === "SALE" && price.trim() === "")
+      return toast.error("Enter the unit price — use the Non-revenue tab for comps");
     try {
       await mutations.create.mutateAsync({
         saleDate: date,
@@ -209,7 +234,7 @@ function QuickEntry({ kind }: { kind: SaleKind }) {
           kind === "NON_REVENUE" && target.type === "item" && content !== "" ? Number(content) : undefined,
         reason: kind === "NON_REVENUE" ? (reason as (typeof NON_REVENUE_REASONS)[number]) : undefined,
       });
-      toast.success("Saved");
+      toast.success(copy.saved);
       setTarget(null);
       setQty("1");
       setPrice("");
@@ -230,8 +255,8 @@ function QuickEntry({ kind }: { kind: SaleKind }) {
 
       <div className="grid grid-cols-[1fr_auto] gap-2">
         <div className="space-y-2">
-          <Label>Item or menu</Label>
-          <SaleTargetCombobox ref={comboRef} value={target} onSelect={pickTarget} />
+          <Label htmlFor="s-target">Item or menu</Label>
+          <SaleTargetCombobox id="s-target" ref={comboRef} value={target} onSelect={pickTarget} />
         </div>
         <div className="space-y-2">
           <Label htmlFor="s-date">Date</Label>
@@ -278,9 +303,9 @@ function QuickEntry({ kind }: { kind: SaleKind }) {
         {kind === "NON_REVENUE" && (
           <>
             <div className="space-y-2">
-              <Label>Reason</Label>
+              <Label htmlFor="s-reason">Reason</Label>
               <Select value={reason} onValueChange={setReason}>
-                <SelectTrigger>
+                <SelectTrigger id="s-reason">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -317,7 +342,7 @@ function QuickEntry({ kind }: { kind: SaleKind }) {
       )}
 
       <div className="flex justify-end">
-        <Button onClick={save} disabled={!item || mutations.create.isPending}>
+        <Button onClick={save} disabled={!target || mutations.create.isPending}>
           {mutations.create.isPending ? "Saving…" : copy.button}
         </Button>
       </div>
@@ -327,8 +352,8 @@ function QuickEntry({ kind }: { kind: SaleKind }) {
 
 const SaleTargetCombobox = forwardRef<
   HTMLButtonElement,
-  { value: SaleTarget | null; onSelect: (target: SaleTarget) => void }
->(function SaleTargetCombobox({ value, onSelect }, ref) {
+  { value: SaleTarget | null; onSelect: (target: SaleTarget) => void; id?: string }
+>(function SaleTargetCombobox({ value, onSelect, id }, ref) {
   const [open, setOpen] = useState(false);
   const items = useLocationItems();
   const menus = useMenus();
@@ -344,9 +369,9 @@ const SaleTargetCombobox = forwardRef<
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button ref={ref} variant="outline" role="combobox" aria-expanded={open} className="w-full justify-between font-normal">
+        <Button id={id} ref={ref} variant="outline" role="combobox" aria-expanded={open} className="w-full justify-between font-normal">
           {label ? (
-            <span className="truncate">
+            <span className="truncate" title={label}>
               {value?.type === "menu" && <Martini className="mr-1.5 inline size-3.5 text-primary" />}
               {label}
             </span>
