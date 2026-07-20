@@ -81,6 +81,16 @@ Signature patterns:
 - **Report table**: sticky first column + header, category group rows, negative variance rows tinted `destructive/8%` with red variance text, click-through drill-downs, print stylesheet (A4 landscape, repeating header, no chrome).
 - **Match badges** (imports): EXACT (blue), ALIAS (blue outline), FUZZY n% (amber), UNMATCHED (red outline).
 - **Empty states teach**: icon, one sentence, one primary action ("No counts yet — start your first count").
+- **Reports hub**: grouped by the question being asked — Reconciliation, Sales & Revenue, Stock & Movement, Losses & Returns — in the order an audit is worked. The Full Audit leads the page at its own weight above the groups, carrying the reconciliation formula; it is the report the product exists to produce, not the first of thirteen equals.
+
+### Two rules that stop form fields colliding
+
+Both were learned from a real overlap on Sales → Non-Revenue, where the Reason select painted over Content per Unit.
+
+1. **`SelectTrigger` is `w-full`, not shadcn's `w-fit`** (`components/ui/select.tsx`). `w-fit` sizes a control to its longest option, so it escapes its grid cell. Toolbar filters still pass an explicit `w-36`/`w-40`. Full width also matches `Input`, so both form controls size by one rule.
+2. **Panes measure themselves with container queries, not viewport breakpoints.** A form inside a two-pane card is ~429 px on a 13" laptop however wide the window is; `lg:` reports "plenty of room" and lays three columns into 145 px each. Use `@container` + `@`-variants on the pane.
+
+   **Watch the rem scale when picking a step.** This app ships an **18 px root font** (client req #1), and Tailwind's container breakpoints are rem-based — `@sm` is 24 rem = **432 px here, not 384 px**. That landed 3 px above the very pane it was meant to measure and silently kept the form stacked with no error anywhere. Measure the real pane at the real root size before choosing a step.
 
 The dashboard never shows four equal launch cards or an unqualified "All clear." Its next-action precedence is open count → unmatched import → purchase draft → empty catalog → beginning count → missing prices → Full Audit → next count → read-only reports. Variance leaders expose direction, percentage, cost, and retail values as semantic text; magnitude bars are supplementary only.
 

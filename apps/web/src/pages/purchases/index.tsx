@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router";
 import { Plus, ShoppingCart, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 import { can, type Role } from "@fnb/core";
+import { statusVariant } from "@/lib/status";
 import { useMe } from "@/api/auth";
 import { useLocationId, useSuppliers } from "@/api/location";
 import { useForfeitMutations, useForfeits, usePurchaseMutations, usePurchases } from "@/api/ops";
@@ -194,7 +195,7 @@ function PurchasesTab({
                   {p.refNo && <span className="ml-2 text-xs">({p.refNo})</span>}
                 </TableCell>
                 <TableCell>
-                  <Badge variant={p.status === "DRAFT" ? "default" : p.status === "COMMITTED" ? "secondary" : "outline"}>
+                  <Badge variant={statusVariant(p.status)}>
                     {p.status === "DRAFT" ? "Draft" : p.status === "COMMITTED" ? "Committed" : "Cancelled"}
                   </Badge>
                 </TableCell>
@@ -420,7 +421,7 @@ function ForfeitsTab() {
                     </p>
                   </div>
                   {canVoid && !voided && (
-                    <Button variant="ghost" size="sm" onClick={() => setVoiding(f)}>
+                    <Button variant="destructive" size="xs" onClick={() => setVoiding(f)}>
                       Cancel
                     </Button>
                   )}

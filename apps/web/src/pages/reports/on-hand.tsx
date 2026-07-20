@@ -124,7 +124,7 @@ export function OnHandReportPage() {
                       <TableCell className="font-medium">
                         {row.name}
                         {row.belowPar && (
-                          <Badge variant="outline" className="ml-2 border-warning-text/40 text-warning-text">
+                          <Badge variant="warning" className="ml-2">
                             below par
                           </Badge>
                         )}

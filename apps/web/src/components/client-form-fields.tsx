@@ -98,7 +98,7 @@ export function PackageAndModulesFields({
                 }
               }}
             >
-              <SelectTrigger className="w-full">
+              <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -120,7 +120,7 @@ export function PackageAndModulesFields({
             <ReadOnlyField>{PACKAGE_LABELS.ONE_TIME}</ReadOnlyField>
           ) : (
             <Select value={tier} onValueChange={(v) => handleTierChange(v as PackageType)}>
-              <SelectTrigger id="package-tier" className="w-full">
+              <SelectTrigger id="package-tier">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -136,7 +136,7 @@ export function PackageAndModulesFields({
         <div className="space-y-2">
           <Label htmlFor="max-entities">Max Locations</Label>
           <Select value={String(maxEntities)} onValueChange={(v) => onMaxEntitiesChange(Number(v))}>
-            <SelectTrigger id="max-entities" className="w-full">
+            <SelectTrigger id="max-entities">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

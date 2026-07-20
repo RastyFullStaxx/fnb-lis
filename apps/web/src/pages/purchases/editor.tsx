@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router";
 import { ArrowLeft, Check, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { can, type Role } from "@fnb/core";
+import { statusVariant } from "@/lib/status";
 import { useMe } from "@/api/auth";
 import { useLocationId } from "@/api/location";
 import { usePurchase, usePurchaseMutations } from "@/api/ops";
@@ -117,7 +118,7 @@ export function PurchaseEditorPage() {
             {p.status === "VOID" && ` · cancelled: ${p.voidReason}`}
           </p>
         </div>
-        <Badge className="ml-auto" variant={isDraft ? "default" : p.status === "COMMITTED" ? "secondary" : "outline"}>
+        <Badge className="ml-auto" variant={statusVariant(p.status)}>
           {isDraft ? "Draft" : p.status === "COMMITTED" ? "Committed" : "Cancelled"}
         </Badge>
         {/* Commit lives in the fixed header so it never scrolls out of reach on long drafts. */}
@@ -149,22 +150,29 @@ export function PurchaseEditorPage() {
       <TableSurface
         filters={
           isDraft ? (
-            <div className="grid w-full grid-cols-[minmax(0,1fr)_7rem_8rem_auto] items-end gap-2">
-              <div className="space-y-2">
-                <Label htmlFor="pl-item">Item</Label>
-                <ItemCombobox id="pl-item" ref={comboRef} value={item} onSelect={pickItem} autoFocus />
+            // Four columns need ~34rem; below that the fixed Qty/Unit Cost
+            // tracks and the Add button squeeze the Item combobox to nothing.
+            // Stack until the strip genuinely has the room. The container is
+            // the wrapper, not the grid — an element can't answer its own
+            // container query.
+            <div className="@container/strip w-full">
+              <div className="grid gap-3 @2xl/strip:grid-cols-[minmax(0,1fr)_7rem_8rem_auto] @2xl/strip:items-end">
+                <div className="space-y-2">
+                  <Label htmlFor="pl-item">Item</Label>
+                  <ItemCombobox id="pl-item" ref={comboRef} value={item} onSelect={pickItem} autoFocus />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="pl-qty">Qty</Label>
+                  <QuantityInput id="pl-qty" className="tnum bg-background" value={qty} onChange={(e) => setQty(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addLine()} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="pl-cost">Unit Cost</Label>
+                  <QuantityInput id="pl-cost" className="tnum bg-background" value={cost} onChange={(e) => setCost(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addLine()} />
+                </div>
+                <Button onClick={addLine} disabled={!item || mutations.addLine.isPending}>
+                  Add
+                </Button>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="pl-qty">Qty</Label>
-                <QuantityInput id="pl-qty" className="tnum bg-background" value={qty} onChange={(e) => setQty(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addLine()} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="pl-cost">Unit Cost</Label>
-                <QuantityInput id="pl-cost" className="tnum bg-background" value={cost} onChange={(e) => setCost(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addLine()} />
-              </div>
-              <Button onClick={addLine} disabled={!item || mutations.addLine.isPending}>
-                Add
-              </Button>
             </div>
           ) : undefined
         }
@@ -218,7 +226,7 @@ export function PurchaseEditorPage() {
                           <Trash2 className="size-4" />
                         </Button>
                       ) : canVoid && !voided ? (
-                        <Button variant="ghost" size="sm" onClick={() => setVoidingLine(line)}>
+                        <Button variant="destructive" size="xs" onClick={() => setVoidingLine(line)}>
                           Cancel
                         </Button>
                       ) : null}

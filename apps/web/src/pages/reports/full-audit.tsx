@@ -543,7 +543,7 @@ function CategoryRows({
           <TableCell className={cn("sticky left-0 z-10", row.flags.short ? SHORT_ROW_STICKY_BG : "bg-background")}>
             <span className="font-medium">{row.itemName}</span>
             {row.flags.missingPrice && (
-              <Badge variant="outline" className="ml-2 border-warning-text/40 text-warning-text print:hidden">
+              <Badge variant="warning" className="ml-2 print:hidden">
                 no price
               </Badge>
             )}

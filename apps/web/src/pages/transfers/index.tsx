@@ -59,13 +59,13 @@ function StatusBadge({ transfer }: { transfer: Transfer }) {
   const lines = transfer.lineCount ?? 0;
   if (lines > 0 && received >= lines) {
     return (
-      <Badge variant="outline" className="border-success/40 bg-success/10 text-success">
+      <Badge variant="success">
         Received
       </Badge>
     );
   }
   return (
-    <Badge variant="outline" className="border-warning text-warning-text">
+    <Badge variant="warning">
       {received > 0 ? `${received}/${lines} received` : "Awaiting receipt"}
     </Badge>
   );

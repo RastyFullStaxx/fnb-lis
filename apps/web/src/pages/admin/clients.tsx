@@ -81,19 +81,19 @@ function localDate(iso: string): string {
 
 function AccessStateBadge({ sub }: { sub: AdminSubscription }) {
   if (sub.status === "CANCELLED") return <Badge variant="destructive">Cancelled</Badge>;
-  if (sub.status === "SUSPENDED") return <Badge variant="outline">Suspended</Badge>;
-  if (sub.status === "TRIAL") return <Badge variant="secondary">Trial</Badge>;
+  if (sub.status === "SUSPENDED") return <Badge variant="warning">Suspended</Badge>;
+  if (sub.status === "TRIAL") return <Badge variant="default">Trial</Badge>;
 
   if (sub.billingCycle !== "MONTHLY") {
     return sub.paid
-      ? <Badge variant="default">Active</Badge>
-      : <Badge variant="outline" className="text-warning-text border-warning-text/40">Unpaid</Badge>;
+      ? <Badge variant="success">Active</Badge>
+      : <Badge variant="warning">Unpaid</Badge>;
   }
 
   const state = deriveAccessState(sub);
-  if (state === "ACTIVE") return <Badge variant="default">Active</Badge>;
-  if (state === "VIEW_ONLY") return <Badge variant="destructive">View-only</Badge>;
-  return <Badge variant="outline" className="text-warning-text border-warning-text/40">Grace Period</Badge>;
+  if (state === "ACTIVE") return <Badge variant="success">Active</Badge>;
+  if (state === "VIEW_ONLY") return <Badge variant="warning">View-only</Badge>;
+  return <Badge variant="warning">Grace Period</Badge>;
 }
 
 function DueBadge({ sub }: { sub: AdminSubscription }) {
@@ -550,7 +550,7 @@ function ClientDetailBody({ client }: { client: AdminClient }) {
       {sub && !cancelled && (
         <div className="space-y-2 pt-1">
           {currentPeriodPaid && (
-            <div className="flex items-center gap-1.5 rounded-md bg-success/10 border border-success/30 px-3 py-1.5 text-xs text-success w-fit">
+            <div className="flex items-center gap-1.5 rounded-md bg-success/10 border border-success/30 px-3 py-1.5 text-xs text-success-text w-fit">
               <CheckCircle2 className="size-3.5" />
               Paid
               {sub.lastPaidAt && <span>· {localDate(sub.lastPaidAt)}</span>}

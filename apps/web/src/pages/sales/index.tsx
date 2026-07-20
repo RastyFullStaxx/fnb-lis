@@ -37,7 +37,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
-const KIND_COPY: Record<SaleKind, { title: string; hint?: string; button: string; saved: string }> = {
+const KIND_COPY: Record<SaleKind, { title: string; button: string; saved: string }> = {
   SALE: {
     title: "Record a Sale",
     button: "Save Sale",
@@ -45,7 +45,6 @@ const KIND_COPY: Record<SaleKind, { title: string; hint?: string; button: string
   },
   NON_REVENUE: {
     title: "Record Non-Revenue Use",
-    hint: "For a partial pour, enter the content amount per unit.",
     button: "Save Non-Revenue",
     saved: "Non-revenue use recorded",
   },
@@ -56,8 +55,6 @@ const KIND_COPY: Record<SaleKind, { title: string; hint?: string; button: string
   },
 };
 
-/** Labels for every stored reason — canonical buckets plus legacy codes on
-    historical rows (the entry select offers only the canonical three). */
 /** One labelled fact in a Recent Entries row: "Quantity: 3". */
 function EntryFact({ label, value }: { label: string; value: string | number }) {
   return (
@@ -68,6 +65,8 @@ function EntryFact({ label, value }: { label: string; value: string | number }) 
   );
 }
 
+/** Labels for every stored reason — canonical buckets plus legacy codes on
+    historical rows (the entry select offers only the canonical three). */
 const REASON_LABELS: Record<string, string> = {
   SPOILAGE_SPILLAGE: "Spoilage & Spillages",
   TRIMMING: "Trimming",
@@ -141,7 +140,10 @@ export function SalesPage() {
                 return (
                   <div key={sale.id} className={cn("flex items-center gap-3 px-4 py-2.5", voided && "opacity-50")}>
                     <div className="min-w-0 flex-1">
-                      <p title={name} className={cn("truncate text-sm font-medium", voided && "line-through")}>{name}</p>
+                      {/* Wraps rather than truncates — the row is already
+                          multi-line, so a second line is cheaper than hiding
+                          which item the entry is for. */}
+                      <p className={cn("text-sm font-medium", voided && "line-through")}>{name}</p>
                       {/* Labelled rows — an entry's numbers are read one at a
                           time (which price? what discount?), so each fact gets
                           its own line instead of a run-on dot-separated string. */}
@@ -151,8 +153,20 @@ export function SalesPage() {
                         {sale.kind === "SALE" && (
                           <EntryFact label="Price" value={formatMoney(sale.unitPrice)} />
                         )}
-                        {sale.discountPct > 0 && (
-                          <EntryFact label="Discount" value={`${sale.discountPct}%`} />
+                        {/* Always shown on a sale, even at 0% — the client
+                            reads discount as a fact of every sale, and a row
+                            that omits it looks like data went missing. */}
+                        {sale.kind === "SALE" && (
+                          <EntryFact
+                            label="Discount"
+                            value={
+                              sale.discountPct > 0
+                                ? `${sale.discountPct}% (−${formatMoney(
+                                    sale.unitPrice * sale.qty * (sale.discountPct / 100),
+                                  )})`
+                                : "None"
+                            }
+                          />
                         )}
                         {sale.contentOverride && (
                           <EntryFact label="Content per unit" value={sale.contentOverride} />
@@ -180,7 +194,7 @@ export function SalesPage() {
                       );
                     })()}
                     {canVoid && !voided && (
-                      <Button variant="ghost" size="sm" onClick={() => setVoiding(sale)}>
+                      <Button variant="destructive" size="xs" onClick={() => setVoiding(sale)}>
                         Cancel
                       </Button>
                     )}
@@ -274,13 +288,20 @@ function QuickEntry({ kind }: { kind: SaleKind }) {
   };
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h3 className="font-medium">{copy.title}</h3>
-        {copy.hint ? <p className="text-sm text-muted-foreground">{copy.hint}</p> : null}
-      </div>
+    // Container, not viewport: this form sits in one half of a two-pane card,
+    // so its width is ~429px on a 13" laptop no matter how wide the window is.
+    // `lg:` and friends would report "plenty of room" and lay out three columns
+    // into 145px each. `@`-breakpoints measure the pane that actually holds it.
+    //
+    // Mind the scale when picking one: this app ships an 18px root font (client
+    // req #1, "larger readable fonts"), and Tailwind's container breakpoints are
+    // rem-based — @sm is 24rem, which is 432px here, not 384px. That put it 3px
+    // above this very pane and silently kept the form stacked. Prefer a step
+    // you've measured against the real pane at the real root size.
+    <div className="@container space-y-5">
+      <h3 className="font-medium">{copy.title}</h3>
 
-      <div className="grid grid-cols-[1fr_auto] gap-2">
+      <div className="grid gap-3 @xs:grid-cols-[minmax(0,1fr)_auto]">
         <div className="space-y-2">
           <Label htmlFor="s-target">Item or Menu</Label>
           <SaleTargetCombobox id="s-target" ref={comboRef} value={target} onSelect={pickTarget} />
@@ -291,84 +312,102 @@ function QuickEntry({ kind }: { kind: SaleKind }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-2">
-        <div className="space-y-2">
-          <Label htmlFor="s-qty">Quantity</Label>
-          <QuantityInput
-            id="s-qty"
-            className="tnum"
-            value={qty}
-            onChange={(e) => setQty(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && save()}
-          />
+      {/* The two kinds have genuinely different field widths, so they get their
+          own tracks rather than being forced through one `grid-cols-3`.
+          Quantity is always a short number; what sits beside it is not. */}
+      {kind === "SALE" && (
+        <div className="grid gap-3 grid-cols-2 @xs:grid-cols-[7rem_minmax(0,1fr)_minmax(0,1fr)]">
+          <div className="space-y-2">
+            <Label htmlFor="s-qty">Quantity</Label>
+            <QuantityInput
+              id="s-qty"
+              className="tnum"
+              value={qty}
+              onChange={(e) => setQty(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && save()}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="s-price">Price</Label>
+            <QuantityInput
+              id="s-price"
+              className="tnum"
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && save()}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="s-disc">Discount %</Label>
+            <QuantityInput
+              id="s-disc"
+              className="tnum"
+              placeholder="0"
+              value={discount}
+              onChange={(e) => setDiscount(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && save()}
+            />
+          </div>
         </div>
-        {kind === "SALE" && (
-          <>
-            <div className="space-y-2">
-              <Label htmlFor="s-price">Price</Label>
-              <QuantityInput
-                id="s-price"
-                className="tnum"
-                value={price}
-                onChange={(e) => setPrice(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && save()}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="s-disc">Discount %</Label>
-              <QuantityInput
-                id="s-disc"
-                className="tnum"
-                placeholder="0"
-                value={discount}
-                onChange={(e) => setDiscount(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && save()}
-              />
-            </div>
-          </>
-        )}
-        {kind === "NON_REVENUE" && (
-          <>
-            <div className="space-y-2">
-              <Label htmlFor="s-reason">Reason</Label>
-              {/* Client req (2026-07-20): exactly three encoding options —
-                  each drives its own report; legacy reasons remain readable
-                  on historical rows but can no longer be entered. */}
-              <Select value={reason} onValueChange={setReason}>
-                <SelectTrigger id="s-reason">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {NON_REVENUE_GROUPS.map((r) => (
-                    <SelectItem key={r} value={r}>
-                      {NON_REVENUE_GROUP_LABELS[r]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            {target?.type !== "menu" && (
-              <div className="space-y-2">
-                <Label htmlFor="s-content">Content per Unit</Label>
-                <QuantityInput
-                  id="s-content"
-                  className="tnum"
-                  placeholder={item?.itemVariant.contentTracked ? `e.g. 350 ${item.itemVariant.unit.name}` : "whole units"}
-                  value={content}
-                  onChange={(e) => setContent(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && save()}
-                />
-              </div>
-            )}
-          </>
-        )}
-      </div>
+      )}
 
-      {kind === "NON_REVENUE" && item?.itemVariant.contentTracked && (
-        <p className="text-xs text-muted-foreground">
-          Leave "content per unit" empty when whole {variantLabel(item.itemVariant)} units were used; fill it
-          for partial pours — e.g. 350 means each unit used 350 of {variantLabel(item.itemVariant)}.
-        </p>
+      {kind !== "SALE" && (
+        // Reason carries "Spoilage & Spillages" and Content per Unit carries a
+        // worked example, so they only share a row once the pane can actually
+        // hold three columns; below that Content takes a full row of its own.
+        <div className="grid gap-3 @xs:grid-cols-[7rem_minmax(0,1fr)] @2xl:grid-cols-[7rem_minmax(0,1fr)_minmax(0,1fr)]">
+          <div className="space-y-2">
+            <Label htmlFor="s-qty">Quantity</Label>
+            <QuantityInput
+              id="s-qty"
+              className="tnum"
+              value={qty}
+              onChange={(e) => setQty(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && save()}
+            />
+          </div>
+          {kind === "NON_REVENUE" && (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="s-reason">Reason</Label>
+                {/* Client req (2026-07-20): exactly three encoding options —
+                    each drives its own report; legacy reasons remain readable
+                    on historical rows but can no longer be entered. */}
+                <Select value={reason} onValueChange={setReason}>
+                  <SelectTrigger id="s-reason">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {NON_REVENUE_GROUPS.map((r) => (
+                      <SelectItem key={r} value={r}>
+                        {NON_REVENUE_GROUP_LABELS[r]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {target?.type !== "menu" && (
+                <div className="space-y-2 @xs:col-span-2 @2xl:col-span-1">
+                  <Label htmlFor="s-content">Content per Unit</Label>
+                  <QuantityInput
+                    id="s-content"
+                    className="tnum"
+                    // Empty means whole units — say so in the field itself rather
+                    // than in a paragraph underneath it.
+                    placeholder={
+                      item?.itemVariant.contentTracked
+                        ? `Whole units, or e.g. 350 ${item.itemVariant.unit.name}`
+                        : "Whole units"
+                    }
+                    value={content}
+                    onChange={(e) => setContent(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && save()}
+                  />
+                </div>
+              )}
+            </>
+          )}
+        </div>
       )}
 
       <div className="flex justify-end">

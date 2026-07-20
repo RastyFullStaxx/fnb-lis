@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { ClipboardList, Plus } from "lucide-react";
 import { toast } from "sonner";
+import { statusVariant } from "@/lib/status";
 import { useLocationId } from "@/api/location";
 import { useCountMutations, useCountSessions } from "@/api/ops";
 import { ApiError } from "@/api/http";
@@ -35,12 +36,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-/** One badge vocabulary for count-session status — the session page reuses it. */
-export const STATUS_BADGE: Record<string, "secondary" | "default" | "outline"> = {
-  OPEN: "default",
-  COMMITTED: "secondary",
-  VOID: "outline",
-};
 
 export function CountsPage() {
   const sessions = useCountSessions();
@@ -133,7 +128,7 @@ export function CountsPage() {
                 <TableRow key={s.id} className={s.status === "VOID" ? "opacity-50" : undefined}>
                   <TableCell className="tnum font-medium">{s.countDate}</TableCell>
                   <TableCell>
-                    <Badge variant={STATUS_BADGE[s.status] ?? "outline"}>
+                    <Badge variant={statusVariant(s.status)}>
                       {s.status === "OPEN" ? "Counting" : s.status === "COMMITTED" ? "Committed" : "Cancelled"}
                     </Badge>
                     {s.voidReason && (

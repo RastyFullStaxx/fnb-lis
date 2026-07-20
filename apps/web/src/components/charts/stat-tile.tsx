@@ -51,7 +51,7 @@ export function StatTile({
           <span
             className={cn(
               "flex items-center gap-0.5 font-medium",
-              delta.good === null ? "text-muted-foreground" : delta.good ? "text-success" : "text-destructive",
+              delta.good === null ? "text-muted-foreground" : delta.good ? "text-success-text" : "text-destructive",
             )}
           >
             <DeltaIcon className="size-3" aria-hidden="true" />

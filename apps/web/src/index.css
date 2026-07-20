@@ -32,9 +32,13 @@
 
   --success: oklch(0.55 0.15 155);
   --warning: oklch(0.62 0.15 75);
-  /* Text-safe warning: --warning is a tint/badge color that sits ~3.6:1 on
-     white; darken it for 12-14px text so amber labels clear the 4.5:1 floor. */
+  /* Text-safe semantic inks. --warning sits ~3.7:1 on white and --success
+     ~4.4:1 — both miss the 4.5:1 floor for 12-14px labels, so each has a
+     darkened sibling for text/borders (measured 6.1:1 and 5.5:1). The base
+     tokens stay for tints, fills and chart series. --destructive needs no
+     sibling: it already measures 5.4:1 as text. */
   --warning-text: oklch(0.5 0.13 75);
+  --success-text: oklch(0.5 0.14 155);
 
   --border: oklch(0.916 0.008 264);
   --input: oklch(0.916 0.008 264);
@@ -43,8 +47,8 @@
   --chart-1: oklch(0.488 0.217 264);
   --chart-2: oklch(0.62 0.14 264);
   --chart-3: oklch(0.75 0.09 264);
-  --chart-4: oklch(0.55 0.15 155);
-  --chart-5: oklch(0.62 0.15 75);
+  --chart-4: var(--success);
+  --chart-5: var(--warning);
 
   /* The one Committed surface: deep royal ink sidebar. */
   --sidebar: oklch(0.28 0.09 264);
@@ -85,6 +89,7 @@
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-warning-text: var(--warning-text);
+  --color-success-text: var(--success-text);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);

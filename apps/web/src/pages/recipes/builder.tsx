@@ -136,7 +136,7 @@ export function RecipeBuilderSheet({
           </SheetDescription>
         </SheetHeader>
 
-        <div className="space-y-5 px-4 pb-4">
+        <div className="@container/builder space-y-5 px-4 pb-4">
           {!menu && (
             <div className="space-y-2">
               <Label htmlFor="menu-name">Menu Name</Label>
@@ -186,7 +186,9 @@ export function RecipeBuilderSheet({
 
           <Separator />
 
-          <div className="grid grid-cols-3 items-end gap-3">
+          {/* The sheet is full-width on a phone, where three columns leave
+              ~105px for a peso figure that needs more. */}
+          <div className="grid gap-4 @sm/builder:grid-cols-3 @sm/builder:items-end">
             <div className="space-y-2">
               <Label htmlFor="menu-srp">SRP</Label>
               <QuantityInput

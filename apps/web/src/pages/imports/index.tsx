@@ -49,12 +49,12 @@ export const SOURCE_LABELS: Record<string, string> = {
   IMAGE: "Image",
 };
 
-const STATUS_BADGE: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
-  NEEDS_REVIEW: { label: "Needs Review", variant: "default" },
-  COMMITTED: { label: "Committed", variant: "secondary" },
-  REVERSED: { label: "Reversed", variant: "outline" },
+const STATUS_BADGE: Record<string, { label: string; variant: "default" | "success" | "warning" | "destructive" }> = {
+  NEEDS_REVIEW: { label: "Needs Review", variant: "warning" },
+  COMMITTED: { label: "Committed", variant: "success" },
+  REVERSED: { label: "Reversed", variant: "destructive" },
   FAILED: { label: "Failed", variant: "destructive" },
-  PROCESSING: { label: "Processing", variant: "outline" },
+  PROCESSING: { label: "Processing", variant: "default" },
 };
 
 export function ImportsPage() {

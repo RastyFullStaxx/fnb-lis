@@ -136,7 +136,7 @@ export function StockPage() {
               {rows.data!.map((row) => {
                 const missing = row.cost === 0 || row.retail === 0;
                 return (
-                  <TableRow key={row.id} className={cn("group", missing && "bg-destructive/5")}>
+                  <TableRow key={row.id} className={cn("group", missing && "bg-warning/5")}>
                     <TableCell>
                       <span className="font-medium">{row.itemVariant.item.name}</span>
                       <span className="ml-2 text-sm text-muted-foreground">{variantLabel(row.itemVariant)}</span>
@@ -152,9 +152,9 @@ export function StockPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       {missing ? (
-                        <Badge variant="destructive">No price</Badge>
+                        <Badge variant="warning">No price</Badge>
                       ) : (
-                        <Badge variant="secondary">Ready</Badge>
+                        <Badge variant="success">Ready</Badge>
                       )}
                     </TableCell>
                   </TableRow>

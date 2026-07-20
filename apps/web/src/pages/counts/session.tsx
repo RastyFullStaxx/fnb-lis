@@ -3,12 +3,12 @@ import { Link, useParams } from "react-router";
 import { ArrowLeft, Check, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { can, type Role } from "@fnb/core";
+import { statusVariant } from "@/lib/status";
 import { useMe } from "@/api/auth";
 import { useLocationId } from "@/api/location";
 import { useCountMutations, useCountSession } from "@/api/ops";
 import { variantLabel, type CountLine, type LocationItem } from "@/api/types";
 import { ApiError } from "@/api/http";
-import { STATUS_BADGE } from "@/pages/counts";
 import { ItemCombobox } from "@/components/item-combobox";
 import { VoidDialog } from "@/components/void-dialog";
 import { useWeighPreview, WeighPreviewStrip } from "@/components/weigh-calculator";
@@ -109,7 +109,7 @@ function SessionHeader({ session }: { session: SessionWithLines }) {
               : `Cancelled: ${session.voidReason}`}
         </p>
       </div>
-      <Badge className="ml-auto" variant={STATUS_BADGE[session.status] ?? "outline"}>
+      <Badge className="ml-auto" variant={statusVariant(session.status)}>
         {session.status === "OPEN" ? "Counting" : session.status === "COMMITTED" ? "Committed" : "Cancelled"}
       </Badge>
     </div>
@@ -444,7 +444,7 @@ function LineRow({
         </Button>
       )}
       {onVoid && (
-        <Button variant="ghost" size="sm" onClick={onVoid}>
+        <Button variant="destructive" size="xs" onClick={onVoid}>
           Cancel
         </Button>
       )}

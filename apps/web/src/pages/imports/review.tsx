@@ -46,7 +46,7 @@ import { cn } from "@/lib/utils";
 const METHOD_BADGE: Record<string, { label: string; className: string }> = {
   EXACT: { label: "Exact", className: "border-primary text-primary" },
   ALIAS: { label: "Alias", className: "border-primary/60 text-primary" },
-  FUZZY: { label: "Fuzzy", className: "border-warning text-warning-text" },
+  FUZZY: { label: "Fuzzy", className: "border-warning/35 bg-warning/10 text-warning-text" },
   MANUAL: { label: "Manual", className: "border-primary text-primary" },
 };
 
@@ -246,7 +246,7 @@ export function ImportReviewPage() {
               </AlertDialogContent>
             </AlertDialog>
           )}
-          {b.status === "REVERSED" && <Badge variant="outline">Reversed</Badge>}
+          {b.status === "REVERSED" && <Badge variant="destructive">Reversed</Badge>}
         </div>
       </div>
 
@@ -320,7 +320,7 @@ export function ImportReviewPage() {
                       </Button>
                     </div>
                   ) : (
-                    <Badge variant={row.status === "COMMITTED" ? "secondary" : "outline"}>
+                    <Badge variant={row.status === "COMMITTED" ? "success" : "outline"}>
                       {ROW_STATUS_LABELS[row.status] ?? row.status}
                     </Badge>
                   )}

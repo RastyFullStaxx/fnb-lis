@@ -526,7 +526,7 @@ function AttentionQueue({
         </ul>
       ) : allClear ? (
         <div className="mt-4 flex gap-3 rounded-md bg-success/10 p-3 text-sm">
-          <Check className="mt-0.5 size-4 shrink-0 text-success" />
+          <Check className="mt-0.5 size-4 shrink-0 text-success-text" />
           <p>No pricing, import, delivery, or count work needs review right now.</p>
         </div>
       ) : data.readiness.activeItems === 0 || data.period.countDates === 0 ? (
@@ -622,7 +622,7 @@ function SetupChecklist({
           {steps.map((step) => (
             <li key={step.title} className="flex gap-3">
               {step.done ? (
-                <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-success/10 text-success" aria-label="Complete">
+                <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-success/10 text-success-text" aria-label="Complete">
                   <Check className="size-3.5" />
                 </span>
               ) : (
@@ -696,13 +696,13 @@ function VarianceLeaders({ data, to }: { data: DashboardData; to: (path: string)
                       <p className="truncate text-sm font-medium" title={item.itemName}>{item.itemName}</p>
                       <div className="mt-2 h-1 max-w-72 overflow-hidden rounded-full bg-muted" aria-hidden="true">
                         <div
-                          className={item.short ? "h-full rounded-full bg-destructive" : "h-full rounded-full bg-success"}
+                          className={item.short ? "h-full rounded-full bg-destructive" : "h-full rounded-full bg-primary"}
                           style={{ width }}
                         />
                       </div>
                     </div>
                     <div className="text-left sm:text-right">
-                      <p className={item.short ? "text-xs font-medium text-destructive" : "text-xs font-medium text-success"}>
+                      <p className={item.short ? "text-xs font-medium text-destructive" : "text-xs font-medium text-primary"}>
                         {item.short ? "Shortage" : "Surplus"}
                       </p>
                       <p className="mt-0.5 text-xs text-muted-foreground tnum">

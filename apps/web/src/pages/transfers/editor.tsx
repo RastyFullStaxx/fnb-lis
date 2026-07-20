@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router";
 import { ArrowLeft, Check, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { can, type Role } from "@fnb/core";
+import { statusVariant } from "@/lib/status";
 import { useMe } from "@/api/auth";
 import { useLocationId } from "@/api/location";
 import { useTransfer, useTransferMutations } from "@/api/ops";
@@ -173,7 +174,7 @@ export function TransferEditorPage() {
               </AlertDialogContent>
             </AlertDialog>
           )}
-          <Badge variant={isDraft ? "default" : "secondary"}>
+          <Badge variant={statusVariant(isDraft ? "DRAFT" : t.status)}>
             {isDraft ? "Draft" : t.status === "COMMITTED" ? "Committed" : "Cancelled"}
           </Badge>
         </div>
@@ -253,7 +254,7 @@ export function TransferEditorPage() {
                           <Trash2 className="size-4" />
                         </Button>
                       ) : canVoid && !voided ? (
-                        <Button variant="ghost" size="sm" onClick={() => setVoidingLine(line)}>
+                        <Button variant="destructive" size="xs" onClick={() => setVoidingLine(line)}>
                           Cancel
                         </Button>
                       ) : canVoidReceipt && !voided && receipt ? (

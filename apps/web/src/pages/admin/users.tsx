@@ -262,7 +262,7 @@ export function AdminUsersPage() {
                     )}
                   </TableCell>
                   <TableCell>
-                    <Badge variant={u.status === "ACTIVE" ? "secondary" : "outline"}>
+                    <Badge variant={u.status === "ACTIVE" ? "success" : "destructive"}>
                       {u.status === "ACTIVE" ? "Active" : "Disabled"}
                     </Badge>
                   </TableCell>
