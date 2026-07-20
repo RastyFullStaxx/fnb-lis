@@ -50,7 +50,9 @@ async function copyMenusBetweenLocations(opts: {
   const destByVariantId = new Map(destLocationItems.map((li) => [li.itemVariantId, li]));
   const destNameSet = new Set(destExistingNames.map((m) => m.name.toLowerCase()));
 
-  const toCopy: typeof sourceMenus = [];
+  // Carry the validated current version with each menu — the guard below has
+  // already proven it exists, and pairing them keeps the type checker with us.
+  const toCopy: Array<{ menu: (typeof sourceMenus)[number]; version: (typeof sourceMenus)[number]["versions"][number] }> = [];
   const skippedExisting: string[] = [];
   const skippedNoRecipe: string[] = [];
   const skippedMissingIngredients: { name: string; missing: string[] }[] = [];
@@ -73,13 +75,12 @@ async function copyMenusBetweenLocations(opts: {
       });
       continue;
     }
-    toCopy.push(menu);
+    toCopy.push({ menu, version });
   }
 
   const copied: string[] = [];
   await prisma.$transaction(async (tx) => {
-    for (const menu of toCopy) {
-      const version = menu.versions[0];
+    for (const { menu, version } of toCopy) {
       const lines = version.lines.map((line) => {
         const destIngredient = destByVariantId.get(line.locationItem.itemVariantId)!;
         return {

@@ -88,8 +88,8 @@ export function PurchaseReportPage() {
                 <TableHead>Supplier</TableHead>
                 <TableHead>Item</TableHead>
                 <TableHead className="text-right">Qty</TableHead>
-                <TableHead className="text-right">Unit cost</TableHead>
-                <TableHead className="text-right">Line total</TableHead>
+                <TableHead className="text-right">Unit Cost</TableHead>
+                <TableHead className="text-right">Line Total</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -126,11 +126,11 @@ export function PurchaseReportPage() {
       {report.data && report.data.rows.length > 0 && (
         <div className="mt-8 grid gap-8 lg:grid-cols-2">
           <div>
-            <h3 className="mb-2 text-sm font-semibold">Cost by supplier</h3>
+            <h3 className="mb-2 text-sm font-semibold">Cost by Supplier</h3>
             <MagnitudeBars data={supplierBars} name="Cost" />
           </div>
           <div>
-            <h3 className="mb-2 text-sm font-semibold">By supplier</h3>
+            <h3 className="mb-2 text-sm font-semibold">By Supplier</h3>
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">

@@ -95,7 +95,7 @@ From the client's 16-item list after the July check-up.
 | 17 | Non-revenue encoding options: **Spoilage & Spillages / Trimming / Marketing & OTH (On the House)** — each generates its own report; the Full/Detailed report keeps them under Non-Revenue | ✅ Entry select offers exactly these three; Non-Revenue report + exports gained bucket tabs (`?group=`); legacy reasons fold into the nearest bucket for reporting, Full Audit rollup untouched |
 | 18 | Production report **under Sales** ("Input Production") | ✅ Sales report gained a Production view tab (+ export) listing PRODUCTION records at zero revenue |
 | 19 | Discounted report under Sales — every input with a discount | ✅ Sales report gained a Discounted view tab (+ export) — SALE rows with `discountPct > 0` |
-| 11 (cont.) | "Full and detailed reports" — client will send a legacy example ("mag send ako example mamya"); liked the stockledger prototype's analytics/charts | ⏳ Interim: dashboard Audit-trends band, Full Audit verdict strip + per-category chart, and per-report charts shipped 2026-07-20. **Hold final shape until the example arrives** |
+| 11 (cont.) | "Full and detailed reports" — formats RECEIVED 2026-07-20: two XLSX examples + an 11-report list | 📋 Answer key captured in [client-report-formats.md](client-report-formats.md) (examples copied to `docs/reference/`). Quick wins shipped (Variance Report entry, NR buckets, Production/Discounted views); the full report suite is the next build phase — four decisions need the client first (averaged cost basis, Cost-of-Sold formula, PDF route, shot/bottle mapping) |
 
 ## Open decisions — raise at the next client check-in
 

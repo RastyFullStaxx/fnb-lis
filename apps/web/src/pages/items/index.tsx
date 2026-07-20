@@ -62,7 +62,7 @@ export function ItemsPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value={ALL}>All types</SelectItem>
+                      <SelectItem value={ALL}>All Types</SelectItem>
                       {(productTypes.data?.productTypes ?? []).map((t) => (
                         <SelectItem key={t} value={t}>
                           {t}

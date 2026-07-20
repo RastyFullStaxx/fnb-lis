@@ -86,7 +86,7 @@ export function ItemFormSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
         <SheetHeader>
-          <SheetTitle>New item</SheetTitle>
+          <SheetTitle>New Item</SheetTitle>
           <SheetDescription>
             Define the item once here; each client location prices it in its own catalog.
           </SheetDescription>

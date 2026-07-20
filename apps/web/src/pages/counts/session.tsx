@@ -300,7 +300,7 @@ function OpenSession({ session }: { session: SessionWithLines }) {
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>Keep counting</AlertDialogCancel>
-                <AlertDialogAction onClick={commit}>Commit count</AlertDialogAction>
+                <AlertDialogAction onClick={commit}>Commit Count</AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>

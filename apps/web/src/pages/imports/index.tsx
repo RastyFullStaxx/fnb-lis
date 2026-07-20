@@ -91,7 +91,7 @@ export function ImportsPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ALL">All types</SelectItem>
+                <SelectItem value="ALL">All Types</SelectItem>
                 <SelectItem value="SALES">Sales</SelectItem>
                 <SelectItem value="PURCHASES">Purchases</SelectItem>
                 <SelectItem value="NON_REVENUE">Non-revenue</SelectItem>
@@ -140,7 +140,7 @@ export function ImportsPage() {
                 <TableHead>Source</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Rows</TableHead>
-                <TableHead>Uploaded by</TableHead>
+                <TableHead>Uploaded By</TableHead>
                 <TableHead className="w-24" />
               </TableRow>
             </TableHeader>

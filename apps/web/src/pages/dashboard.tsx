@@ -299,7 +299,7 @@ function TrendsBand() {
         <div className="flex flex-wrap items-baseline justify-between gap-3">
           <div className="flex items-center gap-2">
             <TrendingDown className="size-4 text-primary" />
-            <h2 className="text-base font-semibold">Audit trends</h2>
+            <h2 className="text-base font-semibold">Audit Trends</h2>
           </div>
           <p className="text-xs text-muted-foreground">
             Last {periods.length} closed {periods.length === 1 ? "period" : "periods"}
@@ -344,13 +344,13 @@ function TrendsBand() {
 
         <div className="mt-5 grid gap-8 lg:grid-cols-2">
           <section aria-label="Sales by audit period">
-            <h3 className="text-sm font-semibold">Sales by period</h3>
+            <h3 className="text-sm font-semibold">Sales by Period</h3>
             <div className="mt-3">
               <PeriodColumns data={columns((p) => p.revenue)} name="Sales" height={200} />
             </div>
           </section>
           <section aria-label="Variance by audit period">
-            <h3 className="text-sm font-semibold">Variance by period (cost)</h3>
+            <h3 className="text-sm font-semibold">Variance by Period (Cost)</h3>
             <div className="mt-3">
               <PeriodColumns data={columns((p) => p.varianceCost)} name="Variance" diverging height={200} />
             </div>
@@ -451,7 +451,7 @@ function NextAction({
     <section aria-labelledby="next-action-heading">
       <div className="flex items-center gap-2 text-primary">
         <action.icon className="size-4" />
-        <h2 id="next-action-heading" className="text-sm font-semibold text-foreground">Next action</h2>
+        <h2 id="next-action-heading" className="text-sm font-semibold text-foreground">Next Action</h2>
       </div>
       <h3 className="mt-4 text-lg font-semibold tracking-tight">{action.title}</h3>
       <p className="mt-1 max-w-[60ch] text-sm leading-6 text-muted-foreground">{action.description}</p>
@@ -506,7 +506,7 @@ function AttentionQueue({
         ) : (
           <Check className="size-4 text-muted-foreground" />
         )}
-        <h2 id="attention-heading" className="text-sm font-semibold">Needs attention</h2>
+        <h2 id="attention-heading" className="text-sm font-semibold">Needs Attention</h2>
       </div>
 
       {items.length > 0 ? (
@@ -661,7 +661,7 @@ function VarianceLeaders({ data, to }: { data: DashboardData; to: (path: string)
           <div>
             <div className="flex items-center gap-2">
               <TrendingDown className="size-4 text-primary" />
-              <h2 className="text-base font-semibold">Variance leaders</h2>
+              <h2 className="text-base font-semibold">Variance Leaders</h2>
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
               {data.period.latest
@@ -743,7 +743,7 @@ function RecentActivity({
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <Activity className="size-4 text-primary" />
-            <h2 className="text-base font-semibold">Recent activity</h2>
+            <h2 className="text-base font-semibold">Recent Activity</h2>
           </div>
           {can(role, "activity.view") ? (
             <Button asChild size="sm" variant="ghost">

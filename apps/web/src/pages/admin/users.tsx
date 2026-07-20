@@ -150,7 +150,7 @@ export function AdminUsersPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ALL">All statuses</SelectItem>
+                <SelectItem value="ALL">All Statuses</SelectItem>
                 <SelectItem value="ACTIVE">Active</SelectItem>
                 <SelectItem value="DISABLED">Disabled</SelectItem>
               </SelectContent>

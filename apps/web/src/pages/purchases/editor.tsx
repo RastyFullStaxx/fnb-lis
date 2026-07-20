@@ -159,7 +159,7 @@ export function PurchaseEditorPage() {
                 <QuantityInput id="pl-qty" className="tnum bg-background" value={qty} onChange={(e) => setQty(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addLine()} />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="pl-cost">Unit cost</Label>
+                <Label htmlFor="pl-cost">Unit Cost</Label>
                 <QuantityInput id="pl-cost" className="tnum bg-background" value={cost} onChange={(e) => setCost(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addLine()} />
               </div>
               <Button onClick={addLine} disabled={!item || mutations.addLine.isPending}>
@@ -174,7 +174,7 @@ export function PurchaseEditorPage() {
             <TableRow className="bg-muted hover:bg-muted">
               <TableHead>Item</TableHead>
               <TableHead className="text-right">Qty</TableHead>
-              <TableHead className="text-right">Unit cost</TableHead>
+              <TableHead className="text-right">Unit Cost</TableHead>
               <TableHead className="text-right">Total</TableHead>
               <TableHead className="w-16" />
             </TableRow>

@@ -155,7 +155,7 @@ function OutgoingTab({ createOpen, setCreateOpen }: { createOpen: boolean; setCr
               <TableHead>To</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Lines</TableHead>
-              <TableHead className="text-right">At cost</TableHead>
+              <TableHead className="text-right">At Cost</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -217,7 +217,7 @@ function CreateTransferDialog({ open, onOpenChange }: { open: boolean; onOpenCha
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>New transfer</DialogTitle>
+          <DialogTitle>New Transfer</DialogTitle>
           <DialogDescription>
             Stock moves out of this location on the transfer date; the destination confirms what arrives.
           </DialogDescription>
@@ -281,7 +281,7 @@ function IncomingTab() {
               <TableHead>From</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Lines</TableHead>
-              <TableHead className="text-right">At cost</TableHead>
+              <TableHead className="text-right">At Cost</TableHead>
               <TableHead className="w-28" />
             </TableRow>
           </TableHeader>

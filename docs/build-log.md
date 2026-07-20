@@ -194,6 +194,30 @@ fixes applied across every page group. The headline pieces:
 - Listing-report defaults switched to the **open period** (last count → today) so entries since
   the last count are visible on first paint (deviation #20).
 
+### Phase 10 addendum 2 (2026-07-20, third pass)
+
+- **Client report formats received** (request #11 resolved into a spec): two XLSX examples decoded
+  — both share ONE 24-column layout (Shot|Bottle sales split, B-Cost/E-Cost, Used-vs-Sales +
+  Overall Variance with non-rev added back, category TOTAL rows, headline Beverage-Cost ratio).
+  Full mapping to `ReconRow` + the 11-report status table live in
+  [client-report-formats.md](client-report-formats.md); example files copied to `docs/reference/`.
+  Four decisions blocked on the client (averaged cost basis, Cost-of-Sold formula, PDF route,
+  shot/bottle mapping).
+- **Quick wins**: Variance Report hub card (`full-audit?variance=only` pre-arms the filter);
+  Transfers card labeled "(Requisition)" to match the client's vocabulary.
+- **Full Audit no-horizontal-scroll**: `SidebarInset min-w-0` (one wide child was dragging the
+  whole page sideways and hiding the export buttons) + chart containers clip stale measurements +
+  Compact-by-default (8 columns, 0px overflow; "All Columns" opt-in with short headers in compact).
+- **Adversarial review round 3 (12 agents): 8 confirmed, 8 fixed** — atomic count-line edits via
+  the existing PUT (add-then-remove could double-count inventory), honest titles on view/bucket
+  exports, negative-bar end-label geometry (traced into recharts source), zero-delta suppression,
+  `₱1000K`→`₱1M`, palette `?q=` deep links now actually filter Stock/Recipes/Suppliers.
+- **Title Case sweep** (client preference, recorded in DESIGN.md Voice): nav, buttons, tabs,
+  column headers, section headings across the app; sentences stay sentences.
+- Resolved the merge conflict in `pages/recipes/index.tsx` (kept both: teammate's copy-menus
+  feature + palette `?q=` seeding) and fixed the type errors in the teammate's `menus.ts`
+  copy-from-location route. Teammate's Top Sellers report noted and left as-is.
+
 ## Contributor history
 
 | Window | Who | What |

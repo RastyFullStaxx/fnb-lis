@@ -204,7 +204,7 @@ export function TransferEditorPage() {
               <TableHead>Item</TableHead>
               <TableHead className="text-right">Sent</TableHead>
               <TableHead className="text-right">Received</TableHead>
-              <TableHead className="text-right">Unit cost</TableHead>
+              <TableHead className="text-right">Unit Cost</TableHead>
               <TableHead className="text-right">Total</TableHead>
               <TableHead className="w-16" />
             </TableRow>

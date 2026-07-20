@@ -99,7 +99,7 @@ export function SalesReportPage() {
                 sense where net is real. */}
             {view !== "production" && byDay.length >= 2 && (
               <div className="border-b bg-muted/20 px-4 py-3 print:hidden">
-                <p className="text-xs font-medium text-muted-foreground">Net revenue by day</p>
+                <p className="text-xs font-medium text-muted-foreground">Net Revenue by Day</p>
                 <div className="mt-2">
                   <PeriodColumns data={byDay} name="Net revenue" height={160} />
                 </div>
@@ -115,7 +115,7 @@ export function SalesReportPage() {
                     <TableHead>Item / Menu</TableHead>
                     <TableHead>Category</TableHead>
                     <TableHead className="text-right">Qty</TableHead>
-                    <TableHead className="text-right">Unit price</TableHead>
+                    <TableHead className="text-right">Unit Price</TableHead>
                     <TableHead className="text-right">Disc.</TableHead>
                     <TableHead className="text-right">Gross</TableHead>
                     <TableHead className="text-right">Net</TableHead>

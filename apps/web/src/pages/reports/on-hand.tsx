@@ -110,11 +110,11 @@ export function OnHandReportPage() {
                   <TableRow className="bg-muted hover:bg-muted">
                     <TableHead>Item</TableHead>
                     <TableHead>Category</TableHead>
-                    <TableHead className="text-right">On hand</TableHead>
+                    <TableHead className="text-right">On Hand</TableHead>
                     <TableHead className="text-right">Cost</TableHead>
                     <TableHead className="text-right">Retail</TableHead>
-                    <TableHead className="text-right">Cost value</TableHead>
-                    <TableHead className="text-right">Retail value</TableHead>
+                    <TableHead className="text-right">Cost Value</TableHead>
+                    <TableHead className="text-right">Retail Value</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

@@ -91,8 +91,8 @@ export function NonRevenueReportPage() {
                 <TableHead>Item / Menu</TableHead>
                 <TableHead>Reason</TableHead>
                 <TableHead className="text-right">Qty</TableHead>
-                <TableHead className="text-right">Content/unit</TableHead>
-                <TableHead className="text-right">Est. cost</TableHead>
+                <TableHead className="text-right">Content/Unit</TableHead>
+                <TableHead className="text-right">Est. Cost</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -129,12 +129,12 @@ export function NonRevenueReportPage() {
         <div className="mt-8 grid gap-8 lg:grid-cols-2">
           {reasonBars.length > 0 && (
             <div>
-              <h3 className="mb-2 text-sm font-semibold">Cost by reason</h3>
+              <h3 className="mb-2 text-sm font-semibold">Cost by Reason</h3>
               <MagnitudeBars data={reasonBars} name="Est. cost" />
             </div>
           )}
           <div>
-            <h3 className="mb-3 text-sm font-semibold">By reason</h3>
+            <h3 className="mb-3 text-sm font-semibold">By Reason</h3>
             <div className="flex flex-wrap gap-x-10 gap-y-3">
               {report.data.byReason.map((g) => (
                 <div key={g.reason}>

@@ -66,7 +66,9 @@ export function FullAuditPage() {
   const [productType, setProductType] = useState(params.get("productType") || ALL);
   const [drill, setDrill] = useState<{ id: string; name: string } | null>(null);
   const [query, setQuery] = useState("");
-  const [varianceOnly, setVarianceOnly] = useState(false);
+  // ?variance=only — the Variance Report entry on the hub lands here with the
+  // filter pre-armed (client report #10: only items that carry a variance).
+  const [varianceOnly, setVarianceOnly] = useState(params.get("variance") === "only");
   // Compact is the DEFAULT: only the columns the verdict needs — Begin, End,
   // Usage, Sold, and the variance block — so the report fits without
   // horizontal scrolling. "All Columns" brings the movement detail back;
@@ -214,7 +216,7 @@ export function FullAuditPage() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={ALL}>All types</SelectItem>
+              <SelectItem value={ALL}>All Types</SelectItem>
               {(productTypes.data?.productTypes ?? []).map((t) => (
                 <SelectItem key={t} value={t}>
                   {t}
@@ -386,7 +388,7 @@ function VerdictStrip({ report, begin, end }: { report: Report; begin: string; e
       <div className="grid gap-6 lg:grid-cols-[minmax(200px,240px)_minmax(0,1fr)]">
         <div className="space-y-4">
           <div>
-            <p className="text-xs font-medium text-muted-foreground">Period variance at cost</p>
+            <p className="text-xs font-medium text-muted-foreground">Period Variance at Cost</p>
             <p
               className={cn(
                 "mt-0.5 text-[28px] font-semibold leading-[34px] tracking-tight",

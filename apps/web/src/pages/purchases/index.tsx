@@ -80,7 +80,7 @@ export function PurchasesPage() {
             <>
               <TabsList>
                 <TabsTrigger value="purchases">Deliveries</TabsTrigger>
-                <TabsTrigger value="forfeits">Returned bottles</TabsTrigger>
+                <TabsTrigger value="forfeits">Returned Bottles</TabsTrigger>
               </TabsList>
               {tab === "purchases" && (
                 <>
@@ -90,7 +90,7 @@ export function PurchasesPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="ALL">All statuses</SelectItem>
+                      <SelectItem value="ALL">All Statuses</SelectItem>
                       <SelectItem value="DRAFT">Draft</SelectItem>
                       <SelectItem value="COMMITTED">Committed</SelectItem>
                       <SelectItem value="VOID">Void</SelectItem>

@@ -49,8 +49,8 @@ export function TransferReportPage() {
           <div className="flex flex-wrap items-center gap-3">
             <Tabs value={direction} onValueChange={(v) => setDirection(v as "out" | "in")}>
               <TabsList>
-                <TabsTrigger value="out">Out (dispatched)</TabsTrigger>
-                <TabsTrigger value="in">In (received)</TabsTrigger>
+                <TabsTrigger value="out">Out (Dispatched)</TabsTrigger>
+                <TabsTrigger value="in">In (Received)</TabsTrigger>
               </TabsList>
             </Tabs>
             <DateRangeControl from={from} to={to} onFrom={setFrom} onTo={setTo} />
@@ -76,9 +76,9 @@ export function TransferReportPage() {
                 <TableHead>Item</TableHead>
                 <TableHead className="text-right">Sent</TableHead>
                 <TableHead className="text-right">Received</TableHead>
-                <TableHead className="text-right">Unit cost</TableHead>
-                <TableHead className="text-right">At cost</TableHead>
-                <TableHead className="text-right">At retail</TableHead>
+                <TableHead className="text-right">Unit Cost</TableHead>
+                <TableHead className="text-right">At Cost</TableHead>
+                <TableHead className="text-right">At Retail</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -132,7 +132,7 @@ export function TransferReportPage() {
               <TableRow className="hover:bg-transparent">
                 <TableHead>Location</TableHead>
                 <TableHead className="text-right">Qty</TableHead>
-                <TableHead className="text-right">At cost</TableHead>
+                <TableHead className="text-right">At Cost</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
