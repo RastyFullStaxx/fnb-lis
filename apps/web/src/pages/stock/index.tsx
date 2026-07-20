@@ -61,7 +61,7 @@ export function StockPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader
-        title="Stock"
+        title="Local Database"
         actions={
           canEditPrices && (
             <>

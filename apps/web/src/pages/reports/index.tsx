@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { ArrowLeftRight, BarChart3, Boxes, PieChart, Receipt, ShoppingCart, Wine } from "lucide-react";
+import { ArrowLeftRight, BarChart3, Boxes, PieChart, Receipt, ShoppingCart, TrendingUp, Wine } from "lucide-react";
 import { useLocationId } from "@/api/location";
 import { useTrends } from "@/api/dashboard";
 import { pesoFull, shortDate } from "@/components/charts/chart-kit";

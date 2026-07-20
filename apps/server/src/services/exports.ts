@@ -8,6 +8,7 @@ import type {
   SalesReport,
   TransferReport,
 } from "./report-lists";
+import type { TopSellersReport } from "./top-sellers";
 
 // Palette (ARGB). Royal blue header, light-blue group rows, red negatives.
 const BLUE = "FF3A56E4";
@@ -523,5 +524,95 @@ export function transferCsv(report: TransferReport): string {
     ]);
   }
   rows.push(["Total", "", "", "", report.direction === "out" ? round2(report.totals.qty) : "", report.direction === "in" ? round2(report.totals.qty) : "", "", round2(report.totals.cost), round2(report.totals.retail)]);
+  return toCsv(rows);
+}
+
+// ───────────────────────── Top Sellers ─────────────────────────
+// Three sections in one sheet: Brands, Menus, Ingredients.
+// Ingredients omit the Revenue column (consumption has no direct price).
+
+const TOP_BRANDS_HEADERS = ["Rank", "Item", "Category", "Qty", "Revenue"];
+const TOP_MENUS_HEADERS = ["Rank", "Menu", "Qty", "Revenue"];
+const TOP_INGREDIENTS_HEADERS = ["Rank", "Ingredient", "Category", "Qty consumed"];
+
+export async function topSellersWorkbook(report: TopSellersReport, meta: ReportMeta): Promise<Buffer> {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Top Sellers");
+  titleBlock(
+    ws,
+    "Top Sellers Report",
+    `${meta.clientName} · ${meta.locationName} · ${report.from} → ${report.to}`,
+    TOP_BRANDS_HEADERS.length,
+    meta,
+  );
+
+  // — Top Brands —
+  const bh = ws.addRow(["TOP BRANDS"]);
+  bh.font = { bold: true, color: { argb: "FF3A56E4" } };
+  styleHeaderRow(ws.addRow(TOP_BRANDS_HEADERS));
+  report.topBrands.forEach((row, i) => {
+    const r = ws.addRow([i + 1, row.name, row.category ?? ""]);
+    qtyCell(r.getCell(4), row.qty);
+    moneyCell(r.getCell(5), row.revenue, false);
+  });
+  if (report.topBrands.length === 0) ws.addRow(["—"]);
+
+  ws.addRow([]);
+
+  // — Top Menus —
+  const mh = ws.addRow(["TOP MENUS"]);
+  mh.font = { bold: true, color: { argb: "FF3A56E4" } };
+  styleHeaderRow(ws.addRow(TOP_MENUS_HEADERS));
+  report.topMenus.forEach((row, i) => {
+    const r = ws.addRow([i + 1, row.name]);
+    qtyCell(r.getCell(3), row.qty);
+    moneyCell(r.getCell(4), row.revenue, false);
+  });
+  if (report.topMenus.length === 0) ws.addRow(["—"]);
+
+  ws.addRow([]);
+
+  // — Top Ingredients —
+  const ih = ws.addRow(["TOP INGREDIENTS"]);
+  ih.font = { bold: true, color: { argb: "FF3A56E4" } };
+  styleHeaderRow(ws.addRow(TOP_INGREDIENTS_HEADERS));
+  report.topIngredients.forEach((row, i) => {
+    const r = ws.addRow([i + 1, row.name, row.category ?? ""]);
+    qtyCell(r.getCell(4), row.qty);
+  });
+  if (report.topIngredients.length === 0) ws.addRow(["—"]);
+
+  ws.getColumn(1).width = 8;
+  ws.getColumn(2).width = 32;
+  ws.getColumn(3).width = 18;
+  ws.getColumn(4).width = 13;
+  ws.getColumn(5).width = 13;
+
+  return toBuffer(wb);
+}
+
+export function topSellersCsv(report: TopSellersReport): string {
+  const rows: CsvValue[][] = [];
+
+  rows.push(["TOP BRANDS"]);
+  rows.push(TOP_BRANDS_HEADERS);
+  report.topBrands.forEach((row, i) =>
+    rows.push([i + 1, row.name, row.category ?? "", round2(row.qty), round2(row.revenue)]),
+  );
+
+  rows.push([]);
+  rows.push(["TOP MENUS"]);
+  rows.push(TOP_MENUS_HEADERS);
+  report.topMenus.forEach((row, i) =>
+    rows.push([i + 1, row.name, round2(row.qty), round2(row.revenue)]),
+  );
+
+  rows.push([]);
+  rows.push(["TOP INGREDIENTS"]);
+  rows.push(TOP_INGREDIENTS_HEADERS);
+  report.topIngredients.forEach((row, i) =>
+    rows.push([i + 1, row.name, row.category ?? "", round2(row.qty)]),
+  );
+
   return toCsv(rows);
 }

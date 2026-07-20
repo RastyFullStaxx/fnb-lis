@@ -55,6 +55,22 @@ export function useMenu(menuId: string | null) {
   });
 }
 
+export function useCopyMenusFromLocation() {
+  const locationId = useLocationId();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (sourceLocationId: string) =>
+      post<{
+        copied: number;
+        skippedExisting: number;
+        skippedNoRecipe: number;
+        skippedMissingIngredients: number;
+        missingIngredientMenus: string[];
+      }>(`${base(locationId)}/menus/copy-from/${sourceLocationId}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["menus", locationId] }),
+  });
+}
+
 export function useMenuMutations() {
   const locationId = useLocationId();
   const qc = useQueryClient();
