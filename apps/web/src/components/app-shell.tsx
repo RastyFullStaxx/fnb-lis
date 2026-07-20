@@ -284,7 +284,7 @@ function UserMenu({ me }: { me: MeResponse }) {
 
 const PAGE_TITLES: Record<string, string> = {
   dashboard: "Dashboard",
-  stock: "Stock",
+  stock: "Local Database",
   counts: "Counts",
   purchases: "Purchases",
   transfers: "Transfers",
@@ -292,7 +292,7 @@ const PAGE_TITLES: Record<string, string> = {
   recipes: "Recipes",
   imports: "Imports",
   reports: "Reports",
-  items: "Local Database",
+  items: "Main Database",
   suppliers: "Suppliers",
   settings: "Settings",
   admin: "Administration",

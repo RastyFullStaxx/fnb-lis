@@ -210,10 +210,52 @@ export function useFullAuditDrill(begin: string, end: string, locationItemId: st
   });
 }
 
+export interface TopSellersReport {
+  from: string;
+  to: string;
+  topBrands: Array<{
+    id: string;
+    name: string;
+    kind: "item";
+    category: string | null;
+    qty: number;
+    revenue: number;
+  }>;
+  topMenus: Array<{
+    id: string;
+    name: string;
+    kind: "menu";
+    category: string | null;
+    qty: number;
+    revenue: number;
+  }>;
+  topIngredients: Array<{
+    id: string;
+    name: string;
+    kind: "ingredient";
+    category: string | null;
+    qty: number;
+    revenue: number;
+  }>;
+}
+
+export function useTopSellersReport(from?: string, to?: string, limit?: number) {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["report", "top-sellers", locationId, from, to, limit],
+    queryFn: () => {
+      const qs = new URLSearchParams({ from: from!, to: to! });
+      if (limit) qs.set("limit", String(limit));
+      return api<TopSellersReport>(`${base(locationId)}/reports/top-sellers?${qs}`);
+    },
+    enabled: Boolean(from && to),
+  });
+}
+
 /** Export URL builder — used with downloadFile(). */
 export function exportUrl(
   locationId: string,
-  report: "full-audit" | "sales" | "purchases" | "non-revenue" | "on-hand" | "transfers" | "cost-analysis",
+  report: "full-audit" | "sales" | "purchases" | "non-revenue" | "on-hand" | "transfers" | "cost-analysis" | "top-sellers",
   format: "xlsx" | "csv",
   params: Record<string, string> = {},
 ): string {
