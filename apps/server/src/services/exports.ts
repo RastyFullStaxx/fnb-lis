@@ -1,5 +1,15 @@
 import ExcelJS from "exceljs";
-import { round2, toCsv, type CsvValue, type ReconReport, type ReconRow, type ReconTotals } from "@fnb/core";
+import {
+  COST_BASIS_LABELS,
+  PAYMENT_TERMS_LABELS,
+  round2,
+  toCsv,
+  type CostBasis,
+  type CsvValue,
+  type ReconReport,
+  type ReconRow,
+  type ReconTotals,
+} from "@fnb/core";
 import type {
   CostAnalysisReport,
   NonRevenueReport,
@@ -26,6 +36,13 @@ export interface ReportMeta {
   footer?: string;
   /** "First Last" of the user who requested the export — audit traceability. */
   exportedBy?: string;
+  /**
+   * The client's inventory cost basis. Disclosed in the title block of every
+   * report whose numbers move with it, so a document can never be read on the
+   * wrong basis. Only a NON-default basis is printed — stamping
+   * "Purchase Price" on every legacy file would be noise.
+   */
+  costBasis?: CostBasis;
 }
 
 type Cell = ExcelJS.Cell;
@@ -56,13 +73,20 @@ export function styleHeaderRow(row: ExcelJS.Row) {
   });
 }
 
+/** Appends the valuation basis to a subtitle when it is NOT the default, so
+    two same-titled files with different totals are self-describing. */
+export function basisSubtitle(subtitle: string, meta: ReportMeta): string {
+  if (!meta.costBasis || meta.costBasis === "PRICE") return subtitle;
+  return `${subtitle} · Valuation: ${COST_BASIS_LABELS[meta.costBasis]}`;
+}
+
 export function titleBlock(ws: ExcelJS.Worksheet, title: string, subtitle: string, colCount: number, meta: ReportMeta) {
   const last = String.fromCharCode(64 + colCount);
   ws.mergeCells(`A1:${last}1`);
   ws.getCell("A1").value = title;
   ws.getCell("A1").font = { bold: true, size: 15, color: { argb: BLUE } };
   ws.mergeCells(`A2:${last}2`);
-  ws.getCell("A2").value = subtitle;
+  ws.getCell("A2").value = basisSubtitle(subtitle, meta);
   ws.getCell("A2").font = { size: 10, color: { argb: "FF6B7280" } };
   ws.addRow([]);
   brandFooter(ws, meta);
@@ -268,10 +292,17 @@ export async function purchaseWorkbook(report: PurchaseReport, meta: ReportMeta)
 
   // Supplier rollup below.
   ws.addRow([]);
-  const sh = ws.addRow(["By supplier", "", "", "", "", "Qty", "", "Cost"]);
+  // By supplier — with contact + payment terms (client req 2026-07-20).
+  const sh = ws.addRow(["By Supplier", "Contact", "Phone", "Email", "Terms", "Qty", "", "Cost"]);
   styleHeaderRow(sh);
   for (const s of report.bySupplier) {
-    const r = ws.addRow([s.supplier, "", "", "", ""]);
+    const r = ws.addRow([
+      s.supplier,
+      s.contactPerson ?? "",
+      s.phone ?? "",
+      s.email ?? "",
+      s.paymentTerms ? PAYMENT_TERMS_LABELS[s.paymentTerms] : "",
+    ]);
     qtyCell(r.getCell(6), s.qty);
     moneyCell(r.getCell(8), s.cost, false);
   }
@@ -288,6 +319,21 @@ export function purchaseCsv(report: PurchaseReport): string {
     rows.push([row.purchaseDate, row.supplier, row.refNo ?? "", row.name, row.category ?? "", round2(row.qty), round2(row.unitCost), round2(row.lineTotal)]);
   }
   rows.push(["Total", "", "", "", "", round2(report.totals.qty), "", round2(report.totals.cost)]);
+  // Supplier directory: contact + payment terms (client req 2026-07-20).
+  rows.push([]);
+  rows.push(["By Supplier", "Contact", "Phone", "Email", "Address", "Terms", "Qty", "Cost"]);
+  for (const s of report.bySupplier) {
+    rows.push([
+      s.supplier,
+      s.contactPerson ?? "",
+      s.phone ?? "",
+      s.email ?? "",
+      s.address ?? "",
+      s.paymentTerms ? PAYMENT_TERMS_LABELS[s.paymentTerms] : "",
+      round2(s.qty),
+      round2(s.cost),
+    ]);
+  }
   return toCsv(rows);
 }
 

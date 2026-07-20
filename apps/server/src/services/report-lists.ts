@@ -1,4 +1,13 @@
-import { costLine, netOfVat, nonRevenueGroupOf, pctOf, type CostBasis, type NonRevenueGroup } from "@fnb/core";
+import {
+  costLine,
+  isPaymentTerms,
+  netOfVat,
+  nonRevenueGroupOf,
+  pctOf,
+  type CostBasis,
+  type NonRevenueGroup,
+  type PaymentTerms,
+} from "@fnb/core";
 import { buildFullAudit, committedCountDates } from "./report-assembly";
 import { weightedAverageCosts } from "./valuation";
 import { prisma } from "../db";
@@ -119,7 +128,18 @@ export interface PurchaseReport {
   from: string;
   to: string;
   rows: PurchaseReportRow[];
-  bySupplier: Array<{ supplier: string; qty: number; cost: number }>;
+  /** Per-supplier rollup carrying the contact + terms the client asked for
+      (2026-07-20) so a buyer can see who to call and when payment is due. */
+  bySupplier: Array<{
+    supplier: string;
+    contactPerson: string | null;
+    phone: string | null;
+    email: string | null;
+    address: string | null;
+    paymentTerms: PaymentTerms | null;
+    qty: number;
+    cost: number;
+  }>;
   totals: { qty: number; cost: number };
 }
 
@@ -152,16 +172,40 @@ export async function purchaseReport(
     lineTotal: l.lineTotal,
   }));
 
-  const supplierMap = new Map<string, { qty: number; cost: number }>();
-  for (const r of rows) {
-    const agg = supplierMap.get(r.supplier) ?? { qty: 0, cost: 0 };
-    agg.qty += r.qty;
-    agg.cost += r.lineTotal;
-    supplierMap.set(r.supplier, agg);
+  // Keyed by supplier ID, not name: two distinct suppliers can legitimately
+  // share a name (the seed data has exactly that), and merging them would
+  // attribute one vendor's spend — and contact details — to another.
+  const supplierMap = new Map<
+    string,
+    {
+      supplier: string;
+      qty: number;
+      cost: number;
+      contactPerson: string | null;
+      phone: string | null;
+      email: string | null;
+      address: string | null;
+      paymentTerms: PaymentTerms | null;
+    }
+  >();
+  for (const l of lines) {
+    const s = l.purchase.supplier;
+    const key = s?.id ?? "__none__";
+    const agg = supplierMap.get(key) ?? {
+      supplier: s?.name ?? "—",
+      qty: 0,
+      cost: 0,
+      contactPerson: s?.contactPerson ?? null,
+      phone: s?.phone ?? null,
+      email: s?.email ?? null,
+      address: s?.address ?? null,
+      paymentTerms: isPaymentTerms(s?.paymentTerms) ? s.paymentTerms : null,
+    };
+    agg.qty += l.qty;
+    agg.cost += l.lineTotal;
+    supplierMap.set(key, agg);
   }
-  const bySupplier = [...supplierMap.entries()]
-    .map(([supplier, v]) => ({ supplier, ...v }))
-    .sort((a, b) => b.cost - a.cost);
+  const bySupplier = [...supplierMap.values()].sort((a, b) => b.cost - a.cost);
 
   const totals = rows.reduce(
     (acc, r) => ({ qty: acc.qty + r.qty, cost: acc.cost + r.lineTotal }),
@@ -316,7 +360,10 @@ export async function onHandReport(
     const onHand =
       row.beginFull + row.beginOpenEquiv + row.purchased + row.forfeited + row.transferIn - row.transferOut -
       (row.soldDirect + row.soldPortion + row.nonRevenue + row.production);
-    const cost = wac.get(row.locationItemId) ?? price?.cost ?? row.costBasis;
+    // Mirror core's rule: only a POSITIVE valuation override wins, so a
+    // zero-cost average can never silently zero the stock's worth.
+    const average = wac.get(row.locationItemId);
+    const cost = average !== undefined && average > 0 ? average : (price?.cost ?? row.costBasis);
     const retail = price?.retail ?? 0;
     return {
       locationItemId: row.locationItemId,

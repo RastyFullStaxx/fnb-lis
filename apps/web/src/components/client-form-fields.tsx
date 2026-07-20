@@ -84,7 +84,7 @@ export function PackageAndModulesFields({
     <>
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-2">
-          <Label>Billing cycle</Label>
+          <Label>Billing Cycle</Label>
           {locked ? (
             <ReadOnlyField>{BILLING_CYCLE_LABELS[billingCycle] ?? billingCycle}</ReadOnlyField>
           ) : (
@@ -134,7 +134,7 @@ export function PackageAndModulesFields({
 
       {!locked && !isStandalone && tier === "MEDIUM" && (
         <div className="space-y-2">
-          <Label htmlFor="max-entities">Max locations</Label>
+          <Label htmlFor="max-entities">Max Locations</Label>
           <Select value={String(maxEntities)} onValueChange={(v) => onMaxEntitiesChange(Number(v))}>
             <SelectTrigger id="max-entities" className="w-full">
               <SelectValue />
@@ -151,7 +151,7 @@ export function PackageAndModulesFields({
       )}
 
       <div className="space-y-2">
-        <Label>Inventory modules</Label>
+        <Label>Inventory Modules</Label>
         {modulesLocked ? (
           <ReadOnlyField>
             {modules.map((m) => MODULE_TYPE_LABELS[m] ?? m).join(" + ")}
@@ -305,10 +305,10 @@ function KindSelect({ value, onChange }: { value: string | null; onChange: (v: s
         className="h-6 gap-1 border-0 bg-transparent px-1 text-[10px] uppercase tracking-wide text-muted-foreground shadow-none hover:text-foreground"
         aria-label="Location kind"
       >
-        <SelectValue placeholder="No label" />
+        <SelectValue placeholder="No Label" />
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value={KIND_NONE}>No label</SelectItem>
+        <SelectItem value={KIND_NONE}>No Label</SelectItem>
         {LOCATION_KINDS.map((k) => (
           <SelectItem key={k} value={k}>
             {LOCATION_KIND_LABELS[k]}

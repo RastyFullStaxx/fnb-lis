@@ -99,7 +99,7 @@ export function TransfersPage() {
         actions={
           tab === "out" && can(role, "entries.create") ? (
             <Button onClick={() => setCreateOpen(true)}>
-              <Plus className="size-4" /> New transfer
+              <Plus className="size-4" /> New Transfer
             </Button>
           ) : undefined
         }
@@ -143,7 +143,7 @@ function OutgoingTab({ createOpen, setCreateOpen }: { createOpen: boolean; setCr
           description="Send stock to another of this client's locations — the destination confirms what arrives."
           action={
             <Button onClick={() => setCreateOpen(true)}>
-              <Plus className="size-4" /> New transfer
+              <Plus className="size-4" /> New Transfer
             </Button>
           }
         />
@@ -240,14 +240,14 @@ function CreateTransferDialog({ open, onOpenChange }: { open: boolean; onOpenCha
             </Select>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="t-date">Transfer date</Label>
+            <Label htmlFor="t-date">Transfer Date</Label>
             <Input id="t-date" type="date" value={businessDate} onChange={(e) => setBusinessDate(e.target.value)} />
           </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button onClick={create} disabled={!toLocationId || mutations.create.isPending}>
-            Start draft
+            Start Draft
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -277,7 +277,7 @@ function IncomingTab() {
         <Table>
           <TableHeader>
             <TableRow className="bg-muted hover:bg-muted">
-              <TableHead>Sent on</TableHead>
+              <TableHead>Sent On</TableHead>
               <TableHead>From</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Lines</TableHead>
@@ -393,7 +393,7 @@ function ReceiveDialog({ transferId, onClose }: { transferId: string; onClose: (
         ) : (
           <div className="space-y-4">
             <div className="w-44 space-y-2">
-              <Label htmlFor="r-date">Receipt date</Label>
+              <Label htmlFor="r-date">Receipt Date</Label>
               <Input id="r-date" type="date" value={receiptDate} onChange={(e) => setReceiptDate(e.target.value)} />
             </div>
             <div className="rounded-lg border">
@@ -446,7 +446,7 @@ function ReceiveDialog({ transferId, onClose }: { transferId: string; onClose: (
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button onClick={receive} disabled={pending.length === 0 || mutations.receive.isPending}>
-            Confirm receipt
+            Confirm Receipt
           </Button>
         </DialogFooter>
       </DialogContent>

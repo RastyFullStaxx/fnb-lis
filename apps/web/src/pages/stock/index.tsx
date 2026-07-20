@@ -68,10 +68,10 @@ export function StockPage() {
           canEditPrices && (
             <>
               <Button variant="outline" onClick={() => setCopyOpen(true)}>
-                <Copy className="size-4" /> Copy from location
+                <Copy className="size-4" /> Copy from Location
               </Button>
               <Button onClick={() => setAttachOpen(true)}>
-                <Plus className="size-4" /> Add items
+                <Plus className="size-4" /> Add Items
               </Button>
             </>
           )
@@ -116,7 +116,7 @@ export function StockPage() {
               !search &&
               !missingOnly && (
                 <Button onClick={() => setAttachOpen(true)}>
-                  <Plus className="size-4" /> Add items
+                  <Plus className="size-4" /> Add Items
                 </Button>
               )
             }
@@ -208,7 +208,7 @@ function CopyFromDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Copy catalog from another location</DialogTitle>
+          <DialogTitle>Copy Catalog from Another Location</DialogTitle>
           <DialogDescription>
             Brings that location's items and prices into this one. Items already here — or outside this
             location's assigned modules — are left out.

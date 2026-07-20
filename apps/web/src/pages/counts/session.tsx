@@ -43,7 +43,7 @@ export function CountSessionPage() {
       <div className="flex flex-col items-center gap-3 py-24 text-center">
         <p className="text-sm">Couldn't load this count session — it may have been removed.</p>
         <Button asChild variant="outline" size="sm">
-          <Link to={`/l/${locationId}/counts`}>Back to counts</Link>
+          <Link to={`/l/${locationId}/counts`}>Back to Counts</Link>
         </Button>
       </div>
     );
@@ -94,7 +94,7 @@ function SessionHeader({ session }: { session: SessionWithLines }) {
   const locationId = useLocationId();
   return (
     <div className="mb-4 flex items-center gap-3">
-      <Button asChild variant="ghost" size="icon" aria-label="Back to counts">
+      <Button asChild variant="ghost" size="icon" aria-label="Back to Counts">
         <Link to={`/l/${locationId}/counts`}>
           <ArrowLeft className="size-4" />
         </Link>
@@ -238,7 +238,7 @@ function OpenSession({ session }: { session: SessionWithLines }) {
 
           {activeMode === "FULL" ? (
             <div className="space-y-2">
-              <Label htmlFor="count-qty">Counted quantity</Label>
+              <Label htmlFor="count-qty">Counted Quantity</Label>
               <QuantityInput
                 id="count-qty"
                 className="tnum h-11 text-lg"
@@ -299,7 +299,7 @@ function OpenSession({ session }: { session: SessionWithLines }) {
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel>Keep counting</AlertDialogCancel>
+                <AlertDialogCancel>Keep Counting</AlertDialogCancel>
                 <AlertDialogAction onClick={commit}>Commit Count</AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>

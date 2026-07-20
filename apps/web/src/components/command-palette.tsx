@@ -21,10 +21,10 @@ interface Current {
 
 const REPORTS = [
   { title: "Full Audit", path: "reports/full-audit" },
-  { title: "Sales report", path: "reports/sales" },
-  { title: "Purchases report", path: "reports/purchases" },
-  { title: "Non-revenue report", path: "reports/non-revenue" },
-  { title: "Inventory on hand", path: "reports/on-hand" },
+  { title: "Sales Report", path: "reports/sales" },
+  { title: "Purchases Report", path: "reports/purchases" },
+  { title: "Non-Revenue Report", path: "reports/non-revenue" },
+  { title: "Inventory on Hand", path: "reports/on-hand" },
 ];
 
 // Computed once — the handler accepts metaKey too, so macOS shows its own chord.

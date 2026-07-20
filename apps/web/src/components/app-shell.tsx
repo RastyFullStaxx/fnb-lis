@@ -273,7 +273,7 @@ function UserMenu({ me }: { me: MeResponse }) {
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={onLogout}>
               <LogOut className="size-4" />
-              Sign out
+              Sign Out
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

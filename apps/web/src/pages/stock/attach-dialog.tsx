@@ -73,7 +73,7 @@ export function AttachItemDialog({
     >
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Add item to this location</DialogTitle>
+          <DialogTitle>Add Item to This Location</DialogTitle>
           <DialogDescription>
             Pick a size from the master catalog, then set this location's cost and retail price.
           </DialogDescription>

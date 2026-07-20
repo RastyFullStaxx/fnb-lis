@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { UNIT_KINDS, WEIGH_MODES } from "../constants";
+import { PAYMENT_TERMS, UNIT_KINDS, WEIGH_MODES } from "../constants";
 import { id, nonNegative, positive } from "./common";
 
 export const unitCreate = z.object({
@@ -73,6 +73,13 @@ export type LocationItemUpdate = z.infer<typeof locationItemUpdate>;
 export const supplierUpsert = z.object({
   name: z.string().trim().min(1).max(120),
   contactInfo: z.string().trim().max(500).nullable().optional(),
+  // Structured contact + terms (client req 2026-07-20) — printed on the
+  // Purchase report so buyers can see who to call and when payment is due.
+  contactPerson: z.string().trim().max(120).nullable().optional(),
+  phone: z.string().trim().max(60).nullable().optional(),
+  email: z.string().trim().max(120).nullable().optional(),
+  address: z.string().trim().max(240).nullable().optional(),
+  paymentTerms: z.enum(PAYMENT_TERMS).nullable().optional(),
   isActive: z.boolean().optional(),
 });
 export type SupplierUpsert = z.infer<typeof supplierUpsert>;

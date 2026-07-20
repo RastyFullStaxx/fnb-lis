@@ -128,7 +128,7 @@ export function RecipeBuilderSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
         <SheetHeader>
-          <SheetTitle>{menu ? `${menu.name} — new version` : "New menu"}</SheetTitle>
+          <SheetTitle>{menu ? `${menu.name} — new version` : "New Menu"}</SheetTitle>
           <SheetDescription>
             {menu
               ? `Publishing creates v${(menu.current?.versionNo ?? 0) + 1}. Sales already recorded keep v${menu.current?.versionNo ?? 1}.`
@@ -139,7 +139,7 @@ export function RecipeBuilderSheet({
         <div className="space-y-5 px-4 pb-4">
           {!menu && (
             <div className="space-y-2">
-              <Label htmlFor="menu-name">Menu name</Label>
+              <Label htmlFor="menu-name">Menu Name</Label>
               <Input id="menu-name" autoFocus value={name} onChange={(e) => setName(e.target.value)} />
             </div>
           )}
@@ -197,7 +197,7 @@ export function RecipeBuilderSheet({
               />
             </div>
             <div aria-live="polite">
-              <p className="text-xs text-muted-foreground">Estimated cost</p>
+              <p className="text-xs text-muted-foreground">Estimated Cost</p>
               <p className="tnum text-lg font-semibold">
                 <span
                   key={cost}

@@ -1,5 +1,7 @@
 // Response shapes for the REST API (server includes noted relations).
 
+import type { PaymentTerms } from "@fnb/core";
+
 export interface Unit {
   id: string;
   name: string;
@@ -63,6 +65,11 @@ export interface Supplier {
   clientId: string;
   name: string;
   contactInfo: string | null;
+  contactPerson: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  paymentTerms: PaymentTerms | null;
   isActive: boolean;
 }
 

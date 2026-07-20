@@ -142,7 +142,7 @@ function DisplayPreferencesSection() {
     >
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
-          <Label htmlFor="pref-font-size">Text size</Label>
+          <Label htmlFor="pref-font-size">Text Size</Label>
           <Select
             value={preferences.fontSize}
             onValueChange={(v) =>
@@ -156,7 +156,7 @@ function DisplayPreferencesSection() {
             <SelectContent>
               <SelectItem value="default">Default</SelectItem>
               <SelectItem value="large">Large</SelectItem>
-              <SelectItem value="x-large">Extra large</SelectItem>
+              <SelectItem value="x-large">Extra Large</SelectItem>
             </SelectContent>
           </Select>
           <p className="text-xs text-muted-foreground">
@@ -165,7 +165,7 @@ function DisplayPreferencesSection() {
           </p>
         </div>
         <div className="space-y-2">
-          <Label htmlFor="pref-unit-system">Preferred unit of measurement</Label>
+          <Label htmlFor="pref-unit-system">Preferred Unit of Measurement</Label>
           <Select
             value={preferences.unitSystem}
             onValueChange={(v) =>
@@ -257,7 +257,7 @@ function CompanySection() {
         <div className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="legalName">Legal name</Label>
+              <Label htmlFor="legalName">Legal Name</Label>
               <Input id="legalName" value={form.legalName} onChange={set("legalName")} placeholder={client?.name} />
             </div>
             <div className="space-y-2">
@@ -274,7 +274,7 @@ function CompanySection() {
             <Input id="cemail" type="email" value={form.email} onChange={set("email")} />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="footer">Report footer note</Label>
+            <Label htmlFor="footer">Report Footer Note</Label>
             <Textarea
               id="footer"
               rows={2}
@@ -284,7 +284,7 @@ function CompanySection() {
             />
           </div>
           <Button onClick={save} disabled={update.isPending || !client || !isDirty}>
-            Save company info
+            Save Company Info
           </Button>
         </div>
       )}
@@ -373,7 +373,7 @@ function ProductTypesSection() {
             </Button>
           </div>
           <Button onClick={save} disabled={update.isPending || !isDirty}>
-            Save product types
+            Save Product Types
           </Button>
         </div>
       )}

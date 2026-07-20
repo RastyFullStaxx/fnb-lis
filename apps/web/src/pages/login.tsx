@@ -79,7 +79,7 @@ export function LoginPage() {
                   onClick={() => setShowForgotPassword(false)}
                 >
                   <ArrowLeft className="size-4" />
-                  Back to sign in
+                  Back to Sign In
                 </Button>
               </div>
             ) : (
@@ -186,7 +186,7 @@ export function LoginPage() {
                   )}
 
                   <Button type="submit" className="min-h-11 w-full" disabled={login.isPending}>
-                    {login.isPending ? "Signing in…" : "Sign in"}
+                    {login.isPending ? "Signing in…" : "Sign In"}
                   </Button>
                 </form>
               </>

@@ -61,7 +61,7 @@ export function UnitsTab({
           description="Add a unit with its factor to the base (ml, g, or 1)."
           action={
             <Button onClick={() => setCreateOpen(true)}>
-              <Plus className="size-4" /> New unit
+              <Plus className="size-4" /> New Unit
             </Button>
           }
         />
@@ -71,7 +71,7 @@ export function UnitsTab({
             <TableRow className="bg-muted hover:bg-muted">
               <TableHead>Unit</TableHead>
               <TableHead>Kind</TableHead>
-              <TableHead className="text-right">Factor to base</TableHead>
+              <TableHead className="text-right">Factor to Base</TableHead>
               <TableHead className="text-right">Source</TableHead>
             </TableRow>
           </TableHeader>
@@ -124,7 +124,7 @@ function UnitDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>New unit</DialogTitle>
+          <DialogTitle>New Unit</DialogTitle>
           <DialogDescription>
             Example: a "keg" that holds 30,000 ml is kind Volume with factor 30000.
           </DialogDescription>
@@ -166,7 +166,7 @@ function UnitDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open
           </div>
           <DialogFooter>
             <Button type="submit" disabled={createUnit.isPending}>
-              Add unit
+              Add Unit
             </Button>
           </DialogFooter>
         </form>

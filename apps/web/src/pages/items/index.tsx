@@ -30,11 +30,11 @@ export function ItemsPage() {
   const action =
     tab === "items" ? (
       <Button onClick={() => setItemFormOpen(true)}>
-        <Plus className="size-4" /> New item
+        <Plus className="size-4" /> New Item
       </Button>
     ) : tab === "categories" ? (
       <Button onClick={() => setCatCreateOpen(true)}>
-        <Plus className="size-4" /> New category
+        <Plus className="size-4" /> New Category
       </Button>
     ) : (
       <Button onClick={() => setUnitCreateOpen(true)}>

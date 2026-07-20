@@ -51,7 +51,7 @@ export function ItemsTab({
           action={
             !filtered && (
               <Button onClick={() => setFormOpen(true)}>
-                <Plus className="size-4" /> New item
+                <Plus className="size-4" /> New Item
               </Button>
             )
           }

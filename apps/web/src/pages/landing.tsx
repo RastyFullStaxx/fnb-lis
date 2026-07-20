@@ -47,7 +47,7 @@ export function LandingPage() {
           variant="outline"
           className="border-sidebar-border bg-transparent text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
         >
-          <Link to="/login">Sign in</Link>
+          <Link to="/login">Sign In</Link>
         </Button>
       </header>
 
@@ -73,7 +73,7 @@ export function LandingPage() {
             <div className="landing-rise landing-rise-4 mt-9 flex flex-wrap items-center gap-3">
               <Button asChild size="lg" className="min-h-11">
                 <Link to="/login">
-                  Open the system <ArrowRight className="size-4" />
+                  Open the System <ArrowRight className="size-4" />
                 </Link>
               </Button>
               {FACEBOOK_URL && (
@@ -84,7 +84,7 @@ export function LandingPage() {
                   className="min-h-11 border-sidebar-border bg-transparent text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 >
                   <a href={FACEBOOK_URL} target="_blank" rel="noreferrer">
-                    Find us on Facebook <ExternalLink className="size-4" />
+                    Find Us on Facebook <ExternalLink className="size-4" />
                   </a>
                 </Button>
               )}

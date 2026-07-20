@@ -58,7 +58,7 @@ export function TransferEditorPage() {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="mb-4 flex items-center gap-3">
-          <Button asChild variant="ghost" size="icon" aria-label="Back to transfers">
+          <Button asChild variant="ghost" size="icon" aria-label="Back to Transfers">
             <Link to={`/l/${locationId}/transfers`}>
               <ArrowLeft className="size-4" />
             </Link>
@@ -82,7 +82,7 @@ export function TransferEditorPage() {
             This transfer couldn't be found — it may have been removed, or the link is out of date.
           </p>
           <Button asChild variant="outline" size="sm">
-            <Link to={`/l/${locationId}/transfers`}>Back to transfers</Link>
+            <Link to={`/l/${locationId}/transfers`}>Back to Transfers</Link>
           </Button>
         </div>
       </div>
@@ -130,7 +130,7 @@ export function TransferEditorPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="mb-4 flex items-center gap-3">
-        <Button asChild variant="ghost" size="icon" aria-label="Back to transfers">
+        <Button asChild variant="ghost" size="icon" aria-label="Back to Transfers">
           <Link to={`/l/${locationId}/transfers`}>
             <ArrowLeft className="size-4" />
           </Link>
@@ -154,7 +154,7 @@ export function TransferEditorPage() {
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button size="sm" disabled={activeLines.length === 0}>
-                  <Check className="size-4" /> Commit transfer
+                  <Check className="size-4" /> Commit Transfer
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
@@ -167,7 +167,7 @@ export function TransferEditorPage() {
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogCancel>Keep drafting</AlertDialogCancel>
+                  <AlertDialogCancel>Keep Drafting</AlertDialogCancel>
                   <AlertDialogAction onClick={commit}>Commit</AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>

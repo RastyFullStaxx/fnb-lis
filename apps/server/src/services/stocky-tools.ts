@@ -10,7 +10,7 @@
  */
 import { z } from "zod";
 import type Anthropic from "@anthropic-ai/sdk";
-import { FUZZY_THRESHOLD, fuzzyScore, normalizeAlias, round2 } from "@fnb/core";
+import { FUZZY_THRESHOLD, fuzzyScore, normalizeAlias, round2, type CostBasis } from "@fnb/core";
 import { buildFullAudit, committedCountDates } from "./report-assembly";
 import { fullAuditDrill, nonRevenueReport, onHandReport, purchaseReport, salesReport } from "./report-lists";
 import { buildDashboard } from "./dashboard";
@@ -21,6 +21,9 @@ const dateStr = z.string().regex(DATE_RE, "must be YYYY-MM-DD");
 export interface StockyContext {
   locationId: string;
   clientId: string;
+  /** The client's saved inventory cost basis — Stocky must value stock the
+      same way the report pages it links to do. */
+  costBasis: CostBasis;
 }
 
 export interface StockyTool {
@@ -112,7 +115,7 @@ const getStock = tool({
     additionalProperties: false,
   },
   async run(ctx, input) {
-    const report = await onHandReport(ctx.locationId);
+    const report = await onHandReport(ctx.locationId, undefined, ctx.costBasis);
     if (!report.lastCountDate) {
       return { error: "No committed counts yet — stock on hand is unknown until the first count is committed." };
     }

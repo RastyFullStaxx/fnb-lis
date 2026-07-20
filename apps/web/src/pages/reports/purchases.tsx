@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { ShoppingCart } from "lucide-react";
-import { round2 } from "@fnb/core";
+import { PAYMENT_TERMS_LABELS, round2 } from "@fnb/core";
 import { useLocationId } from "@/api/location";
 import { useCountDates } from "@/api/ops";
 import { exportUrl, usePurchaseReport } from "@/api/reports";
@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/page-header";
 import { TableSurface, TableLoading, TableEmpty, TableError, ToolbarSearch } from "@/components/table-surface";
 import { DateRangeControl, ExportButtons } from "@/components/report-toolbar";
 import { MagnitudeBars } from "@/components/charts/magnitude-bars";
+import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -131,11 +132,16 @@ export function PurchaseReportPage() {
             <MagnitudeBars data={supplierBars} name="Cost" />
           </div>
           <div>
+            {/* Contact + payment terms per supplier (client req 2026-07-20):
+                who to call, and when the invoice falls due. */}
             <h3 className="mb-2 text-sm font-semibold">By Supplier</h3>
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
                   <TableHead>Supplier</TableHead>
+                  <TableHead>Contact</TableHead>
+                  <TableHead>Phone</TableHead>
+                  <TableHead>Terms</TableHead>
                   <TableHead className="text-right">Qty</TableHead>
                   <TableHead className="text-right">Cost</TableHead>
                 </TableRow>
@@ -143,7 +149,19 @@ export function PurchaseReportPage() {
               <TableBody>
                 {report.data.bySupplier.map((s) => (
                   <TableRow key={s.supplier}>
-                    <TableCell className="font-medium">{s.supplier}</TableCell>
+                    <TableCell className="font-medium">
+                      {s.supplier}
+                      {s.email && <span className="block text-xs text-muted-foreground">{s.email}</span>}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{s.contactPerson || "—"}</TableCell>
+                    <TableCell className="tnum text-muted-foreground">{s.phone || "—"}</TableCell>
+                    <TableCell>
+                      {s.paymentTerms ? (
+                        <Badge variant="outline">{PAYMENT_TERMS_LABELS[s.paymentTerms]}</Badge>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
                     <TableCell className="tnum text-right">{n2(s.qty)}</TableCell>
                     <TableCell className="tnum text-right">{formatMoney(s.cost)}</TableCell>
                   </TableRow>

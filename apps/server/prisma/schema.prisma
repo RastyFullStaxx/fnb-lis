@@ -279,7 +279,15 @@ model Supplier {
   clientId    String
   client      Client  @relation(fields: [clientId], references: [id])
   name        String
+  // Freeform legacy field — kept so existing notes aren't lost. The structured
+  // fields below are what the Purchase report prints (client req 2026-07-20).
   contactInfo String?
+  contactPerson String?
+  phone         String?
+  email         String?
+  address       String?
+  // C.O.D. / 7 / 15 / 30 days / prepaid — see @fnb/core PAYMENT_TERMS.
+  paymentTerms  String? // COD | NET_7 | NET_15 | NET_30 | PREPAID
   isActive    Boolean @default(true)
 
   purchases Purchase[]

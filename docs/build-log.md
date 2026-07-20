@@ -261,13 +261,39 @@ Verification before building surfaced two real defects, both fixed:
   stock. Now true periodic weighted average — `(opening + purchases) ÷ total units` — giving
   ₱618.38 for Absolut and ₱44.67 for San Miguel, both matching hand computation.
 
-Shipped: `Client.costBasis` (migration `20260720121446_client_cost_basis`, default `PRICE` so
-nothing previously shipped moved), `services/valuation.ts` (weighted average as of a date),
+Adversarial review (15 agents, 10 confirmed / 2 refuted) then caught five more, all fixed: the WAC
+purchase cutoff was inclusive while the audit window is half-open (a purchase dated on the
+beginning count inflated opening value *and* counted again as a period purchase — now `< asOfDate`);
+transfer-in receipts were excluded from the average pool despite being costed stock-ins (now
+included at the dispatching location's unit cost); a computed average of 0 could override a real
+catalog cost (now only a positive average wins, matching core); Stocky's on-hand tool was hardcoded
+to PRICE and contradicted the report page it links to; and the cost-basis GET sat behind
+`master.write`, so non-editors saw "Purchase Price" regardless of the real policy. The review also
+flagged, correctly, that deviation #21 overclaimed — the Beginning/Ending Cost reports *do* restate
+(that is the intended fix); the doc now says so.
+
+Shipped: `Client.costBasis` (migration `20260720121446_client_cost_basis`, default `PRICE` — the
+Full Audit and golden fixtures unchanged), `services/valuation.ts` (weighted average as of a date),
 optional `begin/endValuationUnitCost` on `ReconItemInput` (valuation columns only — variance is
 structurally unable to read them), a Settings section with the policy explained, ActivityLog on
 every change, and the basis stamped into export filenames *and* in-file headers so two files with
 the same title can never be confused. Deviations #21–23. Golden fixture byte-identical on the
 default basis; variance/usage/non-revenue costs bit-identical under both bases.
+
+## Phase 12 — Supplier contact & payment terms (2026-07-20, night)
+
+Client req: "sa Purchase report pala lagay din natin options info ng supplier, contact details at
+kung ano terms ng payment nila (C.O.D, 7, or 15 days)". `Supplier` gained structured
+`contactPerson / phone / email / address / paymentTerms` (migration
+`20260720181110_supplier_contact_terms`; the freeform `contactInfo` is kept as Notes so nothing is
+lost). Terms vocabulary lives in `@fnb/core PAYMENT_TERMS` — C.O.D. / 7 / 15 / 30 Days / Prepaid,
+TEXT not enum per the SQLite rule, with a `PAYMENT_TERMS_DAYS` map ready for future due-date work.
+Editable on the Suppliers page (which now shows Contact / Phone / Terms columns); the Purchase
+report's By-Supplier rollup and its XLSX, CSV and PDF exports all carry the details.
+
+Caught while verifying: the rollup keyed by supplier NAME, and the seed data contains two distinct
+suppliers sharing "Metro Beverage Distribution" — that would have merged one vendor's spend and
+contact details into another. Now keyed by supplier ID.
 
 ## Contributor history
 

@@ -265,7 +265,16 @@ export const locationItemRoutes = new Hono<AppEnv>()
     const body = c.req.valid("json");
     const supplier = await prisma.$transaction(async (tx) => {
       const created = await tx.supplier.create({
-        data: { clientId: location.clientId, name: body.name, contactInfo: body.contactInfo ?? null },
+        data: {
+          clientId: location.clientId,
+          name: body.name,
+          contactInfo: body.contactInfo ?? null,
+          contactPerson: body.contactPerson ?? null,
+          phone: body.phone ?? null,
+          email: body.email ?? null,
+          address: body.address ?? null,
+          paymentTerms: body.paymentTerms ?? null,
+        },
       });
       await logActivity(
         { user, clientId: location.clientId, action: "supplier.create", entity: "Supplier", entityId: created.id, summary: `Added supplier ${created.name}` },

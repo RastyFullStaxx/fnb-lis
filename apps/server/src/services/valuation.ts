@@ -45,7 +45,7 @@ export async function weightedAverageCosts(
   const map: ValuationMap = new Map();
   if (basis !== "AVERAGE") return map; // PRICE basis: nothing to override
 
-  const [openingLines, purchaseAgg] = await Promise.all([
+  const [openingLines, purchaseLines, receiptLines] = await Promise.all([
     // Every committed count line at or before the valuation date. We reduce to
     // the EARLIEST count date per item below — that is the opening balance;
     // later counts are re-measurements of the same stock, not new stock-ins,
@@ -65,18 +65,38 @@ export async function weightedAverageCosts(
         locationItem: { include: LI_INCLUDE },
       },
     }),
-    // Dates come back per line (not grouped) because each item's purchases are
-    // windowed against ITS OWN opening count date — see the filter below.
+    // Stock-ins use the audit's HALF-OPEN window: strictly BEFORE asOfDate.
+    // A purchase dated on the valuation date belongs to the next period (it is
+    // already counted as that period's `purchasedQty`), so including it here
+    // would inflate the opening value and be counted a second time as a
+    // period purchase. Dates come back per line because each item's purchases
+    // are also windowed against ITS OWN opening count date (see below).
     prisma.purchaseLine.findMany({
       where: {
         status: "ACTIVE",
-        purchase: { locationId, status: "COMMITTED", purchaseDate: { lte: asOfDate } },
+        purchase: { locationId, status: "COMMITTED", purchaseDate: { lt: asOfDate } },
       },
       select: {
         locationItemId: true,
         qty: true,
         lineTotal: true,
         purchase: { select: { purchaseDate: true } },
+      },
+    }),
+    // Transfers IN are costed stock-ins too — stock received from a sister
+    // location joins this location's pool exactly like a purchase, valued at
+    // the dispatching location's snapshot unit cost.
+    prisma.transferReceiptLine.findMany({
+      where: {
+        status: "ACTIVE",
+        receiptDate: { lt: asOfDate },
+        transferLine: { status: "ACTIVE", transfer: { toLocationId: locationId, status: "COMMITTED" } },
+      },
+      select: {
+        toLocationItemId: true,
+        qtyReceived: true,
+        receiptDate: true,
+        transferLine: { select: { unitCost: true } },
       },
     }),
   ]);
@@ -104,27 +124,42 @@ export async function weightedAverageCosts(
     opening.set(line.locationItemId, entry);
   }
 
-  // Only purchases AFTER the opening count join the average. A purchase that
-  // predates an item's first count is already physically inside that count's
-  // quantity — adding it again would inflate both sides of the ratio. (Real
-  // case: a new item is delivered mid-period and first counted at period end.)
-  const purchases = new Map<string, { qty: number; value: number }>();
-  for (const line of purchaseAgg) {
-    const opened = earliestDate.get(line.locationItemId);
-    if (opened && line.purchase.purchaseDate <= opened) continue;
-    const entry = purchases.get(line.locationItemId) ?? { qty: 0, value: 0 };
-    entry.qty += line.qty;
-    entry.value += line.lineTotal;
-    purchases.set(line.locationItemId, entry);
+  // Only stock-ins AFTER the opening count join the average. One that predates
+  // an item's first count is already physically inside that count's quantity —
+  // adding it again would inflate both sides of the ratio. (Real case: a new
+  // item is delivered mid-period and first counted at period end.)
+  const stockIns = new Map<string, { qty: number; value: number }>();
+  const addStockIn = (id: string, onDate: string, qty: number, value: number) => {
+    const opened = earliestDate.get(id);
+    if (opened && onDate <= opened) return;
+    const entry = stockIns.get(id) ?? { qty: 0, value: 0 };
+    entry.qty += qty;
+    entry.value += value;
+    stockIns.set(id, entry);
+  };
+  for (const line of purchaseLines) {
+    addStockIn(line.locationItemId, line.purchase.purchaseDate, line.qty, line.lineTotal);
+  }
+  for (const receipt of receiptLines) {
+    addStockIn(
+      receipt.toLocationItemId,
+      receipt.receiptDate,
+      receipt.qtyReceived,
+      receipt.qtyReceived * receipt.transferLine.unitCost,
+    );
   }
 
-  for (const id of new Set([...opening.keys(), ...purchases.keys()])) {
+  for (const id of new Set([...opening.keys(), ...stockIns.keys()])) {
     const o = opening.get(id) ?? { qty: 0, value: 0 };
-    const p = purchases.get(id) ?? { qty: 0, value: 0 };
-    const qty = o.qty + p.qty;
-    // Zero total quantity ⇒ no defensible average; leave the item out so the
-    // caller keeps its snapshot/catalog cost rather than valuing it at 0.
-    if (qty > 0) map.set(id, (o.value + p.value) / qty);
+    const s = stockIns.get(id) ?? { qty: 0, value: 0 };
+    const qty = o.qty + s.qty;
+    if (qty <= 0) continue; // no defensible average — caller keeps its own basis
+    const average = (o.value + s.value) / qty;
+    // A zero average means every stock-in carried zero cost (unpriced items).
+    // Publishing 0 as a real valuation would silently zero the stock's worth
+    // AND diverge from core, which only honours a positive override — so leave
+    // the item out and let the caller's fallback stand.
+    if (average > 0) map.set(id, average);
   }
   return map;
 }

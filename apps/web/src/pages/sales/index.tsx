@@ -39,21 +39,21 @@ import { cn } from "@/lib/utils";
 
 const KIND_COPY: Record<SaleKind, { title: string; hint: string; button: string; saved: string }> = {
   SALE: {
-    title: "Record a sale",
+    title: "Record a Sale",
     hint: "Revenue sales — price prefills from the item's retail.",
-    button: "Save sale",
+    button: "Save Sale",
     saved: "Sale recorded",
   },
   NON_REVENUE: {
-    title: "Record non-revenue use",
+    title: "Record Non-Revenue Use",
     hint: "Comps, spillage, staff use… consumed but not sold. For a partial pour, enter the content amount per unit.",
-    button: "Save non-revenue",
+    button: "Save Non-Revenue",
     saved: "Non-revenue use recorded",
   },
   PRODUCTION: {
-    title: "Record production use",
+    title: "Record Production Use",
     hint: "Ingredients consumed by prep/production — counted as usage, no revenue.",
-    button: "Save production",
+    button: "Save Production",
     saved: "Production use recorded",
   },
 };
@@ -108,7 +108,7 @@ export function SalesPage() {
           <QuickEntry kind={kind} />
 
           <div className="lg:border-l lg:pl-6">
-            <div className="mb-2 text-sm font-medium">Recent entries</div>
+            <div className="mb-2 text-sm font-medium">Recent Entries</div>
             <div aria-live="polite" className="max-h-[28rem] divide-y overflow-y-auto">
             {sales.isPending ? (
               <div className="divide-y">
@@ -260,7 +260,7 @@ function QuickEntry({ kind }: { kind: SaleKind }) {
 
       <div className="grid grid-cols-[1fr_auto] gap-2">
         <div className="space-y-2">
-          <Label htmlFor="s-target">Item or menu</Label>
+          <Label htmlFor="s-target">Item or Menu</Label>
           <SaleTargetCombobox id="s-target" ref={comboRef} value={target} onSelect={pickTarget} />
         </div>
         <div className="space-y-2">
@@ -327,7 +327,7 @@ function QuickEntry({ kind }: { kind: SaleKind }) {
             </div>
             {target?.type !== "menu" && (
               <div className="space-y-2">
-                <Label htmlFor="s-content">Content per unit</Label>
+                <Label htmlFor="s-content">Content per Unit</Label>
                 <QuantityInput
                   id="s-content"
                   className="tnum"

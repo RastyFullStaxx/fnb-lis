@@ -496,7 +496,7 @@ export const reportRoutes = new Hono<AppEnv>()
   });
 
 async function meta(
-  client: { id: string; name: string },
+  client: { id: string; name: string; costBasis?: string },
   locationName: string,
   user?: { firstName: string; lastName: string },
 ): Promise<ReportMeta> {
@@ -508,5 +508,8 @@ async function meta(
     address: company.address || undefined,
     footer: company.reportFooter || undefined,
     exportedBy: user ? fullName(user) : undefined,
+    // Every export built from this meta discloses a non-default basis in its
+    // title block — see basisSubtitle().
+    costBasis: isCostBasis(client.costBasis) ? client.costBasis : "PRICE",
   };
 }

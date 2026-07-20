@@ -93,7 +93,7 @@ function AccessStateBadge({ sub }: { sub: AdminSubscription }) {
   const state = deriveAccessState(sub);
   if (state === "ACTIVE") return <Badge variant="default">Active</Badge>;
   if (state === "VIEW_ONLY") return <Badge variant="destructive">View-only</Badge>;
-  return <Badge variant="outline" className="text-warning-text border-warning-text/40">Grace period</Badge>;
+  return <Badge variant="outline" className="text-warning-text border-warning-text/40">Grace Period</Badge>;
 }
 
 function DueBadge({ sub }: { sub: AdminSubscription }) {
@@ -112,7 +112,7 @@ function DueBadge({ sub }: { sub: AdminSubscription }) {
     );
   }
   if (days === 0) {
-    return <span className="text-xs text-warning-text font-medium">Due today</span>;
+    return <span className="text-xs text-warning-text font-medium">Due Today</span>;
   }
   const overdue = Math.abs(days);
   return (
@@ -138,7 +138,7 @@ export function AdminClientsPage() {
         title="Clients"
         actions={
           <Button onClick={() => setCreating(true)}>
-            <Plus className="size-4" /> New client
+            <Plus className="size-4" /> New Client
           </Button>
         }
       />
@@ -153,7 +153,7 @@ export function AdminClientsPage() {
             description="Create the first client to start onboarding locations and users."
             action={
               <Button onClick={() => setCreating(true)}>
-                <Plus className="size-4" /> New client
+                <Plus className="size-4" /> New Client
               </Button>
             }
           />
@@ -246,10 +246,10 @@ export function AdminClientsPage() {
   );
 }
 
-// ── Create client ───────────────────────────────────────────────────────────
+// ── Create Client ───────────────────────────────────────────────────────────
 // One form: name, locations, and subscription package are all filled in on
 // the same screen (mirrors Manage's layout). Nothing is created until
-// "Create client" is clicked, which submits everything together to
+// "Create Client" is clicked, which submits everything together to
 // POST /clients/full — one atomic transaction on the server.
 
 function CreateClientDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
@@ -318,12 +318,12 @@ function CreateClientDialog({ open, onOpenChange }: { open: boolean; onOpenChang
     <Dialog open={open} onOpenChange={(o) => (o ? onOpenChange(o) : close())}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>New client</DialogTitle>
+          <DialogTitle>New Client</DialogTitle>
         </DialogHeader>
 
         {/* ── Name ── */}
         <div className="space-y-2">
-          <Label htmlFor="client-name">Client name</Label>
+          <Label htmlFor="client-name">Client Name</Label>
           <Input
             id="client-name"
             autoFocus
@@ -368,7 +368,7 @@ function CreateClientDialog({ open, onOpenChange }: { open: boolean; onOpenChang
             Cancel
           </Button>
           <Button onClick={submit} disabled={!name.trim() || createFull.isPending}>
-            Create client
+            Create Client
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -376,7 +376,7 @@ function CreateClientDialog({ open, onOpenChange }: { open: boolean; onOpenChang
   );
 }
 
-// ── Manage client dialog (rename + locations + subscription all in one) ──────
+// ── Manage Client dialog (rename + locations + subscription all in one) ──────
 //
 // ClientDetailBody is the single source of truth for the "name + locations +
 // subscription" body. Both Manage and New Client (once the client exists)
@@ -388,7 +388,7 @@ function ManageClientDialog({ client, onClose }: { client: AdminClient | null; o
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Manage client</DialogTitle>
+          <DialogTitle>Manage Client</DialogTitle>
         </DialogHeader>
         <ClientDetailBody client={client} />
       </DialogContent>
@@ -498,7 +498,7 @@ function ClientDetailBody({ client }: { client: AdminClient }) {
     <div className="space-y-5">
       {/* ── Name ── */}
       <div className="space-y-2">
-        <Label htmlFor="manage-name">Client name</Label>
+        <Label htmlFor="manage-name">Client Name</Label>
         <Input
           id="manage-name"
           value={name}
@@ -545,7 +545,7 @@ function ClientDetailBody({ client }: { client: AdminClient }) {
         atLimit={!!atLimit}
       />
 
-      {/* ── Actions: paid status on its own line, then Mark as paid / Cancel
+      {/* ── Actions: paid status on its own line, then Mark as Paid / Cancel
           (left) + Save (right) together on one row. ── */}
       {sub && !cancelled && (
         <div className="space-y-2 pt-1">
@@ -561,7 +561,7 @@ function ClientDetailBody({ client }: { client: AdminClient }) {
               {!currentPeriodPaid ? (
                 <Button size="sm" className="gap-1.5" onClick={handleMarkPaid} disabled={markPaid.isPending}>
                   <CheckCircle2 className="size-4" />
-                  Mark as paid
+                  Mark as Paid
                 </Button>
               ) : (
                 <Button
@@ -583,7 +583,7 @@ function ClientDetailBody({ client }: { client: AdminClient }) {
                 onClick={() => setCancelConfirmOpen(true)}
               >
                 <XCircle className="size-4" />
-                Cancel subscription
+                Cancel Subscription
               </Button>
             </div>
             <Button onClick={save} disabled={!isDirty || saving} size="sm">
@@ -708,7 +708,7 @@ function SubscriptionPanel({
   );
 }
 
-// ── Create subscription panel (shown when client has none) ──────────────────
+// ── Create Subscription panel (shown when client has none) ──────────────────
 
 function CreateSubscriptionPanel({ clientId, onDone }: { clientId: string; onDone?: () => void }) {
   const create = useCreateSubscription();
@@ -758,7 +758,7 @@ function CreateSubscriptionPanel({ clientId, onDone }: { clientId: string; onDon
 
       <div className="flex justify-end">
         <Button onClick={submit} disabled={create.isPending} size="sm">
-          Create subscription
+          Create Subscription
         </Button>
       </div>
     </div>
@@ -794,14 +794,14 @@ function CancelSubscriptionDialog({
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Cancel subscription?</AlertDialogTitle>
+          <AlertDialogTitle>Cancel Subscription?</AlertDialogTitle>
           <AlertDialogDescription>
             This will cancel the {PACKAGE_LABELS[sub.packageType as PackageType] ?? sub.packageType} subscription
             for <strong>{clientName}</strong>. The client's access will be affected. This action is recorded in the activity log.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>Go back</AlertDialogCancel>
+          <AlertDialogCancel>Go Back</AlertDialogCancel>
           <AlertDialogAction
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             onClick={confirm}

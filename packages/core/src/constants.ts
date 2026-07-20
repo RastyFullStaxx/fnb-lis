@@ -26,6 +26,35 @@ export const IMPORT_STATUSES = ["PROCESSING", "NEEDS_REVIEW", "COMMITTED", "REVE
 export const MATCH_METHODS = ["EXACT", "ALIAS", "FUZZY", "MANUAL"] as const;
 
 /**
+ * Supplier payment terms (client req, 2026-07-20: "lagay din natin options
+ * info ng supplier, contact details at kung ano terms ng payment nila —
+ * C.O.D, 7, or 15 days"). TEXT, not an enum, per the SQLite portability rule.
+ */
+export const PAYMENT_TERMS = ["COD", "NET_7", "NET_15", "NET_30", "PREPAID"] as const;
+export type PaymentTerms = (typeof PAYMENT_TERMS)[number];
+
+export const PAYMENT_TERMS_LABELS: Record<PaymentTerms, string> = {
+  COD: "C.O.D.",
+  NET_7: "7 Days",
+  NET_15: "15 Days",
+  NET_30: "30 Days",
+  PREPAID: "Prepaid",
+};
+
+/** Days until payment is due; null when the term isn't a credit period. */
+export const PAYMENT_TERMS_DAYS: Record<PaymentTerms, number | null> = {
+  COD: 0,
+  NET_7: 7,
+  NET_15: 15,
+  NET_30: 30,
+  PREPAID: null,
+};
+
+export function isPaymentTerms(value: unknown): value is PaymentTerms {
+  return typeof value === "string" && (PAYMENT_TERMS as readonly string[]).includes(value);
+}
+
+/**
  * Inventory cost basis (client decision, 2026-07-20). An accounting POLICY,
  * so it is stored per client and applies to VALUATION only — stock worth,
  * never variance. PAS 2 / IAS 2 permit FIFO or weighted average but require

@@ -61,10 +61,10 @@ export function RecipesPage() {
           canWrite && (
             <>
               <Button variant="outline" onClick={() => setCopyOpen(true)}>
-                <Copy className="size-4" /> Copy from location
+                <Copy className="size-4" /> Copy from Location
               </Button>
               <Button onClick={() => setBuilding("new")}>
-                <Plus className="size-4" /> New menu
+                <Plus className="size-4" /> New Menu
               </Button>
             </>
           )
@@ -86,7 +86,7 @@ export function RecipesPage() {
             action={
               (menus.data ?? []).length === 0 && (
                 <Button onClick={() => setBuilding("new")}>
-                  <Plus className="size-4" /> New menu
+                  <Plus className="size-4" /> New Menu
                 </Button>
               )
             }
@@ -196,7 +196,7 @@ function CopyMenusDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Copy recipes from another location</DialogTitle>
+          <DialogTitle>Copy Recipes from Another Location</DialogTitle>
           <DialogDescription>
             Brings that location's published recipes into this one, remapped onto this location's own catalog
             prices. Menus already here, or that use an ingredient this location doesn't stock yet, are left out —

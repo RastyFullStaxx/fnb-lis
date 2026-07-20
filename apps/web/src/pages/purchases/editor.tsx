@@ -58,7 +58,7 @@ export function PurchaseEditorPage() {
       <div className="flex flex-col items-center gap-3 py-24 text-center">
         <p className="text-sm">Couldn't load this delivery — it may have been removed.</p>
         <Button asChild variant="outline" size="sm">
-          <Link to={`/l/${locationId}/purchases`}>Back to purchases</Link>
+          <Link to={`/l/${locationId}/purchases`}>Back to Purchases</Link>
         </Button>
       </div>
     );
@@ -104,7 +104,7 @@ export function PurchaseEditorPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="mb-4 flex items-center gap-3">
-        <Button asChild variant="ghost" size="icon" aria-label="Back to purchases">
+        <Button asChild variant="ghost" size="icon" aria-label="Back to Purchases">
           <Link to={`/l/${locationId}/purchases`}>
             <ArrowLeft className="size-4" />
           </Link>
@@ -125,7 +125,7 @@ export function PurchaseEditorPage() {
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button disabled={activeLines.length === 0}>
-                <Check className="size-4" /> Commit delivery
+                <Check className="size-4" /> Commit Delivery
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
@@ -137,7 +137,7 @@ export function PurchaseEditorPage() {
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel>Keep drafting</AlertDialogCancel>
+                <AlertDialogCancel>Keep Drafting</AlertDialogCancel>
                 <AlertDialogAction onClick={commit}>Commit</AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>

@@ -82,6 +82,19 @@ export const preferencesRoutes = new Hono<AppEnv>()
       create: { clientId: "", key: `prefs:${user.id}`, value: JSON.stringify(body) },
     });
     return c.json(body);
+  })
+
+  // READ-ONLY and outside the master.write guard on purpose: the basis is
+  // printed on every valuation report, so anyone who can read a report must be
+  // able to read the basis. A 403 here would silently mislabel their screen as
+  // "Purchase Price". Writing it stays restricted (see settingsRoutes).
+  .get("/cost-basis", async (c) => {
+    const user = c.get("user")!;
+    const clientId = c.req.query("clientId") ?? "";
+    if (!clientId) throw new AppError(400, "clientId is required");
+    await assertClientAccess(user.id, user.role, clientId);
+    const client = await prisma.client.findUnique({ where: { id: clientId }, select: { costBasis: true } });
+    return c.json({ costBasis: isCostBasis(client?.costBasis) ? client.costBasis : "PRICE" });
   });
 
 export const settingsRoutes = new Hono<AppEnv>()
@@ -117,16 +130,8 @@ export const settingsRoutes = new Hono<AppEnv>()
 
   // ── Inventory cost basis (accounting policy — client req 2026-07-20) ──
   // Stored on the Client, not passed per request: an accounting policy must
-  // not vary between two people exporting the same report.
-  .get("/cost-basis", async (c) => {
-    const user = c.get("user")!;
-    const clientId = c.req.query("clientId") ?? "";
-    if (!clientId) throw new AppError(400, "clientId is required");
-    await assertClientAccess(user.id, user.role, clientId);
-    const client = await prisma.client.findUnique({ where: { id: clientId }, select: { costBasis: true } });
-    return c.json({ costBasis: isCostBasis(client?.costBasis) ? client.costBasis : "PRICE" });
-  })
-
+  // not vary between two people exporting the same report. The matching GET
+  // lives on preferencesRoutes so non-editors can still see the basis.
   .put("/cost-basis", zValidator("json", costBasisBody), async (c) => {
     const user = c.get("user")!;
     const clientId = c.req.query("clientId") ?? "";

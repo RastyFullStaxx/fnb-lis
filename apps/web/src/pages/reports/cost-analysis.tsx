@@ -157,7 +157,7 @@ export function CostAnalysisPage() {
             </TableBody>
             <TableFooter>
               <TableRow>
-                <TableCell className="font-medium">Total sales</TableCell>
+                <TableCell className="font-medium">Total Sales</TableCell>
                 <TableCell className="tnum text-right font-semibold">
                   {formatMoney(round2(report.data.sales.totalGross))}
                 </TableCell>

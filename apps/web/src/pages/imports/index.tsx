@@ -50,7 +50,7 @@ export const SOURCE_LABELS: Record<string, string> = {
 };
 
 const STATUS_BADGE: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
-  NEEDS_REVIEW: { label: "Needs review", variant: "default" },
+  NEEDS_REVIEW: { label: "Needs Review", variant: "default" },
   COMMITTED: { label: "Committed", variant: "secondary" },
   REVERSED: { label: "Reversed", variant: "outline" },
   FAILED: { label: "Failed", variant: "destructive" },
@@ -125,7 +125,7 @@ export function ImportsPage() {
                     setKind("ALL");
                   }}
                 >
-                  Clear filters
+                  Clear Filters
                 </Button>
               )
             }
@@ -207,7 +207,7 @@ function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (op
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Import a file</DialogTitle>
+          <DialogTitle>Import a File</DialogTitle>
           <DialogDescription>
             Drop a POS export or supplier file. The system extracts and matches rows; you review before
             anything touches inventory.
@@ -216,7 +216,7 @@ function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (op
       <div>
         <div className="mb-4 flex flex-wrap items-end gap-3">
           <div className="space-y-1.5">
-            <Label>Import type</Label>
+            <Label>Import Type</Label>
             <Select value={kind} onValueChange={(v) => setKind(v as ImportKind)}>
               <SelectTrigger className="w-44">
                 <SelectValue />

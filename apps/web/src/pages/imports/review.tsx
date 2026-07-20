@@ -85,7 +85,7 @@ export function ImportReviewPage() {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="mb-4 flex items-center gap-3">
-          <Button asChild variant="ghost" size="icon" aria-label="Back to imports">
+          <Button asChild variant="ghost" size="icon" aria-label="Back to Imports">
             <Link to={`/l/${locationId}/imports`}>
               <ArrowLeft className="size-4" />
             </Link>
@@ -109,7 +109,7 @@ export function ImportReviewPage() {
             This import batch couldn't be found — it may have been removed, or the link is out of date.
           </p>
           <Button asChild variant="outline" size="sm">
-            <Link to={`/l/${locationId}/imports`}>Back to imports</Link>
+            <Link to={`/l/${locationId}/imports`}>Back to Imports</Link>
           </Button>
         </div>
       </div>
@@ -181,7 +181,7 @@ export function ImportReviewPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="mb-4 flex items-center gap-3">
-        <Button asChild variant="ghost" size="icon" aria-label="Back to imports">
+        <Button asChild variant="ghost" size="icon" aria-label="Back to Imports">
           <Link to={`/l/${locationId}/imports`}>
             <ArrowLeft className="size-4" />
           </Link>
@@ -217,7 +217,7 @@ export function ImportReviewPage() {
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
-                    <AlertDialogCancel>Keep reviewing</AlertDialogCancel>
+                    <AlertDialogCancel>Keep Reviewing</AlertDialogCancel>
                     <AlertDialogAction onClick={commit}>Commit</AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
@@ -228,7 +228,7 @@ export function ImportReviewPage() {
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="outline" size="sm">
-                  <Undo2 className="size-4" /> Reverse batch
+                  <Undo2 className="size-4" /> Reverse Batch
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
@@ -240,7 +240,7 @@ export function ImportReviewPage() {
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogCancel>Keep it</AlertDialogCancel>
+                  <AlertDialogCancel>Keep It</AlertDialogCancel>
                   <AlertDialogAction onClick={reverse}>Reverse</AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
@@ -254,8 +254,8 @@ export function ImportReviewPage() {
         <Table>
           <TableHeader>
             <TableRow className="bg-muted hover:bg-muted">
-              <TableHead>From file</TableHead>
-              <TableHead>Matched to</TableHead>
+              <TableHead>From File</TableHead>
+              <TableHead>Matched To</TableHead>
               <TableHead className="text-right">Qty</TableHead>
               <TableHead className="text-right">{b.kind === "PURCHASES" ? "Cost" : "Price"}</TableHead>
               <TableHead>Date</TableHead>

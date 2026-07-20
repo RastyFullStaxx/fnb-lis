@@ -130,7 +130,7 @@ export function ItemFormSheet({
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <Label>Sizes / variants</Label>
+                <Label>Sizes / Variants</Label>
                 <p className="text-xs text-muted-foreground">
                   Each purchasable size — e.g. a 700 ml bottle and a 1 L bottle are two variants.
                 </p>
@@ -141,7 +141,7 @@ export function ItemFormSheet({
                 size="sm"
                 onClick={() => variants.append(emptyVariant())}
               >
-                <Plus className="size-4" /> Add size
+                <Plus className="size-4" /> Add Size
               </Button>
             </div>
 
@@ -203,7 +203,7 @@ export function ItemFormSheet({
 
                   <div className="flex items-center justify-between gap-4 border-t pt-3">
                     <div>
-                      <p className="text-sm font-medium">Track open content</p>
+                      <p className="text-sm font-medium">Track Open Content</p>
                       <p className="text-xs text-muted-foreground">
                         On: partial amounts count as a fraction of this size (open bottles). Off: counted whole.
                       </p>
@@ -220,7 +220,7 @@ export function ItemFormSheet({
                   {!contentTracked && unitIsMass && (
                     <div className="flex items-center justify-between gap-4 border-t pt-3">
                       <div>
-                        <p className="text-sm font-medium">Weigh by net weight</p>
+                        <p className="text-sm font-medium">Weigh by Net Weight</p>
                         <p className="text-xs text-muted-foreground">
                           Kitchen counting: scale reading − tare = quantity in {units.data?.find((u) => u.id === unitId)?.name ?? "the unit"}. No density conversion.
                         </p>
@@ -235,7 +235,7 @@ export function ItemFormSheet({
                   {netMode && (
                     <div className="grid grid-cols-2 items-end gap-2">
                       <div className="space-y-1.5">
-                        <Label className="text-xs">Tare weight</Label>
+                        <Label className="text-xs">Tare Weight</Label>
                         <QuantityInput
                           className="tnum"
                           placeholder="empty container (0 = none)"
@@ -245,7 +245,7 @@ export function ItemFormSheet({
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <Label className="text-xs">Tare unit</Label>
+                        <Label className="text-xs">Tare Unit</Label>
                         <Select
                           value={form.watch(`variants.${i}.tareWeightUnit`) ?? ""}
                           onValueChange={(v) =>
@@ -267,7 +267,7 @@ export function ItemFormSheet({
                   {contentTracked && (
                     <div className="grid grid-cols-2 items-end gap-2 sm:grid-cols-3">
                       <div className="space-y-1.5">
-                        <Label className="text-xs">Tare weight</Label>
+                        <Label className="text-xs">Tare Weight</Label>
                         <QuantityInput
                           className="tnum"
                           placeholder="empty container"
@@ -277,7 +277,7 @@ export function ItemFormSheet({
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <Label className="text-xs">Tare unit</Label>
+                        <Label className="text-xs">Tare Unit</Label>
                         <Select
                           value={form.watch(`variants.${i}.tareWeightUnit`) ?? ""}
                           onValueChange={(v) =>
@@ -397,7 +397,7 @@ export function ItemEditSheet({
     >
       <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
         <SheetHeader>
-          <SheetTitle>Edit item</SheetTitle>
+          <SheetTitle>Edit Item</SheetTitle>
           <SheetDescription>
             Changes apply everywhere this item appears — every location's catalog and future counts.
           </SheetDescription>
@@ -440,7 +440,7 @@ export function ItemEditSheet({
 
           <div className="space-y-3">
             <div>
-              <Label>Sizes / variants</Label>
+              <Label>Sizes / Variants</Label>
               <p className="text-xs text-muted-foreground">
                 Sizes are fixed once created; bottle weight and Liquid Weight can be corrected per size.
               </p>
@@ -453,7 +453,7 @@ export function ItemEditSheet({
                 </div>
                 {(v.contentTracked || v.weighMode === "NET") && (
                   <Button type="button" variant="outline" size="sm" onClick={() => setQuickEditId(v.id)}>
-                    <Scale className="size-4" /> Bottle weight
+                    <Scale className="size-4" /> Bottle Weight
                   </Button>
                 )}
               </div>

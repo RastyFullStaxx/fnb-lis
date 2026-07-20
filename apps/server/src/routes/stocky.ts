@@ -3,6 +3,7 @@ import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
 import Anthropic from "@anthropic-ai/sdk";
+import { isCostBasis, type CostBasis } from "@fnb/core";
 import { AppError } from "../lib/errors";
 import { requirePermission, type AppEnv } from "../middleware/auth";
 import { AI_MODEL, isAiEnabled } from "../services/import-extract";
@@ -88,7 +89,13 @@ export const stockyRoutes = new Hono<AppEnv>().post(
     const messages = toAnthropicMessages(history);
     if (messages.length === 0) throw new AppError(400, "The conversation must start with a user message");
     const question = [...history].reverse().find((m) => m.role === "user")?.content ?? "";
-    const toolCtx = { locationId: location.id, clientId: client.id };
+    // Carry the client's valuation policy so Stocky's stock-worth answers
+    // agree with the report pages it cites.
+    const toolCtx = {
+      locationId: location.id,
+      clientId: client.id,
+      costBasis: (isCostBasis(client.costBasis) ? client.costBasis : "PRICE") as CostBasis,
+    };
 
     // No key → the deterministic rule engine answers from the same read-only
     // tools. A key upgrades the same endpoint to free-form LLM conversation.

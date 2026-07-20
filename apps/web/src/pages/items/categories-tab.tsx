@@ -57,7 +57,7 @@ export function CategoriesTab({
           description="Add a category to group items for reports and count sheets."
           action={
             <Button onClick={() => setCreateOpen(true)}>
-              <Plus className="size-4" /> New category
+              <Plus className="size-4" /> New Category
             </Button>
           }
         />
@@ -148,7 +148,7 @@ function CategoryDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{category ? "Edit category" : "New category"}</DialogTitle>
+          <DialogTitle>{category ? "Edit Category" : "New Category"}</DialogTitle>
           <DialogDescription>
             The Liquid Weight formula (density factor) converts scale weight into remaining content —
             e.g. Vodka is 30.12 ml per oz.
@@ -163,7 +163,7 @@ function CategoryDialog({
             )}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="cat-type">Product type</Label>
+            <Label htmlFor="cat-type">Product Type</Label>
             <Select
               value={form.watch("productType")}
               onValueChange={(v) => form.setValue("productType", v, { shouldValidate: true })}

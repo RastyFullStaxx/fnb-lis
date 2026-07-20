@@ -137,7 +137,7 @@ export function VariantQuickEditDialog({
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">Tare unit</Label>
+            <Label className="text-xs">Tare Unit</Label>
             <Select value={tareWeightUnit} onValueChange={(v) => setTareWeightUnit(v as "g" | "oz")}>
               <SelectTrigger>
                 <SelectValue />

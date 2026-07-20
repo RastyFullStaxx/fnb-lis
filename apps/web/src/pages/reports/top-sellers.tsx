@@ -151,7 +151,7 @@ export function TopSellersPage() {
                   <TableHead className="w-10 text-right">#</TableHead>
                   <TableHead>Ingredient</TableHead>
                   <TableHead>Category</TableHead>
-                  <TableHead className="text-right">Qty consumed</TableHead>
+                  <TableHead className="text-right">Qty Consumed</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

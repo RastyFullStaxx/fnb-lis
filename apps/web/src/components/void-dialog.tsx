@@ -64,7 +64,7 @@ export function VoidDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Keep record
+            Keep Record
           </Button>
           <Button
             variant="destructive"

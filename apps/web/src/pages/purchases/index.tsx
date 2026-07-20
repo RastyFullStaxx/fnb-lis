@@ -66,7 +66,7 @@ export function PurchasesPage() {
         actions={
           tab === "purchases" ? (
             <Button onClick={() => setCreateOpen(true)}>
-              <Plus className="size-4" /> Receive delivery
+              <Plus className="size-4" /> Receive Delivery
             </Button>
           ) : (
             // Stable-height placeholder so the title row never jumps when the action leaves.
@@ -164,11 +164,11 @@ function PurchasesTab({
           action={
             (purchases.data ?? []).length === 0 ? (
               <Button onClick={() => setCreateOpen(true)}>
-                <Plus className="size-4" /> Receive delivery
+                <Plus className="size-4" /> Receive Delivery
               </Button>
             ) : (
               <Button variant="outline" onClick={onClearFilters}>
-                Clear filters
+                Clear Filters
               </Button>
             )
           }
@@ -244,12 +244,12 @@ function NewPurchaseDialog({ open, onOpenChange }: { open: boolean; onOpenChange
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle>Receive a delivery</DialogTitle>
+          <DialogTitle>Receive a Delivery</DialogTitle>
           <DialogDescription>Starts a draft — add lines, then commit when the delivery checks out.</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="p-date">Delivery date</Label>
+            <Label htmlFor="p-date">Delivery Date</Label>
             <Input id="p-date" type="date" className="tnum" value={purchaseDate} onChange={(e) => setPurchaseDate(e.target.value)} />
           </div>
           <div className="space-y-2">
@@ -259,7 +259,7 @@ function NewPurchaseDialog({ open, onOpenChange }: { open: boolean; onOpenChange
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={NONE}>No supplier</SelectItem>
+                <SelectItem value={NONE}>No Supplier</SelectItem>
                 {(suppliers.data ?? []).filter((s) => s.isActive).map((s) => (
                   <SelectItem key={s.id} value={s.id}>
                     {s.name}
@@ -362,7 +362,7 @@ function ForfeitsTab() {
         ) : (
           item && (
             <div className="space-y-2">
-              <Label htmlFor="f-qty">Quantity returned</Label>
+              <Label htmlFor="f-qty">Quantity Returned</Label>
               <QuantityInput
                 id="f-qty"
                 className="tnum h-11 text-lg"
@@ -381,7 +381,7 @@ function ForfeitsTab() {
       </div>
 
       <div className="lg:border-l lg:pl-6">
-        <div className="mb-2 text-sm font-medium">Recent returns</div>
+        <div className="mb-2 text-sm font-medium">Recent Returns</div>
         <div aria-live="polite" className="max-h-[28rem] divide-y overflow-y-auto">
           {forfeits.isPending ? (
             <div className="divide-y">

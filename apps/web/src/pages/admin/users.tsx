@@ -136,7 +136,7 @@ export function AdminUsersPage() {
         title="Users"
         actions={
           <Button onClick={() => setCreating(true)}>
-            <Plus className="size-4" /> New user
+            <Plus className="size-4" /> New User
           </Button>
         }
       />
@@ -160,8 +160,8 @@ export function AdminUsersPage() {
                 <SelectValue placeholder="Billing type" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ALL">All billing types</SelectItem>
-                <SelectItem value="__none__">No package</SelectItem>
+                <SelectItem value="ALL">All Billing Types</SelectItem>
+                <SelectItem value="__none__">No Package</SelectItem>
                 <SelectItem value="MONTHLY">Subscription</SelectItem>
                 <SelectItem value="STANDALONE">Standalone</SelectItem>
               </SelectContent>
@@ -171,8 +171,8 @@ export function AdminUsersPage() {
                 <SelectValue placeholder="Package" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ALL">All packages</SelectItem>
-                <SelectItem value="__none__">No package</SelectItem>
+                <SelectItem value="ALL">All Packages</SelectItem>
+                <SelectItem value="__none__">No Package</SelectItem>
                 {PACKAGE_TYPES.map((p) => (
                   <SelectItem key={p} value={p}>{PACKAGE_LABELS[p]}</SelectItem>
                 ))}
@@ -183,8 +183,8 @@ export function AdminUsersPage() {
                 <SelectValue placeholder="Module" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ALL">All modules</SelectItem>
-                <SelectItem value="__none__">No module</SelectItem>
+                <SelectItem value="ALL">All Modules</SelectItem>
+                <SelectItem value="__none__">No Module</SelectItem>
                 {MODULE_TYPES.map((m) => (
                   <SelectItem key={m} value={m}>{MODULE_TYPE_LABELS[m]}</SelectItem>
                 ))}
@@ -522,7 +522,7 @@ function CreateUserDialog({
     >
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>New user</DialogTitle>
+          <DialogTitle>New User</DialogTitle>
           <DialogDescription>
             A temporary password is generated — the user can keep or change it later.
           </DialogDescription>
@@ -530,11 +530,11 @@ function CreateUserDialog({
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
-              <Label htmlFor="fn">First name</Label>
+              <Label htmlFor="fn">First Name</Label>
               <Input id="fn" autoFocus value={firstName} onChange={(e) => setFirstName(e.target.value)} />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="ln">Last name</Label>
+              <Label htmlFor="ln">Last Name</Label>
               <Input id="ln" value={lastName} onChange={(e) => setLastName(e.target.value)} />
             </div>
           </div>
@@ -579,7 +579,7 @@ function CreateUserDialog({
           </div>
           {role !== "ADMIN" && (
             <div className="space-y-2">
-              <Label>Client access</Label>
+              <Label>Client Access</Label>
               <p className="text-xs text-muted-foreground">
                 Package badges show each client's subscription tier.
               </p>
@@ -588,7 +588,7 @@ function CreateUserDialog({
           )}
           {role !== "ADMIN" && (
             <div className="space-y-2">
-              <Label>Module access</Label>
+              <Label>Module Access</Label>
               <ModuleCheckboxes selected={modules} onToggle={toggleModule} />
             </div>
           )}
@@ -604,7 +604,7 @@ function CreateUserDialog({
             Cancel
           </Button>
           <Button onClick={submit} disabled={!valid || create.isPending}>
-            Create user
+            Create User
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -714,7 +714,7 @@ function EditUserDialog({
 
           {role !== "ADMIN" && (
             <div className="space-y-2">
-              <Label>Client access</Label>
+              <Label>Client Access</Label>
               <p className="text-xs text-muted-foreground">
                 Package badges show each client's subscription tier.
               </p>
@@ -724,7 +724,7 @@ function EditUserDialog({
 
           {role !== "ADMIN" && (
             <div className="space-y-2">
-              <Label>Module access</Label>
+              <Label>Module Access</Label>
               <ModuleCheckboxes selected={modules} onToggle={toggleModule} />
             </div>
           )}
@@ -735,7 +735,7 @@ function EditUserDialog({
               Reset password
             </div>
             <Button variant="outline" size="sm" onClick={doReset} disabled={update.isPending}>
-              Generate & reset
+              Generate & Reset
             </Button>
           </div>
 
@@ -759,7 +759,7 @@ function EditUserDialog({
             Cancel
           </Button>
           <Button onClick={saveRole} disabled={update.isPending || updateAccess.isPending}>
-            Save changes
+            Save Changes
           </Button>
         </DialogFooter>
       </DialogContent>

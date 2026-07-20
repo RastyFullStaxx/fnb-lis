@@ -47,9 +47,9 @@ interface SecondaryAction {
 }
 
 const SECONDARY_ACTIONS: SecondaryAction[] = [
-  { kind: "purchase", title: "Receive delivery", path: "purchases", icon: ShoppingCart, permission: "entries.create" },
-  { kind: "sale", title: "Record sale", path: "sales", icon: Receipt, permission: "entries.create" },
-  { kind: "import", title: "Import file", path: "imports", icon: FileInput, permission: "imports.upload" },
+  { kind: "purchase", title: "Receive Delivery", path: "purchases", icon: ShoppingCart, permission: "entries.create" },
+  { kind: "sale", title: "Record Sale", path: "sales", icon: Receipt, permission: "entries.create" },
+  { kind: "import", title: "Import File", path: "imports", icon: FileInput, permission: "imports.upload" },
 ];
 
 const DATE = new Intl.DateTimeFormat("en-PH", {
@@ -154,9 +154,9 @@ function getPrimaryAction(data: DashboardData, role: Role): DashboardAction {
   if (openCount && can(role, "entries.create")) {
     return {
       kind: "count",
-      title: "Continue the open count",
+      title: "Continue the Open Count",
       description: `${formatDate(openCount.date)} has ${openCount.lineCount} ${openCount.lineCount === 1 ? "entry" : "entries"} saved. Resume where the team left off.`,
-      buttonLabel: "Continue count",
+      buttonLabel: "Continue Count",
       path: `counts/${openCount.id}`,
       icon: ClipboardList,
     };
@@ -164,9 +164,9 @@ function getPrimaryAction(data: DashboardData, role: Role): DashboardAction {
   if (data.attention.unmatchedRows > 0 && can(role, "imports.upload")) {
     return {
       kind: "import",
-      title: "Review imported rows",
+      title: "Review Imported Rows",
       description: `${data.attention.unmatchedRows} ${data.attention.unmatchedRows === 1 ? "row needs" : "rows need"} a match before the import can be committed.`,
-      buttonLabel: "Review import",
+      buttonLabel: "Review Import",
       path: "imports",
       icon: FileInput,
     };
@@ -176,9 +176,9 @@ function getPrimaryAction(data: DashboardData, role: Role): DashboardAction {
     const reference = purchase.invoiceRef ? `Invoice ${purchase.invoiceRef}` : "The latest delivery draft";
     return {
       kind: "purchase",
-      title: "Continue the delivery draft",
+      title: "Continue the Delivery Draft",
       description: `${reference}${purchase.supplierName ? ` from ${purchase.supplierName}` : ""} is waiting to be committed.`,
-      buttonLabel: "Continue delivery",
+      buttonLabel: "Continue Delivery",
       path: `purchases/${purchase.id}`,
       icon: ShoppingCart,
     };
@@ -186,9 +186,9 @@ function getPrimaryAction(data: DashboardData, role: Role): DashboardAction {
   if (data.readiness.activeItems === 0 && can(role, "master.write")) {
     return {
       kind: "items",
-      title: "Add the first inventory item",
+      title: "Add the First Inventory Item",
       description: "Build the location catalog before recording counts, deliveries, or sales.",
-      buttonLabel: "Add inventory items",
+      buttonLabel: "Add Inventory Items",
       path: "items",
       icon: Package,
     };
@@ -196,9 +196,9 @@ function getPrimaryAction(data: DashboardData, role: Role): DashboardAction {
   if (data.period.countDates === 0 && can(role, "entries.create")) {
     return {
       kind: "count",
-      title: "Start the beginning count",
+      title: "Start the Beginning Count",
       description: "Commit the location's opening quantities to establish the first audit period.",
-      buttonLabel: "Start beginning count",
+      buttonLabel: "Start Beginning Count",
       path: "counts",
       icon: ClipboardList,
     };
@@ -206,9 +206,9 @@ function getPrimaryAction(data: DashboardData, role: Role): DashboardAction {
   if (data.attention.missingPrices > 0 && can(role, "prices.edit")) {
     return {
       kind: "prices",
-      title: "Complete missing prices",
+      title: "Complete Missing Prices",
       description: `${data.attention.missingPrices} ${data.attention.missingPrices === 1 ? "item needs" : "items need"} cost or retail pricing before reports are complete.`,
-      buttonLabel: "Complete pricing",
+      buttonLabel: "Complete Pricing",
       path: "stock",
       icon: Tags,
     };
@@ -216,7 +216,7 @@ function getPrimaryAction(data: DashboardData, role: Role): DashboardAction {
   if (data.period.canAudit && can(role, "reports.view")) {
     return {
       kind: "audit",
-      title: "Review the latest reconciliation",
+      title: "Review the Latest Reconciliation",
       description: data.period.latest
         ? `${formatDate(data.period.latest.begin)} to ${formatDate(data.period.latest.end)} is ready for variance review.`
         : "The latest count pair is ready for variance review.",
@@ -228,9 +228,9 @@ function getPrimaryAction(data: DashboardData, role: Role): DashboardAction {
   if (can(role, "entries.create")) {
     return {
       kind: "count",
-      title: "Start the next count",
+      title: "Start the Next Count",
       description: "Record the next physical count to close the current activity period.",
-      buttonLabel: "Start a count",
+      buttonLabel: "Start a Count",
       path: "counts",
       icon: ClipboardList,
     };
@@ -238,18 +238,18 @@ function getPrimaryAction(data: DashboardData, role: Role): DashboardAction {
   if (can(role, "reports.view")) {
     return {
       kind: "audit",
-      title: "Review inventory reports",
+      title: "Review Inventory Reports",
       description: "Open the report library to review stock, purchases, sales, and audit history.",
-      buttonLabel: "View reports",
+      buttonLabel: "View Reports",
       path: "reports",
       icon: TrendingDown,
     };
   }
   return {
     kind: "stock",
-    title: "Review current stock",
+    title: "Review Current Stock",
     description: "Open the stock list to review the active catalog for this location.",
-    buttonLabel: "View stock",
+    buttonLabel: "View Stock",
     path: "stock",
     icon: Package,
   };
@@ -386,8 +386,8 @@ function OperationalStatus({
   const stageCopy: Record<DashboardStage, { label: string; detail: string }> = {
     SETUP: { label: "Setup", detail: "Prepare the first audit period" },
     COUNTING: { label: "Counting", detail: "A physical count is in progress" },
-    ACTIVE: { label: "Active period", detail: "Record activity before the next count" },
-    RECONCILIATION: { label: "Reconciliation ready", detail: "A count pair is ready to review" },
+    ACTIVE: { label: "Active Period", detail: "Record activity before the next count" },
+    RECONCILIATION: { label: "Reconciliation Ready", detail: "A count pair is ready to review" },
   };
 
   return (
@@ -588,14 +588,14 @@ function SetupChecklist({
 }) {
   const steps = [
     {
-      title: "Add inventory items",
+      title: "Add Inventory Items",
       detail: data.readiness.activeItems > 0 ? `${data.readiness.activeItems} active items available` : "Create the location catalog",
       done: data.readiness.activeItems > 0,
       path: "items",
       actionable: can(role, "master.write"),
     },
     {
-      title: "Complete item pricing",
+      title: "Complete Item Pricing",
       detail: data.readiness.activeItems === 0
         ? "Add items before assigning prices"
         : data.attention.missingPrices === 0
@@ -606,7 +606,7 @@ function SetupChecklist({
       actionable: can(role, "prices.edit"),
     },
     {
-      title: "Commit the beginning count",
+      title: "Commit the Beginning Count",
       detail: data.period.countDates > 0 ? "The first audit period is active" : "Record the opening quantities",
       done: data.period.countDates > 0,
       path: "counts",
@@ -617,7 +617,7 @@ function SetupChecklist({
   return (
     <Card>
       <CardContent>
-        <h2 className="text-base font-semibold">Finish location setup</h2>
+        <h2 className="text-base font-semibold">Finish Location Setup</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Complete these steps before the first reconciliation can be generated.
         </p>
@@ -747,7 +747,7 @@ function RecentActivity({
           </div>
           {can(role, "activity.view") ? (
             <Button asChild size="sm" variant="ghost">
-              <Link to={to("admin/activity")}>View activity</Link>
+              <Link to={to("admin/activity")}>View Activity</Link>
             </Button>
           ) : null}
         </div>

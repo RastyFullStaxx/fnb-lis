@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import type { CostBasis } from "@fnb/core";
+import type { CostBasis, PaymentTerms } from "@fnb/core";
 import { api } from "./http";
 import { useLocationId } from "./location";
 
@@ -37,7 +37,16 @@ export interface PurchaseReport {
     unitCost: number;
     lineTotal: number;
   }>;
-  bySupplier: Array<{ supplier: string; qty: number; cost: number }>;
+  bySupplier: Array<{
+    supplier: string;
+    contactPerson: string | null;
+    phone: string | null;
+    email: string | null;
+    address: string | null;
+    paymentTerms: PaymentTerms | null;
+    qty: number;
+    cost: number;
+  }>;
   totals: { qty: number; cost: number };
 }
 

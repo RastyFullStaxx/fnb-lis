@@ -33,7 +33,7 @@ export function BootError({ message, onRetry }: { message: string; onRetry?: () 
         <p className="text-sm leading-6 text-foreground">{message}</p>
         {onRetry ? (
           <Button size="sm" variant="outline" onClick={onRetry}>
-            Try again
+            Try Again
           </Button>
         ) : null}
       </div>
