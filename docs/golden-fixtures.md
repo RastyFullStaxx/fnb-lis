@@ -157,3 +157,67 @@ net 80.5 oz → phpRound(80.5 × 28.3495) = phpRound(2282.13) = **2,282 g** → 
 
 NET mode is rejected when the variant is `contentTracked` or its counting unit is not MASS —
 both enforced on create and on merged update state.
+
+---
+
+## 6. Top Sellers
+
+Replaces the legacy Graph report. Verified 2026-07-20 against `services/top-sellers.ts`.
+
+**Location:** Prime Hospitality Group → Main Bar · **Window:** 2026-06-01 → 2026-06-08 (inclusive,
+same `SaleRecord` base filter as the Sales report — `kind = SALE`, `status = ACTIVE`).
+
+**Seeded events** (layered on top of the golden audit cycle — no new seed data required):
+
+- Direct item sales (same records as fixture 1): Absolut ×3 @1,650; JD ×2 @2,400; San Miguel ×30 @120
+- Menu sales `kind = SALE` only (NON_REVENUE is excluded from both menus and ingredient buckets):
+  - Vodka Tonic v1 (recipe snapshot: 45 ml Absolut 700 + 1 × Tonic 200): ×12 @250 full price · ×2 @250 at 10% off → **14 total**
+  - JD Coke v1 (recipe snapshot: 30 ml JD 700 + 1 × Coke 200, `contentTracked=false`, SRP 200): ×5 @200
+
+**Top Brands** (`locationItemId` set, ranked by qty)
+
+| Rank | Item | Category | Qty | Revenue |
+|---|---|---|---|---|
+| 1 | San Miguel 330 ml | Beer | 30 | ₱3,600.00 |
+| 2 | Absolut 700 ml | Spirits | 3 | ₱4,950.00 |
+| 3 | JD 700 ml | Spirits | 2 | ₱4,800.00 |
+
+Revenue = `unitPrice × qty × (1 − discountPct/100)`, same `net` calc as `salesReport()`.
+No discount on any direct sale in this fixture → revenue = qty × unitPrice.
+
+**Top Menus** (`menuItemId` set, `locationItemId` null, ranked by qty)
+
+| Rank | Menu | Qty | Revenue |
+|---|---|---|---|
+| 1 | Vodka Tonic | 14 | ₱3,450.00 |
+| 2 | JD Coke | 5 | ₱1,000.00 |
+
+Revenue derivations:
+- Vodka Tonic: `12 × 250 × 1.00 + 2 × 250 × 0.90 = 3,000 + 450 = **3,450**`
+- JD Coke: `5 × 200 × 1.00 = **1,000**`
+
+**Top Ingredients** (expanded through snapshotted `recipeVersion.lines`, ranked by qty consumed)
+
+| Rank | Ingredient | Category | Qty consumed | Derivation |
+|---|---|---|---|---|
+| 1 | Tonic 200 ml | Mixer | **14.000000** | `contentTracked=false` → `servingQty × qtySold = 1 × 14` |
+| 2 | Coke 200 ml | Mixer | **5.000000** | `contentTracked=false` → `1 × 5` |
+| 3 | Absolut 700 ml | Spirits | **0.900000** | `contentTracked=true` → `(45/700) × 14 = 0.9` (exact — 45×14=630, 630/700=0.9) |
+| 4 | JD 700 ml | Spirits | **0.214286** | `contentTracked=true` → `(30/700) × 5 = 150/700 = 0.214286` (6 dp) |
+
+`contentTracked` branching — the same formula as `reconciliation.ts` §6:
+```
+contentTracked = true  →  (servingQty / size) × qtySold
+contentTracked = false →  servingQty × qtySold
+```
+
+**Guards verified:**
+- The 1 × Vodka Tonic `NON_REVENUE` record (STAFF_USE) is absent from all three buckets — `kind = SALE` filter excludes it.
+- Absolut's ingredient qty (0.9) is distinct from its brand qty (3) — the two buckets are independent.
+- Absolut appears in **both** Top Brands (direct sales) and Top Ingredients (menu expansion) — correct; they are separate aggregations.
+- A hypothetical second recipe version published after the sale leaves the fixture byte-identical — ingredient expansion always walks `recipeVersion.lines` (the snapshot), never the menu's current live recipe.
+- A menu sale with `recipeVersionId = null` is silently skipped from Top Ingredients and does not throw.
+
+**How to verify:** call `topSellersReport(locationId, '2026-06-01', '2026-06-08')` via
+`npx tsx` from `apps/server` against the seeded database, or read the Top Sellers report page
+at `/l/:locationId/reports/top-sellers` with these dates.
