@@ -55,8 +55,9 @@ export function AttachItemDialog({
         retail: Number(retail) || 0,
       });
       toast.success(`${selected.item.name} ${variantLabel(selected)} added to this location`);
+      // Stay open with a fresh search — pricing a new catalog is a batch job;
+      // "Done" closes the dialog when the pass is finished.
       reset();
-      onOpenChange(false);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not add the item");
     }
@@ -80,7 +81,12 @@ export function AttachItemDialog({
 
         {!selected ? (
           <Command shouldFilter={false} className="rounded-lg border">
-            <CommandInput placeholder="Search the master catalog…" value={search} onValueChange={setSearch} />
+            <CommandInput
+              autoFocus
+              placeholder="Search the master catalog…"
+              value={search}
+              onValueChange={setSearch}
+            />
             <CommandList>
               <CommandEmpty>
                 {available.isPending ? "Searching…" : "No available items — everything may already be in this catalog."}
@@ -120,6 +126,12 @@ export function AttachItemDialog({
                   autoFocus
                   value={cost}
                   onChange={(e) => setCost(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      document.getElementById("attach-retail")?.focus();
+                    }
+                  }}
                 />
               </div>
               <div className="space-y-1.5">
@@ -140,6 +152,15 @@ export function AttachItemDialog({
         )}
 
         <DialogFooter>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              reset();
+              onOpenChange(false);
+            }}
+          >
+            Done
+          </Button>
           <Button onClick={save} disabled={!selected || attach.isPending}>
             {attach.isPending ? "Adding…" : "Add to catalog"}
           </Button>

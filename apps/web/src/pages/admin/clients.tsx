@@ -39,13 +39,11 @@ import {
 } from "@/api/admin";
 import { ApiError } from "@/api/http";
 import { PageHeader } from "@/components/page-header";
-import { EmptyState } from "@/components/empty-state";
+import { TableEmpty, TableLoading, TableSurface } from "@/components/table-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
   DialogContent,
@@ -66,11 +64,19 @@ import {
 
 // ── Access state helpers ────────────────────────────────────────────────────
 
+function formatLocalDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 function today(): string {
   // Local calendar date, not toISOString() (UTC) — for a UTC+8 user near
   // midnight the UTC date is still "yesterday".
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return formatLocalDate(new Date());
+}
+
+/** Timestamps display as YYYY-MM-DD, matching business dates everywhere else. */
+function localDate(iso: string): string {
+  return formatLocalDate(new Date(iso));
 }
 
 function AccessStateBadge({ sub }: { sub: AdminSubscription }) {
@@ -81,13 +87,13 @@ function AccessStateBadge({ sub }: { sub: AdminSubscription }) {
   if (sub.billingCycle !== "MONTHLY") {
     return sub.paid
       ? <Badge variant="default">Active</Badge>
-      : <Badge variant="outline" className="text-amber-600 border-amber-400">Unpaid</Badge>;
+      : <Badge variant="outline" className="text-warning-text border-warning-text/40">Unpaid</Badge>;
   }
 
   const state = deriveAccessState(sub);
   if (state === "ACTIVE") return <Badge variant="default">Active</Badge>;
   if (state === "VIEW_ONLY") return <Badge variant="destructive">View-only</Badge>;
-  return <Badge variant="outline" className="text-amber-600 border-amber-400">Grace period</Badge>;
+  return <Badge variant="outline" className="text-warning-text border-warning-text/40">Grace period</Badge>;
 }
 
 function DueBadge({ sub }: { sub: AdminSubscription }) {
@@ -100,13 +106,13 @@ function DueBadge({ sub }: { sub: AdminSubscription }) {
   const days = daysUntilDue(sub);
   if (days > 0) {
     return (
-      <span className="text-xs text-amber-600 font-medium">
+      <span className="text-xs text-warning-text font-medium">
         Due in {days}d
       </span>
     );
   }
   if (days === 0) {
-    return <span className="text-xs text-amber-600 font-medium">Due today</span>;
+    return <span className="text-xs text-warning-text font-medium">Due today</span>;
   }
   const overdue = Math.abs(days);
   return (
@@ -121,10 +127,13 @@ function DueBadge({ sub }: { sub: AdminSubscription }) {
 export function AdminClientsPage() {
   const clients = useAdminClients();
   const [creating, setCreating] = useState(false);
-  const [managing, setManaging] = useState<AdminClient | null>(null);
+  const [managingId, setManagingId] = useState<string | null>(null);
+  // Derive the managed client from the live query — never a snapshot — so
+  // mark-paid / add-location / save re-render the open dialog with fresh data.
+  const managing = clients.data?.find((c) => c.id === managingId) ?? null;
 
   return (
-    <div>
+    <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader
         title="Clients"
         actions={
@@ -134,103 +143,105 @@ export function AdminClientsPage() {
         }
       />
 
-      {clients.isPending ? (
-        <div className="space-y-3">
-          <Skeleton className="h-28 w-full" />
-          <Skeleton className="h-28 w-full" />
-        </div>
-      ) : (clients.data ?? []).length === 0 ? (
-        <EmptyState
-          icon={Building2}
-          title="No clients yet"
-          description="Create the first client to start onboarding locations and users."
-          action={
-            <Button onClick={() => setCreating(true)}>
-              <Plus className="size-4" /> New client
-            </Button>
-          }
-        />
-      ) : (
-        <div className="space-y-3">
-          {clients.data!.map((client) => {
-            const sub = client.subscription;
-            const activeLocations = client.locations.filter((l) => l.status === "ACTIVE").length;
-            const atLimit = sub && sub.maxEntities > 0 && activeLocations >= sub.maxEntities;
+      <TableSurface>
+        {clients.isPending ? (
+          <TableLoading rows={4} />
+        ) : (clients.data ?? []).length === 0 ? (
+          <TableEmpty
+            icon={Building2}
+            title="No clients yet"
+            description="Create the first client to start onboarding locations and users."
+            action={
+              <Button onClick={() => setCreating(true)}>
+                <Plus className="size-4" /> New client
+              </Button>
+            }
+          />
+        ) : (
+          <div className="divide-y">
+            {clients.data!.map((client) => {
+              const sub = client.subscription;
+              const activeLocations = client.locations.filter((l) => l.status === "ACTIVE").length;
+              const atLimit = sub && sub.maxEntities > 0 && activeLocations >= sub.maxEntities;
 
-            return (
-              <Card key={client.id} className={client.status !== "ACTIVE" ? "opacity-60" : undefined}>
-                <CardHeader className="!flex flex-row items-center justify-between gap-3 space-y-0 pb-3">
-                  <div className="flex items-center gap-2">
-                    <CardTitle className="text-base">{client.name}</CardTitle>
-                    {client.status !== "ACTIVE" && <Badge variant="outline">Archived</Badge>}
-                    {sub && <AccessStateBadge sub={sub} />}
+              return (
+                <section
+                  key={client.id}
+                  className={client.status !== "ACTIVE" ? "px-4 py-4 opacity-60" : "px-4 py-4"}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-sm font-semibold">{client.name}</h2>
+                      {client.status !== "ACTIVE" && <Badge variant="outline">Archived</Badge>}
+                      {sub && <AccessStateBadge sub={sub} />}
+                    </div>
+                    <Button variant="ghost" size="sm" className="shrink-0" onClick={() => setManagingId(client.id)}>
+                      Manage
+                    </Button>
                   </div>
-                  <Button variant="ghost" size="sm" className="shrink-0" onClick={() => setManaging(client)}>
-                    Manage
-                  </Button>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {/* One restrained meta line — package, modules, users, location count/limit,
-                      due date all read as plain text at the same weight, separated by middots,
-                      instead of a row of competing badges. */}
-                  <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
-                    {sub ? (
-                      <>
-                        <span className="font-medium text-foreground">
-                          {PACKAGE_LABELS[sub.packageType as PackageType] ?? sub.packageType}
-                        </span>
-                        <span>·</span>
-                        <span>{sub.modules.map((m) => MODULE_TYPE_LABELS[m as ModuleType] ?? m).join(" + ")}</span>
-                        <span>·</span>
-                        <span className={atLimit ? "text-destructive font-medium" : undefined}>
-                          {sub.maxEntities === 0
-                            ? "Unlimited locations"
-                            : `${activeLocations}/${sub.maxEntities} locations`}
-                        </span>
-                      </>
-                    ) : (
-                      <span>No package</span>
-                    )}
-                    <span>·</span>
-                    <span>
-                      {client.access.length} user{client.access.length === 1 ? "" : "s"}
-                    </span>
-                    {sub && <DueBadge sub={sub} />}
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    {client.locations.map((loc) => (
-                      <span
-                        key={loc.id}
-                        className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm ${
-                          loc.status !== "ACTIVE" ? "opacity-50 bg-muted/20" : "bg-muted/40"
-                        }`}
-                      >
-                        <MapPin className="size-3.5 text-muted-foreground" />
-                        {loc.name}
-                        {loc.modules.length > 0 && (
-                          <span className="text-xs text-muted-foreground">
-                            ({loc.modules.map((m) => MODULE_TYPE_LABELS[m as ModuleType] ?? m).join("+")})
+                  <div className="mt-2 space-y-3">
+                    {/* One restrained meta line — package, modules, users, location count/limit,
+                        due date all read as plain text at the same weight, separated by middots,
+                        instead of a row of competing badges. */}
+                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
+                      {sub ? (
+                        <>
+                          <span className="font-medium text-foreground">
+                            {PACKAGE_LABELS[sub.packageType as PackageType] ?? sub.packageType}
                           </span>
-                        )}
-                        {loc.status !== "ACTIVE" && (
-                          <span className="text-xs text-muted-foreground">(inactive)</span>
-                        )}
+                          <span>·</span>
+                          <span>{sub.modules.map((m) => MODULE_TYPE_LABELS[m as ModuleType] ?? m).join(" + ")}</span>
+                          <span>·</span>
+                          <span className={atLimit ? "text-destructive font-medium" : undefined}>
+                            {sub.maxEntities === 0
+                              ? "Unlimited locations"
+                              : `${activeLocations}/${sub.maxEntities} locations`}
+                          </span>
+                        </>
+                      ) : (
+                        <span>No package</span>
+                      )}
+                      <span>·</span>
+                      <span>
+                        {client.access.length} user{client.access.length === 1 ? "" : "s"}
                       </span>
-                    ))}
-                    {client.locations.length === 0 && (
-                      <p className="text-sm text-muted-foreground">No locations yet.</p>
-                    )}
+                      {sub && <DueBadge sub={sub} />}
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      {client.locations.map((loc) => (
+                        <span
+                          key={loc.id}
+                          className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm ${
+                            loc.status !== "ACTIVE" ? "opacity-50 bg-muted/20" : "bg-muted/40"
+                          }`}
+                        >
+                          <MapPin className="size-3.5 text-muted-foreground" />
+                          {loc.name}
+                          {loc.modules.length > 0 && (
+                            <span className="text-xs text-muted-foreground">
+                              ({loc.modules.map((m) => MODULE_TYPE_LABELS[m as ModuleType] ?? m).join("+")})
+                            </span>
+                          )}
+                          {loc.status !== "ACTIVE" && (
+                            <span className="text-xs text-muted-foreground">(inactive)</span>
+                          )}
+                        </span>
+                      ))}
+                      {client.locations.length === 0 && (
+                        <p className="text-sm text-muted-foreground">No locations yet.</p>
+                      )}
+                    </div>
                   </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-      )}
+                </section>
+              );
+            })}
+          </div>
+        )}
+      </TableSurface>
 
       <CreateClientDialog open={creating} onOpenChange={setCreating} />
-      <ManageClientDialog client={managing} onClose={() => setManaging(null)} />
+      <ManageClientDialog client={managing} onClose={() => setManagingId(null)} />
     </div>
   );
 }
@@ -353,6 +364,9 @@ function CreateClientDialog({ open, onOpenChange }: { open: boolean; onOpenChang
         />
 
         <DialogFooter>
+          <Button variant="ghost" onClick={close}>
+            Cancel
+          </Button>
           <Button onClick={submit} disabled={!name.trim() || createFull.isPending}>
             Create client
           </Button>
@@ -536,14 +550,10 @@ function ClientDetailBody({ client }: { client: AdminClient }) {
       {sub && !cancelled && (
         <div className="space-y-2 pt-1">
           {currentPeriodPaid && (
-            <div className="flex items-center gap-1.5 rounded-md bg-green-50 border border-green-200 px-3 py-1.5 text-xs text-green-700 dark:bg-green-950/30 dark:border-green-800 dark:text-green-400 w-fit">
+            <div className="flex items-center gap-1.5 rounded-md bg-success/10 border border-success/30 px-3 py-1.5 text-xs text-success w-fit">
               <CheckCircle2 className="size-3.5" />
               Paid
-              {sub.lastPaidAt && (
-                <span className="text-green-500">
-                  · {new Date(sub.lastPaidAt).toLocaleDateString()}
-                </span>
-              )}
+              {sub.lastPaidAt && <span>· {localDate(sub.lastPaidAt)}</span>}
             </div>
           )}
           <div className="flex items-center justify-between gap-3">
@@ -652,7 +662,7 @@ function SubscriptionPanel({
         </div>
       )}
       {!cancelled && accessState === "GRACE" && sub.billingCycle === "MONTHLY" && days !== null && (
-        <div className="flex items-center gap-2 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950/30 dark:border-amber-800 dark:text-amber-400">
+        <div className="flex items-center gap-2 rounded-md bg-warning/10 border border-warning-text/30 px-3 py-2 text-xs text-warning-text">
           <CalendarDays className="size-3.5 shrink-0" />
           {days > 0
             ? `Payment due in ${days} day${days === 1 ? "" : "s"}.`
@@ -673,7 +683,7 @@ function SubscriptionPanel({
         modulesLocked={cancelled}
       />
       {narrowing && (
-        <div className="flex items-center gap-2 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950/30 dark:border-amber-800 dark:text-amber-400">
+        <div className="flex items-center gap-2 rounded-md bg-warning/10 border border-warning-text/30 px-3 py-2 text-xs text-warning-text">
           <AlertCircle className="size-3.5 shrink-0" />
           Removing a module here also removes it from any location currently assigned it.
         </div>
@@ -690,7 +700,7 @@ function SubscriptionPanel({
         {sub.endDate && <span>Ends {sub.endDate}</span>}
         {cancelled && (
           <span>
-            Cancelled{sub.cancelledAt ? ` ${new Date(sub.cancelledAt as unknown as string).toLocaleDateString()}` : ""}
+            Cancelled{sub.cancelledAt ? ` ${localDate(sub.cancelledAt as unknown as string)}` : ""}
           </span>
         )}
       </div>

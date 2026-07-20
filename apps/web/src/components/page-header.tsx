@@ -14,7 +14,8 @@ export function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+    // min-h keeps the title row's height stable when a tab has no actions.
+    <div className="mb-4 flex min-h-9 flex-wrap items-center justify-between gap-3">
       <h2 className="text-xl font-semibold tracking-tight">{title}</h2>
       {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
     </div>

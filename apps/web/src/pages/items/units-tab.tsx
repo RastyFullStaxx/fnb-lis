@@ -1,6 +1,6 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Ruler } from "lucide-react";
+import { Plus, Ruler } from "lucide-react";
 import { toast } from "sonner";
 import { unitCreate, type UnitCreate } from "@fnb/core";
 import { useCreateUnit, useUnits } from "@/api/master";
@@ -55,7 +55,16 @@ export function UnitsTab({
       {units.isPending ? (
         <TableLoading />
       ) : (units.data ?? []).length === 0 ? (
-        <TableEmpty icon={Ruler} title="No units yet" description="Add a unit with its factor to the base (ml, g, or 1)." />
+        <TableEmpty
+          icon={Ruler}
+          title="No units yet"
+          description="Add a unit with its factor to the base (ml, g, or 1)."
+          action={
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus className="size-4" /> New unit
+            </Button>
+          }
+        />
       ) : (
         <Table>
           <TableHeader>
@@ -74,7 +83,7 @@ export function UnitsTab({
                   {KIND_LABELS[unit.kind]?.label ?? unit.kind}
                 </TableCell>
                 <TableCell className="tnum text-right">
-                  {unit.factorToBase} {KIND_LABELS[unit.kind]?.base}
+                  {unit.factorToBase.toLocaleString("en-PH")} {KIND_LABELS[unit.kind]?.base}
                 </TableCell>
                 <TableCell className="text-right">
                   <Badge variant={unit.isSystem ? "secondary" : "outline"}>
@@ -129,12 +138,12 @@ function UnitDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open
             )}
           </div>
           <div className="space-y-2">
-            <Label>Kind</Label>
+            <Label htmlFor="unit-kind">Kind</Label>
             <Select
               value={kind}
               onValueChange={(v) => form.setValue("kind", v as UnitCreate["kind"], { shouldValidate: true })}
             >
-              <SelectTrigger>
+              <SelectTrigger id="unit-kind">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

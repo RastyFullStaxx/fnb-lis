@@ -1,12 +1,7 @@
 import { useState } from "react";
-import { useParams } from "react-router";
-import { Copy, Martini, Plus } from "lucide-react";
-import { toast } from "sonner";
-import { can, type Role } from "@fnb/core";
-import { useMe } from "@/api/auth";
-import { useCopyMenusFromLocation, useMenus, type MenuSummary } from "@/api/menus";
-import { ApiError } from "@/api/http";
-import { formatMoney } from "@/lib/utils";
+import { Martini, Plus } from "lucide-react";
+import { useMenus, type MenuSummary } from "@/api/menus";
+import { cn, formatMoney } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { TableSurface, TableLoading, TableEmpty, ToolbarSearch } from "@/components/table-surface";
 import { Badge } from "@/components/ui/badge";
@@ -121,14 +116,18 @@ export function RecipesPage() {
                       {cur ? formatMoney(cur.costAtPublish) : "—"}
                     </TableCell>
                     <TableCell className="tnum text-right">{cur ? formatMoney(cur.srp) : "—"}</TableCell>
-                    <TableCell className="tnum text-right">
+                    <TableCell
+                      className={cn("tnum text-right", margin !== null && margin < 0 && "font-medium text-destructive")}
+                    >
                       {margin === null ? "—" : `${margin.toFixed(0)}%`}
                     </TableCell>
                     <TableCell className="tnum text-right">{menu.salesCount}</TableCell>
                     <TableCell className="text-right">
-                      <Button variant="ghost" size="sm" onClick={() => setViewing(menu)}>
-                        History
-                      </Button>
+                      {cur && (
+                        <Button variant="ghost" size="sm" onClick={() => setViewing(menu)}>
+                          History
+                        </Button>
+                      )}
                       <Button variant="ghost" size="sm" onClick={() => setBuilding(menu)}>
                         {cur ? "New version" : "Build recipe"}
                       </Button>

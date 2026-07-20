@@ -1,17 +1,17 @@
 import { useState } from "react";
 import { useParams } from "react-router";
-import { Boxes, Copy, Plus, Search, TriangleAlert } from "lucide-react";
+import { Boxes, Copy, Plus, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { can, MODULE_TYPE_LABELS, type ModuleType, type Role } from "@fnb/core";
 import { useMe } from "@/api/auth";
 import { useCopyFromLocation, useCurrentLocation, useLocationItems } from "@/api/location";
 import { variantLabel } from "@/api/types";
 import { ApiError } from "@/api/http";
+import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
-import { TableSurface, TableLoading, TableEmpty } from "@/components/table-surface";
+import { TableSurface, TableLoading, TableEmpty, ToolbarSearch } from "@/components/table-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -47,12 +47,16 @@ export function StockPage() {
   const [attachOpen, setAttachOpen] = useState(false);
   const [copyOpen, setCopyOpen] = useState(false);
   const rows = useLocationItems({ search: search || undefined, missingPrices: missingOnly });
+  // Unfiltered catalog just for the missing-price count, so the chip's label
+  // stays stable under search and the filter never strands the user.
+  const catalog = useLocationItems();
 
   const role = (me.data?.user.role ?? "READONLY") as Role;
   const canEditPrices = can(role, "prices.edit");
 
-  const missingCount = rows.data?.filter((r) => r.cost === 0 || r.retail === 0).length ?? 0;
+  const missingCount = catalog.data?.filter((r) => r.cost === 0 || r.retail === 0).length ?? 0;
   const locationModules = location?.modules ?? [];
+  const moduleScope = locationModules.map((m) => MODULE_TYPE_LABELS[m as ModuleType] ?? m).join(" + ");
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -72,35 +76,24 @@ export function StockPage() {
         }
       />
 
-      {locationModules.length > 0 && (
-        <p className="mb-3 text-xs text-muted-foreground">
-          This location's catalog is limited to{" "}
-          <span className="font-medium text-foreground">
-            {locationModules.map((m) => MODULE_TYPE_LABELS[m as ModuleType] ?? m).join(" + ")}
-          </span>{" "}
-          under its assigned modules.
-        </p>
-      )}
-
       <TableSurface
         filters={
           <>
-            <div className="relative w-64">
-              <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Search this catalog…"
-                className="bg-background pl-8"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
-            {missingCount > 0 && (
+            <ToolbarSearch value={search} onChange={setSearch} placeholder="Search this catalog…" />
+            {(missingOnly || missingCount > 0) && (
               <Toggle pressed={missingOnly} onPressedChange={setMissingOnly}>
                 <TriangleAlert className="size-3.5" />
-                {missingCount} missing price{missingCount === 1 ? "" : "s"}
+                {missingCount > 0
+                  ? `${missingCount} missing price${missingCount === 1 ? "" : "s"}`
+                  : "Missing prices"}
               </Toggle>
             )}
           </>
+        }
+        actions={
+          moduleScope ? (
+            <span className="text-xs text-muted-foreground">{moduleScope} catalog</span>
+          ) : undefined
         }
       >
         {rows.isPending ? (
@@ -112,7 +105,9 @@ export function StockPage() {
             description={
               search || missingOnly
                 ? "Clear the search or filter to see everything."
-                : "Add items from the master catalog, or copy another location's catalog to start fast."
+                : `Add items from the master catalog, or copy another location's catalog to start fast.${
+                    moduleScope ? ` This location's catalog covers ${moduleScope} items only.` : ""
+                  }`
             }
             action={
               canEditPrices &&
@@ -139,7 +134,7 @@ export function StockPage() {
               {rows.data!.map((row) => {
                 const missing = row.cost === 0 || row.retail === 0;
                 return (
-                  <TableRow key={row.id} className={missing ? "bg-destructive/5" : undefined}>
+                  <TableRow key={row.id} className={cn("group", missing && "bg-destructive/5")}>
                     <TableCell>
                       <span className="font-medium">{row.itemVariant.item.name}</span>
                       <span className="ml-2 text-sm text-muted-foreground">{variantLabel(row.itemVariant)}</span>
@@ -198,7 +193,8 @@ function CopyFromDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
         notes.push(`${result.skippedByModule} outside this location's assigned modules`);
       }
       toast.success(
-        `Copied ${result.copied} item(s)` + (notes.length > 0 ? ` — ${notes.join("; ")}` : ""),
+        `Copied ${result.copied} ${result.copied === 1 ? "item" : "items"}` +
+          (notes.length > 0 ? ` — ${notes.join("; ")}` : ""),
       );
       onOpenChange(false);
     } catch (err) {

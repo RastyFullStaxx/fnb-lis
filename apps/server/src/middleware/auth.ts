@@ -96,7 +96,9 @@ export const requireLocationAccess = createMiddleware<AppEnv>(async (c, next) =>
     const access = await prisma.userClientAccess.findUnique({
       where: { userId_clientId: { userId: user.id, clientId: location.clientId } },
     });
-    if (!access) throw new AppError(403, "No access to this client");
+    // 404, not 403: another client's location must be indistinguishable from a
+    // nonexistent one (same convention as the transfers tenant guard).
+    if (!access) throw new AppError(404, "Location not found");
   }
 
   c.set("client", location.client);

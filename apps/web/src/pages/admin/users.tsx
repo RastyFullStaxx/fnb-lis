@@ -24,6 +24,7 @@ import { PageHeader } from "@/components/page-header";
 import { TableSurface, TableLoading, TableEmpty, ToolbarSearch } from "@/components/table-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -59,6 +60,15 @@ const ROLE_HINT: Record<Role, string> = {
   READONLY: "View reports only",
 };
 
+// Raw enum values (READONLY, ACCOUNTANT) are jargon — show plain labels.
+const ROLE_LABELS: Record<Role, string> = {
+  ADMIN: "Admin",
+  MANAGER: "Manager",
+  STAFF: "Staff",
+  ACCOUNTANT: "Accountant",
+  READONLY: "Read-only",
+};
+
 function generatePassword(): string {
   const words = ["Audit", "Stock", "Ledger", "Bottle", "Cellar", "Tally", "Cask", "Vault"];
   const arr = new Uint32Array(2);
@@ -72,6 +82,9 @@ export function AdminUsersPage() {
   const users = useAdminUsers();
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<AdminUser | null>(null);
+  // Generated passwords persist in a dialog until explicitly dismissed — a
+  // 12-second toast is too easy to miss, and a missed password is unrecoverable.
+  const [issued, setIssued] = useState<IssuedPassword | null>(null);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("ALL");
   const [pkgFilter, setPkgFilter] = useState("ALL");
@@ -137,7 +150,7 @@ export function AdminUsersPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ALL">All</SelectItem>
+                <SelectItem value="ALL">All statuses</SelectItem>
                 <SelectItem value="ACTIVE">Active</SelectItem>
                 <SelectItem value="DISABLED">Disabled</SelectItem>
               </SelectContent>
@@ -213,7 +226,7 @@ export function AdminUsersPage() {
                     <div className="text-xs text-muted-foreground">@{u.username}</div>
                   </TableCell>
                   <TableCell>
-                    <Badge variant="secondary">{u.role}</Badge>
+                    <Badge variant="secondary">{ROLE_LABELS[u.role] ?? u.role}</Badge>
                   </TableCell>
                   <TableCell className="max-w-72 text-sm">
                     {u.role === "ADMIN" ? (
@@ -226,15 +239,15 @@ export function AdminUsersPage() {
                           <div key={a.clientId} className="flex items-center gap-1.5 flex-wrap">
                             <span className="text-muted-foreground">{a.client.name}</span>
                             {a.client.subscription ? (
-                              <span className="inline-flex items-center gap-0.5 rounded-full bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
-                                <BadgeCheck className="size-2.5" />
+                              <Badge variant="outline" className="border-primary/30 text-primary">
+                                <BadgeCheck />
                                 {PACKAGE_LABELS[a.client.subscription.packageType as PackageType] ?? a.client.subscription.packageType}
-                              </span>
+                              </Badge>
                             ) : (
-                              <span className="inline-flex items-center gap-0.5 rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-                                <Package className="size-2.5" />
-                                No pkg
-                              </span>
+                              <Badge variant="secondary" className="text-muted-foreground">
+                                <Package />
+                                No package
+                              </Badge>
                             )}
                             {a.client.subscription && (
                               <span className="text-xs text-muted-foreground">
@@ -265,9 +278,67 @@ export function AdminUsersPage() {
         )}
       </TableSurface>
 
-      <CreateUserDialog open={creating} onOpenChange={setCreating} />
-      <EditUserDialog user={editing} onClose={() => setEditing(null)} />
+      <CreateUserDialog open={creating} onOpenChange={setCreating} onPassword={setIssued} />
+      <EditUserDialog user={editing} onClose={() => setEditing(null)} onPassword={setIssued} />
+      <PasswordRevealDialog issued={issued} onClose={() => setIssued(null)} />
     </div>
+  );
+}
+
+interface IssuedPassword {
+  username: string;
+  password: string;
+}
+
+async function copyPassword(password: string) {
+  try {
+    await navigator.clipboard.writeText(password);
+    toast.success("Password copied");
+  } catch {
+    toast.error("Couldn't copy — select it manually");
+  }
+}
+
+/** Shows a freshly generated password until the admin explicitly dismisses it. */
+function PasswordRevealDialog({
+  issued,
+  onClose,
+}: {
+  issued: IssuedPassword | null;
+  onClose: () => void;
+}) {
+  if (!issued) return null;
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Temporary password for @{issued.username}</DialogTitle>
+          <DialogDescription>
+            Share it securely — it won't be shown again after you close this.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex gap-2">
+          <Input
+            readOnly
+            value={issued.password}
+            className="font-mono"
+            onFocus={(e) => e.currentTarget.select()}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            onClick={() => copyPassword(issued.password)}
+            title="Copy"
+          >
+            <Copy className="size-4" />
+          </Button>
+        </div>
+        <DialogFooter>
+          <Button onClick={onClose}>Done</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -291,24 +362,22 @@ function ClientCheckboxes({
           key={c.id}
           className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm hover:bg-accent"
         >
-          <input
-            type="checkbox"
-            className="size-4 accent-primary"
+          <Checkbox
             checked={selected.has(c.id)}
             disabled={disabled}
-            onChange={() => onToggle(c.id)}
+            onCheckedChange={() => onToggle(c.id)}
           />
           <span className="flex-1">{c.name}</span>
           {c.subscription ? (
-            <span className="inline-flex items-center gap-0.5 rounded-full bg-primary/10 px-1.5 py-0.5 text-xs text-primary">
-              <BadgeCheck className="size-2.5" />
+            <Badge variant="outline" className="border-primary/30 text-primary">
+              <BadgeCheck />
               {PACKAGE_LABELS[c.subscription.packageType as PackageType] ?? c.subscription.packageType}
-            </span>
+            </Badge>
           ) : (
-            <span className="inline-flex items-center gap-0.5 rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-              <Package className="size-2.5" />
-              No pkg
-            </span>
+            <Badge variant="secondary" className="text-muted-foreground">
+              <Package />
+              No package
+            </Badge>
           )}
         </label>
       ))}
@@ -333,12 +402,7 @@ function ModuleCheckboxes({
       <div className="flex flex-wrap gap-4 rounded-md border p-2.5">
         {MODULE_TYPES.map((m) => (
           <label key={m} className="flex cursor-pointer items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              className="size-4 accent-primary"
-              checked={selected.has(m)}
-              onChange={() => onToggle(m)}
-            />
+            <Checkbox checked={selected.has(m)} onCheckedChange={() => onToggle(m)} />
             {MODULE_TYPE_LABELS[m]}
           </label>
         ))}
@@ -361,7 +425,7 @@ function RoleSelect({ value, onChange }: { value: Role; onChange: (r: Role) => v
       <SelectContent>
         {ROLES.map((r) => (
           <SelectItem key={r} value={r}>
-            <span className="font-medium">{r}</span>
+            <span className="font-medium">{ROLE_LABELS[r]}</span>
             <span className="ml-2 text-xs text-muted-foreground">{ROLE_HINT[r]}</span>
           </SelectItem>
         ))}
@@ -370,7 +434,15 @@ function RoleSelect({ value, onChange }: { value: Role; onChange: (r: Role) => v
   );
 }
 
-function CreateUserDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+function CreateUserDialog({
+  open,
+  onOpenChange,
+  onPassword,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  onPassword: (issued: IssuedPassword) => void;
+}) {
   const create = useCreateUser();
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -429,10 +501,8 @@ function CreateUserDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
         clientIds: role === "ADMIN" ? [] : [...clientIds],
         modules: role === "ADMIN" ? [] : [...modules],
       });
-      toast.success(`User @${username.trim()} created`, {
-        description: `Temporary password: ${password} — share it securely.`,
-        duration: 12000,
-      });
+      toast.success(`User @${username.trim()} created`);
+      onPassword({ username: username.trim(), password });
       reset();
       onOpenChange(false);
     } catch (err) {
@@ -496,10 +566,7 @@ function CreateUserDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
                 type="button"
                 variant="outline"
                 size="icon"
-                onClick={() => {
-                  navigator.clipboard.writeText(password);
-                  toast.success("Password copied");
-                }}
+                onClick={() => copyPassword(password)}
                 title="Copy"
               >
                 <Copy className="size-4" />
@@ -527,6 +594,15 @@ function CreateUserDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
           )}
         </div>
         <DialogFooter>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              reset();
+              onOpenChange(false);
+            }}
+          >
+            Cancel
+          </Button>
           <Button onClick={submit} disabled={!valid || create.isPending}>
             Create user
           </Button>
@@ -536,7 +612,15 @@ function CreateUserDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
   );
 }
 
-function EditUserDialog({ user, onClose }: { user: AdminUser | null; onClose: () => void }) {
+function EditUserDialog({
+  user,
+  onClose,
+  onPassword,
+}: {
+  user: AdminUser | null;
+  onClose: () => void;
+  onPassword: (issued: IssuedPassword) => void;
+}) {
   const update = useUpdateUser();
   const updateAccess = useUpdateUserAccess();
   const [role, setRole] = useState<Role>("STAFF");
@@ -603,7 +687,8 @@ function EditUserDialog({ user, onClose }: { user: AdminUser | null; onClose: ()
     const pw = resetPw ?? generatePassword();
     try {
       await update.mutateAsync({ id: user.id, password: pw });
-      toast.success("Password reset", { description: `New password: ${pw}`, duration: 12000 });
+      toast.success("Password reset");
+      onPassword({ username: user.username, password: pw });
       onClose();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not reset the password");
@@ -670,6 +755,9 @@ function EditUserDialog({ user, onClose }: { user: AdminUser | null; onClose: ()
         </div>
 
         <DialogFooter>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
           <Button onClick={saveRole} disabled={update.isPending || updateAccess.isPending}>
             Save changes
           </Button>

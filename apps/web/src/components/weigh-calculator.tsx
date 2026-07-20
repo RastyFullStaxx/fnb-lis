@@ -147,7 +147,7 @@ export function WeighPreviewStrip({
     <div aria-live="polite" className="space-y-1.5">
       <div
         className={cn(
-          "flex items-center gap-2 rounded-md border px-3 py-2 transition-opacity duration-150",
+          "flex items-center gap-2 rounded-md border px-3 py-2",
           preview.blocking ? "border-destructive/50 bg-destructive/5" : "bg-muted",
         )}
       >
@@ -157,14 +157,21 @@ export function WeighPreviewStrip({
         ) : preview.mode === "NET" ? (
           <span className="tnum text-sm">
             scale {preview.scale} − tare {preview.tare} {preview.unit} →{" "}
-            <span className="font-semibold">
+            {/* Keyed on the result so every recomputation visibly ticks (DESIGN.md motion). */}
+            <span
+              key={preview.remaining}
+              className="inline-block font-semibold duration-150 animate-in fade-in slide-in-from-bottom-0.5 motion-reduce:animate-none"
+            >
               {preview.remaining} {contentUnit}
             </span>
           </span>
         ) : (
           <span className="tnum text-sm">
             (scale {preview.scale} − tare {preview.tare}) × Liquid Weight {preview.density} →{" "}
-            <span className="font-semibold">
+            <span
+              key={preview.remaining}
+              className="inline-block font-semibold duration-150 animate-in fade-in slide-in-from-bottom-0.5 motion-reduce:animate-none"
+            >
               {preview.remaining} {contentUnit}
             </span>{" "}
             · {preview.equivalent.toFixed(2)} of {size} {contentUnit}
@@ -172,7 +179,7 @@ export function WeighPreviewStrip({
         )}
       </div>
       {!preview.blocking && warning && (
-        <p className="text-xs text-warning-foreground text-muted-foreground">{warning.message}</p>
+        <p className="rounded-md bg-warning/10 px-3 py-1.5 text-xs text-foreground">{warning.message}</p>
       )}
     </div>
   );

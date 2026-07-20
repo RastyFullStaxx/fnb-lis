@@ -1,4 +1,5 @@
-import { Download, FileSpreadsheet, Printer } from "lucide-react";
+import { useState } from "react";
+import { Download, FileSpreadsheet, Loader2, Printer } from "lucide-react";
 import { toast } from "sonner";
 import { can, type Role } from "@fnb/core";
 import { useMe } from "@/api/auth";
@@ -18,6 +19,7 @@ export function DateRangeControl({
   onFrom: (v: string) => void;
   onTo: (v: string) => void;
 }) {
+  const inverted = Boolean(from && to && from > to);
   // Inline label + input pairs, matching every other page's toolbar (see admin/activity).
   return (
     <>
@@ -27,6 +29,7 @@ export function DateRangeControl({
       <Input
         id="range-from"
         type="date"
+        max={to || undefined}
         className="tnum w-40 bg-background"
         value={from}
         onChange={(e) => onFrom(e.target.value)}
@@ -37,10 +40,16 @@ export function DateRangeControl({
       <Input
         id="range-to"
         type="date"
+        min={from || undefined}
         className="tnum w-40 bg-background"
         value={to}
         onChange={(e) => onTo(e.target.value)}
       />
+      {inverted && (
+        <p className="text-xs text-destructive" role="alert">
+          From is after To — swap the dates to see results.
+        </p>
+      )}
     </>
   );
 }
@@ -60,12 +69,18 @@ export function ExportButtons({
   const me = useMe();
   const role = (me.data?.user.role ?? "READONLY") as Role;
   const canExport = can(role, "reports.export");
+  // Slow workbooks invite double-clicks — disable both buttons while one runs.
+  const [running, setRunning] = useState<"xlsx" | "csv" | null>(null);
 
-  const run = async (url: string) => {
+  const run = async (kind: "xlsx" | "csv", url: string) => {
+    setRunning(kind);
     try {
       await downloadFile(url);
+      toast.success("Export ready");
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Export failed");
+    } finally {
+      setRunning(null);
     }
   };
 
@@ -78,11 +93,11 @@ export function ExportButtons({
       )}
       {canExport && (
         <>
-          <Button variant="outline" size="sm" disabled={disabled} onClick={() => run(xlsxUrl)}>
-            <FileSpreadsheet className="size-4" /> Excel
+          <Button variant="outline" size="sm" disabled={disabled || running !== null} onClick={() => void run("xlsx", xlsxUrl)}>
+            {running === "xlsx" ? <Loader2 className="size-4 animate-spin" /> : <FileSpreadsheet className="size-4" />} Excel
           </Button>
-          <Button variant="outline" size="sm" disabled={disabled} onClick={() => run(csvUrl)}>
-            <Download className="size-4" /> CSV
+          <Button variant="outline" size="sm" disabled={disabled || running !== null} onClick={() => void run("csv", csvUrl)}>
+            {running === "csv" ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />} CSV
           </Button>
         </>
       )}

@@ -8,14 +8,15 @@ import { useLocationId } from "@/api/location";
 import { useCountMutations, useCountSession } from "@/api/ops";
 import { variantLabel, type CountLine, type LocationItem } from "@/api/types";
 import { ApiError } from "@/api/http";
+import { STATUS_BADGE } from "@/pages/counts";
 import { ItemCombobox } from "@/components/item-combobox";
 import { VoidDialog } from "@/components/void-dialog";
 import { useWeighPreview, WeighPreviewStrip } from "@/components/weigh-calculator";
-import { FullPageSpinner } from "@/components/full-page-spinner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { QuantityInput } from "@/components/quantity-input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   AlertDialog,
@@ -33,13 +34,58 @@ import { cn } from "@/lib/utils";
 
 export function CountSessionPage() {
   const { sessionId } = useParams();
+  const locationId = useLocationId();
   const session = useCountSession(sessionId!);
 
-  if (session.isPending) return <FullPageSpinner />;
-  if (session.isError) return <FullPageSpinner error="Count session not found." />;
+  if (session.isPending) return <SessionSkeleton />;
+  if (session.isError)
+    return (
+      <div className="flex flex-col items-center gap-3 py-24 text-center">
+        <p className="text-sm">Couldn't load this count session — it may have been removed.</p>
+        <Button asChild variant="outline" size="sm">
+          <Link to={`/l/${locationId}/counts`}>Back to counts</Link>
+        </Button>
+      </div>
+    );
 
   const s = session.data;
   return s.status === "OPEN" ? <OpenSession session={s} /> : <ReadOnlySession session={s} />;
+}
+
+/** Skeleton shaped like the session workspace — header row, then the 7fr/5fr entry/recent split. */
+function SessionSkeleton() {
+  return (
+    <div aria-busy="true">
+      <div className="mb-4 flex items-center gap-3">
+        <Skeleton className="size-9" />
+        <div className="space-y-1.5">
+          <Skeleton className="h-5 w-44" />
+          <Skeleton className="h-4 w-72" />
+        </div>
+        <Skeleton className="ml-auto h-6 w-24" />
+      </div>
+      <div className="grid gap-6 rounded-lg border p-4 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
+        <div className="space-y-4">
+          <Skeleton className="h-9 w-full" />
+          <Skeleton className="h-11 w-full" />
+          <div className="flex justify-end">
+            <Skeleton className="h-9 w-28" />
+          </div>
+        </div>
+        <div className="lg:border-l lg:pl-6">
+          <Skeleton className="mb-3 h-4 w-32" />
+          <div className="space-y-3">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="space-y-1.5">
+                <Skeleton className="h-4 w-3/5" />
+                <Skeleton className="h-3 w-2/5" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 type SessionWithLines = NonNullable<ReturnType<typeof useCountSession>["data"]>;
@@ -54,7 +100,7 @@ function SessionHeader({ session }: { session: SessionWithLines }) {
         </Link>
       </Button>
       <div>
-        <h2 className="text-lg font-semibold tracking-tight tnum">Count · {session.countDate}</h2>
+        <h2 className="text-xl font-semibold tracking-tight tnum">Count · {session.countDate}</h2>
         <p className="text-sm text-muted-foreground">
           {session.status === "OPEN"
             ? "Counting in progress — every saved line lands below."
@@ -63,7 +109,7 @@ function SessionHeader({ session }: { session: SessionWithLines }) {
               : `Voided: ${session.voidReason}`}
         </p>
       </div>
-      <Badge className="ml-auto" variant={session.status === "OPEN" ? "default" : "secondary"}>
+      <Badge className="ml-auto" variant={STATUS_BADGE[session.status] ?? "outline"}>
         {session.status === "OPEN" ? "Counting" : session.status === "COMMITTED" ? "Committed" : "Void"}
       </Badge>
     </div>
@@ -110,16 +156,17 @@ function OpenSession({ session }: { session: SessionWithLines }) {
   const save = async () => {
     if (!item) return;
     try {
+      // Edits add the replacement line FIRST, then remove the original — if the
+      // add fails, the counted line is still there. Never delete before saving.
       if (activeMode === "FULL") {
         const n = Number(qty);
         if (qty === "" || !Number.isFinite(n) || n < 0) return toast.error("Enter the counted quantity");
-        if (editingLineId) await mutations.removeLine.mutateAsync(editingLineId);
         await mutations.addLine.mutateAsync({ locationItemId: item.id, countType: "FULL", qtyFull: n });
+        if (editingLineId) await mutations.removeLine.mutateAsync(editingLineId);
       } else {
         if (!preview || !preview.ready || !preview.entered || preview.blocking) {
           return toast.error("Fix the scale reading first");
         }
-        if (editingLineId) await mutations.removeLine.mutateAsync(editingLineId);
         await mutations.addLine.mutateAsync({
           locationItemId: item.id,
           countType: "WEIGH",
@@ -128,6 +175,7 @@ function OpenSession({ session }: { session: SessionWithLines }) {
           tareWeight: preview.tare,
           densityFactor: preview.density ?? undefined,
         });
+        if (editingLineId) await mutations.removeLine.mutateAsync(editingLineId);
       }
       const wasEditing = editingLineId !== null;
       // Enter → saved → refocus the item picker: the counting rhythm.
@@ -153,9 +201,10 @@ function OpenSession({ session }: { session: SessionWithLines }) {
   return (
     <div>
       <SessionHeader session={session} />
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
+      {/* One bordered surface, two panes split by a hairline — never two stacked cards. */}
+      <div className="grid gap-6 rounded-lg border p-4 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
         {/* Entry pane */}
-        <div className="space-y-4 rounded-lg border p-4">
+        <div className="space-y-4">
           {editingLineId && (
             <div className="flex items-center justify-between rounded-md bg-accent px-3 py-2 text-sm text-accent-foreground">
               <span className="flex items-center gap-1.5">
@@ -167,8 +216,8 @@ function OpenSession({ session }: { session: SessionWithLines }) {
             </div>
           )}
           <div className="space-y-2">
-            <Label>Item</Label>
-            <ItemCombobox ref={comboRef} value={item} onSelect={setItem} autoFocus />
+            <Label htmlFor="count-item">Item</Label>
+            <ItemCombobox id="count-item" ref={comboRef} value={item} onSelect={setItem} autoFocus />
           </div>
 
           {weighable && (
@@ -202,7 +251,7 @@ function OpenSession({ session }: { session: SessionWithLines }) {
               <QuantityInput
                 id="count-scale"
                 className="tnum h-11 text-lg"
-                placeholder="put the bottle on the scale"
+                placeholder="Put the bottle on the scale"
                 value={scale}
                 onChange={(e) => setScale(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && save()}
@@ -233,7 +282,7 @@ function OpenSession({ session }: { session: SessionWithLines }) {
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button variant="secondary" className="w-full" disabled={activeLines.length === 0}>
-                <Check className="size-4" /> Review & commit ({activeLines.length} line
+                <Check className="size-4" /> Commit count ({activeLines.length} line
                 {activeLines.length === 1 ? "" : "s"})
               </Button>
             </AlertDialogTrigger>
@@ -255,8 +304,8 @@ function OpenSession({ session }: { session: SessionWithLines }) {
         </div>
 
         {/* Recent entries pane (modernized legacy live preview) */}
-        <div className="rounded-lg border">
-          <div className="border-b bg-muted px-4 py-2 text-sm font-medium">
+        <div className="lg:border-l lg:pl-6">
+          <div className="mb-2 text-sm font-medium">
             Entered lines
             <span className="ml-2 tnum text-muted-foreground">{activeLines.length}</span>
           </div>
@@ -360,7 +409,10 @@ function LineRow({
       )}
     >
       <div className="min-w-0 flex-1">
-        <p className={cn("truncate text-sm font-medium", voided && "line-through")}>
+        <p
+          title={`${variant.item.name} ${variantLabel(variant)}`}
+          className={cn("truncate text-sm font-medium", voided && "line-through")}
+        >
           {variant.item.name}
           <span className="ml-1.5 font-normal text-muted-foreground">{variantLabel(variant)}</span>
         </p>

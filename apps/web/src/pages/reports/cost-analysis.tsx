@@ -7,8 +7,9 @@ import { exportUrl, useCostAnalysisReport } from "@/api/reports";
 import { formatMoney } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
-import { TableLoading } from "@/components/table-surface";
+import { TableSurface, TableLoading, TableError } from "@/components/table-surface";
 import { ExportButtons } from "@/components/report-toolbar";
+import { MagnitudeBars } from "@/components/charts/magnitude-bars";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -29,6 +30,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 
 const pct = (v: number | null) => (v === null ? "—" : `${round2(v).toFixed(2)}%`);
+const pctShort = (v: number) => `${round2(v).toFixed(1)}%`;
 
 export function CostAnalysisPage() {
   const locationId = useLocationId();
@@ -45,7 +47,20 @@ export function CostAnalysisPage() {
 
   const report = useCostAnalysisReport(effectiveBegin, effectiveEnd);
 
-  if (countDates.isPending) return <Skeleton className="h-96 w-full" />;
+  if (countDates.isPending) {
+    return (
+      <div>
+        <PageHeader title="Cost Analysis" />
+        <div className="overflow-hidden rounded-lg border">
+          <div className="flex items-center gap-2 border-b bg-muted/30 px-3 py-2.5">
+            <Skeleton className="h-9 w-40" />
+            <Skeleton className="h-9 w-40" />
+          </div>
+          <TableLoading rows={6} />
+        </div>
+      </div>
+    );
+  }
 
   if (dates.length < 2) {
     return (
@@ -60,6 +75,33 @@ export function CostAnalysisPage() {
     );
   }
 
+  const periodPicker = (
+    <>
+      <Label htmlFor="ca-begin" className="text-xs text-muted-foreground">Beginning</Label>
+      <Select value={effectiveBegin} onValueChange={(v) => { setBegin(v); if (effectiveEnd && effectiveEnd <= v) setEnd(undefined); }}>
+        <SelectTrigger id="ca-begin" className="tnum w-40 bg-background">
+          <SelectValue placeholder="Pick a date" />
+        </SelectTrigger>
+        <SelectContent>
+          {dates.map((d) => (
+            <SelectItem key={d} value={d} className="tnum">{d}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Label htmlFor="ca-end" className="text-xs text-muted-foreground">Ending</Label>
+      <Select value={effectiveEnd} onValueChange={setEnd}>
+        <SelectTrigger id="ca-end" className="tnum w-40 bg-background">
+          <SelectValue placeholder="Pick a date" />
+        </SelectTrigger>
+        <SelectContent>
+          {endOptions.map((d) => (
+            <SelectItem key={d} value={d} className="tnum">{d}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </>
+  );
+
   return (
     <div>
       <PageHeader
@@ -73,90 +115,89 @@ export function CostAnalysisPage() {
         }
       />
 
-      <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2.5">
-        <Label htmlFor="ca-begin" className="text-xs text-muted-foreground">Beginning</Label>
-        <Select value={effectiveBegin} onValueChange={(v) => { setBegin(v); if (effectiveEnd && effectiveEnd <= v) setEnd(undefined); }}>
-          <SelectTrigger id="ca-begin" className="tnum w-40 bg-background">
-            <SelectValue placeholder="Pick a date" />
-          </SelectTrigger>
-          <SelectContent>
-            {dates.map((d) => (
-              <SelectItem key={d} value={d} className="tnum">{d}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Label htmlFor="ca-end" className="text-xs text-muted-foreground">Ending</Label>
-        <Select value={effectiveEnd} onValueChange={setEnd}>
-          <SelectTrigger id="ca-end" className="tnum w-40 bg-background">
-            <SelectValue placeholder="Pick a date" />
-          </SelectTrigger>
-          <SelectContent>
-            {endOptions.map((d) => (
-              <SelectItem key={d} value={d} className="tnum">{d}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      {/* One surface: the period picker is fused to the sales summary, never a
+          strip floating in the gap (DESIGN.md page skeleton). */}
+      <TableSurface filters={periodPicker}>
+        {!effectiveBegin || !effectiveEnd ? (
+          <p className="px-4 py-12 text-center text-sm text-muted-foreground">
+            Pick a beginning count and a later ending count to run the analysis.
+          </p>
+        ) : report.isPending ? (
+          <TableLoading rows={5} />
+        ) : report.isError ? (
+          <TableError onRetry={() => void report.refetch()} retrying={report.isRefetching} />
+        ) : !report.data ? (
+          <p className="px-4 py-12 text-center text-sm text-muted-foreground">
+            Could not build the report for this period — pick a different pair of count dates.
+          </p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted hover:bg-muted">
+                <TableHead>Sales</TableHead>
+                <TableHead className="text-right">Gross</TableHead>
+                <TableHead className="text-right">Net (÷1.12)</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {report.data.sales.byType.map((t) => (
+                <TableRow key={t.productType}>
+                  <TableCell>{t.productType} gross sales</TableCell>
+                  <TableCell className="tnum text-right">{formatMoney(round2(t.gross))}</TableCell>
+                  <TableCell className="tnum text-right">{formatMoney(round2(t.net))}</TableCell>
+                </TableRow>
+              ))}
+              <TableRow>
+                <TableCell className="text-muted-foreground">VAT amount (gross − net)</TableCell>
+                <TableCell className="tnum text-right text-muted-foreground">
+                  {formatMoney(round2(report.data.sales.vatAmount))}
+                </TableCell>
+                <TableCell />
+              </TableRow>
+            </TableBody>
+            <TableFooter>
+              <TableRow>
+                <TableCell className="font-medium">Total sales</TableCell>
+                <TableCell className="tnum text-right font-semibold">
+                  {formatMoney(round2(report.data.sales.totalGross))}
+                </TableCell>
+                <TableCell className="tnum text-right font-semibold">
+                  {formatMoney(round2(report.data.sales.totalNet))}
+                </TableCell>
+              </TableRow>
+            </TableFooter>
+          </Table>
+        )}
+      </TableSurface>
 
-      {!effectiveBegin || !effectiveEnd ? (
-        <p className="px-1 py-12 text-center text-sm text-muted-foreground">
-          Pick a beginning count and a LATER ending count to run the analysis.
-        </p>
-      ) : report.isPending ? (
-        <TableLoading rows={8} />
-      ) : !report.data ? (
-        <p className="px-1 py-12 text-center text-sm text-muted-foreground">
-          Could not build the report for this period — pick a different pair of count dates.
-        </p>
-      ) : (
-        <div className="space-y-8">
-          {/* Sales summary */}
-          <div className="rounded-lg border">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-muted hover:bg-muted">
-                  <TableHead>Sales</TableHead>
-                  <TableHead className="text-right">Gross</TableHead>
-                  <TableHead className="text-right">Net (÷1.12)</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {report.data.sales.byType.map((t) => (
-                  <TableRow key={t.productType}>
-                    <TableCell>{t.productType} gross sales</TableCell>
-                    <TableCell className="tnum text-right">{formatMoney(round2(t.gross))}</TableCell>
-                    <TableCell className="tnum text-right">{formatMoney(round2(t.net))}</TableCell>
-                  </TableRow>
-                ))}
-                <TableRow>
-                  <TableCell className="text-muted-foreground">VAT amount (gross − net)</TableCell>
-                  <TableCell className="tnum text-right text-muted-foreground">
-                    {formatMoney(round2(report.data.sales.vatAmount))}
-                  </TableCell>
-                  <TableCell />
-                </TableRow>
-              </TableBody>
-              <TableFooter>
-                <TableRow>
-                  <TableCell className="font-medium">Total sales</TableCell>
-                  <TableCell className="tnum text-right font-semibold">
-                    {formatMoney(round2(report.data.sales.totalGross))}
-                  </TableCell>
-                  <TableCell className="tnum text-right font-semibold">
-                    {formatMoney(round2(report.data.sales.totalNet))}
-                  </TableCell>
-                </TableRow>
-              </TableFooter>
-            </Table>
-          </div>
-
-          {/* One cost section per product type — beverage & food side by side (req #3). */}
-          {report.data.sections.map((section) => (
-            <div key={section.productType}>
-              <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide">
-                {section.productType} cost analysis
-              </h3>
-              <div className="rounded-lg border">
+      {/* One flat section per product type — beverage & food (req #3): a small
+          heading + bare table, never a second bordered card. */}
+      {report.data && effectiveBegin && effectiveEnd
+        ? report.data.sections.map((section) => {
+            const pctBars = section.rows
+              .filter((row) => row.netPct !== null && row.netPct > 0)
+              .map((row) => ({ label: row.category, value: round2(row.netPct!) }));
+            return (
+              <div key={section.productType} className="mt-8">
+                <h3 className="mb-2 text-sm font-semibold">
+                  {section.productType.charAt(0) + section.productType.slice(1).toLowerCase()} cost analysis
+                </h3>
+                {pctBars.length >= 2 && (
+                  <div className="mb-4 max-w-xl">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      Net cost as a share of net sales
+                      {section.totals.netPct !== null ? ` — section total ${pctShort(section.totals.netPct)}` : ""}
+                    </p>
+                    <div className="mt-2">
+                      <MagnitudeBars
+                        data={pctBars}
+                        name="Net cost %"
+                        formatter={(v) => pct(v)}
+                        endLabelFormatter={pctShort}
+                      />
+                    </div>
+                  </div>
+                )}
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-muted hover:bg-muted">
@@ -167,8 +208,8 @@ export function CostAnalysisPage() {
                       <TableHead className="text-right">Ending</TableHead>
                       <TableHead className="text-right font-semibold">Cost</TableHead>
                       <TableHead className="text-right">Cost Net</TableHead>
-                      <TableHead className="text-right">GROSS %</TableHead>
-                      <TableHead className="text-right">NET %</TableHead>
+                      <TableHead className="text-right">Gross %</TableHead>
+                      <TableHead className="text-right">Net %</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -205,10 +246,9 @@ export function CostAnalysisPage() {
                   </TableFooter>
                 </Table>
               </div>
-            </div>
-          ))}
-        </div>
-      )}
+            );
+          })
+        : null}
     </div>
   );
 }

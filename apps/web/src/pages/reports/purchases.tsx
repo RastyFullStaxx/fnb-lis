@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import { ShoppingCart } from "lucide-react";
 import { round2 } from "@fnb/core";
 import { useLocationId } from "@/api/location";
@@ -5,8 +6,9 @@ import { useCountDates } from "@/api/ops";
 import { exportUrl, usePurchaseReport } from "@/api/reports";
 import { formatMoney } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
-import { TableSurface, TableLoading, TableEmpty } from "@/components/table-surface";
+import { TableSurface, TableLoading, TableEmpty, TableError, ToolbarSearch } from "@/components/table-surface";
 import { DateRangeControl, ExportButtons } from "@/components/report-toolbar";
+import { MagnitudeBars } from "@/components/charts/magnitude-bars";
 import {
   Table,
   TableBody,
@@ -20,11 +22,33 @@ import { useReportRange } from "./use-report-range";
 
 const n2 = (v: number) => round2(v).toLocaleString("en-US", { maximumFractionDigits: 2 });
 
+/** Bars stay readable up to ~8 rows — fold the long tail into "Other". */
+const SUPPLIER_BAR_CAP = 7;
+
 export function PurchaseReportPage() {
   const locationId = useLocationId();
   const dates = useCountDates();
   const [from, to, setFrom, setTo] = useReportRange(dates.data?.dates);
   const report = usePurchaseReport(from, to);
+  const [query, setQuery] = useState("");
+
+  const rows = useMemo(() => {
+    const all = report.data?.rows ?? [];
+    const q = query.trim().toLowerCase();
+    return q
+      ? all.filter((r) => r.name.toLowerCase().includes(q) || r.supplier.toLowerCase().includes(q))
+      : all;
+  }, [report.data, query]);
+
+  const supplierBars = useMemo(() => {
+    const bySupplier = report.data?.bySupplier ?? [];
+    const head = bySupplier.slice(0, SUPPLIER_BAR_CAP).map((s) => ({ label: s.supplier, value: round2(s.cost) }));
+    const tail = bySupplier.slice(SUPPLIER_BAR_CAP);
+    if (tail.length > 0) {
+      head.push({ label: `Other (${tail.length})`, value: round2(tail.reduce((n, s) => n + s.cost, 0)) });
+    }
+    return head;
+  }, [report.data]);
 
   return (
     <div>
@@ -39,11 +63,23 @@ export function PurchaseReportPage() {
         }
       />
 
-      <TableSurface filters={<DateRangeControl from={from} to={to} onFrom={setFrom} onTo={setTo} />}>
+      <TableSurface
+        className="max-h-[70vh]"
+        filters={
+          <>
+            <DateRangeControl from={from} to={to} onFrom={setFrom} onTo={setTo} />
+            <ToolbarSearch value={query} onChange={setQuery} placeholder="Find an item or supplier…" className="w-52" />
+          </>
+        }
+      >
         {report.isPending ? (
           <TableLoading />
+        ) : report.isError ? (
+          <TableError onRetry={() => void report.refetch()} retrying={report.isRefetching} />
         ) : !report.data || report.data.rows.length === 0 ? (
           <TableEmpty icon={ShoppingCart} title="No purchases in this range" description="Adjust the dates to find committed deliveries." />
+        ) : rows.length === 0 ? (
+          <TableEmpty icon={ShoppingCart} title="No rows match the search" description="Try a different item or supplier name." />
         ) : (
           <Table>
             <TableHeader>
@@ -57,7 +93,7 @@ export function PurchaseReportPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {report.data.rows.map((row, i) => (
+              {rows.map((row, i) => (
                 <TableRow key={i}>
                   <TableCell className="tnum">{row.purchaseDate}</TableCell>
                   <TableCell className="text-muted-foreground">
@@ -71,41 +107,49 @@ export function PurchaseReportPage() {
                 </TableRow>
               ))}
             </TableBody>
-            <TableFooter>
-              <TableRow>
-                <TableCell colSpan={3} className="font-medium">
-                  Total
-                </TableCell>
-                <TableCell className="tnum text-right font-medium">{n2(report.data.totals.qty)}</TableCell>
-                <TableCell />
-                <TableCell className="tnum text-right font-semibold">{formatMoney(report.data.totals.cost)}</TableCell>
-              </TableRow>
-            </TableFooter>
+            {query.trim() === "" && (
+              <TableFooter>
+                <TableRow>
+                  <TableCell colSpan={3} className="font-medium">
+                    Total
+                  </TableCell>
+                  <TableCell className="tnum text-right font-medium">{n2(report.data.totals.qty)}</TableCell>
+                  <TableCell />
+                  <TableCell className="tnum text-right font-semibold">{formatMoney(report.data.totals.cost)}</TableCell>
+                </TableRow>
+              </TableFooter>
+            )}
           </Table>
         )}
       </TableSurface>
 
       {report.data && report.data.rows.length > 0 && (
-        <div className="mt-8">
-          <h3 className="mb-2 text-sm font-semibold">By supplier</h3>
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead>Supplier</TableHead>
-                <TableHead className="text-right">Qty</TableHead>
-                <TableHead className="text-right">Cost</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {report.data.bySupplier.map((s) => (
-                <TableRow key={s.supplier}>
-                  <TableCell className="font-medium">{s.supplier}</TableCell>
-                  <TableCell className="tnum text-right">{n2(s.qty)}</TableCell>
-                  <TableCell className="tnum text-right">{formatMoney(s.cost)}</TableCell>
+        <div className="mt-8 grid gap-8 lg:grid-cols-2">
+          <div>
+            <h3 className="mb-2 text-sm font-semibold">Cost by supplier</h3>
+            <MagnitudeBars data={supplierBars} name="Cost" />
+          </div>
+          <div>
+            <h3 className="mb-2 text-sm font-semibold">By supplier</h3>
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead>Supplier</TableHead>
+                  <TableHead className="text-right">Qty</TableHead>
+                  <TableHead className="text-right">Cost</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {report.data.bySupplier.map((s) => (
+                  <TableRow key={s.supplier}>
+                    <TableCell className="font-medium">{s.supplier}</TableCell>
+                    <TableCell className="tnum text-right">{n2(s.qty)}</TableCell>
+                    <TableCell className="tnum text-right">{formatMoney(s.cost)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         </div>
       )}
     </div>

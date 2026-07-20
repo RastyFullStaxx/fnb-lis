@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Package, Plus } from "lucide-react";
 import { useItems } from "@/api/master";
 import { variantLabel } from "@/api/types";
@@ -12,7 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { TableLoading, TableEmpty } from "@/components/table-surface";
-import { ItemFormSheet } from "./item-form";
+import { ItemFormSheet, ItemEditSheet } from "./item-form";
 
 const ALL = "__all__";
 
@@ -28,6 +29,11 @@ export function ItemsTab({
   setFormOpen: (open: boolean) => void;
 }) {
   const items = useItems({ search: search || undefined, productType: productType === ALL ? undefined : productType });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  // Derive from the live query so the sheet re-renders from fresh data after
+  // a save (never a stale snapshot captured at click time).
+  const editing = items.data?.find((i) => i.id === editingId) ?? null;
+  const filtered = Boolean(search) || productType !== ALL;
 
   return (
     <>
@@ -36,10 +42,14 @@ export function ItemsTab({
       ) : (items.data ?? []).length === 0 ? (
         <TableEmpty
           icon={Package}
-          title={search ? "No items match your search" : "The master catalog is empty"}
-          description={search ? "Try a different name." : "Add your first item — it becomes available to every client location."}
+          title={filtered ? "Nothing matches the current filter" : "No items yet"}
+          description={
+            filtered
+              ? "Clear the search or type filter to see everything."
+              : "Add your first item — it becomes available to every client location."
+          }
           action={
-            !search && (
+            !filtered && (
               <Button onClick={() => setFormOpen(true)}>
                 <Plus className="size-4" /> New item
               </Button>
@@ -55,6 +65,7 @@ export function ItemsTab({
               <TableHead>Type</TableHead>
               <TableHead>Sizes</TableHead>
               <TableHead className="text-right">Weighing</TableHead>
+              <TableHead className="w-20" />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -79,6 +90,11 @@ export function ItemsTab({
                   <TableCell className="text-right text-sm text-muted-foreground">
                     {weighable ? "Scale-ready" : "—"}
                   </TableCell>
+                  <TableCell className="text-right">
+                    <Button variant="ghost" size="sm" onClick={() => setEditingId(item.id)}>
+                      Edit
+                    </Button>
+                  </TableCell>
                 </TableRow>
               );
             })}
@@ -87,6 +103,7 @@ export function ItemsTab({
       )}
 
       <ItemFormSheet open={formOpen} onOpenChange={setFormOpen} />
+      <ItemEditSheet item={editing} onOpenChange={(open) => !open && setEditingId(null)} />
     </>
   );
 }

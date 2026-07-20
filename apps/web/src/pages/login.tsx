@@ -170,7 +170,7 @@ export function LoginPage() {
                     <button
                       type="button"
                       onClick={() => setShowForgotPassword(true)}
-                      className="min-h-11 text-sm font-medium text-sidebar-foreground hover:underline"
+                      className="min-h-11 rounded-md text-sm font-medium text-sidebar-foreground hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/50"
                     >
                       Forgot password?
                     </button>

@@ -1,9 +1,10 @@
 import { useState } from "react";
+import { Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { useUpdateLocationItem } from "@/api/location";
 import type { LocationItem } from "@/api/types";
 import { ApiError } from "@/api/http";
-import { formatMoney } from "@/lib/utils";
+import { cn, formatMoney } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { QuantityInput } from "@/components/quantity-input";
 import { Label } from "@/components/ui/label";
@@ -20,7 +21,7 @@ export function PriceEdit({ row, canEdit }: { row: LocationItem; canEdit: boolea
   const missing = row.cost === 0 || row.retail === 0;
 
   const display = (
-    <span className={missing ? "font-medium text-destructive" : "tnum"}>
+    <span className={cn("tnum", missing && "font-medium text-destructive")}>
       {formatMoney(row.cost)} / {formatMoney(row.retail)}
     </span>
   );
@@ -57,9 +58,14 @@ export function PriceEdit({ row, canEdit }: { row: LocationItem; canEdit: boolea
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="rounded px-1 py-0.5 text-left hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+          title="Edit cost, retail, and par"
+          className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-left hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
         >
           {display}
+          <Pencil
+            aria-hidden="true"
+            className="size-3.5 text-muted-foreground opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100"
+          />
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-64 space-y-3" align="end">

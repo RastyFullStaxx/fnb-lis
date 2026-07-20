@@ -10,12 +10,13 @@ import { variantLabel, type LocationItem, type PurchaseLine } from "@/api/types"
 import { ApiError } from "@/api/http";
 import { formatMoney } from "@/lib/utils";
 import { ItemCombobox } from "@/components/item-combobox";
+import { TableSurface } from "@/components/table-surface";
 import { VoidDialog } from "@/components/void-dialog";
-import { FullPageSpinner } from "@/components/full-page-spinner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { QuantityInput } from "@/components/quantity-input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -51,8 +52,16 @@ export function PurchaseEditorPage() {
   const [voidingLine, setVoidingLine] = useState<PurchaseLine | null>(null);
   const comboRef = useRef<HTMLButtonElement>(null);
 
-  if (purchase.isPending) return <FullPageSpinner />;
-  if (purchase.isError) return <FullPageSpinner error="Purchase not found." />;
+  if (purchase.isPending) return <EditorSkeleton />;
+  if (purchase.isError)
+    return (
+      <div className="flex flex-col items-center gap-3 py-24 text-center">
+        <p className="text-sm">Couldn't load this delivery — it may have been removed.</p>
+        <Button asChild variant="outline" size="sm">
+          <Link to={`/l/${locationId}/purchases`}>Back to purchases</Link>
+        </Button>
+      </div>
+    );
 
   const p = purchase.data;
   const isDraft = p.status === "DRAFT";
@@ -93,7 +102,7 @@ export function PurchaseEditorPage() {
   };
 
   return (
-    <div>
+    <div className="flex min-h-0 flex-1 flex-col">
       <div className="mb-4 flex items-center gap-3">
         <Button asChild variant="ghost" size="icon" aria-label="Back to purchases">
           <Link to={`/l/${locationId}/purchases`}>
@@ -101,39 +110,65 @@ export function PurchaseEditorPage() {
           </Link>
         </Button>
         <div>
-          <h2 className="text-lg font-semibold tracking-tight tnum">Delivery · {p.purchaseDate}</h2>
+          <h2 className="text-xl font-semibold tracking-tight tnum">Delivery · {p.purchaseDate}</h2>
           <p className="text-sm text-muted-foreground">
             {p.supplier?.name ?? "No supplier"}
             {p.refNo && ` · ${p.refNo}`}
             {p.status === "VOID" && ` · void: ${p.voidReason}`}
           </p>
         </div>
-        <Badge className="ml-auto" variant={isDraft ? "default" : "secondary"}>
+        <Badge className="ml-auto" variant={isDraft ? "default" : p.status === "COMMITTED" ? "secondary" : "outline"}>
           {isDraft ? "Draft" : p.status === "COMMITTED" ? "Committed" : "Void"}
         </Badge>
+        {/* Commit lives in the fixed header so it never scrolls out of reach on long drafts. */}
+        {isDraft && (
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button disabled={activeLines.length === 0}>
+                <Check className="size-4" /> Commit delivery
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Commit this delivery?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {activeLines.length} line{activeLines.length === 1 ? "" : "s"}, {formatMoney(total)} total.
+                  Committed deliveries count into reports; fixes then go through void &amp; correct.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Keep drafting</AlertDialogCancel>
+                <AlertDialogAction onClick={commit}>Commit</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        )}
       </div>
 
-      {isDraft && (
-        <div className="mb-4 grid grid-cols-[minmax(0,1fr)_7rem_8rem_auto] items-end gap-2 rounded-lg border p-4">
-          <div className="space-y-2">
-            <Label>Item</Label>
-            <ItemCombobox ref={comboRef} value={item} onSelect={pickItem} autoFocus />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="pl-qty">Qty</Label>
-            <QuantityInput id="pl-qty" className="tnum" value={qty} onChange={(e) => setQty(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addLine()} />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="pl-cost">Unit cost</Label>
-            <QuantityInput id="pl-cost" className="tnum" value={cost} onChange={(e) => setCost(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addLine()} />
-          </div>
-          <Button onClick={addLine} disabled={!item || mutations.addLine.isPending}>
-            Add
-          </Button>
-        </div>
-      )}
-
-      <div className="rounded-lg border">
+      {/* One surface: the add-line strip is the table's toolbar, and only the rows scroll. */}
+      <TableSurface
+        filters={
+          isDraft ? (
+            <div className="grid w-full grid-cols-[minmax(0,1fr)_7rem_8rem_auto] items-end gap-2">
+              <div className="space-y-2">
+                <Label htmlFor="pl-item">Item</Label>
+                <ItemCombobox id="pl-item" ref={comboRef} value={item} onSelect={pickItem} autoFocus />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="pl-qty">Qty</Label>
+                <QuantityInput id="pl-qty" className="tnum bg-background" value={qty} onChange={(e) => setQty(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addLine()} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="pl-cost">Unit cost</Label>
+                <QuantityInput id="pl-cost" className="tnum bg-background" value={cost} onChange={(e) => setCost(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addLine()} />
+              </div>
+              <Button onClick={addLine} disabled={!item || mutations.addLine.isPending}>
+                Add
+              </Button>
+            </div>
+          ) : undefined
+        }
+      >
         <Table>
           <TableHeader>
             <TableRow className="bg-muted hover:bg-muted">
@@ -207,32 +242,7 @@ export function PurchaseEditorPage() {
             </TableFooter>
           )}
         </Table>
-      </div>
-
-      {isDraft && (
-        <div className="mt-4 flex justify-end">
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button disabled={activeLines.length === 0}>
-                <Check className="size-4" /> Commit delivery
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Commit this delivery?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  {activeLines.length} line{activeLines.length === 1 ? "" : "s"}, {formatMoney(total)} total.
-                  Committed deliveries count into reports; fixes then go through void &amp; correct.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Keep drafting</AlertDialogCancel>
-                <AlertDialogAction onClick={commit}>Commit</AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </div>
-      )}
+      </TableSurface>
 
       <VoidDialog
         open={voidingLine !== null}
@@ -249,6 +259,34 @@ export function PurchaseEditorPage() {
           }
         }}
       />
+    </div>
+  );
+}
+
+/** Skeleton shaped like the editor — header row, entry strip, then table rows. */
+function EditorSkeleton() {
+  return (
+    <div aria-busy="true" className="flex min-h-0 flex-1 flex-col">
+      <div className="mb-4 flex items-center gap-3">
+        <Skeleton className="size-9" />
+        <div className="space-y-1.5">
+          <Skeleton className="h-5 w-44" />
+          <Skeleton className="h-4 w-64" />
+        </div>
+        <Skeleton className="ml-auto h-6 w-20" />
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border">
+        <div className="border-b bg-muted/30 px-3 py-2.5">
+          <Skeleton className="h-9 w-full" />
+        </div>
+        <div className="divide-y">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="px-4 py-3">
+              <Skeleton className="h-5 w-full" />
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

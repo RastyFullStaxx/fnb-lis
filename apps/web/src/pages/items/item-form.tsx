@@ -1,12 +1,14 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Scale, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { itemCreate, type ItemCreate } from "@fnb/core";
-import { useCategories, useCreateItem, useUnits } from "@/api/master";
+import { itemCreate, itemUpdate, type ItemCreate, type ItemUpdate } from "@fnb/core";
+import { useCategories, useCreateItem, useUnits, useUpdateItem } from "@/api/master";
+import { variantLabel, type Item, type ItemVariant } from "@/api/types";
 import { defaultWeighUnit, useUnitSystem } from "@/lib/preferences";
 import { ApiError } from "@/api/http";
+import { VariantQuickEditDialog } from "@/components/variant-quick-edit";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { QuantityInput } from "@/components/quantity-input";
@@ -73,7 +75,7 @@ export function ItemFormSheet({
   const onSubmit = form.handleSubmit(async (values) => {
     try {
       const created = await createItem.mutateAsync(values);
-      toast.success(`Item "${created.name}" added to the master catalog`);
+      toast.success(`Item "${created.name}" added — every client location can now price it`);
       onOpenChange(false);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not save the item");
@@ -100,9 +102,9 @@ export function ItemFormSheet({
           </div>
 
           <div className="space-y-2">
-            <Label>Category</Label>
+            <Label htmlFor="item-category">Category</Label>
             <Select value={categoryId} onValueChange={(v) => form.setValue("categoryId", v, { shouldValidate: true })}>
-              <SelectTrigger>
+              <SelectTrigger id="item-category">
                 <SelectValue placeholder="Choose a category" />
               </SelectTrigger>
               <SelectContent>
@@ -149,6 +151,7 @@ export function ItemFormSheet({
               const unitId = form.watch(`variants.${i}.unitId`);
               const unitIsMass = units.data?.find((u) => u.id === unitId)?.kind === "MASS";
               const netMode = !contentTracked && weighMode === "NET";
+              const vErr = form.formState.errors.variants?.[i];
               return (
                 <div key={field.id} className="space-y-3 rounded-lg border p-3">
                   <div className="flex items-end gap-2">
@@ -156,6 +159,7 @@ export function ItemFormSheet({
                       <Label className="text-xs">Size</Label>
                       <QuantityInput
                         className="tnum"
+                        {...(vErr?.size ? { "aria-invalid": true } : {})}
                         {...form.register(`variants.${i}.size`, { valueAsNumber: true })}
                       />
                     </div>
@@ -165,7 +169,7 @@ export function ItemFormSheet({
                         value={form.watch(`variants.${i}.unitId`)}
                         onValueChange={(v) => form.setValue(`variants.${i}.unitId`, v, { shouldValidate: true })}
                       >
-                        <SelectTrigger>
+                        <SelectTrigger aria-invalid={vErr?.unitId ? true : undefined}>
                           <SelectValue placeholder="Unit" />
                         </SelectTrigger>
                         <SelectContent>
@@ -189,8 +193,15 @@ export function ItemFormSheet({
                       </Button>
                     )}
                   </div>
+                  {(vErr?.size || vErr?.unitId) && (
+                    <p className="text-sm text-destructive">
+                      {[vErr?.size && "Size must be greater than zero.", vErr?.unitId && "Pick a unit."]
+                        .filter(Boolean)
+                        .join(" ")}
+                    </p>
+                  )}
 
-                  <div className="flex items-center justify-between rounded-md bg-muted px-3 py-2">
+                  <div className="flex items-center justify-between gap-4 border-t pt-3">
                     <div>
                       <p className="text-sm font-medium">Track open content</p>
                       <p className="text-xs text-muted-foreground">
@@ -207,7 +218,7 @@ export function ItemFormSheet({
                   </div>
 
                   {!contentTracked && unitIsMass && (
-                    <div className="flex items-center justify-between rounded-md bg-muted px-3 py-2">
+                    <div className="flex items-center justify-between gap-4 border-t pt-3">
                       <div>
                         <p className="text-sm font-medium">Weigh by net weight</p>
                         <p className="text-xs text-muted-foreground">
@@ -297,7 +308,7 @@ export function ItemFormSheet({
                             setValueAs: (v) => (v === "" || v === null ? null : Number(v)),
                           })}
                         />
-                        <p className="text-[11px] leading-tight text-muted-foreground">
+                        <p className="text-xs text-muted-foreground">
                           Density factor: ml of liquid per gram/oz of weight — converts a scale reading
                           into remaining volume.
                         </p>
@@ -318,6 +329,153 @@ export function ItemFormSheet({
             </Button>
           </SheetFooter>
         </form>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+/** Weighing summary line for a variant row in the edit sheet. */
+function weighSummary(v: ItemVariant): string {
+  if (v.contentTracked) {
+    return v.tareWeight != null
+      ? `Open content · tare ${v.tareWeight} ${v.tareWeightUnit ?? "g"}`
+      : "Open content · no bottle weight yet";
+  }
+  if (v.weighMode === "NET") return "Weighed by net weight";
+  return "Counted whole";
+}
+
+/**
+ * Edit an existing master item: name, category, and description via
+ * `useUpdateItem`; per-variant bottle weight / Liquid Weight through the same
+ * VariantQuickEditDialog the count screen uses. Sizes themselves stay fixed —
+ * committed counts and purchases reference them.
+ */
+export function ItemEditSheet({
+  item,
+  onOpenChange,
+}: {
+  item: Item | null;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const categories = useCategories();
+  const updateItem = useUpdateItem();
+  // Track only the id and derive the variant from the live item, so the dialog
+  // always shows fresh values after a save instead of a stale snapshot.
+  const [quickEditId, setQuickEditId] = useState<string | null>(null);
+  const quickEdit = item?.variants.find((v) => v.id === quickEditId) ?? null;
+
+  const form = useForm<ItemUpdate>({
+    resolver: zodResolver(itemUpdate),
+    values: {
+      name: item?.name ?? "",
+      categoryId: item?.categoryId ?? "",
+      description: item?.description ?? null,
+    },
+  });
+  const categoryId = form.watch("categoryId");
+
+  const onSubmit = form.handleSubmit(async (values) => {
+    if (!item) return;
+    try {
+      await updateItem.mutateAsync({ id: item.id, ...values });
+      toast.success(`Item "${values.name ?? item.name}" updated`);
+      setQuickEditId(null);
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not save the item");
+    }
+  });
+
+  return (
+    <Sheet
+      open={item !== null}
+      onOpenChange={(o) => {
+        if (!o) setQuickEditId(null);
+        onOpenChange(o);
+      }}
+    >
+      <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
+        <SheetHeader>
+          <SheetTitle>Edit item</SheetTitle>
+          <SheetDescription>
+            Changes apply everywhere this item appears — every location's catalog and future counts.
+          </SheetDescription>
+        </SheetHeader>
+
+        <form onSubmit={onSubmit} className="space-y-5 px-4 pb-4">
+          <div className="space-y-2">
+            <Label htmlFor="item-edit-name">Name</Label>
+            <Input id="item-edit-name" autoFocus {...form.register("name")} />
+            {form.formState.errors.name && (
+              <p className="text-sm text-destructive">{form.formState.errors.name.message}</p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="item-edit-category">Category</Label>
+            <Select
+              value={categoryId}
+              onValueChange={(v) => form.setValue("categoryId", v, { shouldValidate: true, shouldDirty: true })}
+            >
+              <SelectTrigger id="item-edit-category">
+                <SelectValue placeholder="Choose a category" />
+              </SelectTrigger>
+              <SelectContent>
+                {(categories.data ?? []).map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name} · {c.productType}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="item-edit-desc">Description (optional)</Label>
+            <Input id="item-edit-desc" {...form.register("description")} />
+          </div>
+
+          <Separator />
+
+          <div className="space-y-3">
+            <div>
+              <Label>Sizes / variants</Label>
+              <p className="text-xs text-muted-foreground">
+                Sizes are fixed once created; bottle weight and Liquid Weight can be corrected per size.
+              </p>
+            </div>
+            {(item?.variants ?? []).map((v) => (
+              <div key={v.id} className="flex items-center justify-between gap-4 border-t pt-3">
+                <div className="min-w-0">
+                  <p className="tnum text-sm font-medium">{variantLabel(v)}</p>
+                  <p className="text-xs text-muted-foreground">{weighSummary(v)}</p>
+                </div>
+                {(v.contentTracked || v.weighMode === "NET") && (
+                  <Button type="button" variant="outline" size="sm" onClick={() => setQuickEditId(v.id)}>
+                    <Scale className="size-4" /> Bottle weight
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <SheetFooter className="px-0">
+            <Button type="submit" disabled={updateItem.isPending}>
+              {updateItem.isPending ? "Saving…" : "Save changes"}
+            </Button>
+          </SheetFooter>
+        </form>
+
+        {item && quickEdit && (
+          <VariantQuickEditDialog
+            open
+            onOpenChange={(o) => !o && setQuickEditId(null)}
+            itemName={item.name}
+            variant={quickEdit}
+            categoryDefaultDensity={item.category.defaultDensityFactor}
+          />
+        )}
       </SheetContent>
     </Sheet>
   );

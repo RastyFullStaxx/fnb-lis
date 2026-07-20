@@ -46,7 +46,14 @@ export function MagnitudeBars({
         layout="vertical"
         margin={{ top: 0, right: 56, bottom: 0, left: diverging ? 56 : 0 }}
       >
-        <XAxis type="number" hide domain={diverging ? ["dataMin", "dataMax"] : undefined} />
+        {/* The zero baseline must always be in the domain — with all-negative
+            data, dataMax would become the baseline and bars grow from the
+            wrong edge (the smallest bar vanishes entirely). */}
+        <XAxis
+          type="number"
+          hide
+          domain={[(dataMin: number) => Math.min(0, dataMin), (dataMax: number) => Math.max(0, dataMax)]}
+        />
         <YAxis
           type="category"
           dataKey="label"

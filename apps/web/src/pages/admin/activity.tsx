@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { Activity as ActivityIcon, Search } from "lucide-react";
+import { Activity as ActivityIcon } from "lucide-react";
 import { useActivity, type ActivityFilters } from "@/api/activity";
 import { useCurrentClient } from "@/api/location";
 import { PageHeader } from "@/components/page-header";
-import { TableSurface, TableLoading, TableEmpty } from "@/components/table-surface";
+import { TableSurface, TableLoading, TableEmpty, ToolbarSearch } from "@/components/table-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +16,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+
+// The server caps a page at this many rows (apps/server/src/routes/activity.ts).
+const PAGE_LIMIT = 200;
+
+/** Audit-log timestamps match the project's YYYY-MM-DD business-date convention. */
+function formatTimestamp(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 export function AdminActivityPage() {
   const client = useCurrentClient();
@@ -41,17 +51,7 @@ export function AdminActivityPage() {
       <TableSurface
         filters={
           <>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                aria-label="Search activity"
-                className="w-56 bg-background pl-8"
-                placeholder="Summary contains…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && apply()}
-              />
-            </div>
+            <ToolbarSearch value={search} onChange={setSearch} onEnter={apply} placeholder="Summary contains…" />
             <Label htmlFor="act-from" className="text-xs text-muted-foreground">
               From
             </Label>
@@ -87,11 +87,19 @@ export function AdminActivityPage() {
         {activity.isPending ? (
           <TableLoading rows={10} />
         ) : (activity.data?.rows ?? []).length === 0 ? (
-          <TableEmpty
-            icon={ActivityIcon}
-            title="No activity found"
-            description="Nothing matches these filters yet. Widen the date range or clear the search."
-          />
+          !applied.search && !applied.from && !applied.to ? (
+            <TableEmpty
+              icon={ActivityIcon}
+              title="No activity yet"
+              description="Actions appear here as your team works."
+            />
+          ) : (
+            <TableEmpty
+              icon={ActivityIcon}
+              title="No activity found"
+              description="Nothing matches these filters yet. Widen the date range or clear the search."
+            />
+          )
         ) : (
           <Table>
             <TableHeader>
@@ -106,7 +114,7 @@ export function AdminActivityPage() {
               {activity.data!.rows.map((r) => (
                 <TableRow key={r.id}>
                   <TableCell className="tnum whitespace-nowrap text-xs text-muted-foreground">
-                    {new Date(r.ts).toLocaleString()}
+                    {formatTimestamp(r.ts)}
                   </TableCell>
                   <TableCell className="text-sm">{r.userName ?? "System"}</TableCell>
                   <TableCell>
@@ -117,6 +125,13 @@ export function AdminActivityPage() {
                   <TableCell className="text-sm">{r.summary}</TableCell>
                 </TableRow>
               ))}
+              {activity.data!.rows.length === PAGE_LIMIT && (
+                <TableRow className="hover:bg-transparent">
+                  <TableCell colSpan={4} className="py-3 text-center text-xs text-muted-foreground">
+                    Showing the latest {PAGE_LIMIT} entries — narrow the date range to see older activity.
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         )}
