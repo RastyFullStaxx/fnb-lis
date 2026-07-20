@@ -47,7 +47,7 @@ export function VoidDialog({
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
             {description ??
-              "The record stays in history, marked void with your reason. Reports stop counting it."}
+              "The entry stays in history, marked cancelled with your reason. Reports stop counting it."}
           </DialogDescription>
         </DialogHeader>
         {children}
@@ -57,7 +57,7 @@ export function VoidDialog({
             id="void-reason"
             rows={2}
             autoFocus
-            placeholder="Why is this record wrong?"
+            placeholder="Why is this entry wrong?"
             value={reason}
             onChange={(e) => setReason(e.target.value)}
           />
@@ -71,7 +71,7 @@ export function VoidDialog({
             disabled={reason.trim().length < 3 || pending}
             onClick={() => onConfirm(reason.trim())}
           >
-            {pending ? "Voiding…" : "Void record"}
+            {pending ? "Cancelling…" : "Cancel Entry"}
           </Button>
         </DialogFooter>
       </DialogContent>

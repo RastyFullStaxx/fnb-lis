@@ -58,6 +58,16 @@ const KIND_COPY: Record<SaleKind, { title: string; hint?: string; button: string
 
 /** Labels for every stored reason — canonical buckets plus legacy codes on
     historical rows (the entry select offers only the canonical three). */
+/** One labelled fact in a Recent Entries row: "Quantity: 3". */
+function EntryFact({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="flex gap-1.5">
+      <dt className="shrink-0">{label}:</dt>
+      <dd className="tnum min-w-0 truncate text-foreground/80">{value}</dd>
+    </div>
+  );
+}
+
 const REASON_LABELS: Record<string, string> = {
   SPOILAGE_SPILLAGE: "Spoilage & Spillages",
   TRIMMING: "Trimming",
@@ -132,15 +142,29 @@ export function SalesPage() {
                   <div key={sale.id} className={cn("flex items-center gap-3 px-4 py-2.5", voided && "opacity-50")}>
                     <div className="min-w-0 flex-1">
                       <p title={name} className={cn("truncate text-sm font-medium", voided && "line-through")}>{name}</p>
-                      <p className="tnum text-xs text-muted-foreground">
-                        {sale.saleDate} · ×{sale.qty}
-                        {sale.kind === "SALE" && ` @ ${formatMoney(sale.unitPrice)}`}
-                        {sale.discountPct > 0 && ` · ${sale.discountPct}% off`}
-                        {sale.contentOverride && ` · ${sale.contentOverride}/unit content`}
-                        {sale.reason && ` · ${REASON_LABELS[sale.reason] ?? sale.reason}`}
-                        {sale.correctionOfId && " · correction"}
-                        {voided && sale.voidReason && ` · void: ${sale.voidReason}`}
-                      </p>
+                      {/* Labelled rows — an entry's numbers are read one at a
+                          time (which price? what discount?), so each fact gets
+                          its own line instead of a run-on dot-separated string. */}
+                      <dl className="mt-0.5 space-y-px text-xs text-muted-foreground">
+                        <EntryFact label="Date" value={sale.saleDate} />
+                        <EntryFact label="Quantity" value={sale.qty} />
+                        {sale.kind === "SALE" && (
+                          <EntryFact label="Price" value={formatMoney(sale.unitPrice)} />
+                        )}
+                        {sale.discountPct > 0 && (
+                          <EntryFact label="Discount" value={`${sale.discountPct}%`} />
+                        )}
+                        {sale.contentOverride && (
+                          <EntryFact label="Content per unit" value={sale.contentOverride} />
+                        )}
+                        {sale.reason && (
+                          <EntryFact label="Reason" value={REASON_LABELS[sale.reason] ?? sale.reason} />
+                        )}
+                        {sale.correctionOfId && <EntryFact label="Type" value="Correction" />}
+                        {voided && sale.voidReason && (
+                          <EntryFact label="Cancelled" value={sale.voidReason} />
+                        )}
+                      </dl>
                     </div>
                     {sale.kind === "SALE" && !voided && (() => {
                       const gross = sale.unitPrice * sale.qty;
@@ -157,7 +181,7 @@ export function SalesPage() {
                     })()}
                     {canVoid && !voided && (
                       <Button variant="ghost" size="sm" onClick={() => setVoiding(sale)}>
-                        Void
+                        Cancel
                       </Button>
                     )}
                   </div>
@@ -178,7 +202,7 @@ export function SalesPage() {
       <VoidDialog
         open={voiding !== null}
         onOpenChange={(open) => !open && setVoiding(null)}
-        title="Void this entry?"
+        title="Cancel this entry?"
         pending={mutations.voidSale.isPending}
         onConfirm={async (reason) => {
           try {

@@ -222,7 +222,7 @@ export function ItemFormSheet({
                       <div>
                         <p className="text-sm font-medium">Weigh by Net Weight</p>
                         <p className="text-xs text-muted-foreground">
-                          Kitchen counting: scale reading − tare = quantity in {units.data?.find((u) => u.id === unitId)?.name ?? "the unit"}. No density conversion.
+                          Kitchen counting: scale weight − empty weight = quantity in {units.data?.find((u) => u.id === unitId)?.name ?? "the unit"}. No density conversion.
                         </p>
                       </div>
                       <Switch
@@ -235,7 +235,7 @@ export function ItemFormSheet({
                   {netMode && (
                     <div className="grid grid-cols-2 items-end gap-2">
                       <div className="space-y-1.5">
-                        <Label className="text-xs">Tare Weight</Label>
+                        <Label className="text-xs">Empty Weight</Label>
                         <QuantityInput
                           className="tnum"
                           placeholder="empty container (0 = none)"
@@ -245,7 +245,7 @@ export function ItemFormSheet({
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <Label className="text-xs">Tare Unit</Label>
+                        <Label className="text-xs">Weight Unit</Label>
                         <Select
                           value={form.watch(`variants.${i}.tareWeightUnit`) ?? ""}
                           onValueChange={(v) =>
@@ -267,7 +267,7 @@ export function ItemFormSheet({
                   {contentTracked && (
                     <div className="grid grid-cols-2 items-end gap-2 sm:grid-cols-3">
                       <div className="space-y-1.5">
-                        <Label className="text-xs">Tare Weight</Label>
+                        <Label className="text-xs">Empty Weight</Label>
                         <QuantityInput
                           className="tnum"
                           placeholder="empty container"
@@ -277,7 +277,7 @@ export function ItemFormSheet({
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <Label className="text-xs">Tare Unit</Label>
+                        <Label className="text-xs">Weight Unit</Label>
                         <Select
                           value={form.watch(`variants.${i}.tareWeightUnit`) ?? ""}
                           onValueChange={(v) =>
@@ -309,8 +309,7 @@ export function ItemFormSheet({
                           })}
                         />
                         <p className="text-xs text-muted-foreground">
-                          Density factor: ml of liquid per gram/oz of weight — converts a scale reading
-                          into remaining volume.
+                          Liquid Weight: ml of liquid per gram/oz of weight — converts a scale weight into remaining volume.
                         </p>
                       </div>
                     </div>
@@ -338,7 +337,7 @@ export function ItemFormSheet({
 function weighSummary(v: ItemVariant): string {
   if (v.contentTracked) {
     return v.tareWeight != null
-      ? `Open content · tare ${v.tareWeight} ${v.tareWeightUnit ?? "g"}`
+      ? `Open content · empty ${v.tareWeight} ${v.tareWeightUnit ?? "g"}`
       : "Open content · no bottle weight yet";
   }
   if (v.weighMode === "NET") return "Weighed by net weight";

@@ -114,11 +114,11 @@ export function PurchaseEditorPage() {
           <p className="text-sm text-muted-foreground">
             {p.supplier?.name ?? "No supplier"}
             {p.refNo && ` · ${p.refNo}`}
-            {p.status === "VOID" && ` · void: ${p.voidReason}`}
+            {p.status === "VOID" && ` · cancelled: ${p.voidReason}`}
           </p>
         </div>
         <Badge className="ml-auto" variant={isDraft ? "default" : p.status === "COMMITTED" ? "secondary" : "outline"}>
-          {isDraft ? "Draft" : p.status === "COMMITTED" ? "Committed" : "Void"}
+          {isDraft ? "Draft" : p.status === "COMMITTED" ? "Committed" : "Cancelled"}
         </Badge>
         {/* Commit lives in the fixed header so it never scrolls out of reach on long drafts. */}
         {isDraft && (
@@ -197,7 +197,7 @@ export function PurchaseEditorPage() {
                         {variantLabel(line.locationItem.itemVariant)}
                       </span>
                       {voided && line.voidReason && (
-                        <span className="ml-2 text-xs text-muted-foreground">void: {line.voidReason}</span>
+                        <span className="ml-2 text-xs text-muted-foreground">cancelled: {line.voidReason}</span>
                       )}
                     </TableCell>
                     <TableCell className="tnum text-right">{line.qty}</TableCell>
@@ -219,7 +219,7 @@ export function PurchaseEditorPage() {
                         </Button>
                       ) : canVoid && !voided ? (
                         <Button variant="ghost" size="sm" onClick={() => setVoidingLine(line)}>
-                          Void
+                          Cancel
                         </Button>
                       ) : null}
                     </TableCell>
@@ -247,7 +247,7 @@ export function PurchaseEditorPage() {
       <VoidDialog
         open={voidingLine !== null}
         onOpenChange={(open) => !open && setVoidingLine(null)}
-        title="Void this purchase line?"
+        title="Cancel this purchase line?"
         pending={mutations.voidLine.isPending}
         onConfirm={async (reason) => {
           try {

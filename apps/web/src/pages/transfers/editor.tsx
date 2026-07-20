@@ -141,13 +141,13 @@ export function TransferEditorPage() {
           </h2>
           <p className="text-sm text-muted-foreground">
             {t.fromLocation?.name} → {t.toLocation?.name}
-            {t.status === "VOID" && ` · void: ${t.voidReason}`}
+            {t.status === "VOID" && ` · cancelled: ${t.voidReason}`}
           </p>
         </div>
         <div className="ml-auto flex items-center gap-2">
           {(canVoid || canDiscard) && (
             <Button variant="outline" size="sm" onClick={() => setVoidingTransfer(true)}>
-              {isDraft ? "Discard draft" : "Void transfer"}
+              {isDraft ? "Discard Draft" : "Cancel Transfer"}
             </Button>
           )}
           {isDraft && isSource && (
@@ -174,7 +174,7 @@ export function TransferEditorPage() {
             </AlertDialog>
           )}
           <Badge variant={isDraft ? "default" : "secondary"}>
-            {isDraft ? "Draft" : t.status === "COMMITTED" ? "Committed" : "Void"}
+            {isDraft ? "Draft" : t.status === "COMMITTED" ? "Committed" : "Cancelled"}
           </Badge>
         </div>
       </div>
@@ -229,7 +229,7 @@ export function TransferEditorPage() {
                         {variantLabel(line.locationItem.itemVariant)}
                       </span>
                       {voided && line.voidReason && (
-                        <span className="ml-2 text-xs text-muted-foreground">void: {line.voidReason}</span>
+                        <span className="ml-2 text-xs text-muted-foreground">cancelled: {line.voidReason}</span>
                       )}
                     </TableCell>
                     <TableCell className="tnum text-right">{line.qty}</TableCell>
@@ -254,7 +254,7 @@ export function TransferEditorPage() {
                         </Button>
                       ) : canVoid && !voided ? (
                         <Button variant="ghost" size="sm" onClick={() => setVoidingLine(line)}>
-                          Void
+                          Cancel
                         </Button>
                       ) : canVoidReceipt && !voided && receipt ? (
                         <Button
@@ -267,7 +267,7 @@ export function TransferEditorPage() {
                             })
                           }
                         >
-                          Void receipt
+                          Cancel Receipt
                         </Button>
                       ) : null}
                     </TableCell>
@@ -300,7 +300,7 @@ export function TransferEditorPage() {
       <VoidDialog
         open={voidingLine !== null}
         onOpenChange={(open) => !open && setVoidingLine(null)}
-        title="Void this transfer line?"
+        title="Cancel this transfer line?"
         pending={mutations.voidLine.isPending}
         onConfirm={async (reason) => {
           try {
@@ -315,7 +315,7 @@ export function TransferEditorPage() {
       <VoidDialog
         open={voidingTransfer}
         onOpenChange={setVoidingTransfer}
-        title={isDraft ? "Discard this draft transfer?" : "Void this whole transfer?"}
+        title={isDraft ? "Discard this draft transfer?" : "Cancel this whole transfer?"}
         pending={mutations.voidTransfer.isPending}
         onConfirm={async (reason) => {
           try {

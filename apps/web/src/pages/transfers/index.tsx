@@ -54,7 +54,7 @@ function kindLabel(kind: string | null | undefined): string | null {
 
 function StatusBadge({ transfer }: { transfer: Transfer }) {
   if (transfer.status === "DRAFT") return <Badge>Draft</Badge>;
-  if (transfer.status === "VOID") return <Badge variant="destructive">Void</Badge>;
+  if (transfer.status === "VOID") return <Badge variant="destructive">Cancelled</Badge>;
   const received = transfer.receivedCount ?? 0;
   const lines = transfer.lineCount ?? 0;
   if (lines > 0 && received >= lines) {

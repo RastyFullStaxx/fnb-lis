@@ -43,7 +43,7 @@ export function useWeighPreview(item: LocationItem | null, scaleText: string) {
     const tare = variant.tareWeight;
 
     if (mode === "NET") {
-      if (tare === null) return { ready: false as const, missing: "tare weight" };
+      if (tare === null) return { ready: false as const, missing: "empty weight" };
       const unitName = variant.tareWeightUnit ?? fallbackUnit;
       const scale = Number(scaleText);
       if (scaleText === "" || !Number.isFinite(scale)) {
@@ -83,7 +83,7 @@ export function useWeighPreview(item: LocationItem | null, scaleText: string) {
       variant.item.category.defaultDensityFactor,
     );
     if (!density || tare === null) {
-      return { ready: false as const, missing: !density ? "liquid weight formula" : "tare weight" };
+      return { ready: false as const, missing: !density ? "liquid weight" : "empty weight" };
     }
     const scale = Number(scaleText);
     if (scaleText === "" || !Number.isFinite(scale)) {
@@ -137,8 +137,8 @@ export function WeighPreviewStrip({
     return (
       <p className="text-sm text-muted-foreground tnum">
         {preview.mode === "NET"
-          ? `Tare ${preview.tare} ${preview.unit} · net weight mode — type the scale reading.`
-          : `Tare ${preview.tare} ${preview.unit} · Liquid Weight ×${preview.density} — type the scale reading.`}
+          ? `Empty weight ${preview.tare} ${preview.unit} · weighed by net weight — type the scale weight.`
+          : `Empty weight ${preview.tare} ${preview.unit} · Liquid Weight ×${preview.density} — type the scale weight.`}
       </p>
     );
   }
@@ -156,7 +156,7 @@ export function WeighPreviewStrip({
           <span className="text-sm text-destructive">{warning?.message}</span>
         ) : preview.mode === "NET" ? (
           <span className="tnum text-sm">
-            scale {preview.scale} − tare {preview.tare} {preview.unit} →{" "}
+            scale {preview.scale} − empty {preview.tare} {preview.unit} →{" "}
             {/* Keyed on the result so every recomputation visibly ticks (DESIGN.md motion). */}
             <span
               key={preview.remaining}
@@ -167,7 +167,7 @@ export function WeighPreviewStrip({
           </span>
         ) : (
           <span className="tnum text-sm">
-            (scale {preview.scale} − tare {preview.tare}) × Liquid Weight {preview.density} →{" "}
+            (scale {preview.scale} − empty {preview.tare}) × Liquid Weight {preview.density} →{" "}
             <span
               key={preview.remaining}
               className="inline-block font-semibold duration-150 animate-in fade-in slide-in-from-bottom-0.5 motion-reduce:animate-none"

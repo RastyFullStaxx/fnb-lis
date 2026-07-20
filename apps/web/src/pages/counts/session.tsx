@@ -105,12 +105,12 @@ function SessionHeader({ session }: { session: SessionWithLines }) {
           {session.status === "OPEN"
             ? "Counting in progress — every saved line lands below."
             : session.status === "COMMITTED"
-              ? "Committed. Lines are frozen; use void or correct for fixes."
-              : `Voided: ${session.voidReason}`}
+              ? "Committed. Lines are locked — cancel an entry and re-enter it to fix a mistake."
+              : `Cancelled: ${session.voidReason}`}
         </p>
       </div>
       <Badge className="ml-auto" variant={STATUS_BADGE[session.status] ?? "outline"}>
-        {session.status === "OPEN" ? "Counting" : session.status === "COMMITTED" ? "Committed" : "Void"}
+        {session.status === "OPEN" ? "Counting" : session.status === "COMMITTED" ? "Committed" : "Cancelled"}
       </Badge>
     </div>
   );
@@ -227,10 +227,10 @@ function OpenSession({ session }: { session: SessionWithLines }) {
             <Tabs value={activeMode} onValueChange={(v) => setMode(v as "FULL" | "WEIGH")}>
               <TabsList className="w-full">
                 <TabsTrigger value="FULL" className="flex-1">
-                  Full units
+                  Full Units
                 </TabsTrigger>
                 <TabsTrigger value="WEIGH" className="flex-1">
-                  Weigh open
+                  Weigh Partial
                 </TabsTrigger>
               </TabsList>
             </Tabs>
@@ -294,8 +294,7 @@ function OpenSession({ session }: { session: SessionWithLines }) {
                 <AlertDialogTitle>Commit this count?</AlertDialogTitle>
                 <AlertDialogDescription>
                   {activeLines.length} line{activeLines.length === 1 ? "" : "s"} for {session.countDate}.
-                  Once committed, lines freeze — fixes go through void &amp; correct, and the date becomes
-                  available as a report boundary.
+                  Once committed, lines lock — to fix a mistake you cancel the entry and re-enter it, and the date becomes available as a report boundary.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -370,7 +369,7 @@ function ReadOnlySession({ session }: { session: SessionWithLines }) {
       <VoidDialog
         open={voiding !== null}
         onOpenChange={(open) => !open && setVoiding(null)}
-        title="Void this count line?"
+        title="Cancel this count line?"
         pending={mutations.voidLine.isPending}
         onConfirm={async (reason) => {
           try {
@@ -424,7 +423,7 @@ function LineRow({
             ? `${line.qtyFull} full`
             : `scale ${line.scaleWeight} ${line.scaleUnit} → ${line.remainingContent} ${variant.unit.name}`}
           {line.correctionOfId && " · correction"}
-          {voided && line.voidReason && ` · void: ${line.voidReason}`}
+          {voided && line.voidReason && ` · cancelled: ${line.voidReason}`}
           {" · "}
           {line.createdByName}
         </p>
@@ -446,7 +445,7 @@ function LineRow({
       )}
       {onVoid && (
         <Button variant="ghost" size="sm" onClick={onVoid}>
-          Void
+          Cancel
         </Button>
       )}
     </div>

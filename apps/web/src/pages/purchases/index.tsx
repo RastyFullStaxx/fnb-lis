@@ -93,7 +93,7 @@ export function PurchasesPage() {
                       <SelectItem value="ALL">All Statuses</SelectItem>
                       <SelectItem value="DRAFT">Draft</SelectItem>
                       <SelectItem value="COMMITTED">Committed</SelectItem>
-                      <SelectItem value="VOID">Void</SelectItem>
+                      <SelectItem value="VOID">Cancelled</SelectItem>
                     </SelectContent>
                   </Select>
                 </>
@@ -195,7 +195,7 @@ function PurchasesTab({
                 </TableCell>
                 <TableCell>
                   <Badge variant={p.status === "DRAFT" ? "default" : p.status === "COMMITTED" ? "secondary" : "outline"}>
-                    {p.status === "DRAFT" ? "Draft" : p.status === "COMMITTED" ? "Committed" : "Void"}
+                    {p.status === "DRAFT" ? "Draft" : p.status === "COMMITTED" ? "Committed" : "Cancelled"}
                   </Badge>
                 </TableCell>
                 <TableCell className="tnum text-right">{p.lineCount}</TableCell>
@@ -416,12 +416,12 @@ function ForfeitsTab() {
                       {f.remainingContent > 0
                         ? `${f.remainingContent} ${variant.unit.name} back to stock`
                         : `${f.qty} unit(s)`}
-                      {voided && f.voidReason && ` · void: ${f.voidReason}`}
+                      {voided && f.voidReason && ` · cancelled: ${f.voidReason}`}
                     </p>
                   </div>
                   {canVoid && !voided && (
                     <Button variant="ghost" size="sm" onClick={() => setVoiding(f)}>
-                      Void
+                      Cancel
                     </Button>
                   )}
                 </div>
@@ -434,7 +434,7 @@ function ForfeitsTab() {
       <VoidDialog
         open={voiding !== null}
         onOpenChange={(open) => !open && setVoiding(null)}
-        title="Void this return?"
+        title="Cancel this return?"
         pending={voidForfeit.isPending}
         onConfirm={async (reason) => {
           try {

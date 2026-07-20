@@ -80,7 +80,7 @@ export function CountsPage() {
                 <SelectItem value="ALL">All Statuses</SelectItem>
                 <SelectItem value="OPEN">Counting</SelectItem>
                 <SelectItem value="COMMITTED">Committed</SelectItem>
-                <SelectItem value="VOID">Void</SelectItem>
+                <SelectItem value="VOID">Cancelled</SelectItem>
               </SelectContent>
             </Select>
           </>
@@ -134,7 +134,7 @@ export function CountsPage() {
                   <TableCell className="tnum font-medium">{s.countDate}</TableCell>
                   <TableCell>
                     <Badge variant={STATUS_BADGE[s.status] ?? "outline"}>
-                      {s.status === "OPEN" ? "Counting" : s.status === "COMMITTED" ? "Committed" : "Void"}
+                      {s.status === "OPEN" ? "Counting" : s.status === "COMMITTED" ? "Committed" : "Cancelled"}
                     </Badge>
                     {s.voidReason && (
                       <span className="ml-2 text-xs text-muted-foreground">{s.voidReason}</span>

@@ -125,7 +125,7 @@ export function VariantQuickEditDialog({
         <div className="grid grid-cols-2 items-end gap-2 sm:grid-cols-3">
           <div className="space-y-1.5">
             <Label htmlFor="qe-tare" className="text-xs">
-              Tare weight
+              Empty Weight
             </Label>
             <QuantityInput
               id="qe-tare"
@@ -137,7 +137,7 @@ export function VariantQuickEditDialog({
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">Tare Unit</Label>
+            <Label className="text-xs">Weight Unit</Label>
             <Select value={tareWeightUnit} onValueChange={(v) => setTareWeightUnit(v as "g" | "oz")}>
               <SelectTrigger>
                 <SelectValue />
@@ -168,7 +168,7 @@ export function VariantQuickEditDialog({
             weighed.
           </p>
         )}
-        {!tareValid && <p className="text-sm text-destructive">Tare weight must be zero or more.</p>}
+        {!tareValid && <p className="text-sm text-destructive">Empty weight must be zero or more.</p>}
         {tareValid && !densityValid && (
           <p className="text-sm text-destructive">Liquid Weight must be greater than zero.</p>
         )}
