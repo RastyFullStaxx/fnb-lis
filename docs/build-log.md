@@ -295,6 +295,64 @@ Caught while verifying: the rollup keyed by supplier NAME, and the seed data con
 suppliers sharing "Metro Beverage Distribution" — that would have merged one vendor's spend and
 contact details into another. Now keyed by supplier ID.
 
+## Phase 13 — Demo seed depth (2026-07-21)
+
+The app only ever held one hand-built audit period, so most surfaces demoed as empty states:
+Casa Verde had no committed counts at all, trend charts had nothing to trend, and the Full Audit
+showed 4 of the Main Bar's 12 catalog rows.
+
+**`prisma/seed-demo.ts`** now stacks five audit periods (2026-06-15 → 07-20) across Main Bar,
+Kitchen, Depot and Casa Verde, plus a live open period on 07-20/07-21 so the reports that default
+to *last count → today* are not blank on arrival. Suppliers carry the full contact block spread
+across the whole `PAYMENT_TERMS` vocabulary, with one inactive vendor so the status filter has
+something to filter.
+
+Two things make it authorable rather than emergent:
+
+- **Variances are declared, not discovered.** Since `variance = expected − usage` and
+  `usage = begin + in − end`, setting the closing count to `begin + in − consumed + v` makes `v`
+  exactly the variance the report will show. `VARIANCE_PLAN` names which item is off in which
+  period; everything else reconciles clean.
+- **Jitter is a seeded LCG, not `Math.random`.** A reseed reproduces the same numbers, so
+  hand-checks and screenshots in these docs don't go stale.
+
+The fixture layer is untouched: nothing is written on or before 2026-06-15 at Main Bar or Depot.
+Fixtures 1 and 2 were captured before the change and re-verified byte-identical after, on both
+cost bases.
+
+**Three defects the realistic data exposed**, none visible against the old single-period seed:
+
+1. **Transfers weren't in the ledger.** The transfer pass and the count pass were independent, so
+   every transferred bottle read as a variance (+12 and +18 exactly). The ledger now reads back
+   committed transfer lines for each window rather than restating the quantities, so the two
+   passes cannot drift.
+2. **A 0.1 oz scale step can't express the millilitre a movement implies** (~3 ml per step), so
+   every weighed row carried a hairline variance. Readings are now chosen at 0.01 oz, which
+   recomputes to the exact intended millilitre.
+3. **`variance !== 0` is the wrong test** — see below.
+
+### `hasVariance` (core)
+
+A weighed quantity is `full + content / size`, and 700 ml is not representable in binary, so a
+period that reconciles *perfectly* lands on ~1e-16 rather than zero. The four places testing
+`variance !== 0` — the Variance Only filter, the Variance Report route, and the variance-only
+export — therefore listed items that balance exactly as exceptions, displaying "0.00" in the
+variance column. All four now use `hasVariance()` (`VARIANCE_EPSILON = 1e-6`). The smallest
+variance a human can cause is one millilitre, ~0.0014 of a 700 ml bottle — three orders of
+magnitude above the threshold, so nothing real is suppressed. Measured on the live 07-14 → 07-20
+period: 6 rows listed before, 3 after; the suppressed three were 8.9e-16, 8.9e-16 and 1.8e-15.
+No computed number changes — this is a filter predicate, not reconciliation math — and the
+fixtures were re-verified after it landed.
+
+### Duplicate supplier
+
+Two suppliers shared the name "Metro Beverage Distribution". Not a seed bug: during live testing of
+the Phase 12 fields, the contact form was submitted against **Bar Essentials Supply** carrying
+Metro's details *and* its name. Repaired by restoring the row rather than deleting it — it owns
+`DRAFT-BAR-001`, and Bar Essentials is one of the four vendors the seed intends to exist. Logged to
+ActivityLog with before/after. The ID-keyed rollup from Phase 12 meant reports stayed correct
+throughout.
+
 ## Contributor history
 
 | Window | Who | What |

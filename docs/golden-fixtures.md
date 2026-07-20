@@ -12,6 +12,13 @@ during the initial build, per AGENTS.md).
 Full Audit at `/l/:locationId/reports/full-audit` with the stated dates, or call the service
 functions directly with `npx tsx` from `apps/server`. Compare to 6 decimal places.
 
+> **Seeding rule.** `prisma/seed.ts` writes the fixture layer; `prisma/seed-demo.ts` stacks demo
+> trading on top of it. Demo data must never land on or before **2026-06-15** at Main Bar or
+> Depot — that boundary closes fixtures 1 and 2. Kitchen is free after 2026-06-08; Casa Verde has
+> no fixtures. Weighted-average cost values an item from counts at or before the as-of date and
+> purchases strictly before it, so later activity cannot move an earlier valuation.
+> Re-verified byte-identical after the Phase 13 demo layer landed (2026-07-21), on both bases.
+
 ---
 
 ## 1. Golden audit cycle — THE sacred fixture

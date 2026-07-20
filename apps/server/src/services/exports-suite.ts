@@ -1,5 +1,5 @@
 import ExcelJS from "exceljs";
-import { COST_BASIS_LABELS, round2, toCsv, type CostBasis, type CsvValue, type ReconReport } from "@fnb/core";
+import { COST_BASIS_LABELS, hasVariance, round2, toCsv, type CostBasis, type CsvValue, type ReconReport } from "@fnb/core";
 import {
   brandFooter,
   exportStamp,
@@ -586,7 +586,7 @@ export function onHandPdfDoc(report: OnHandReport, meta: ReportMeta): Promise<Bu
 export function fullAuditPdfDoc(report: ReconReport, meta: ReportMeta, varianceOnly = false): Promise<Buffer> {
   const rows: PdfRow[] = [];
   for (const group of report.categories) {
-    const groupRows = varianceOnly ? group.rows.filter((r) => r.variance !== 0) : group.rows;
+    const groupRows = varianceOnly ? group.rows.filter((r) => hasVariance(r.variance)) : group.rows;
     if (groupRows.length === 0) continue;
     rows.push({ cells: [group.categoryName.toUpperCase()], kind: "group" });
     for (const r of groupRows) {

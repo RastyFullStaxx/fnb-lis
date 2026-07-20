@@ -2,6 +2,7 @@ import { Hono, type Context } from "hono";
 import {
   allowedProductTypes,
   COST_BASIS_LABELS,
+  hasVariance,
   COST_BASIS_SLUGS,
   isCostBasis,
   NON_REVENUE_GROUP_LABELS,
@@ -192,9 +193,9 @@ export const reportRoutes = new Hono<AppEnv>()
     // carry a variance, with subset totals computed from the surviving rows.
     const varianceOnly = c.req.query("variance") === "only";
     if (varianceOnly) {
-      const rows = report.rows.filter((r) => r.variance !== 0);
+      const rows = report.rows.filter((r) => hasVariance(r.variance));
       const categories = report.categories
-        .map((g) => ({ ...g, rows: g.rows.filter((r) => r.variance !== 0) }))
+        .map((g) => ({ ...g, rows: g.rows.filter((r) => hasVariance(r.variance)) }))
         .filter((g) => g.rows.length > 0);
       const totals = rows.reduce(
         (t, r) => ({

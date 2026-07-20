@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { BarChart3, ChevronDown, FileDown, Info } from "lucide-react";
-import { can, round2, type Role } from "@fnb/core";
+import { can, hasVariance, round2, type Role } from "@fnb/core";
 import { toast } from "sonner";
 import { useMe } from "@/api/auth";
 import { useCountDates, useFullAudit } from "@/api/ops";
@@ -121,7 +121,7 @@ export function FullAuditPage() {
         rows: group.rows.filter(
           (row) =>
             (!q || row.itemName.toLowerCase().includes(q)) &&
-            (!varianceOnly || row.variance !== 0),
+            (!varianceOnly || hasVariance(row.variance)),
         ),
       }))
       .filter((group) => group.rows.length > 0);

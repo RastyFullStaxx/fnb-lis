@@ -1,6 +1,7 @@
 import { prisma } from "../src/db";
 import { hashPassword } from "../src/auth/password";
 import { allowedProductTypes, derivePackageType } from "@fnb/core";
+import { seedDemoHistory } from "./seed-demo";
 
 const PASSWORD = "Fnb!2026"; // documented demo password for all seeded roles
 
@@ -390,12 +391,53 @@ async function assertLocationCatalogWithinModules(clientName: string, locationNa
   }
 }
 
+/**
+ * Vendors carry the full structured contact block (client req 2026-07-20) and
+ * spread across the whole PAYMENT_TERMS vocabulary, so the Purchase report's
+ * By-Supplier rollup and the terms column demo every value rather than one.
+ * Harbor Wine is deliberately inactive — the Suppliers page status filter
+ * needs something to filter.
+ *
+ * Details are re-applied on every run: earlier seeds created these rows bare,
+ * and a re-seed should converge them rather than leave half-filled vendors.
+ */
+type SupplierSeed = {
+  name: string;
+  contactPerson: string;
+  phone: string;
+  email: string;
+  address: string;
+  paymentTerms: string;
+  isActive?: boolean;
+};
+
+const PRIME_SUPPLIERS: SupplierSeed[] = [
+  { name: "Metro Beverage Distribution", contactPerson: "Rina Cruz", phone: "+63 917 555 0134", email: "orders@metrobev.ph", address: "12 Kalayaan Ave, Quezon City", paymentTerms: "NET_15" },
+  { name: "Bar Essentials Supply", contactPerson: "Dennis Ong", phone: "+63 918 220 7745", email: "sales@baressentials.ph", address: "88 Sct. Borromeo St, Quezon City", paymentTerms: "COD" },
+  { name: "FreshFoods Corp", contactPerson: "Alma Villanueva", phone: "+63 917 883 2210", email: "purchasing@freshfoods.com.ph", address: "5 Mindanao Ave, Valenzuela", paymentTerms: "NET_7" },
+  { name: "Island Meat & Seafood", contactPerson: "Ferdie Lacson", phone: "+63 920 447 9012", email: "ferdie@islandmeat.ph", address: "Navotas Fish Port Complex, Navotas", paymentTerms: "NET_30" },
+  { name: "Sunrise Dairy & Produce", contactPerson: "Joy Mercado", phone: "+63 915 671 3388", email: "joy@sunrisedairy.ph", address: "Km 42 Aguinaldo Hwy, Cavite", paymentTerms: "PREPAID" },
+  { name: "Harbor Wine Merchants", contactPerson: "Teresa Yap", phone: "+63 917 004 5521", email: "teresa@harborwine.ph", address: "3F Salcedo Bldg, Makati", paymentTerms: "NET_15", isActive: false },
+];
+
+const CASA_SUPPLIERS: SupplierSeed[] = [
+  { name: "Verde Fresh Market", contactPerson: "Nonoy Bautista", phone: "+63 922 118 6604", email: "orders@verdefresh.ph", address: "Public Market Rd, Tagaytay", paymentTerms: "COD" },
+  { name: "Highland Poultry Farms", contactPerson: "Carmen Dizon", phone: "+63 919 550 8123", email: "carmen@highlandpoultry.ph", address: "Brgy. San Jose, Silang, Cavite", paymentTerms: "NET_7" },
+];
+
 async function seedSuppliers() {
-  const prime = await prisma.client.findFirst({ where: { name: "Prime Hospitality Group" } });
-  if (!prime) return;
-  for (const name of ["Metro Beverage Distribution", "FreshFoods Corp", "Island Meat & Seafood", "Bar Essentials Supply"]) {
-    const exists = await prisma.supplier.findFirst({ where: { clientId: prime.id, name } });
-    if (!exists) await prisma.supplier.create({ data: { clientId: prime.id, name } });
+  for (const [clientName, rows] of [
+    ["Prime Hospitality Group", PRIME_SUPPLIERS],
+    ["Casa Verde Restaurant", CASA_SUPPLIERS],
+  ] as Array<[string, SupplierSeed[]]>) {
+    const client = await prisma.client.findFirst({ where: { name: clientName } });
+    if (!client) continue;
+    for (const row of rows) {
+      const data = { ...row, isActive: row.isActive ?? true };
+      const exists = await prisma.supplier.findFirst({ where: { clientId: client.id, name: row.name } });
+      if (exists) await prisma.supplier.update({ where: { id: exists.id }, data });
+      else await prisma.supplier.create({ data: { clientId: client.id, ...data } });
+    }
   }
 }
 
@@ -942,6 +984,11 @@ async function main() {
   await seedTransferFixture();
   await seedKitchenCycle();
   await seedActivity();
+  // Everything above is the fixture layer — the exact records the golden
+  // fixtures are computed from. seedDemoHistory stacks months of ordinary
+  // trading on top of it, strictly after the fixture windows close, so the
+  // app demos as a live operation without any fixture moving.
+  await seedDemoHistory();
   console.log(`Seed complete. Logins: admin / manager / staff / accountant / readonly — password ${PASSWORD}`);
   console.log("Demo subscriptions: Prime = Medium/{BAR,KITCHEN} (Main Bar=BAR, Kitchen=KITCHEN), Casa Verde = Basic/{KITCHEN}");
 }

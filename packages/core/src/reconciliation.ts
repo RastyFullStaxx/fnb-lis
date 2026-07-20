@@ -138,6 +138,24 @@ export interface ReconRow {
   flags: { short: boolean; missingPrice: boolean };
 }
 
+/**
+ * Below this, a variance is floating-point residue rather than a finding.
+ *
+ * A weighed item's quantity is `full + remainingContent / size`, and sizes
+ * like 700 ml are not representable in binary — so a period that reconciles
+ * perfectly still lands on ~1e-16 instead of a clean zero. Testing `!== 0`
+ * therefore lists items that balance exactly as exceptions, showing "0.00" in
+ * the variance column. The smallest variance a human can actually cause is
+ * one millilitre (~0.0014 of a 700 ml bottle), several orders of magnitude
+ * above this threshold, so nothing real is suppressed.
+ */
+export const VARIANCE_EPSILON = 1e-6;
+
+/** Whether a variance is a real finding rather than float residue. */
+export function hasVariance(variance: number): boolean {
+  return Math.abs(variance) > VARIANCE_EPSILON;
+}
+
 export function reconcileItem(input: ReconItemInput): ReconRow {
   const { size, contentTracked } = input;
 
