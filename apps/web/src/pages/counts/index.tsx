@@ -7,7 +7,13 @@ import { useLocationId } from "@/api/location";
 import { useCountMutations, useCountSessions } from "@/api/ops";
 import { ApiError } from "@/api/http";
 import { PageHeader } from "@/components/page-header";
-import { TableSurface, TableLoading, TableEmpty, ToolbarSearch } from "@/components/table-surface";
+import {
+  TableSurface,
+  TableLoading,
+  TableEmpty,
+  ToolbarField,
+  ToolbarSearch,
+} from "@/components/table-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -66,18 +72,25 @@ export function CountsPage() {
       <TableSurface
         filters={
           <>
-            <ToolbarSearch value={search} onChange={setSearch} placeholder="Search date or encoder…" />
-            <Select value={status} onValueChange={setStatus}>
-              <SelectTrigger className="w-40 bg-background" aria-label="Filter by status">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">All Statuses</SelectItem>
-                <SelectItem value="OPEN">Counting</SelectItem>
-                <SelectItem value="COMMITTED">Committed</SelectItem>
-                <SelectItem value="VOID">Cancelled</SelectItem>
-              </SelectContent>
-            </Select>
+            <ToolbarSearch
+              label="Search"
+              value={search}
+              onChange={setSearch}
+              placeholder="Search date or encoder…"
+            />
+            <ToolbarField label="Status" htmlFor="counts-status">
+              <Select value={status} onValueChange={setStatus}>
+                <SelectTrigger id="counts-status" className="w-40 bg-background">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All Statuses</SelectItem>
+                  <SelectItem value="OPEN">Counting</SelectItem>
+                  <SelectItem value="COMMITTED">Committed</SelectItem>
+                  <SelectItem value="VOID">Cancelled</SelectItem>
+                </SelectContent>
+              </Select>
+            </ToolbarField>
           </>
         }
       >

@@ -6,7 +6,7 @@ import { useMe } from "@/api/auth";
 import { downloadFile, ApiError } from "@/api/http";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { ToolbarField } from "@/components/table-surface";
 
 export function DateRangeControl({
   from,
@@ -20,33 +20,33 @@ export function DateRangeControl({
   onTo: (v: string) => void;
 }) {
   const inverted = Boolean(from && to && from > to);
-  // Inline label + input pairs, matching every other page's toolbar (see admin/activity).
+  // Captions stack above their inputs (ToolbarField) rather than sitting inline
+  // before them: inline labels made the strip long enough to wrap onto a second
+  // and third row, and every wrapped row is height stolen from the table.
   return (
     <>
-      <Label htmlFor="range-from" className="text-xs text-muted-foreground">
-        From
-      </Label>
-      <Input
-        id="range-from"
-        type="date"
-        max={to || undefined}
-        className="tnum w-40 bg-background"
-        value={from}
-        onChange={(e) => onFrom(e.target.value)}
-      />
-      <Label htmlFor="range-to" className="text-xs text-muted-foreground">
-        To
-      </Label>
-      <Input
-        id="range-to"
-        type="date"
-        min={from || undefined}
-        className="tnum w-40 bg-background"
-        value={to}
-        onChange={(e) => onTo(e.target.value)}
-      />
+      <ToolbarField label="From" htmlFor="range-from">
+        <Input
+          id="range-from"
+          type="date"
+          max={to || undefined}
+          className="tnum w-[9.5rem] bg-background"
+          value={from}
+          onChange={(e) => onFrom(e.target.value)}
+        />
+      </ToolbarField>
+      <ToolbarField label="To" htmlFor="range-to">
+        <Input
+          id="range-to"
+          type="date"
+          min={from || undefined}
+          className="tnum w-[9.5rem] bg-background"
+          value={to}
+          onChange={(e) => onTo(e.target.value)}
+        />
+      </ToolbarField>
       {inverted && (
-        <p className="text-xs text-destructive" role="alert">
+        <p className="pb-2 text-xs text-destructive" role="alert">
           From is after To — swap the dates to see results.
         </p>
       )}

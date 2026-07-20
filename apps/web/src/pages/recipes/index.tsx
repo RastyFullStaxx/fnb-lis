@@ -71,7 +71,9 @@ export function RecipesPage() {
         }
       />
 
-      <TableSurface filters={<ToolbarSearch value={search} onChange={setSearch} placeholder="Search menus…" />}>
+      <TableSurface
+        filters={<ToolbarSearch label="Search" value={search} onChange={setSearch} placeholder="Search menus…" />}
+      >
         {menus.isPending ? (
           <TableLoading />
         ) : filtered.length === 0 ? (
@@ -110,7 +112,7 @@ export function RecipesPage() {
                 const margin = cur && cur.srp > 0 ? ((cur.srp - cur.costAtPublish) / cur.srp) * 100 : null;
                 return (
                   <TableRow key={menu.id}>
-                    <TableCell>
+                    <TableCell className="max-w-[22rem] break-words">
                       <span className="font-medium">{menu.name}</span>
                       {!cur && (
                         <Badge variant="outline" className="ml-2">

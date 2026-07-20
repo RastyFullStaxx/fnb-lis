@@ -3,6 +3,7 @@ import { RefreshCw, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 
 /**
@@ -30,9 +31,12 @@ export function TableSurface({
   return (
     <div className={cn("flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border", className)}>
       {hasToolbar && (
-        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-muted/30 px-3 py-2.5 print:hidden">
-          {filters && <div className="flex flex-1 flex-wrap items-center gap-2">{filters}</div>}
-          {actions && <div className="ml-auto flex items-center gap-2">{actions}</div>}
+        // items-end, not items-center: every control is the same height, so
+        // aligning bottoms puts the BOXES on one line whether or not a given
+        // control carries a stacked label above it.
+        <div className="flex shrink-0 flex-wrap items-end gap-x-3 gap-y-2 border-b bg-muted/30 px-3 py-2.5 print:hidden">
+          {filters && <div className="flex min-w-0 flex-1 flex-wrap items-end gap-x-3 gap-y-2">{filters}</div>}
+          {actions && <div className="ml-auto flex shrink-0 items-end gap-2">{actions}</div>}
         </div>
       )}
       {/* The body is the only thing that scrolls: the table header sticks so column
@@ -55,32 +59,83 @@ export function TableSurface({
   );
 }
 
-/** The one search box used in every table toolbar — identical affordance across pages. */
+/**
+ * One labelled slot in a toolbar: caption above, control beneath.
+ *
+ * Labels used to sit INLINE before their control, which made the strip so long
+ * it wrapped to two or three rows and ate the height the table needs. Stacking
+ * the caption over its control roughly halves the row's width, and the parent's
+ * `items-end` keeps every box on one line regardless.
+ */
+export function ToolbarField({
+  label,
+  htmlFor,
+  grow = false,
+  className,
+  children,
+}: {
+  /** Omit for controls that read themselves (toggles, tabs, buttons). */
+  label?: string;
+  htmlFor?: string;
+  /** Take the row's leftover width — the search field, normally. */
+  grow?: boolean;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className={cn("flex min-w-0 flex-col gap-1", grow && "flex-1", className)}>
+      {label && (
+        <Label htmlFor={htmlFor} className="text-[11px] leading-none font-medium text-muted-foreground">
+          {label}
+        </Label>
+      )}
+      {children}
+    </div>
+  );
+}
+
+/**
+ * The one search box used in every table toolbar — identical affordance across
+ * pages. It grows into whatever the row's fixed controls leave behind rather
+ * than sitting at a fixed width with dead space beside it.
+ */
 export function ToolbarSearch({
   value,
   onChange,
   placeholder = "Search…",
+  label,
   className,
   onEnter,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
+  /** Stacked caption, matching ToolbarField. Omit to run captionless. */
+  label?: string;
   className?: string;
   onEnter?: () => void;
 }) {
+  const id = `search-${placeholder.replace(/\W+/g, "-").toLowerCase()}`;
   return (
-    <div className={cn("relative w-64", className)}>
-      <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-      <Input
-        aria-label={placeholder}
-        placeholder={placeholder}
-        className="bg-background pl-8"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={onEnter ? (e) => e.key === "Enter" && onEnter() : undefined}
-      />
-    </div>
+    // 9rem floor, measured not guessed: Full Audit's five fixed controls plus
+    // gaps leave ~184px of a 909px strip, and an 11rem (198px at this app's
+    // 18px root) minimum tipped the search onto a second row — the exact
+    // wrapping the stacked captions existed to remove. Below the floor it
+    // wraps deliberately rather than shrinking to a useless sliver.
+    <ToolbarField label={label} htmlFor={id} grow className={cn("min-w-[9rem]", className)}>
+      <div className="relative">
+        <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          id={id}
+          aria-label={placeholder}
+          placeholder={placeholder}
+          className="bg-background pl-8"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={onEnter ? (e) => e.key === "Enter" && onEnter() : undefined}
+        />
+      </div>
+    </ToolbarField>
   );
 }
 

@@ -7,6 +7,7 @@ import { formatMoney } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { TableSurface, TableLoading, TableEmpty, TableError, ToolbarSearch } from "@/components/table-surface";
 import { ExportButtons } from "@/components/report-toolbar";
+import { ChartBlock } from "@/components/charts/chart-block";
 import { MagnitudeBars } from "@/components/charts/magnitude-bars";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -72,11 +73,16 @@ export function OnHandReportPage() {
       <TableSurface
         filters={
           <>
-            <ToolbarSearch value={query} onChange={setQuery} placeholder="Find an item or category…" className="w-56" />
+            <ToolbarSearch value={query} onChange={setQuery} placeholder="Find an item or category…" />
+            {/* Provenance, not a control — so it carries no caption and never grows.
+                The row is items-end, which would drop this line onto the input's
+                bottom BORDER; pb-2 lifts it onto the input's own text instead. */}
             {report.isPending ? (
-              <Skeleton className="h-4 w-44" />
+              <div className="shrink-0 pb-2">
+                <Skeleton className="h-4 w-44" />
+              </div>
             ) : report.data && report.data.rows.length > 0 ? (
-              <p className="text-sm text-muted-foreground">
+              <p className="shrink-0 pb-2 text-sm text-muted-foreground">
                 As of last count <span className="tnum font-medium text-foreground">{report.data.lastCountDate}</span>
               </p>
             ) : null}
@@ -96,12 +102,9 @@ export function OnHandReportPage() {
         ) : (
           <>
             {categoryBars.length >= 2 && query.trim() === "" && (
-              <div className="border-b bg-muted/20 px-4 py-3 print:hidden">
-                <p className="text-xs font-medium text-muted-foreground">Stock value by category (cost)</p>
-                <div className="mt-2">
-                  <MagnitudeBars data={categoryBars} name="Cost value" />
-                </div>
-              </div>
+              <ChartBlock title="Stock value by category (cost)">
+                <MagnitudeBars data={categoryBars} name="Cost value" />
+              </ChartBlock>
             )}
             {rows.length === 0 ? (
               <TableEmpty icon={Boxes} title="No rows match the search" description="Try a different item or category name." />
@@ -121,7 +124,9 @@ export function OnHandReportPage() {
                 <TableBody>
                   {rows.map((row) => (
                     <TableRow key={row.locationItemId} className={cn(row.belowPar && "bg-warning/5")}>
-                      <TableCell className="font-medium">
+                      {/* Item names run long and carry an inline badge — cap and wrap
+                          them here so the six numeric columns never scroll sideways. */}
+                      <TableCell className="max-w-[22rem] font-medium break-words">
                         {row.name}
                         {row.belowPar && (
                           <Badge variant="warning" className="ml-2">

@@ -11,7 +11,7 @@ import { variantLabel, type Forfeit, type LocationItem } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { formatMoney } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
-import { TableSurface, TableLoading, TableEmpty, ToolbarSearch } from "@/components/table-surface";
+import { TableSurface, TableLoading, TableEmpty, ToolbarField, ToolbarSearch } from "@/components/table-surface";
 import { ItemCombobox } from "@/components/item-combobox";
 import { VoidDialog } from "@/components/void-dialog";
 import { useWeighPreview, WeighPreviewStrip } from "@/components/weigh-calculator";
@@ -85,18 +85,25 @@ export function PurchasesPage() {
               </TabsList>
               {tab === "purchases" && (
                 <>
-                  <ToolbarSearch value={search} onChange={setSearch} placeholder="Search date, supplier, or ref…" />
-                  <Select value={status} onValueChange={setStatus}>
-                    <SelectTrigger className="w-40 bg-background">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ALL">All Statuses</SelectItem>
-                      <SelectItem value="DRAFT">Draft</SelectItem>
-                      <SelectItem value="COMMITTED">Committed</SelectItem>
-                      <SelectItem value="VOID">Cancelled</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <ToolbarSearch
+                    label="Search"
+                    value={search}
+                    onChange={setSearch}
+                    placeholder="Search date, supplier, or ref…"
+                  />
+                  <ToolbarField label="Status" htmlFor="pu-status">
+                    <Select value={status} onValueChange={setStatus}>
+                      <SelectTrigger id="pu-status" className="w-40 bg-background">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ALL">All Statuses</SelectItem>
+                        <SelectItem value="DRAFT">Draft</SelectItem>
+                        <SelectItem value="COMMITTED">Committed</SelectItem>
+                        <SelectItem value="VOID">Cancelled</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </ToolbarField>
                 </>
               )}
             </>
@@ -190,7 +197,7 @@ function PurchasesTab({
             {filtered.map((p) => (
               <TableRow key={p.id} className={p.status === "VOID" ? "opacity-50" : undefined}>
                 <TableCell className="tnum font-medium">{p.purchaseDate}</TableCell>
-                <TableCell className="text-muted-foreground">
+                <TableCell className="max-w-[22rem] break-words text-muted-foreground">
                   {p.supplier?.name ?? "—"}
                   {p.refNo && <span className="ml-2 text-xs">({p.refNo})</span>}
                 </TableCell>

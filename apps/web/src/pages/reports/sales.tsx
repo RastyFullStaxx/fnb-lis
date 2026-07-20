@@ -8,6 +8,7 @@ import { formatMoney } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { TableSurface, TableLoading, TableEmpty, TableError, ToolbarSearch } from "@/components/table-surface";
 import { DateRangeControl, ExportButtons } from "@/components/report-toolbar";
+import { ChartBlock } from "@/components/charts/chart-block";
 import { PeriodColumns } from "@/components/charts/period-columns";
 import { shortDate } from "@/components/charts/chart-kit";
 import { Badge } from "@/components/ui/badge";
@@ -84,7 +85,7 @@ export function SalesReportPage() {
               </TabsList>
             </Tabs>
             <DateRangeControl from={from} to={to} onFrom={setFrom} onTo={setTo} />
-            <ToolbarSearch value={query} onChange={setQuery} placeholder="Find an item or menu…" className="w-52" />
+            <ToolbarSearch value={query} onChange={setQuery} placeholder="Find an item or menu…" label="Search" />
           </>
         }
       >
@@ -99,12 +100,9 @@ export function SalesReportPage() {
             {/* Production carries no revenue — the trend strip only makes
                 sense where net is real. */}
             {view !== "production" && byDay.length >= 2 && (
-              <div className="border-b bg-muted/20 px-4 py-3 print:hidden">
-                <p className="text-xs font-medium text-muted-foreground">Net Revenue by Day</p>
-                <div className="mt-2">
-                  <PeriodColumns data={byDay} name="Net revenue" height={160} />
-                </div>
-              </div>
+              <ChartBlock title="Net Revenue by Day">
+                <PeriodColumns data={byDay} name="Net revenue" height={160} />
+              </ChartBlock>
             )}
             {rows.length === 0 ? (
               <TableEmpty icon={Receipt} title="No rows match the search" description="Try a different item or menu name." />
@@ -126,7 +124,7 @@ export function SalesReportPage() {
                   {rows.map((row, i) => (
                     <TableRow key={i}>
                       <TableCell className="tnum">{row.saleDate}</TableCell>
-                      <TableCell className="font-medium">
+                      <TableCell className="max-w-[22rem] break-words font-medium">
                         {row.name}
                         {row.kind === "menu" && (
                           <Badge variant="secondary" className="ml-2">

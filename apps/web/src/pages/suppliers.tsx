@@ -15,7 +15,13 @@ import { useCreateSupplier, useSuppliers, useUpdateSupplier } from "@/api/locati
 import type { Supplier } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { PageHeader } from "@/components/page-header";
-import { TableSurface, TableLoading, TableEmpty, ToolbarSearch } from "@/components/table-surface";
+import {
+  TableSurface,
+  TableLoading,
+  TableEmpty,
+  ToolbarField,
+  ToolbarSearch,
+} from "@/components/table-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -79,17 +85,25 @@ export function SuppliersPage() {
       <TableSurface
         filters={
           <>
-            <ToolbarSearch value={search} onChange={setSearch} placeholder="Search suppliers…" />
-            <Select value={status} onValueChange={setStatus}>
-              <SelectTrigger className="w-36 bg-background" aria-label="Filter by status">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">All Statuses</SelectItem>
-                <SelectItem value="ACTIVE">Active</SelectItem>
-                <SelectItem value="INACTIVE">Inactive</SelectItem>
-              </SelectContent>
-            </Select>
+            <ToolbarSearch
+              value={search}
+              onChange={setSearch}
+              placeholder="Search suppliers…"
+              label="Search"
+            />
+            <ToolbarField label="Status" htmlFor="sup-status">
+              <Select value={status} onValueChange={setStatus}>
+                {/* The caption names the control, so no aria-label to contradict it. */}
+                <SelectTrigger id="sup-status" className="w-36 bg-background">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All Statuses</SelectItem>
+                  <SelectItem value="ACTIVE">Active</SelectItem>
+                  <SelectItem value="INACTIVE">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
+            </ToolbarField>
           </>
         }
       >
@@ -127,8 +141,11 @@ export function SuppliersPage() {
             <TableBody>
               {filtered.map((s) => (
                 <TableRow key={s.id}>
-                  <TableCell className="font-medium">{s.name}</TableCell>
-                  <TableCell className="max-w-xs truncate text-muted-foreground" title={s.contactPerson || s.contactInfo || undefined}>
+                  <TableCell className="max-w-[22rem] font-medium break-words">{s.name}</TableCell>
+                  <TableCell
+                    className="max-w-xs text-muted-foreground break-words"
+                    title={s.contactPerson || s.contactInfo || undefined}
+                  >
                     {s.contactPerson || s.contactInfo || "—"}
                   </TableCell>
                   <TableCell className="tnum text-muted-foreground">{s.phone || "—"}</TableCell>

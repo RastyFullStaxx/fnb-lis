@@ -81,7 +81,13 @@ export function StockPage() {
       <TableSurface
         filters={
           <>
-            <ToolbarSearch value={search} onChange={setSearch} placeholder="Search this catalog…" />
+            <ToolbarSearch
+              value={search}
+              onChange={setSearch}
+              placeholder="Search this catalog…"
+              label="Search"
+            />
+            {/* No caption on the chip — its own label already names the filter. */}
             {(missingOnly || missingCount > 0) && (
               <Toggle pressed={missingOnly} onPressedChange={setMissingOnly}>
                 <TriangleAlert className="size-3.5" />
@@ -137,7 +143,8 @@ export function StockPage() {
                 const missing = row.cost === 0 || row.retail === 0;
                 return (
                   <TableRow key={row.id} className={cn("group", missing && "bg-warning/5")}>
-                    <TableCell>
+                    {/* Wrap rather than truncate — an auditor has to read the whole item name. */}
+                    <TableCell className="max-w-[22rem] break-words">
                       <span className="font-medium">{row.itemVariant.item.name}</span>
                       <span className="ml-2 text-sm text-muted-foreground">{variantLabel(row.itemVariant)}</span>
                     </TableCell>

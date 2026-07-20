@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { TrendingUp } from "lucide-react";
 import { round2 } from "@fnb/core";
 import { useLocationId } from "@/api/location";
@@ -6,8 +6,10 @@ import { useCountDates } from "@/api/ops";
 import { exportUrl, useTopSellersReport } from "@/api/reports";
 import { formatMoney } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
-import { TableSurface, TableLoading, TableEmpty } from "@/components/table-surface";
+import { TableSurface, TableLoading, TableEmpty, ToolbarField } from "@/components/table-surface";
 import { DateRangeControl, ExportButtons } from "@/components/report-toolbar";
+import { ChartBlock } from "@/components/charts/chart-block";
+import { MagnitudeBars } from "@/components/charts/magnitude-bars";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -33,6 +35,18 @@ export function TopSellersPage() {
 
   const report = useTopSellersReport(from, to, limit);
 
+  // The table ranks brands by qty; revenue is the other half of "top seller",
+  // so the strip re-ranks the same rows by peso value. Its own copy — the
+  // table's order is the service's and must not move.
+  const brandBars = useMemo(
+    () =>
+      [...(report.data?.topBrands ?? [])]
+        .sort((a, b) => b.revenue - a.revenue)
+        .slice(0, 8)
+        .map((row) => ({ label: row.name, value: round2(row.revenue) })),
+    [report.data],
+  );
+
   const hasData =
     report.data &&
     (report.data.topBrands.length > 0 ||
@@ -56,18 +70,20 @@ export function TopSellersPage() {
         filters={
           <>
             <DateRangeControl from={from} to={to} onFrom={setFrom} onTo={setTo} />
-            <div className="flex items-center gap-1">
-              {LIMITS.map((l) => (
-                <Button
-                  key={l}
-                  variant={limit === l ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setLimit(l)}
-                >
-                  Top {l}
-                </Button>
-              ))}
-            </div>
+            <ToolbarField label="Show">
+              <div className="flex items-center gap-1">
+                {LIMITS.map((l) => (
+                  <Button
+                    key={l}
+                    variant={limit === l ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setLimit(l)}
+                  >
+                    Top {l}
+                  </Button>
+                ))}
+              </div>
+            </ToolbarField>
           </>
         }
       >
@@ -81,6 +97,15 @@ export function TopSellersPage() {
           />
         ) : (
           <>
+            {brandBars.length >= 2 && (
+              <ChartBlock
+                title="Top Brands by Revenue"
+                hint={`Top ${brandBars.length} of ${report.data!.topBrands.length} by revenue`}
+              >
+                <MagnitudeBars data={brandBars} name="Revenue" />
+              </ChartBlock>
+            )}
+
             {/* ── Top Brands ── */}
             <p className="border-b px-4 py-2 text-sm font-semibold">Top Brands</p>
             <Table>
@@ -97,7 +122,7 @@ export function TopSellersPage() {
                 {report.data!.topBrands.map((row, i) => (
                   <TableRow key={row.id}>
                     <TableCell className="tnum text-right text-muted-foreground">{i + 1}</TableCell>
-                    <TableCell className="font-medium">{row.name}</TableCell>
+                    <TableCell className="max-w-[22rem] font-medium break-words">{row.name}</TableCell>
                     <TableCell className="text-muted-foreground">{row.category ?? "—"}</TableCell>
                     <TableCell className="tnum text-right">{n6(row.qty)}</TableCell>
                     <TableCell className="tnum text-right">{formatMoney(row.revenue)}</TableCell>
@@ -128,7 +153,7 @@ export function TopSellersPage() {
                 {report.data!.topMenus.map((row, i) => (
                   <TableRow key={row.id}>
                     <TableCell className="tnum text-right text-muted-foreground">{i + 1}</TableCell>
-                    <TableCell className="font-medium">{row.name}</TableCell>
+                    <TableCell className="max-w-[22rem] font-medium break-words">{row.name}</TableCell>
                     <TableCell className="tnum text-right">{n6(row.qty)}</TableCell>
                     <TableCell className="tnum text-right">{formatMoney(row.revenue)}</TableCell>
                   </TableRow>
@@ -158,7 +183,7 @@ export function TopSellersPage() {
                 {report.data!.topIngredients.map((row, i) => (
                   <TableRow key={row.id}>
                     <TableCell className="tnum text-right text-muted-foreground">{i + 1}</TableCell>
-                    <TableCell className="font-medium">{row.name}</TableCell>
+                    <TableCell className="max-w-[22rem] font-medium break-words">{row.name}</TableCell>
                     <TableCell className="text-muted-foreground">{row.category ?? "—"}</TableCell>
                     <TableCell className="tnum text-right">{n6(row.qty)}</TableCell>
                   </TableRow>

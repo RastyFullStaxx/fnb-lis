@@ -55,12 +55,17 @@ const KIND_COPY: Record<SaleKind, { title: string; button: string; saved: string
   },
 };
 
-/** One labelled fact in a Recent Entries row: "Quantity: 3". */
+/** One labelled fact in a Recent Entries row: "Quantity: 3".
+ *
+ *  Values wrap at word boundaries and never mid-token: `break-words` here let
+ *  "−₱728.00" shatter one character per line once the column got narrow, which
+ *  is worse than either truncating or wrapping. Amounts stay whole; a long
+ *  value simply continues on the next line. */
 function EntryFact({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="flex gap-1.5">
       <dt className="shrink-0">{label}:</dt>
-      <dd className="tnum min-w-0 truncate text-foreground/80">{value}</dd>
+      <dd className="tnum min-w-0 text-foreground/80">{value}</dd>
     </div>
   );
 }
@@ -138,7 +143,7 @@ export function SalesPage() {
                   ? `${sale.locationItem.itemVariant.item.name} ${variantLabel(sale.locationItem.itemVariant)}`
                   : (sale.menuItem?.name ?? "—");
                 return (
-                  <div key={sale.id} className={cn("flex items-center gap-3 px-4 py-2.5", voided && "opacity-50")}>
+                  <div key={sale.id} className={cn("flex items-start gap-3 px-4 py-2.5", voided && "opacity-50")}>
                     <div className="min-w-0 flex-1">
                       {/* Wraps rather than truncates — the row is already
                           multi-line, so a second line is cheaper than hiding
@@ -147,6 +152,9 @@ export function SalesPage() {
                       {/* Labelled rows — an entry's numbers are read one at a
                           time (which price? what discount?), so each fact gets
                           its own line instead of a run-on dot-separated string. */}
+                      {/* Labels stay bare here — the entry form carries the
+                          "each"/"whole sale" qualifiers, so this list reads as
+                          data rather than instruction. */}
                       <dl className="mt-0.5 space-y-px text-xs text-muted-foreground">
                         <EntryFact label="Date" value={sale.saleDate} />
                         <EntryFact label="Quantity" value={sale.qty} />
@@ -180,24 +188,30 @@ export function SalesPage() {
                         )}
                       </dl>
                     </div>
-                    {sale.kind === "SALE" && !voided && (() => {
-                      const gross = sale.unitPrice * sale.qty;
-                      const net = gross * (1 - sale.discountPct / 100);
-                      const hasDiscount = sale.discountPct > 0;
-                      return (
-                        <Badge variant="outline" className="tnum shrink-0 gap-1.5">
-                          {hasDiscount && (
-                            <span className="text-muted-foreground line-through">{formatMoney(gross)}</span>
-                          )}
-                          <span className={hasDiscount ? "font-medium" : undefined}>{formatMoney(net)}</span>
-                        </Badge>
-                      );
-                    })()}
-                    {canVoid && !voided && (
-                      <Button variant="destructive" size="xs" onClick={() => setVoiding(sale)}>
-                        Cancel
-                      </Button>
-                    )}
+                    {/* Total and action share one shrink-0 column. The total
+                        stacks its struck gross above the net instead of sitting
+                        beside it — side by side it was ~140px wide and starved
+                        the fact list, which then broke mid-number. */}
+                    <div className="flex shrink-0 items-center gap-2">
+                      {sale.kind === "SALE" && !voided && (() => {
+                        const gross = sale.unitPrice * sale.qty;
+                        const net = gross * (1 - sale.discountPct / 100);
+                        const hasDiscount = sale.discountPct > 0;
+                        return (
+                          <Badge variant="outline" className="tnum flex-col items-end gap-0 py-1 leading-tight">
+                            {hasDiscount && (
+                              <span className="text-muted-foreground line-through">{formatMoney(gross)}</span>
+                            )}
+                            <span className={hasDiscount ? "font-medium" : undefined}>{formatMoney(net)}</span>
+                          </Badge>
+                        );
+                      })()}
+                      {canVoid && !voided && (
+                        <Button variant="destructive" size="xs" onClick={() => setVoiding(sale)}>
+                          Cancel
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 );
               })
@@ -314,9 +328,12 @@ function QuickEntry({ kind }: { kind: SaleKind }) {
 
       {/* The two kinds have genuinely different field widths, so they get their
           own tracks rather than being forced through one `grid-cols-3`.
-          Quantity is always a short number; what sits beside it is not. */}
+          Quantity is always a short number; what sits beside it is not.
+          items-end keeps the three inputs on one baseline even when a label
+          wraps to two lines ("Whole Sale Discount %") — otherwise that
+          column's field drops below its neighbours. */}
       {kind === "SALE" && (
-        <div className="grid gap-3 grid-cols-2 @xs:grid-cols-[7rem_minmax(0,1fr)_minmax(0,1fr)]">
+        <div className="grid items-end gap-3 grid-cols-2 @xs:grid-cols-[7rem_minmax(0,1fr)_minmax(0,1fr)]">
           <div className="space-y-2">
             <Label htmlFor="s-qty">Quantity</Label>
             <QuantityInput
@@ -338,7 +355,9 @@ function QuickEntry({ kind }: { kind: SaleKind }) {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="s-disc">Discount %</Label>
+            {/* The qualifier lives here, on the field that sets the value —
+                the percentage applies to the line total, not per unit. */}
+            <Label htmlFor="s-disc">Sale Discount %</Label>
             <QuantityInput
               id="s-disc"
               className="tnum"

@@ -7,7 +7,7 @@ import { useLocationId } from "@/api/location";
 import { useImportBatches, useUploadImport, type ImportKind } from "@/api/imports";
 import { ApiError } from "@/api/http";
 import { PageHeader } from "@/components/page-header";
-import { TableSurface, TableLoading, TableEmpty, ToolbarSearch } from "@/components/table-surface";
+import { TableSurface, TableLoading, TableEmpty, ToolbarField, ToolbarSearch } from "@/components/table-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -85,19 +85,26 @@ export function ImportsPage() {
       <TableSurface
         filters={
           <>
-            <ToolbarSearch value={search} onChange={setSearch} placeholder="Search file name…" />
-            <Select value={kind} onValueChange={setKind}>
-              <SelectTrigger className="w-40 bg-background">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">All Types</SelectItem>
-                <SelectItem value="SALES">Sales</SelectItem>
-                <SelectItem value="PURCHASES">Purchases</SelectItem>
-                <SelectItem value="NON_REVENUE">Non-revenue</SelectItem>
-                <SelectItem value="COUNTS">Counts</SelectItem>
-              </SelectContent>
-            </Select>
+            <ToolbarSearch
+              value={search}
+              onChange={setSearch}
+              placeholder="Search file name…"
+              label="Search"
+            />
+            <ToolbarField label="Type" htmlFor="imports-kind">
+              <Select value={kind} onValueChange={setKind}>
+                <SelectTrigger id="imports-kind" className="w-40 bg-background">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All Types</SelectItem>
+                  <SelectItem value="SALES">Sales</SelectItem>
+                  <SelectItem value="PURCHASES">Purchases</SelectItem>
+                  <SelectItem value="NON_REVENUE">Non-revenue</SelectItem>
+                  <SelectItem value="COUNTS">Counts</SelectItem>
+                </SelectContent>
+              </Select>
+            </ToolbarField>
           </>
         }
       >

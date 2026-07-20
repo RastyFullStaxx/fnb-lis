@@ -1,14 +1,23 @@
 import { useMemo, useState } from "react";
 import { Gauge } from "lucide-react";
+import { round2 } from "@fnb/core";
 import { useCountDates } from "@/api/ops";
 import { useLocationId } from "@/api/location";
 import { exportUrl, useUsageCostReport } from "@/api/reports";
 import { formatMoney } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
-import { TableSurface, TableLoading, TableEmpty, TableError } from "@/components/table-surface";
+import {
+  TableSurface,
+  TableLoading,
+  TableEmpty,
+  TableError,
+  ToolbarField,
+  ToolbarSearch,
+} from "@/components/table-surface";
 import { ExportButtons } from "@/components/report-toolbar";
-import { Label } from "@/components/ui/label";
+import { ChartBlock } from "@/components/charts/chart-block";
+import { MagnitudeBars } from "@/components/charts/magnitude-bars";
 import {
   Select,
   SelectContent,
@@ -42,6 +51,26 @@ export function UsageCostReportPage() {
   const endOptions = useMemo(() => dates.filter((d) => !effectiveBegin || d > effectiveBegin), [dates, effectiveBegin]);
   const effectiveEnd = end ?? endOptions.at(-1);
   const report = useUsageCostReport(effectiveBegin, effectiveEnd);
+  const [query, setQuery] = useState("");
+
+  const rows = useMemo(() => {
+    const all = report.data?.rows ?? [];
+    const q = query.trim().toLowerCase();
+    return q ? all.filter((r) => r.name.toLowerCase().includes(q)) : all;
+  }, [report.data, query]);
+
+  // Cost, never qty: every row carries its own UOM (bottles, litres, pieces),
+  // so quantities are not comparable across items — only pesos are.
+  // Ranked by magnitude so a negative usage cost, which is an anomaly worth
+  // seeing, surfaces instead of sorting to the bottom.
+  const bars = useMemo(
+    () =>
+      [...(report.data?.rows ?? [])]
+        .sort((a, b) => Math.abs(b.cost) - Math.abs(a.cost))
+        .slice(0, 8)
+        .map((r) => ({ label: r.name, value: round2(r.cost) })),
+    [report.data],
+  );
 
   if (!countDates.isPending && dates.length < 2) {
     return (
@@ -75,28 +104,31 @@ export function UsageCostReportPage() {
       <TableSurface
         filters={
           <>
-            <Label htmlFor="uc-begin" className="text-xs text-muted-foreground">Beginning</Label>
-            <Select value={effectiveBegin} onValueChange={(v) => { setBegin(v); if (effectiveEnd && effectiveEnd <= v) setEnd(undefined); }}>
-              <SelectTrigger id="uc-begin" className="tnum w-40 bg-background">
-                <SelectValue placeholder="Pick a date" />
-              </SelectTrigger>
-              <SelectContent>
-                {dates.map((d) => (
-                  <SelectItem key={d} value={d} className="tnum">{d}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Label htmlFor="uc-end" className="text-xs text-muted-foreground">Ending</Label>
-            <Select value={effectiveEnd} onValueChange={setEnd}>
-              <SelectTrigger id="uc-end" className="tnum w-40 bg-background">
-                <SelectValue placeholder="Pick a date" />
-              </SelectTrigger>
-              <SelectContent>
-                {endOptions.map((d) => (
-                  <SelectItem key={d} value={d} className="tnum">{d}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <ToolbarField label="Beginning" htmlFor="uc-begin">
+              <Select value={effectiveBegin} onValueChange={(v) => { setBegin(v); if (effectiveEnd && effectiveEnd <= v) setEnd(undefined); }}>
+                <SelectTrigger id="uc-begin" className="tnum w-40 bg-background">
+                  <SelectValue placeholder="Pick a date" />
+                </SelectTrigger>
+                <SelectContent>
+                  {dates.map((d) => (
+                    <SelectItem key={d} value={d} className="tnum">{d}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </ToolbarField>
+            <ToolbarField label="Ending" htmlFor="uc-end">
+              <Select value={effectiveEnd} onValueChange={setEnd}>
+                <SelectTrigger id="uc-end" className="tnum w-40 bg-background">
+                  <SelectValue placeholder="Pick a date" />
+                </SelectTrigger>
+                <SelectContent>
+                  {endOptions.map((d) => (
+                    <SelectItem key={d} value={d} className="tnum">{d}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </ToolbarField>
+            <ToolbarSearch label="Search" value={query} onChange={setQuery} placeholder="Find an item…" />
           </>
         }
       >
@@ -111,35 +143,49 @@ export function UsageCostReportPage() {
             description="Nothing was consumed between these counts, or pick a different pair of dates."
           />
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-muted hover:bg-muted">
-                <TableHead>Item</TableHead>
-                <TableHead>UOM</TableHead>
-                <TableHead className="text-right">Qty Used</TableHead>
-                <TableHead className="text-right">Cost</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {report.data.rows.map((row, i) => (
-                <TableRow key={i}>
-                  <TableCell className="font-medium">{row.name}</TableCell>
-                  <TableCell className="text-muted-foreground">{row.uom}</TableCell>
-                  <TableCell className={cn("tnum text-right", row.qty < 0 && "text-destructive")}>{n2(row.qty)}</TableCell>
-                  <TableCell className={cn("tnum text-right", row.cost < 0 && "text-destructive")}>{formatMoney(row.cost)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-            <TableFooter>
-              <TableRow>
-                <TableCell colSpan={2} className="font-medium">
-                  Grand Total
-                </TableCell>
-                <TableCell className="tnum text-right font-medium">{n2(report.data.totals.qty)}</TableCell>
-                <TableCell className="tnum text-right font-semibold">{formatMoney(report.data.totals.cost)}</TableCell>
-              </TableRow>
-            </TableFooter>
-          </Table>
+          <>
+            {bars.length >= 2 && (
+              <ChartBlock title="Usage Cost by Item" hint={`Top ${bars.length} of ${report.data.rows.length} items`}>
+                <MagnitudeBars data={bars} name="Usage cost" diverging />
+              </ChartBlock>
+            )}
+            {rows.length === 0 ? (
+              <TableEmpty icon={Gauge} title="No rows match the search" description="Try a different item name." />
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted hover:bg-muted">
+                    <TableHead>Item</TableHead>
+                    <TableHead>UOM</TableHead>
+                    <TableHead className="text-right">Qty Used</TableHead>
+                    <TableHead className="text-right">Cost</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((row, i) => (
+                    <TableRow key={i}>
+                      <TableCell className="max-w-[22rem] font-medium break-words">{row.name}</TableCell>
+                      <TableCell className="text-muted-foreground">{row.uom}</TableCell>
+                      <TableCell className={cn("tnum text-right", row.qty < 0 && "text-destructive")}>{n2(row.qty)}</TableCell>
+                      <TableCell className={cn("tnum text-right", row.cost < 0 && "text-destructive")}>{formatMoney(row.cost)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+                {/* Totals always reflect the whole period, not the search subset. */}
+                {query.trim() === "" && (
+                  <TableFooter>
+                    <TableRow>
+                      <TableCell colSpan={2} className="font-medium">
+                        Grand Total
+                      </TableCell>
+                      <TableCell className="tnum text-right font-medium">{n2(report.data.totals.qty)}</TableCell>
+                      <TableCell className="tnum text-right font-semibold">{formatMoney(report.data.totals.cost)}</TableCell>
+                    </TableRow>
+                  </TableFooter>
+                )}
+              </Table>
+            )}
+          </>
         )}
       </TableSurface>
     </div>

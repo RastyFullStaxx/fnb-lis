@@ -13,11 +13,10 @@ import { ApiError, downloadFile } from "@/api/http";
 import { formatMoney } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
-import { TableLoading, TableEmpty, TableError, ToolbarSearch } from "@/components/table-surface";
+import { TableLoading, TableEmpty, TableError, ToolbarField, ToolbarSearch } from "@/components/table-surface";
 import { ExportButtons } from "@/components/report-toolbar";
 import { Toggle } from "@/components/toggle-chip";
 import { MagnitudeBars } from "@/components/charts/magnitude-bars";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -60,7 +59,11 @@ const n2 = (v: number) => round2(v).toLocaleString("en-US", { maximumFractionDig
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Solid tint for sticky cells on short rows — translucent destructive/5 would
-    let scrolled columns bleed through a pinned cell. */
+    let scrolled columns bleed through a pinned cell.
+    Hand-matched to `bg-destructive/5` over `--background` in the LIGHT theme,
+    which is the only theme the app ships (no `.dark` toggle exists). If a dark
+    theme is ever added this literal must gain a `dark:` twin, or short rows
+    will pin a near-white cell against a dark table. */
 const SHORT_ROW_STICKY_BG = "bg-[oklch(0.977_0.011_25)]";
 
 export function FullAuditPage() {
@@ -135,10 +138,15 @@ export function FullAuditPage() {
       <div className="flex min-h-0 flex-1 flex-col">
         <PageHeader title="Full Audit" />
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border">
-          <div className="flex shrink-0 items-center gap-2 border-b bg-muted/30 px-3 py-2.5">
-            <Skeleton className="h-9 w-40" />
-            <Skeleton className="h-9 w-40" />
-            <Skeleton className="h-9 w-36" />
+          {/* Mirrors the real toolbar's caption-over-control stack, so the
+              table doesn't jump down when the skeleton is replaced. */}
+          <div className="flex shrink-0 items-end gap-x-3 border-b bg-muted/30 px-3 py-2.5">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="flex flex-col gap-1">
+                <Skeleton className="h-3 w-14" />
+                <Skeleton className="h-9 w-32" />
+              </div>
+            ))}
           </div>
           <TableLoading rows={10} />
         </div>
@@ -216,66 +224,79 @@ export function FullAuditPage() {
       )}
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border print:block print:overflow-visible print:rounded-none print:border-0">
-        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-muted/30 px-3 py-2.5 print:hidden">
-          <Label htmlFor="fa-begin" className="text-xs text-muted-foreground">Beginning</Label>
-          <Select value={effectiveBegin} onValueChange={(v) => { setBegin(v); if (effectiveEnd && effectiveEnd <= v) setEnd(undefined); }}>
-            <SelectTrigger id="fa-begin" className="tnum w-40 bg-background">
-              <SelectValue placeholder="Pick a date" />
-            </SelectTrigger>
-            <SelectContent>
-              {dates.map((d) => (
-                <SelectItem key={d} value={d} className="tnum">
-                  {d}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Label htmlFor="fa-end" className="text-xs text-muted-foreground">Ending</Label>
-          <Select value={effectiveEnd} onValueChange={setEnd}>
-            <SelectTrigger id="fa-end" className="tnum w-40 bg-background">
-              <SelectValue placeholder="Pick a date" />
-            </SelectTrigger>
-            <SelectContent>
-              {endOptions.map((d) => (
-                <SelectItem key={d} value={d} className="tnum">
-                  {d}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Label htmlFor="fa-type" className="text-xs text-muted-foreground">Type</Label>
-          <Select value={productType} onValueChange={setProductType}>
-            <SelectTrigger id="fa-type" className="w-36 bg-background">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>All Types</SelectItem>
-              {(productTypes.data?.productTypes ?? []).map((t) => (
-                <SelectItem key={t} value={t}>
-                  {t}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <ToolbarSearch
-            value={query}
-            onChange={setQuery}
-            placeholder="Find an item…"
-            className="w-48"
-          />
+        {/* One row, captions stacked over their controls. Inline labels made
+            this strip wrap onto a second line at 1280px, and every wrapped row
+            is height taken from the table. items-end keeps the boxes level
+            whether or not a control carries a caption. */}
+        <div className="flex shrink-0 flex-wrap items-end gap-x-3 gap-y-2 border-b bg-muted/30 px-3 py-2.5 print:hidden">
+          <ToolbarField label="Beginning" htmlFor="fa-begin">
+            <Select value={effectiveBegin} onValueChange={(v) => { setBegin(v); if (effectiveEnd && effectiveEnd <= v) setEnd(undefined); }}>
+              {/* w-32 fits YYYY-MM-DD with room to spare; w-40 was buying
+                  nothing but pushing the search off the row. */}
+              <SelectTrigger id="fa-begin" className="tnum w-32 bg-background">
+                <SelectValue placeholder="Pick a date" />
+              </SelectTrigger>
+              <SelectContent>
+                {dates.map((d) => (
+                  <SelectItem key={d} value={d} className="tnum">
+                    {d}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </ToolbarField>
+          <ToolbarField label="Ending" htmlFor="fa-end">
+            <Select value={effectiveEnd} onValueChange={setEnd}>
+              <SelectTrigger id="fa-end" className="tnum w-32 bg-background">
+                <SelectValue placeholder="Pick a date" />
+              </SelectTrigger>
+              <SelectContent>
+                {endOptions.map((d) => (
+                  <SelectItem key={d} value={d} className="tnum">
+                    {d}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </ToolbarField>
+          <ToolbarField label="Type" htmlFor="fa-type">
+            <Select value={productType} onValueChange={setProductType}>
+              <SelectTrigger id="fa-type" className="w-28 bg-background">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>All Types</SelectItem>
+                {(productTypes.data?.productTypes ?? []).map((t) => (
+                  <SelectItem key={t} value={t}>
+                    {t}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </ToolbarField>
           <Toggle pressed={varianceOnly} onPressedChange={setVarianceOnly}>
             Variance Only
           </Toggle>
           <Toggle pressed={!compact} onPressedChange={(pressed) => setCompact(!pressed)}>
             All Columns
           </Toggle>
+          {/* Search sits LAST because it is the only control that grows. A
+              growing item placed mid-row consumes the whole remainder of its
+              line and pushes everything after it onto a second row — which is
+              exactly the wrapping this strip was meant to stop. */}
+          <ToolbarSearch value={query} onChange={setQuery} placeholder="Find an item…" label="Search" />
         </div>
 
-        {report.data && report.data.rows.length > 0 && effectiveBegin && effectiveEnd ? (
-          <VerdictStrip report={report.data} begin={effectiveBegin} end={effectiveEnd} />
-        ) : null}
-
         <div className="scrollbar-thin min-h-0 flex-1 overflow-auto [&_[data-slot=table-container]]:overflow-visible print:overflow-visible">
+          {/* The verdict scrolls WITH the rows rather than being pinned above
+              them. Pinned, it spent ~170px of every viewport permanently — on a
+              13" laptop that is most of the visible rows, and the table is what
+              the reader came for. Inside the scroller it leads on arrival and
+              gives way the moment they reach for evidence; the sticky table
+              header takes over the top edge as it goes. */}
+          {report.data && report.data.rows.length > 0 && effectiveBegin && effectiveEnd ? (
+            <VerdictStrip report={report.data} begin={effectiveBegin} end={effectiveEnd} />
+          ) : null}
           {report.isPending && effectiveBegin && effectiveEnd ? (
             <TableLoading rows={10} />
           ) : report.isError ? (
@@ -308,7 +329,12 @@ export function FullAuditPage() {
               // backgrounds and cell borders always travel.
               className={cn(
                 "border-separate border-spacing-0 [&_th]:border-b [&_td]:border-b",
-                compact ? "min-w-[52rem]" : "min-w-[78rem]",
+                // Compact carries no min-width at all: eight columns fit a 13"
+                // laptop once the item name is capped, and a floor of 52rem was
+                // the only reason this view scrolled sideways. Tighter cells buy
+                // the last ~70px. All Columns is fifteen columns of evidence and
+                // is *meant* to scroll — pretending otherwise would crush it.
+                compact ? "[&_td]:px-1.5 [&_th]:px-1.5" : "min-w-[70rem]",
               )}
             >
               <TableHeader>
@@ -336,7 +362,7 @@ export function FullAuditPage() {
                   </TableHead>
                 </TableRow>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="sticky left-0 top-10 z-30 min-w-48 bg-muted">Item</TableHead>
+                  <TableHead className="sticky left-0 top-10 z-30 w-[15rem] min-w-[9rem] bg-muted">Item</TableHead>
                   <TableHead className="sticky top-10 z-20 border-l bg-muted text-right">
                     {compact ? "Begin" : "Begin (Full + Open)"}
                   </TableHead>
@@ -466,7 +492,8 @@ function VerdictStrip({ report, begin, end }: { report: Report; begin: string; e
     .slice(0, 6);
 
   return (
-    <div className="shrink-0 border-b bg-muted/20 px-4 py-4 print:hidden">
+    // A normal child of the scroller, not a shrink-0 sibling of it.
+    <div className="border-b bg-muted/20 px-4 py-4 print:hidden">
       <div className="grid gap-6 lg:grid-cols-[minmax(200px,240px)_minmax(0,1fr)]">
         <div className="space-y-4">
           <div>
@@ -540,7 +567,16 @@ function CategoryRows({
           }}
           aria-label={`Open source records for ${row.itemName}`}
         >
-          <TableCell className={cn("sticky left-0 z-10", row.flags.short ? SHORT_ROW_STICKY_BG : "bg-background")}>
+          {/* Wraps instead of forcing the table wider. An auditor has to read
+              the whole name to trust the row, so this caps and breaks rather
+              than truncating — "Jack Daniel's Old No. 7 700 ml" over two lines
+              beats an ellipsis or a sideways scrollbar. */}
+          <TableCell
+            className={cn(
+              "sticky left-0 z-10 max-w-[15rem] whitespace-normal break-words",
+              row.flags.short ? SHORT_ROW_STICKY_BG : "bg-background",
+            )}
+          >
             <span className="font-medium">{row.itemName}</span>
             {row.flags.missingPrice && (
               <Badge variant="warning" className="ml-2 print:hidden">

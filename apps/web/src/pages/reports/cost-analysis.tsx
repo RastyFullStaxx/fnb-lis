@@ -7,10 +7,10 @@ import { exportUrl, useCostAnalysisReport } from "@/api/reports";
 import { formatMoney } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
-import { TableSurface, TableLoading, TableError } from "@/components/table-surface";
+import { TableSurface, ToolbarField, TableLoading, TableError } from "@/components/table-surface";
 import { ExportButtons } from "@/components/report-toolbar";
+import { ChartBlock } from "@/components/charts/chart-block";
 import { MagnitudeBars } from "@/components/charts/magnitude-bars";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -32,6 +32,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 const pct = (v: number | null) => (v === null ? "—" : `${round2(v).toFixed(2)}%`);
 const pctShort = (v: number) => `${round2(v).toFixed(1)}%`;
 
+// Past eight bars the ranking stops being scannable and the table below is the
+// better instrument — the cut is disclosed in the chart's hint.
+const TOP_CATEGORIES = 8;
+
 export function CostAnalysisPage() {
   const locationId = useLocationId();
   const countDates = useCountDates();
@@ -47,14 +51,35 @@ export function CostAnalysisPage() {
 
   const report = useCostAnalysisReport(effectiveBegin, effectiveEnd);
 
+  // Chart data is derived from the same payload the tables render — nothing is
+  // fetched for it. Bars rank descending because a magnitude chart is read as a
+  // ranking; the table keeps the report's own row order.
+  const sections = useMemo(
+    () =>
+      (report.data?.sections ?? []).map((section) => {
+        const ranked = section.rows
+          .filter((row) => row.netPct !== null && row.netPct > 0)
+          .map((row) => ({ label: row.category, value: round2(row.netPct!) }))
+          .sort((a, b) => b.value - a.value);
+        return { section, bars: ranked.slice(0, TOP_CATEGORIES), rankedCount: ranked.length };
+      }),
+    [report.data],
+  );
+
   if (countDates.isPending) {
     return (
       <div>
         <PageHeader title="Cost Analysis" />
         <div className="overflow-hidden rounded-lg border">
-          <div className="flex items-center gap-2 border-b bg-muted/30 px-3 py-2.5">
-            <Skeleton className="h-9 w-40" />
-            <Skeleton className="h-9 w-40" />
+          {/* Mirrors the real toolbar's stacked caption + control, so the surface
+              doesn't jump taller the moment the dates land. */}
+          <div className="flex flex-wrap items-end gap-x-3 gap-y-2 border-b bg-muted/30 px-3 py-2.5">
+            {[0, 1].map((i) => (
+              <div key={i} className="flex flex-col gap-1">
+                <Skeleton className="h-[11px] w-16" />
+                <Skeleton className="h-9 w-40" />
+              </div>
+            ))}
           </div>
           <TableLoading rows={6} />
         </div>
@@ -77,28 +102,30 @@ export function CostAnalysisPage() {
 
   const periodPicker = (
     <>
-      <Label htmlFor="ca-begin" className="text-xs text-muted-foreground">Beginning</Label>
-      <Select value={effectiveBegin} onValueChange={(v) => { setBegin(v); if (effectiveEnd && effectiveEnd <= v) setEnd(undefined); }}>
-        <SelectTrigger id="ca-begin" className="tnum w-40 bg-background">
-          <SelectValue placeholder="Pick a date" />
-        </SelectTrigger>
-        <SelectContent>
-          {dates.map((d) => (
-            <SelectItem key={d} value={d} className="tnum">{d}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <Label htmlFor="ca-end" className="text-xs text-muted-foreground">Ending</Label>
-      <Select value={effectiveEnd} onValueChange={setEnd}>
-        <SelectTrigger id="ca-end" className="tnum w-40 bg-background">
-          <SelectValue placeholder="Pick a date" />
-        </SelectTrigger>
-        <SelectContent>
-          {endOptions.map((d) => (
-            <SelectItem key={d} value={d} className="tnum">{d}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      <ToolbarField label="Beginning" htmlFor="ca-begin">
+        <Select value={effectiveBegin} onValueChange={(v) => { setBegin(v); if (effectiveEnd && effectiveEnd <= v) setEnd(undefined); }}>
+          <SelectTrigger id="ca-begin" className="tnum w-40 bg-background">
+            <SelectValue placeholder="Pick a date" />
+          </SelectTrigger>
+          <SelectContent>
+            {dates.map((d) => (
+              <SelectItem key={d} value={d} className="tnum">{d}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </ToolbarField>
+      <ToolbarField label="Ending" htmlFor="ca-end">
+        <Select value={effectiveEnd} onValueChange={setEnd}>
+          <SelectTrigger id="ca-end" className="tnum w-40 bg-background">
+            <SelectValue placeholder="Pick a date" />
+          </SelectTrigger>
+          <SelectContent>
+            {endOptions.map((d) => (
+              <SelectItem key={d} value={d} className="tnum">{d}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </ToolbarField>
     </>
   );
 
@@ -173,30 +200,29 @@ export function CostAnalysisPage() {
       {/* One flat section per product type — beverage & food (req #3): a small
           heading + bare table, never a second bordered card. */}
       {report.data && effectiveBegin && effectiveEnd
-        ? report.data.sections.map((section) => {
-            const pctBars = section.rows
-              .filter((row) => row.netPct !== null && row.netPct > 0)
-              .map((row) => ({ label: row.category, value: round2(row.netPct!) }));
+        ? sections.map(({ section, bars, rankedCount }) => {
+            const hint = [
+              bars.length < rankedCount ? `Top ${bars.length} of ${rankedCount} categories` : null,
+              section.totals.netPct !== null ? `section total ${pctShort(section.totals.netPct)}` : null,
+            ]
+              .filter(Boolean)
+              .join(" · ");
             return (
               <div key={section.productType} className="mt-8">
                 <h3 className="mb-2 text-sm font-semibold">
                   {section.productType.charAt(0) + section.productType.slice(1).toLowerCase()} cost analysis
                 </h3>
-                {pctBars.length >= 2 && (
-                  <div className="mb-4 max-w-xl">
-                    <p className="text-xs font-medium text-muted-foreground">
-                      Net cost as a share of net sales
-                      {section.totals.netPct !== null ? ` — section total ${pctShort(section.totals.netPct)}` : ""}
-                    </p>
-                    <div className="mt-2">
-                      <MagnitudeBars
-                        data={pctBars}
-                        name="Net cost %"
-                        formatter={(v) => pct(v)}
-                        endLabelFormatter={pctShort}
-                      />
-                    </div>
-                  </div>
+                {/* Sits directly on the table it describes; a single bar would
+                    rank nothing, so the block only earns its height from two. */}
+                {bars.length >= 2 && (
+                  <ChartBlock title="Net cost as a share of net sales" hint={hint || undefined}>
+                    <MagnitudeBars
+                      data={bars}
+                      name="Net cost %"
+                      formatter={(v) => pct(v)}
+                      endLabelFormatter={pctShort}
+                    />
+                  </ChartBlock>
                 )}
                 <Table>
                   <TableHeader>
@@ -215,7 +241,7 @@ export function CostAnalysisPage() {
                   <TableBody>
                     {section.rows.map((row) => (
                       <TableRow key={row.category}>
-                        <TableCell className="font-medium">{row.category}</TableCell>
+                        <TableCell className="max-w-[22rem] font-medium break-words">{row.category}</TableCell>
                         <TableCell className="tnum text-right">{formatMoney(round2(row.beginningCost))}</TableCell>
                         <TableCell className="tnum text-right">{formatMoney(round2(row.purchasesCost))}</TableCell>
                         <TableCell className="tnum text-right">

@@ -3,11 +3,10 @@ import { Activity as ActivityIcon } from "lucide-react";
 import { useActivity, type ActivityFilters } from "@/api/activity";
 import { useCurrentClient } from "@/api/location";
 import { PageHeader } from "@/components/page-header";
-import { TableSurface, TableLoading, TableEmpty, ToolbarSearch } from "@/components/table-surface";
+import { TableSurface, TableLoading, TableEmpty, ToolbarField, ToolbarSearch } from "@/components/table-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -51,15 +50,13 @@ export function AdminActivityPage() {
       <TableSurface
         filters={
           <>
-            <ToolbarSearch value={search} onChange={setSearch} onEnter={apply} placeholder="Summary contains…" />
-            <Label htmlFor="act-from" className="text-xs text-muted-foreground">
-              From
-            </Label>
-            <Input id="act-from" type="date" className="w-40 bg-background" value={from} onChange={(e) => setFrom(e.target.value)} />
-            <Label htmlFor="act-to" className="text-xs text-muted-foreground">
-              To
-            </Label>
-            <Input id="act-to" type="date" className="w-40 bg-background" value={to} onChange={(e) => setTo(e.target.value)} />
+            <ToolbarSearch label="Search" value={search} onChange={setSearch} onEnter={apply} placeholder="Summary contains…" />
+            <ToolbarField label="From" htmlFor="act-from">
+              <Input id="act-from" type="date" className="tnum w-40 bg-background" value={from} onChange={(e) => setFrom(e.target.value)} />
+            </ToolbarField>
+            <ToolbarField label="To" htmlFor="act-to">
+              <Input id="act-to" type="date" className="tnum w-40 bg-background" value={to} onChange={(e) => setTo(e.target.value)} />
+            </ToolbarField>
           </>
         }
         actions={

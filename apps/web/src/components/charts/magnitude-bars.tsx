@@ -61,7 +61,7 @@ export function MagnitudeBars({
           dataKey="label"
           tickLine={false}
           axisLine={false}
-          tick={TICK}
+          tick={<CategoryTick width={labelWidth} />}
           width={labelWidth}
           interval={0}
         />
@@ -95,7 +95,15 @@ export function MagnitudeBars({
   );
 }
 
-/** Value at the bar's data end — outside the mark, on the side it grows toward. */
+/**
+ * Value at the bar's data end — outside the mark when the bar is short,
+ * inside it when the bar is long.
+ *
+ * A bar that spans most of the plot leaves no room beyond its data end, so an
+ * always-outside label lands on top of the category axis and the two overprint
+ * ("Tequila" over "−₱267"). The flip is self-correcting: a bar only runs out
+ * of outside room by being long, and a long bar has room within itself.
+ */
 function EndLabel({
   x,
   y,
@@ -114,20 +122,62 @@ function EndLabel({
   if (x === undefined || y === undefined || width === undefined || height === undefined || value === undefined) {
     return null;
   }
+  const text = formatter(value);
   const negative = value < 0;
   // Recharts hands negative bars their RAW geometry: x = the zero line and a
   // NEGATIVE width — the data end is x + width, not x.
+  const end = x + width;
+  // ~6.6px per glyph at 12px tabular figures: enough to choose a side, not to
+  // typeset. Erring toward "too wide" just keeps the label outside, which is
+  // the safe placement.
+  const needed = text.length * 6.6 + 14;
+  const inside = Math.abs(width) >= needed;
   return (
     <text
-      x={negative ? x + width - 6 : x + width + 6}
+      x={inside === negative ? end + 6 : end - 6}
       y={y + height / 2}
-      textAnchor={negative ? "end" : "start"}
+      textAnchor={inside === negative ? "start" : "end"}
       dominantBaseline="central"
       className="tnum"
-      fill="var(--color-muted-foreground)"
+      fill={inside ? "var(--color-primary-foreground)" : "var(--color-muted-foreground)"}
       fontSize={12}
     >
-      {formatter(value)}
+      {text}
+    </text>
+  );
+}
+
+/**
+ * Category label that truncates to the axis gutter instead of overflowing it.
+ * Recharts renders ticks at full length regardless of the axis `width`, so a
+ * long category name runs under its own bars without this.
+ */
+function CategoryTick({
+  x,
+  y,
+  payload,
+  width,
+}: {
+  x?: number;
+  y?: number;
+  payload?: { value?: string };
+  width?: number;
+}) {
+  const full = String(payload?.value ?? "");
+  if (x === undefined || y === undefined) return null;
+  const max = Math.max(4, Math.floor(((width ?? 120) - 10) / 6.6));
+  const shown = full.length > max ? `${full.slice(0, max - 1)}…` : full;
+  return (
+    <text
+      x={x - 4}
+      y={y}
+      textAnchor="end"
+      dominantBaseline="central"
+      fill={TICK.fill}
+      fontSize={TICK.fontSize}
+    >
+      {shown}
+      {shown !== full ? <title>{full}</title> : null}
     </text>
   );
 }

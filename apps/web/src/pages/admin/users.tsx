@@ -21,7 +21,13 @@ import {
 } from "@/api/admin";
 import { ApiError } from "@/api/http";
 import { PageHeader } from "@/components/page-header";
-import { TableSurface, TableLoading, TableEmpty, ToolbarSearch } from "@/components/table-surface";
+import {
+  TableSurface,
+  TableLoading,
+  TableEmpty,
+  ToolbarField,
+  ToolbarSearch,
+} from "@/components/table-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -144,52 +150,66 @@ export function AdminUsersPage() {
       <TableSurface
         filters={
           <>
-            <ToolbarSearch value={search} onChange={setSearch} placeholder="Search name or username…" />
-            <Select value={status} onValueChange={setStatus}>
-              <SelectTrigger className="w-36 bg-background">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">All Statuses</SelectItem>
-                <SelectItem value="ACTIVE">Active</SelectItem>
-                <SelectItem value="DISABLED">Disabled</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={billingFilter} onValueChange={setBillingFilter}>
-              <SelectTrigger className="w-44 bg-background">
-                <SelectValue placeholder="Billing type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">All Billing Types</SelectItem>
-                <SelectItem value="__none__">No Package</SelectItem>
-                <SelectItem value="MONTHLY">Subscription</SelectItem>
-                <SelectItem value="STANDALONE">Standalone</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={pkgFilter} onValueChange={setPkgFilter}>
-              <SelectTrigger className="w-44 bg-background">
-                <SelectValue placeholder="Package" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">All Packages</SelectItem>
-                <SelectItem value="__none__">No Package</SelectItem>
-                {PACKAGE_TYPES.map((p) => (
-                  <SelectItem key={p} value={p}>{PACKAGE_LABELS[p]}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={moduleFilter} onValueChange={setModuleFilter}>
-              <SelectTrigger className="w-52 bg-background">
-                <SelectValue placeholder="Module" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">All Modules</SelectItem>
-                <SelectItem value="__none__">No Module</SelectItem>
-                {MODULE_TYPES.map((m) => (
-                  <SelectItem key={m} value={m}>{MODULE_TYPE_LABELS[m]}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <ToolbarSearch
+              value={search}
+              onChange={setSearch}
+              placeholder="Search name or username…"
+              label="Search"
+            />
+            <ToolbarField label="Status" htmlFor="users-status">
+              <Select value={status} onValueChange={setStatus}>
+                <SelectTrigger id="users-status" className="w-36 bg-background">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All Statuses</SelectItem>
+                  <SelectItem value="ACTIVE">Active</SelectItem>
+                  <SelectItem value="DISABLED">Disabled</SelectItem>
+                </SelectContent>
+              </Select>
+            </ToolbarField>
+            <ToolbarField label="Billing Type" htmlFor="users-billing">
+              <Select value={billingFilter} onValueChange={setBillingFilter}>
+                <SelectTrigger id="users-billing" className="w-40 bg-background">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All Billing Types</SelectItem>
+                  <SelectItem value="__none__">No Package</SelectItem>
+                  <SelectItem value="MONTHLY">Subscription</SelectItem>
+                  <SelectItem value="STANDALONE">Standalone</SelectItem>
+                </SelectContent>
+              </Select>
+            </ToolbarField>
+            {/* Stays w-44: "One-Time Installation" is the widest option here. */}
+            <ToolbarField label="Package" htmlFor="users-package">
+              <Select value={pkgFilter} onValueChange={setPkgFilter}>
+                <SelectTrigger id="users-package" className="w-44 bg-background">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All Packages</SelectItem>
+                  <SelectItem value="__none__">No Package</SelectItem>
+                  {PACKAGE_TYPES.map((p) => (
+                    <SelectItem key={p} value={p}>{PACKAGE_LABELS[p]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </ToolbarField>
+            <ToolbarField label="Module" htmlFor="users-module">
+              <Select value={moduleFilter} onValueChange={setModuleFilter}>
+                <SelectTrigger id="users-module" className="w-36 bg-background">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All Modules</SelectItem>
+                  <SelectItem value="__none__">No Module</SelectItem>
+                  {MODULE_TYPES.map((m) => (
+                    <SelectItem key={m} value={m}>{MODULE_TYPE_LABELS[m]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </ToolbarField>
           </>
         }
       >

@@ -8,6 +8,7 @@ import { formatMoney } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { TableSurface, TableLoading, TableEmpty, TableError } from "@/components/table-surface";
 import { DateRangeControl, ExportButtons } from "@/components/report-toolbar";
+import { ChartBlock } from "@/components/charts/chart-block";
 import { MagnitudeBars } from "@/components/charts/magnitude-bars";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -42,12 +43,14 @@ export function NonRevenueReportPage() {
   const report = useNonRevenueReport(from, to, activeGroup, !transferTab);
   const transfers = useTransferReport(from, to, "out", transferTab);
 
-  // Cost by reason: which write-off bucket is eating the most money.
+  // Cost by reason: which write-off bucket is eating the most money. Capped so
+  // the ranking stays readable — the tail is listed in full under the table.
   const reasonBars = useMemo(
     () =>
       (report.data?.byReason ?? [])
         .filter((g) => g.cost > 0)
         .sort((a, b) => b.cost - a.cost)
+        .slice(0, 8)
         .map((g) => ({ label: g.reason, value: round2(g.cost) })),
     [report.data],
   );
@@ -121,8 +124,8 @@ export function NonRevenueReportPage() {
                 {transfers.data.rows.map((row, i) => (
                   <TableRow key={i}>
                     <TableCell className="tnum">{row.date}</TableCell>
-                    <TableCell className="text-muted-foreground">{row.counterparty}</TableCell>
-                    <TableCell className="font-medium">{row.name}</TableCell>
+                    <TableCell className="max-w-[14rem] break-words text-muted-foreground">{row.counterparty}</TableCell>
+                    <TableCell className="max-w-[22rem] font-medium break-words">{row.name}</TableCell>
                     <TableCell className="tnum text-right">{n2(row.qtySent)}</TableCell>
                     <TableCell className="tnum text-right">{formatMoney(row.costValue)}</TableCell>
                     <TableCell className="tnum text-right">{formatMoney(row.retailValue)}</TableCell>
@@ -148,75 +151,79 @@ export function NonRevenueReportPage() {
         ) : !report.data || report.data.rows.length === 0 ? (
           <TableEmpty icon={Wine} title="No non-revenue use in this range" description="Adjust the dates to find recorded entries." />
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-muted hover:bg-muted">
-                <TableHead>Date</TableHead>
-                <TableHead>Item / Menu</TableHead>
-                <TableHead>UOM</TableHead>
-                <TableHead>Reason</TableHead>
-                <TableHead className="text-right">Qty</TableHead>
-                <TableHead className="text-right">Content/Unit</TableHead>
-                <TableHead className="text-right">Est. Cost</TableHead>
-                <TableHead className="text-right">Est. Retail</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {report.data.rows.map((row, i) => (
-                <TableRow key={i}>
-                  <TableCell className="tnum">{row.saleDate}</TableCell>
-                  <TableCell className="font-medium">{row.name}</TableCell>
-                  <TableCell className="text-muted-foreground">{row.uom ?? "—"}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{row.reason}</Badge>
-                  </TableCell>
-                  <TableCell className="tnum text-right">{n2(row.qty)}</TableCell>
-                  <TableCell className="tnum text-right">{row.contentOverride ?? "—"}</TableCell>
-                  <TableCell className="tnum text-right">
-                    {row.estimatedCost === null ? "—" : formatMoney(row.estimatedCost)}
-                  </TableCell>
-                  <TableCell className="tnum text-right">
-                    {row.estimatedRetail === null ? "—" : formatMoney(row.estimatedRetail)}
-                  </TableCell>
+          <>
+            {reasonBars.length >= 2 && (
+              <ChartBlock
+                title="Cost by Reason"
+                hint={`Top ${reasonBars.length} of ${report.data.byReason.length} reasons`}
+              >
+                <MagnitudeBars data={reasonBars} name="Est. cost" />
+              </ChartBlock>
+            )}
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted hover:bg-muted">
+                  <TableHead>Date</TableHead>
+                  <TableHead>Item / Menu</TableHead>
+                  <TableHead>UOM</TableHead>
+                  <TableHead>Reason</TableHead>
+                  <TableHead className="text-right">Qty</TableHead>
+                  <TableHead className="text-right">Content/Unit</TableHead>
+                  <TableHead className="text-right">Est. Cost</TableHead>
+                  <TableHead className="text-right">Est. Retail</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-            <TableFooter>
-              <TableRow>
-                <TableCell colSpan={4} className="font-medium">
-                  Total
-                </TableCell>
-                <TableCell className="tnum text-right font-medium">{n2(report.data.totals.qty)}</TableCell>
-                <TableCell />
-                <TableCell className="tnum text-right font-semibold">{formatMoney(report.data.totals.cost)}</TableCell>
-                <TableCell className="tnum text-right font-semibold">{formatMoney(report.data.totals.retail)}</TableCell>
-              </TableRow>
-            </TableFooter>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {report.data.rows.map((row, i) => (
+                  <TableRow key={i}>
+                    <TableCell className="tnum">{row.saleDate}</TableCell>
+                    {/* Menu names run long; wrapping keeps them fully readable
+                        without pushing the money columns off-screen. */}
+                    <TableCell className="max-w-[22rem] font-medium break-words">{row.name}</TableCell>
+                    <TableCell className="text-muted-foreground">{row.uom ?? "—"}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{row.reason}</Badge>
+                    </TableCell>
+                    <TableCell className="tnum text-right">{n2(row.qty)}</TableCell>
+                    <TableCell className="tnum text-right">{row.contentOverride ?? "—"}</TableCell>
+                    <TableCell className="tnum text-right">
+                      {row.estimatedCost === null ? "—" : formatMoney(row.estimatedCost)}
+                    </TableCell>
+                    <TableCell className="tnum text-right">
+                      {row.estimatedRetail === null ? "—" : formatMoney(row.estimatedRetail)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+              <TableFooter>
+                <TableRow>
+                  <TableCell colSpan={4} className="font-medium">
+                    Total
+                  </TableCell>
+                  <TableCell className="tnum text-right font-medium">{n2(report.data.totals.qty)}</TableCell>
+                  <TableCell />
+                  <TableCell className="tnum text-right font-semibold">{formatMoney(report.data.totals.cost)}</TableCell>
+                  <TableCell className="tnum text-right font-semibold">{formatMoney(report.data.totals.retail)}</TableCell>
+                </TableRow>
+              </TableFooter>
+            </Table>
+          </>
         )}
       </TableSurface>
 
       {!transferTab && report.data && report.data.rows.length > 0 && (
-        <div className="mt-8 grid gap-8 lg:grid-cols-2">
-          {reasonBars.length > 0 && (
-            <div>
-              <h3 className="mb-2 text-sm font-semibold">Cost by Reason</h3>
-              <MagnitudeBars data={reasonBars} name="Est. cost" />
-            </div>
-          )}
-          <div>
-            <h3 className="mb-3 text-sm font-semibold">By Reason</h3>
-            <div className="flex flex-wrap gap-x-10 gap-y-3">
-              {report.data.byReason.map((g) => (
-                <div key={g.reason}>
-                  <p className="text-sm font-medium">{g.reason}</p>
-                  <p className="tnum text-xs text-muted-foreground">
-                    {g.count} entr{g.count === 1 ? "y" : "ies"} · qty {n2(g.qty)}
-                    {g.cost > 0 && ` · ${formatMoney(g.cost)}`}
-                  </p>
-                </div>
-              ))}
-            </div>
+        <div className="mt-8">
+          <h3 className="mb-3 text-sm font-semibold">By Reason</h3>
+          <div className="flex flex-wrap gap-x-10 gap-y-3">
+            {report.data.byReason.map((g) => (
+              <div key={g.reason}>
+                <p className="text-sm font-medium">{g.reason}</p>
+                <p className="tnum text-xs text-muted-foreground">
+                  {g.count} entr{g.count === 1 ? "y" : "ies"} · qty {n2(g.qty)}
+                  {g.cost > 0 && ` · ${formatMoney(g.cost)}`}
+                </p>
+              </div>
+            ))}
           </div>
         </div>
       )}

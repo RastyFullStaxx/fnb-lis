@@ -11,7 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { PageHeader } from "@/components/page-header";
-import { TableSurface, ToolbarSearch } from "@/components/table-surface";
+import { TableSurface, ToolbarField, ToolbarSearch } from "@/components/table-surface";
 import { ItemsTab } from "./items-tab";
 import { CategoriesTab } from "./categories-tab";
 import { UnitsTab } from "./units-tab";
@@ -56,20 +56,31 @@ export function ItemsPage() {
               </TabsList>
               {tab === "items" && (
                 <>
-                  <ToolbarSearch value={search} onChange={setSearch} placeholder="Search items…" />
-                  <Select value={productType} onValueChange={setProductType}>
-                    <SelectTrigger className="w-40 bg-background" aria-label="Filter by product type">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={ALL}>All Types</SelectItem>
-                      {(productTypes.data?.productTypes ?? []).map((t) => (
-                        <SelectItem key={t} value={t}>
-                          {t}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <ToolbarSearch
+                    value={search}
+                    onChange={setSearch}
+                    placeholder="Search items…"
+                    label="Search"
+                  />
+                  <ToolbarField label="Product Type" htmlFor="items-product-type">
+                    <Select value={productType} onValueChange={setProductType}>
+                      <SelectTrigger
+                        id="items-product-type"
+                        className="w-40 bg-background"
+                        aria-label="Filter by product type"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={ALL}>All Types</SelectItem>
+                        {(productTypes.data?.productTypes ?? []).map((t) => (
+                          <SelectItem key={t} value={t}>
+                            {t}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </ToolbarField>
                 </>
               )}
             </>
