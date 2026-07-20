@@ -39,7 +39,7 @@ export function TableSurface({
           labels stay while rows scroll, and the page chrome above never moves. */}
       <div
         className={cn(
-          "min-h-0 flex-1 overflow-auto",
+          "scrollbar-thin min-h-0 flex-1 overflow-auto",
           // The inner shadcn table wrapper is its own scroll container, which would
           // trap the sticky header — flatten it so this body is the only scroller.
           "[&_[data-slot=table-container]]:overflow-visible",

@@ -1,7 +1,7 @@
 import { forwardRef, useRef, useState } from "react";
 import { ChevronsUpDown, Martini, Receipt } from "lucide-react";
 import { toast } from "sonner";
-import { can, NON_REVENUE_REASONS, type Role, type SaleKind } from "@fnb/core";
+import { can, NON_REVENUE_GROUP_LABELS, NON_REVENUE_GROUPS, NON_REVENUE_REASONS, type Role, type SaleKind } from "@fnb/core";
 import { useMe } from "@/api/auth";
 import { useLocationItems } from "@/api/location";
 import { useMenus, type MenuSummary } from "@/api/menus";
@@ -58,7 +58,12 @@ const KIND_COPY: Record<SaleKind, { title: string; hint: string; button: string;
   },
 };
 
+/** Labels for every stored reason — canonical buckets plus legacy codes on
+    historical rows (the entry select offers only the canonical three). */
 const REASON_LABELS: Record<string, string> = {
+  SPOILAGE_SPILLAGE: "Spoilage & Spillages",
+  TRIMMING: "Trimming",
+  MARKETING_OTH: "Marketing & OTH (On the House)",
   COMPLIMENTARY: "Complimentary",
   SPILLAGE: "Spillage",
   STAFF_USE: "Staff use",
@@ -201,7 +206,7 @@ function QuickEntry({ kind }: { kind: SaleKind }) {
   const [price, setPrice] = useState("");
   const [discount, setDiscount] = useState("");
   const [content, setContent] = useState("");
-  const [reason, setReason] = useState<string>("OTHER");
+  const [reason, setReason] = useState<string>("SPOILAGE_SPILLAGE");
   const comboRef = useRef<HTMLButtonElement>(null);
   const copy = KIND_COPY[kind];
 
@@ -304,14 +309,17 @@ function QuickEntry({ kind }: { kind: SaleKind }) {
           <>
             <div className="space-y-2">
               <Label htmlFor="s-reason">Reason</Label>
+              {/* Client req (2026-07-20): exactly three encoding options —
+                  each drives its own report; legacy reasons remain readable
+                  on historical rows but can no longer be entered. */}
               <Select value={reason} onValueChange={setReason}>
                 <SelectTrigger id="s-reason">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {NON_REVENUE_REASONS.map((r) => (
+                  {NON_REVENUE_GROUPS.map((r) => (
                     <SelectItem key={r} value={r}>
-                      {REASON_LABELS[r]}
+                      {NON_REVENUE_GROUP_LABELS[r]}
                     </SelectItem>
                   ))}
                 </SelectContent>

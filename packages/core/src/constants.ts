@@ -26,6 +26,13 @@ export const IMPORT_STATUSES = ["PROCESSING", "NEEDS_REVIEW", "COMMITTED", "REVE
 export const MATCH_METHODS = ["EXACT", "ALIAS", "FUZZY", "MANUAL"] as const;
 
 export const NON_REVENUE_REASONS = [
+  // Canonical encoding options (client req, 2026-07-20) — the only three the
+  // entry screens offer. Each generates its own report view; the Full Audit
+  // keeps rolling everything up under Non-Revenue.
+  "SPOILAGE_SPILLAGE",
+  "TRIMMING",
+  "MARKETING_OTH",
+  // Legacy codes — still valid so historical rows and imports keep parsing.
   "COMPLIMENTARY",
   "SPILLAGE",
   "STAFF_USE",
@@ -35,6 +42,40 @@ export const NON_REVENUE_REASONS = [
   "INTERNAL_USE",
   "OTHER",
 ] as const;
+export type NonRevenueReason = (typeof NON_REVENUE_REASONS)[number];
+
+/** The client's three canonical non-revenue buckets. */
+export const NON_REVENUE_GROUPS = ["SPOILAGE_SPILLAGE", "TRIMMING", "MARKETING_OTH"] as const;
+export type NonRevenueGroup = (typeof NON_REVENUE_GROUPS)[number];
+
+export const NON_REVENUE_GROUP_LABELS: Record<NonRevenueGroup, string> = {
+  SPOILAGE_SPILLAGE: "Spoilage & Spillages",
+  TRIMMING: "Trimming",
+  MARKETING_OTH: "Marketing & OTH (On the House)",
+};
+
+/**
+ * Which bucket a stored reason reports under. Legacy codes fold into the
+ * nearest bucket; STAFF_USE / INTERNAL_USE / OTHER belong to none — they
+ * appear only in the unfiltered report, never silently inside a bucket.
+ */
+export function nonRevenueGroupOf(reason: string | null | undefined): NonRevenueGroup | null {
+  switch (reason) {
+    case "SPOILAGE_SPILLAGE":
+    case "SPILLAGE":
+    case "SPOILAGE":
+    case "BREAKAGE":
+      return "SPOILAGE_SPILLAGE";
+    case "TRIMMING":
+      return "TRIMMING";
+    case "MARKETING_OTH":
+    case "COMPLIMENTARY":
+    case "TASTING":
+      return "MARKETING_OTH";
+    default:
+      return null;
+  }
+}
 
 // ── Subscription / Package constants ──
 

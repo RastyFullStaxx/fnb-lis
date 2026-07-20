@@ -1,4 +1,4 @@
-import { costLine, netOfVat, pctOf } from "@fnb/core";
+import { costLine, netOfVat, nonRevenueGroupOf, pctOf, type NonRevenueGroup } from "@fnb/core";
 import { buildFullAudit, committedCountDates } from "./report-assembly";
 import { prisma } from "../db";
 
@@ -17,7 +17,13 @@ function itemLabel(li: { itemVariant: { size: number; unit: { name: string }; it
   return `${li.itemVariant.item.name} ${li.itemVariant.size} ${li.itemVariant.unit.name}`;
 }
 
-// ── Sales report (transaction-level, kind = SALE) ──
+// ── Sales report (transaction-level) ──
+// Views (client req, 2026-07-20): "sales" = kind SALE (default);
+// "discounted" = SALE rows carrying a discount; "production" = kind
+// PRODUCTION (consumption at zero revenue), surfaced under Sales per the
+// client's mental model ("Input Production").
+
+export type SalesReportView = "sales" | "discounted" | "production";
 
 export interface SalesReportRow {
   saleDate: string;
@@ -42,12 +48,14 @@ export async function salesReport(
   from: string,
   to: string,
   allowedProductTypes?: readonly string[] | null,
+  view: SalesReportView = "sales",
 ): Promise<SalesReport> {
   const sales = await prisma.saleRecord.findMany({
     where: {
       locationId,
       status: "ACTIVE",
-      kind: "SALE",
+      kind: view === "production" ? "PRODUCTION" : "SALE",
+      ...(view === "discounted" ? { discountPct: { gt: 0 } } : {}),
       saleDate: { gte: from, lte: to },
       // Menu sales (locationItemId null) span ingredients across modules — they're
       // left unfiltered here, matching how report-assembly treats menu expansion;
@@ -158,6 +166,11 @@ export async function purchaseReport(
 // ── Non-revenue report (grouped by reason) ──
 
 const REASON_LABELS: Record<string, string> = {
+  // Canonical buckets (client req, 2026-07-20)
+  SPOILAGE_SPILLAGE: "Spoilage & Spillages",
+  TRIMMING: "Trimming",
+  MARKETING_OTH: "Marketing & OTH (On the House)",
+  // Legacy codes on historical rows
   COMPLIMENTARY: "Complimentary",
   SPILLAGE: "Spillage",
   STAFF_USE: "Staff use",
@@ -189,8 +202,9 @@ export async function nonRevenueReport(
   from: string,
   to: string,
   allowedProductTypes?: readonly string[] | null,
+  group?: NonRevenueGroup,
 ): Promise<NonRevenueReport> {
-  const records = await prisma.saleRecord.findMany({
+  const found = await prisma.saleRecord.findMany({
     where: {
       locationId,
       status: "ACTIVE",
@@ -203,6 +217,9 @@ export async function nonRevenueReport(
     include: { locationItem: { include: LI_INCLUDE }, menuItem: true },
     orderBy: [{ saleDate: "asc" }, { createdAt: "asc" }],
   });
+  // Bucket filter (client req): legacy reasons fold into their nearest bucket
+  // via nonRevenueGroupOf; unmapped reasons appear only in the unfiltered view.
+  const records = group ? found.filter((r) => nonRevenueGroupOf(r.reason) === group) : found;
 
   const rows: NonRevenueRow[] = records.map((r) => {
     const estimatedCost = r.locationItem ? r.qty * r.locationItem.cost : null;

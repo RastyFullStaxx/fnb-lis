@@ -88,6 +88,15 @@ From the client's 16-item list after the July check-up.
 | 15 | Can a user reach another client by editing the URL? | ℹ️ Answered to client — every request passes access-control middleware; verified 403 |
 | 16 | Kitchen weighing: total − tare; bottles use the bar formula | ✅ NET weigh mode; density path unchanged for bottles |
 
+## Client request tracker — 2026-07-20 additions (Lourd GC message)
+
+| # | Request | Status |
+|---|---|---|
+| 17 | Non-revenue encoding options: **Spoilage & Spillages / Trimming / Marketing & OTH (On the House)** — each generates its own report; the Full/Detailed report keeps them under Non-Revenue | ✅ Entry select offers exactly these three; Non-Revenue report + exports gained bucket tabs (`?group=`); legacy reasons fold into the nearest bucket for reporting, Full Audit rollup untouched |
+| 18 | Production report **under Sales** ("Input Production") | ✅ Sales report gained a Production view tab (+ export) listing PRODUCTION records at zero revenue |
+| 19 | Discounted report under Sales — every input with a discount | ✅ Sales report gained a Discounted view tab (+ export) — SALE rows with `discountPct > 0` |
+| 11 (cont.) | "Full and detailed reports" — client will send a legacy example ("mag send ako example mamya"); liked the stockledger prototype's analytics/charts | ⏳ Interim: dashboard Audit-trends band, Full Audit verdict strip + per-category chart, and per-report charts shipped 2026-07-20. **Hold final shape until the example arrives** |
+
 ## Open decisions — raise at the next client check-in
 
 1. **Transfers design sign-off.** Transfers have **no legacy precedent** — unlike everything else,
@@ -95,5 +104,8 @@ From the client's 16-item list after the July check-up.
    correctness check this feature will ever have.
 2. **Cost Analysis VAT treatment.** We apply 12% uniformly; the legacy sheet divided some
    (always-zero) rows by 1.22 and mislabelled net sales as "VAT" (architecture.md deviation #13).
-3. **Request #11** — what "detailed" means to the client.
+3. **Request #11** — waiting on the client's sample of the legacy "full detailed" report before
+   building a dedicated mode (the new analytics layer may already cover part of it).
 4. **Pending assets** — bar/kitchen flyers, Facebook page URL, promo video.
+5. **Legacy non-revenue reasons** (Staff use / Internal use / Other on historical rows) sit outside
+   the three new buckets by design — confirm with the client whether they should fold somewhere.

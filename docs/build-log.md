@@ -172,6 +172,28 @@ fixes applied across every page group. The headline pieces:
   P1 (count line edits deleted before re-adding; now add-first). `--warning-text` token added for
   AA-safe amber text; global `prefers-reduced-motion` rule added.
 
+### Phase 10 addendum (2026-07-20, second pass)
+
+- **Sticky-header rendering fix** — the Full Audit's two-row header showed scrolled rows bleeding
+  through it (user screenshots): Chrome leaves row backgrounds/borders behind when a `thead`
+  sticks under `border-collapse`. Rebuilt as **per-cell sticky** (`th` at `top-0`/`top-10`, cell
+  backgrounds, `border-separate border-spacing-0`, borders on cells). Verified by DOM paint
+  probes with the scroller engaged.
+- **Compact view** for the Full Audit: an 8-column toggle (Item · Begin · End · Usage · Sold ·
+  Variance · At cost · At retail) — the whole reconciliation fits with **no horizontal scroll**.
+- **`.scrollbar-thin`** utility (6px pill thumb) on every table scroller + the sidebar rail;
+  **LIS logo is the favicon**.
+- **Sidebar fit**: tightened group padding/label height/menu gaps + `py-1.5` items so the full
+  admin nav (14 items, 3 groups) fits a 13" laptop viewport at the Large font — measured
+  646/646px, no scroll; hit targets stay ≥ 32px.
+- **Client GC requests (Lourd)**: non-revenue encoding collapsed to the three canonical buckets
+  (Spoilage & Spillages / Trimming / Marketing & OTH) with per-bucket report tabs + exports —
+  legacy reasons fold in via `nonRevenueGroupOf`, unmapped ones (Staff/Internal/Other) appear
+  only in the unfiltered view; Sales report gained **Discounted** and **Production** view tabs
+  (server `?view=` + exports). Full Audit's Non-Revenue rollup untouched — fixture re-verified.
+- Listing-report defaults switched to the **open period** (last count → today) so entries since
+  the last count are visible on first paint (deviation #20).
+
 ## Contributor history
 
 | Window | Who | What |

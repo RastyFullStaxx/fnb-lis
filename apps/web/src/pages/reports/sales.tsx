@@ -3,7 +3,7 @@ import { Receipt } from "lucide-react";
 import { round2 } from "@fnb/core";
 import { useLocationId } from "@/api/location";
 import { useCountDates } from "@/api/ops";
-import { exportUrl, useSalesReport } from "@/api/reports";
+import { exportUrl, useSalesReport, type SalesReportView } from "@/api/reports";
 import { formatMoney } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { TableSurface, TableLoading, TableEmpty, TableError, ToolbarSearch } from "@/components/table-surface";
@@ -11,6 +11,7 @@ import { DateRangeControl, ExportButtons } from "@/components/report-toolbar";
 import { PeriodColumns } from "@/components/charts/period-columns";
 import { shortDate } from "@/components/charts/chart-kit";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -24,11 +25,21 @@ import { useReportRange } from "./use-report-range";
 
 const n2 = (v: number) => round2(v).toLocaleString("en-US", { maximumFractionDigits: 2 });
 
+/** Kind-specific copy so each view names itself honestly. */
+const VIEW_COPY: Record<SalesReportView, { empty: string; hint: string }> = {
+  sales: { empty: "No sales in this range", hint: "Adjust the dates to find recorded sales." },
+  discounted: { empty: "No discounted sales in this range", hint: "Only sales carrying a discount appear here." },
+  production: { empty: "No production use in this range", hint: "Recipe batches recorded as Production appear here." },
+};
+
 export function SalesReportPage() {
   const locationId = useLocationId();
   const dates = useCountDates();
   const [from, to, setFrom, setTo] = useReportRange(dates.data?.dates);
-  const report = useSalesReport(from, to);
+  // Client req (2026-07-20): Production and Discounted generate their own
+  // reports, but live under Sales — a view tab, not a separate page.
+  const [view, setView] = useState<SalesReportView>("sales");
+  const report = useSalesReport(from, to, view);
   const [query, setQuery] = useState("");
 
   const rows = useMemo(() => {
@@ -54,8 +65,8 @@ export function SalesReportPage() {
         title="Sales Report"
         actions={
           <ExportButtons
-            xlsxUrl={exportUrl(locationId, "sales", "xlsx", { from, to })}
-            csvUrl={exportUrl(locationId, "sales", "csv", { from, to })}
+            xlsxUrl={exportUrl(locationId, "sales", "xlsx", { from, to, view })}
+            csvUrl={exportUrl(locationId, "sales", "csv", { from, to, view })}
             disabled={!report.data?.rows.length}
           />
         }
@@ -64,6 +75,13 @@ export function SalesReportPage() {
       <TableSurface
         filters={
           <>
+            <Tabs value={view} onValueChange={(v) => setView(v as SalesReportView)}>
+              <TabsList>
+                <TabsTrigger value="sales">Sales</TabsTrigger>
+                <TabsTrigger value="discounted">Discounted</TabsTrigger>
+                <TabsTrigger value="production">Production</TabsTrigger>
+              </TabsList>
+            </Tabs>
             <DateRangeControl from={from} to={to} onFrom={setFrom} onTo={setTo} />
             <ToolbarSearch value={query} onChange={setQuery} placeholder="Find an item or menu…" className="w-52" />
           </>
@@ -74,10 +92,12 @@ export function SalesReportPage() {
         ) : report.isError ? (
           <TableError onRetry={() => void report.refetch()} retrying={report.isRefetching} />
         ) : !report.data || report.data.rows.length === 0 ? (
-          <TableEmpty icon={Receipt} title="No sales in this range" description="Adjust the dates to find recorded sales." />
+          <TableEmpty icon={Receipt} title={VIEW_COPY[view].empty} description={VIEW_COPY[view].hint} />
         ) : (
           <>
-            {byDay.length >= 2 && (
+            {/* Production carries no revenue — the trend strip only makes
+                sense where net is real. */}
+            {view !== "production" && byDay.length >= 2 && (
               <div className="border-b bg-muted/20 px-4 py-3 print:hidden">
                 <p className="text-xs font-medium text-muted-foreground">Net revenue by day</p>
                 <div className="mt-2">

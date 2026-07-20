@@ -67,6 +67,9 @@ export function FullAuditPage() {
   const [drill, setDrill] = useState<{ id: string; name: string } | null>(null);
   const [query, setQuery] = useState("");
   const [varianceOnly, setVarianceOnly] = useState(false);
+  // Compact view: only the columns the verdict needs — Begin, End, Usage,
+  // Sold, and the variance block. The movement detail returns on demand.
+  const [compact, setCompact] = useState(false);
 
   const location = me.data?.clients.flatMap((c) => c.locations.map((l) => ({ ...l, clientName: c.name }))).find((l) => l.id === locationId);
   const company = useCompanyInfo(location?.clientId ?? "");
@@ -226,13 +229,16 @@ export function FullAuditPage() {
           <Toggle pressed={varianceOnly} onPressedChange={setVarianceOnly}>
             Variance only
           </Toggle>
+          <Toggle pressed={compact} onPressedChange={setCompact}>
+            Compact
+          </Toggle>
         </div>
 
         {report.data && report.data.rows.length > 0 && effectiveBegin && effectiveEnd ? (
           <VerdictStrip report={report.data} begin={effectiveBegin} end={effectiveEnd} />
         ) : null}
 
-        <div className="min-h-0 flex-1 overflow-auto [&_[data-slot=table-container]]:overflow-visible print:overflow-visible">
+        <div className="scrollbar-thin min-h-0 flex-1 overflow-auto [&_[data-slot=table-container]]:overflow-visible print:overflow-visible">
           {report.isPending && effectiveBegin && effectiveEnd ? (
             <TableLoading rows={10} />
           ) : report.isError ? (
@@ -258,49 +264,74 @@ export function FullAuditPage() {
               }
             />
           ) : (
-            <Table className="min-w-[78rem]">
-              <TableHeader className="sticky top-0 z-20">
+            <Table
+              // border-separate + per-CELL sticky headers: with border-collapse,
+              // Chrome leaves row backgrounds/borders behind when a thead
+              // sticks, so scrolled rows bleed through the pinned header. Cell
+              // backgrounds and cell borders always travel.
+              className={cn(
+                "border-separate border-spacing-0 [&_th]:border-b [&_td]:border-b",
+                compact ? "min-w-[52rem]" : "min-w-[78rem]",
+              )}
+            >
+              <TableHeader>
                 {/* Column groups halve the scan: movement → usage → sold → verdict. */}
-                <TableRow className="bg-muted hover:bg-muted">
-                  <TableHead className="sticky left-0 z-10 bg-muted" aria-label="Item column group" />
-                  <TableHead colSpan={5} className="border-l text-center text-xs font-medium text-muted-foreground">
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="sticky left-0 top-0 z-30 bg-muted" aria-label="Item column group" />
+                  <TableHead
+                    colSpan={compact ? 2 : 5}
+                    className="sticky top-0 z-20 border-l bg-muted text-center text-xs font-medium text-muted-foreground"
+                  >
                     Stock movement
                   </TableHead>
-                  <TableHead className="border-l" aria-label="Usage column group" />
-                  <TableHead colSpan={4} className="border-l text-center text-xs font-medium text-muted-foreground">
+                  <TableHead className="sticky top-0 z-20 border-l bg-muted" aria-label="Usage column group" />
+                  <TableHead
+                    colSpan={compact ? 1 : 4}
+                    className="sticky top-0 z-20 border-l bg-muted text-center text-xs font-medium text-muted-foreground"
+                  >
                     Sold &amp; used
                   </TableHead>
-                  <TableHead colSpan={4} className="border-l text-center text-xs font-medium text-muted-foreground">
+                  <TableHead
+                    colSpan={compact ? 3 : 4}
+                    className="sticky top-0 z-20 border-l bg-muted text-center text-xs font-medium text-muted-foreground"
+                  >
                     Variance
                   </TableHead>
                 </TableRow>
-                <TableRow className="bg-muted hover:bg-muted">
-                  <TableHead className="sticky left-0 z-10 min-w-48 bg-muted">Item</TableHead>
-                  <TableHead className="border-l text-right">Begin (full + open)</TableHead>
-                  <TableHead className="text-right">Purchased</TableHead>
-                  <TableHead className="text-right">Returns</TableHead>
-                  <TableHead className="text-right">Transfers (in − out)</TableHead>
-                  <TableHead className="text-right">End (full + open)</TableHead>
-                  <TableHead className="border-l text-right font-semibold">Usage</TableHead>
-                  <TableHead className="border-l text-right">Sold (direct + recipe)</TableHead>
-                  <TableHead className="text-right">Non-revenue</TableHead>
-                  <TableHead className="text-right">Production</TableHead>
-                  <TableHead className="text-right">Revenue</TableHead>
-                  <TableHead className="border-l text-right font-semibold">Variance vs Sold</TableHead>
-                  <TableHead className="text-right">%</TableHead>
-                  <TableHead className="text-right">At cost</TableHead>
-                  <TableHead className="text-right">At retail</TableHead>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="sticky left-0 top-10 z-30 min-w-48 bg-muted">Item</TableHead>
+                  <TableHead className="sticky top-10 z-20 border-l bg-muted text-right">Begin (full + open)</TableHead>
+                  {!compact && <TableHead className="sticky top-10 z-20 bg-muted text-right">Purchased</TableHead>}
+                  {!compact && <TableHead className="sticky top-10 z-20 bg-muted text-right">Returns</TableHead>}
+                  {!compact && <TableHead className="sticky top-10 z-20 bg-muted text-right">Transfers (in − out)</TableHead>}
+                  <TableHead className="sticky top-10 z-20 bg-muted text-right">End (full + open)</TableHead>
+                  <TableHead className="sticky top-10 z-20 border-l bg-muted text-right font-semibold">Usage</TableHead>
+                  <TableHead className="sticky top-10 z-20 border-l bg-muted text-right">Sold (direct + recipe)</TableHead>
+                  {!compact && <TableHead className="sticky top-10 z-20 bg-muted text-right">Non-revenue</TableHead>}
+                  {!compact && <TableHead className="sticky top-10 z-20 bg-muted text-right">Production</TableHead>}
+                  {!compact && <TableHead className="sticky top-10 z-20 bg-muted text-right">Revenue</TableHead>}
+                  <TableHead className="sticky top-10 z-20 border-l bg-muted text-right font-semibold">Variance vs Sold</TableHead>
+                  {!compact && <TableHead className="sticky top-10 z-20 bg-muted text-right">%</TableHead>}
+                  <TableHead className="sticky top-10 z-20 bg-muted text-right">At cost</TableHead>
+                  <TableHead className="sticky top-10 z-20 bg-muted text-right">At retail</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {visibleGroups.map((group) => (
-                  <CategoryRows key={group.categoryName} group={group} onDrill={setDrill} />
+                  <CategoryRows key={group.categoryName} group={group} onDrill={setDrill} compact={compact} />
                 ))}
-                <TableRow className="border-t-2 bg-muted/60 font-semibold hover:bg-muted/60">
-                  <TableCell className="sticky left-0 bg-muted">Grand total</TableCell>
-                  <TableCell colSpan={9} />
-                  <TableCell className="tnum text-right">{formatMoney(round2(report.data.totals.revenue))}</TableCell>
-                  <TableCell colSpan={2} />
+                <TableRow className="bg-muted/60 font-semibold hover:bg-muted/60 [&_td]:border-t-2">
+                  <TableCell className="sticky left-0 z-10 bg-muted">Grand total</TableCell>
+                  {compact ? (
+                    <TableCell colSpan={4} />
+                  ) : (
+                    <>
+                      <TableCell colSpan={9} />
+                      <TableCell className="tnum text-right">{formatMoney(round2(report.data.totals.revenue))}</TableCell>
+                      <TableCell colSpan={2} />
+                    </>
+                  )}
+                  {compact ? <TableCell /> : null}
                   <TableCell className={cn("tnum text-right", report.data.totals.varianceCost < 0 && "text-destructive")}>
                     {formatMoney(round2(report.data.totals.varianceCost))}
                   </TableCell>
@@ -383,14 +414,22 @@ function VerdictStrip({ report, begin, end }: { report: Report; begin: string; e
   );
 }
 
-function CategoryRows({ group, onDrill }: { group: Group; onDrill: (item: { id: string; name: string }) => void }) {
+function CategoryRows({
+  group,
+  onDrill,
+  compact,
+}: {
+  group: Group;
+  onDrill: (item: { id: string; name: string }) => void;
+  compact: boolean;
+}) {
   return (
     <>
       <TableRow className="bg-secondary/60 hover:bg-secondary/60">
-        <TableCell className="sticky left-0 bg-secondary py-1.5 text-xs font-semibold uppercase tracking-wide text-secondary-foreground">
+        <TableCell className="sticky left-0 z-10 bg-secondary py-1.5 text-xs font-semibold uppercase tracking-wide text-secondary-foreground">
           {group.categoryName}
         </TableCell>
-        <TableCell colSpan={14} className="py-1.5" />
+        <TableCell colSpan={compact ? 7 : 14} className="py-1.5" />
       </TableRow>
       {group.rows.map((row) => (
         <TableRow
@@ -409,7 +448,7 @@ function CategoryRows({ group, onDrill }: { group: Group; onDrill: (item: { id: 
           }}
           aria-label={`Open source records for ${row.itemName}`}
         >
-          <TableCell className={cn("sticky left-0", row.flags.short ? SHORT_ROW_STICKY_BG : "bg-background")}>
+          <TableCell className={cn("sticky left-0 z-10", row.flags.short ? SHORT_ROW_STICKY_BG : "bg-background")}>
             <span className="font-medium">{row.itemName}</span>
             {row.flags.missingPrice && (
               <Badge variant="outline" className="ml-2 border-warning-text/40 text-warning-text print:hidden">
@@ -421,19 +460,21 @@ function CategoryRows({ group, onDrill }: { group: Group; onDrill: (item: { id: 
             {n2(row.beginFull)}
             {row.beginOpenEquiv > 0 && <span className="text-muted-foreground"> + {n2(row.beginOpenEquiv)}</span>}
           </TableCell>
-          <TableCell className="tnum text-right">{row.purchased > 0 ? n2(row.purchased) : "—"}</TableCell>
-          <TableCell className="tnum text-right">{row.forfeited > 0 ? n2(row.forfeited) : "—"}</TableCell>
-          <TableCell className="tnum text-right">
-            {row.transferIn === 0 && row.transferOut === 0 ? (
-              "—"
-            ) : (
-              <>
-                {row.transferIn > 0 && `+${n2(row.transferIn)}`}
-                {row.transferIn > 0 && row.transferOut > 0 && " "}
-                {row.transferOut > 0 && <span className="text-muted-foreground">−{n2(row.transferOut)}</span>}
-              </>
-            )}
-          </TableCell>
+          {!compact && <TableCell className="tnum text-right">{row.purchased > 0 ? n2(row.purchased) : "—"}</TableCell>}
+          {!compact && <TableCell className="tnum text-right">{row.forfeited > 0 ? n2(row.forfeited) : "—"}</TableCell>}
+          {!compact && (
+            <TableCell className="tnum text-right">
+              {row.transferIn === 0 && row.transferOut === 0 ? (
+                "—"
+              ) : (
+                <>
+                  {row.transferIn > 0 && `+${n2(row.transferIn)}`}
+                  {row.transferIn > 0 && row.transferOut > 0 && " "}
+                  {row.transferOut > 0 && <span className="text-muted-foreground">−{n2(row.transferOut)}</span>}
+                </>
+              )}
+            </TableCell>
+          )}
           <TableCell className="tnum text-right">
             {n2(row.endFull)}
             {row.endOpenEquiv > 0 && <span className="text-muted-foreground"> + {n2(row.endOpenEquiv)}</span>}
@@ -449,15 +490,19 @@ function CategoryRows({ group, onDrill }: { group: Group; onDrill: (item: { id: 
               "—"
             )}
           </TableCell>
-          <TableCell className="tnum text-right">{row.nonRevenue > 0 ? n2(row.nonRevenue) : "—"}</TableCell>
-          <TableCell className="tnum text-right">{row.production > 0 ? n2(row.production) : "—"}</TableCell>
-          <TableCell className="tnum text-right">{row.revenue > 0 ? formatMoney(round2(row.revenue)) : "—"}</TableCell>
+          {!compact && <TableCell className="tnum text-right">{row.nonRevenue > 0 ? n2(row.nonRevenue) : "—"}</TableCell>}
+          {!compact && <TableCell className="tnum text-right">{row.production > 0 ? n2(row.production) : "—"}</TableCell>}
+          {!compact && (
+            <TableCell className="tnum text-right">{row.revenue > 0 ? formatMoney(round2(row.revenue)) : "—"}</TableCell>
+          )}
           <TableCell className={cn("tnum border-l text-right font-medium", row.flags.short && "text-destructive")}>
             {n2(row.variance)}
           </TableCell>
-          <TableCell className={cn("tnum text-right", row.flags.short && "text-destructive")}>
-            {row.variancePct === null ? "—" : `${n2(row.variancePct)}%`}
-          </TableCell>
+          {!compact && (
+            <TableCell className={cn("tnum text-right", row.flags.short && "text-destructive")}>
+              {row.variancePct === null ? "—" : `${n2(row.variancePct)}%`}
+            </TableCell>
+          )}
           <TableCell className={cn("tnum text-right", row.varianceCost < 0 && "text-destructive")}>
             {formatMoney(round2(row.varianceCost))}
           </TableCell>

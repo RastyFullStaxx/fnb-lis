@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { allowedProductTypes } from "@fnb/core";
+import { allowedProductTypes, NON_REVENUE_GROUPS, type NonRevenueGroup } from "@fnb/core";
 import { AppError } from "../lib/errors";
 import { requirePermission, type AppEnv } from "../middleware/auth";
 import { buildFullAudit, committedCountDates } from "../services/report-assembly";
@@ -11,6 +11,7 @@ import {
   purchaseReport,
   salesReport,
   transferReport,
+  type SalesReportView,
 } from "../services/report-lists";
 import {
   costAnalysisCsv,
@@ -34,6 +35,16 @@ import { getCompanyInfo } from "./settings";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const exportGuard = requirePermission("reports.export");
+
+/** Whitelist ?view= for the sales report; anything else means the default. */
+function salesView(raw: string | undefined): SalesReportView {
+  return raw === "discounted" || raw === "production" ? raw : "sales";
+}
+
+/** Whitelist ?group= for the non-revenue report; unknown values mean "all". */
+function nrGroup(raw: string | undefined): NonRevenueGroup | undefined {
+  return (NON_REVENUE_GROUPS as readonly string[]).includes(raw ?? "") ? (raw as NonRevenueGroup) : undefined;
+}
 
 const XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
@@ -137,21 +148,22 @@ export const reportRoutes = new Hono<AppEnv>()
     return xlsxResponse(await costAnalysisWorkbook(report, await meta(client, location.name, user)), name);
   })
 
-  // ── Sales ──
+  // ── Sales (views: sales | discounted | production — client req 2026-07-20) ──
   .get("/reports/sales", async (c) => {
     const location = c.get("location");
     const { from, to } = requireRange(c);
     const allowed = allowedProductTypes(c.get("locationModules"));
-    return c.json(await salesReport(location.id, from, to, allowed));
+    return c.json(await salesReport(location.id, from, to, allowed, salesView(c.req.query("view"))));
   })
   .get("/reports/sales/export", exportGuard, async (c) => {
     const location = c.get("location");
     const client = c.get("client");
     const { from, to } = requireRange(c);
     const allowed = allowedProductTypes(c.get("locationModules"));
-    const report = await salesReport(location.id, from, to, allowed);
+    const view = salesView(c.req.query("view"));
+    const report = await salesReport(location.id, from, to, allowed, view);
     const user = c.get("user")!;
-    const name = `sales_${location.name}_${from}_${to}`.replace(/[^\w.-]+/g, "-");
+    const name = `${view}_${location.name}_${from}_${to}`.replace(/[^\w.-]+/g, "-");
     if (c.req.query("format") === "csv") return csvResponse(salesCsv(report), name, fullName(user));
     return xlsxResponse(await salesWorkbook(report, await meta(client, location.name, user)), name);
   })
@@ -175,21 +187,22 @@ export const reportRoutes = new Hono<AppEnv>()
     return xlsxResponse(await purchaseWorkbook(report, await meta(client, location.name, user)), name);
   })
 
-  // ── Non-revenue ──
+  // ── Non-revenue (optional ?group= bucket — client req 2026-07-20) ──
   .get("/reports/non-revenue", async (c) => {
     const location = c.get("location");
     const { from, to } = requireRange(c);
     const allowed = allowedProductTypes(c.get("locationModules"));
-    return c.json(await nonRevenueReport(location.id, from, to, allowed));
+    return c.json(await nonRevenueReport(location.id, from, to, allowed, nrGroup(c.req.query("group"))));
   })
   .get("/reports/non-revenue/export", exportGuard, async (c) => {
     const location = c.get("location");
     const client = c.get("client");
     const { from, to } = requireRange(c);
     const allowed = allowedProductTypes(c.get("locationModules"));
-    const report = await nonRevenueReport(location.id, from, to, allowed);
+    const group = nrGroup(c.req.query("group"));
+    const report = await nonRevenueReport(location.id, from, to, allowed, group);
     const user = c.get("user")!;
-    const name = `non-revenue_${location.name}_${from}_${to}`.replace(/[^\w.-]+/g, "-");
+    const name = `${group ? group.toLowerCase() : "non-revenue"}_${location.name}_${from}_${to}`.replace(/[^\w.-]+/g, "-");
     if (c.req.query("format") === "csv") return csvResponse(nonRevenueCsv(report), name, fullName(user));
     return xlsxResponse(await nonRevenueWorkbook(report, await meta(client, location.name, user)), name);
   })

@@ -139,11 +139,13 @@ export interface DrillRecord {
 
 // ── Hooks ──
 
-export function useSalesReport(from: string, to: string, enabled = true) {
+export type SalesReportView = "sales" | "discounted" | "production";
+
+export function useSalesReport(from: string, to: string, view: SalesReportView = "sales", enabled = true) {
   const locationId = useLocationId();
   return useQuery({
-    queryKey: ["report", "sales", locationId, from, to],
-    queryFn: () => api<SalesReport>(`${base(locationId)}/reports/sales?from=${from}&to=${to}`),
+    queryKey: ["report", "sales", locationId, from, to, view],
+    queryFn: () => api<SalesReport>(`${base(locationId)}/reports/sales?from=${from}&to=${to}&view=${view}`),
     enabled: enabled && Boolean(from && to),
   });
 }
@@ -157,11 +159,14 @@ export function usePurchaseReport(from: string, to: string, enabled = true) {
   });
 }
 
-export function useNonRevenueReport(from: string, to: string, enabled = true) {
+export function useNonRevenueReport(from: string, to: string, group?: string, enabled = true) {
   const locationId = useLocationId();
   return useQuery({
-    queryKey: ["report", "non-revenue", locationId, from, to],
-    queryFn: () => api<NonRevenueReport>(`${base(locationId)}/reports/non-revenue?from=${from}&to=${to}`),
+    queryKey: ["report", "non-revenue", locationId, from, to, group ?? "all"],
+    queryFn: () =>
+      api<NonRevenueReport>(
+        `${base(locationId)}/reports/non-revenue?from=${from}&to=${to}${group ? `&group=${group}` : ""}`,
+      ),
     enabled: enabled && Boolean(from && to),
   });
 }

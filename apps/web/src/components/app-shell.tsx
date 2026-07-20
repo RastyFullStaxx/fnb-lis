@@ -105,7 +105,10 @@ function ShellLayout({ me, current }: { me: MeResponse; current: CurrentLocation
         <SidebarHeader>
           <LocationSwitcher me={me} current={current} />
         </SidebarHeader>
-        <SidebarContent>
+        {/* gap-0 + tightened groups: the full admin nav (3 groups, 14 items)
+            must fit a 13" laptop (~780px of content height at the large font
+            preference) without scrolling. scrollbar-thin is the fallback. */}
+        <SidebarContent className="scrollbar-thin gap-0">
           <NavGroup items={mainNav} current={current} label="Operations" />
           {catalogNav.length > 0 && <NavGroup items={catalogNav} current={current} label="Catalog" />}
           {adminNav.length > 0 && <NavGroup items={adminNav} current={current} label="Administration" />}
@@ -139,16 +142,18 @@ function NavGroup({
 }) {
   const { pathname } = useLocation();
   return (
-    <SidebarGroup>
-      <SidebarGroupLabel>{label}</SidebarGroupLabel>
+    <SidebarGroup className="py-0.5">
+      <SidebarGroupLabel className="h-6">{label}</SidebarGroupLabel>
       <SidebarGroupContent>
-        <SidebarMenu>
+        <SidebarMenu className="gap-0">
           {items.map((item) => {
             const href = `/l/${current.id}/${item.path}`;
             const active = pathname.startsWith(href);
             return (
               <SidebarMenuItem key={item.path}>
-                <SidebarMenuButton asChild isActive={active} tooltip={item.title}>
+                {/* py-1.5 keeps 14 items + 3 group labels inside a 13" laptop
+                    viewport at the large font preference; 32px+ hit area holds. */}
+                <SidebarMenuButton asChild isActive={active} tooltip={item.title} className="py-1.5">
                   <Link to={href}>
                     <item.icon />
                     <span>{item.title}</span>
