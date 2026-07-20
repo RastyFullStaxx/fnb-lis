@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { ArrowLeftRight, BarChart3, Boxes, PieChart, Receipt, ShoppingCart, Wine } from "lucide-react";
+import { ArrowLeftRight, BarChart3, Boxes, PieChart, Receipt, ShoppingCart, TrendingUp, Wine } from "lucide-react";
 import { useLocationId } from "@/api/location";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,6 +19,7 @@ const REPORTS = [
   { path: "transfers", icon: ArrowLeftRight, title: "Transfers", description: "Stock sent to and received from this client's other locations, at cost and retail.", ready: true },
   { path: "cost-analysis", icon: PieChart, title: "Cost Analysis", description: "Beverage and food cost: beginning + purchases − ending, as a share of sales.", ready: true },
   { path: "on-hand", icon: Boxes, title: "Inventory on hand", description: "Computed current stock with cost and retail valuation.", ready: true },
+  { path: "top-sellers", icon: TrendingUp, title: "Top Sellers", description: "Best-selling items, menus, and ingredients by quantity or revenue.", ready: true },
 ];
 
 export function ReportsPage() {

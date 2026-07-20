@@ -12,6 +12,7 @@ import {
   salesReport,
   transferReport,
 } from "../services/report-lists";
+import { topSellersReport } from "../services/top-sellers";
 import {
   costAnalysisCsv,
   costAnalysisWorkbook,
@@ -25,6 +26,8 @@ import {
   purchaseWorkbook,
   salesCsv,
   salesWorkbook,
+  topSellersCsv,
+  topSellersWorkbook,
   transferCsv,
   transferWorkbook,
   exportStamp,
@@ -230,6 +233,27 @@ export const reportRoutes = new Hono<AppEnv>()
     const name = `on-hand_${location.name}_${report.lastCountDate ?? "current"}`.replace(/[^\w.-]+/g, "-");
     if (c.req.query("format") === "csv") return csvResponse(onHandCsv(report), name, fullName(user));
     return xlsxResponse(await onHandWorkbook(report, await meta(client, location.name, user)), name);
+  })
+
+  // ── Top Sellers (replaces legacy Graph report) ──
+  .get("/reports/top-sellers", async (c) => {
+    const location = c.get("location");
+    const { from, to } = requireRange(c);
+    const limitParam = parseInt(c.req.query("limit") ?? "10", 10);
+    const limit = [10, 25, 50].includes(limitParam) ? limitParam : 10;
+    const allowed = allowedProductTypes(c.get("locationModules"));
+    return c.json(await topSellersReport(location.id, from, to, allowed, limit));
+  })
+  .get("/reports/top-sellers/export", exportGuard, async (c) => {
+    const location = c.get("location");
+    const client = c.get("client");
+    const { from, to } = requireRange(c);
+    const allowed = allowedProductTypes(c.get("locationModules"));
+    const report = await topSellersReport(location.id, from, to, allowed);
+    const user = c.get("user")!;
+    const name = `top-sellers_${location.name}_${from}_${to}`.replace(/[^\w.-]+/g, "-");
+    if (c.req.query("format") === "csv") return csvResponse(topSellersCsv(report), name, fullName(user));
+    return xlsxResponse(await topSellersWorkbook(report, await meta(client, location.name, user)), name);
   })
 
   // Back-compat: the stock page reads on-hand quantities here.

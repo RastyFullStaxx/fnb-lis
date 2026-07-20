@@ -22,6 +22,7 @@ import { NonRevenueReportPage } from "./pages/reports/non-revenue";
 import { TransferReportPage } from "./pages/reports/transfers";
 import { CostAnalysisPage } from "./pages/reports/cost-analysis";
 import { OnHandReportPage } from "./pages/reports/on-hand";
+import { TopSellersPage } from "./pages/reports/top-sellers";
 import { RecipesPage } from "./pages/recipes";
 import { ImportsPage } from "./pages/imports";
 import { ImportReviewPage } from "./pages/imports/review";
@@ -60,6 +61,7 @@ export const router = createBrowserRouter([
       { path: "reports/transfers", element: <TransferReportPage /> },
       { path: "reports/cost-analysis", element: <CostAnalysisPage /> },
       { path: "reports/on-hand", element: <OnHandReportPage /> },
+      { path: "reports/top-sellers", element: <TopSellersPage /> },
       { path: "reports/*", element: <ComingSoonPage title="This report" phase={5} /> },
       { path: "items", element: <ItemsPage /> },
       { path: "suppliers", element: <SuppliersPage /> },
