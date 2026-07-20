@@ -38,6 +38,7 @@ export function TransferReportPage() {
           <ExportButtons
             xlsxUrl={exportUrl(locationId, "transfers", "xlsx", { from, to, direction })}
             csvUrl={exportUrl(locationId, "transfers", "csv", { from, to, direction })}
+            pdfUrl={exportUrl(locationId, "transfers", "pdf", { from, to, direction })}
             disabled={!report.data?.rows.length}
           />
         }

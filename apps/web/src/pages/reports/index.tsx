@@ -1,5 +1,18 @@
 import { Link } from "react-router";
-import { ArrowLeftRight, BarChart3, Boxes, PieChart, Receipt, ShoppingCart, TrendingUp, Wine } from "lucide-react";
+import {
+  ArrowLeftRight,
+  BarChart3,
+  Boxes,
+  Coins,
+  Gauge,
+  GlassWater,
+  PieChart,
+  Receipt,
+  ShoppingCart,
+  TrendingUp,
+  Undo2,
+  Wine,
+} from "lucide-react";
 import { useLocationId } from "@/api/location";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,6 +38,34 @@ const REPORTS = [
     icon: BarChart3,
     title: "Variance Report",
     description: "Only the items that missed or beat expectation, at cost and retail.",
+    ready: true,
+  },
+  {
+    path: "sales-by-item",
+    icon: GlassWater,
+    title: "Sales by Item (Shot & Bottle)",
+    description: "Per-item shot and bottle sales for an audit period, with cost of sold and revenue.",
+    ready: true,
+  },
+  {
+    path: "cost-snapshot",
+    icon: Coins,
+    title: "Beginning / Ending Cost",
+    description: "Counted stock on an audit date, valued at the average purchase cost.",
+    ready: true,
+  },
+  {
+    path: "usage-cost",
+    icon: Gauge,
+    title: "Usage Cost",
+    description: "What each item's consumption cost for an audit period.",
+    ready: true,
+  },
+  {
+    path: "forfeits",
+    icon: Undo2,
+    title: "Forfeited Bottles",
+    description: "Returned bottles and their open content, valued at cost and retail.",
     ready: true,
   },
 ];

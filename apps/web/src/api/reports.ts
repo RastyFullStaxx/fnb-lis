@@ -46,13 +46,15 @@ export interface NonRevenueReport {
   rows: Array<{
     saleDate: string;
     name: string;
+    uom: string | null;
     reason: string;
     qty: number;
     contentOverride: number | null;
     estimatedCost: number | null;
+    estimatedRetail: number | null;
   }>;
   byReason: Array<{ reason: string; count: number; qty: number; cost: number }>;
-  totals: { count: number; qty: number; cost: number };
+  totals: { count: number; qty: number; cost: number; retail: number };
 }
 
 export interface OnHandReport {
@@ -255,10 +257,103 @@ export function useTopSellersReport(from?: string, to?: string, limit?: number) 
 /** Export URL builder — used with downloadFile(). */
 export function exportUrl(
   locationId: string,
-  report: "full-audit" | "sales" | "purchases" | "non-revenue" | "on-hand" | "transfers" | "cost-analysis" | "top-sellers",
-  format: "xlsx" | "csv",
+  report:
+    | "full-audit"
+    | "sales"
+    | "purchases"
+    | "non-revenue"
+    | "on-hand"
+    | "transfers"
+    | "cost-analysis"
+    | "top-sellers"
+    | "legacy-audit"
+    | "cost-snapshot"
+    | "forfeits"
+    | "usage-cost"
+    | "sales-by-item",
+  format: "xlsx" | "csv" | "pdf",
   params: Record<string, string> = {},
 ): string {
   const qs = new URLSearchParams({ ...params, format });
   return `${base(locationId)}/reports/${report}/export?${qs}`;
+}
+
+// ── Client report suite (docs/client-report-formats.md) ──
+
+export interface CostSnapshotReport {
+  anchorDate: string;
+  rows: Array<{
+    name: string;
+    uom: string;
+    qty: number;
+    cost: number;
+    value: number;
+    basis: "average" | "price";
+  }>;
+  totals: { qty: number; value: number };
+}
+
+export function useCostSnapshotReport(anchor?: string) {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["report", "cost-snapshot", locationId, anchor],
+    queryFn: () => api<CostSnapshotReport>(`${base(locationId)}/reports/cost-snapshot?anchor=${anchor}`),
+    enabled: Boolean(anchor),
+  });
+}
+
+export interface ForfeitsReport {
+  from: string;
+  to: string;
+  rows: Array<{
+    date: string;
+    name: string;
+    uom: string;
+    qty: number;
+    contentEquiv: number;
+    costValue: number;
+    retailValue: number;
+  }>;
+  totals: { qty: number; contentEquiv: number; costValue: number; retailValue: number };
+}
+
+export function useForfeitsReport(from: string, to: string) {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["report", "forfeits", locationId, from, to],
+    queryFn: () => api<ForfeitsReport>(`${base(locationId)}/reports/forfeits?from=${from}&to=${to}`),
+    enabled: Boolean(from && to),
+  });
+}
+
+export interface UsageCostReport {
+  begin: string;
+  end: string;
+  rows: Array<{ name: string; uom: string; qty: number; cost: number }>;
+  totals: { qty: number; cost: number };
+}
+
+export function useUsageCostReport(begin?: string, end?: string) {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["report", "usage-cost", locationId, begin, end],
+    queryFn: () => api<UsageCostReport>(`${base(locationId)}/reports/usage-cost?begin=${begin}&end=${end}`),
+    enabled: Boolean(begin && end),
+  });
+}
+
+export interface SalesByItemReport {
+  begin: string;
+  end: string;
+  rows: Array<{ name: string; uom: string; shot: number; bottle: number; qty: number; cost: number; retail: number }>;
+  totals: { shot: number; bottle: number; qty: number; cost: number; retail: number };
+}
+
+export function useSalesByItemReport(begin?: string, end?: string) {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["report", "sales-by-item", locationId, begin, end],
+    queryFn: () => api<SalesByItemReport>(`${base(locationId)}/reports/sales-by-item?begin=${begin}&end=${end}`),
+    enabled: Boolean(begin && end),
+  });
 }

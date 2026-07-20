@@ -67,6 +67,7 @@ export function SalesReportPage() {
           <ExportButtons
             xlsxUrl={exportUrl(locationId, "sales", "xlsx", { from, to, view })}
             csvUrl={exportUrl(locationId, "sales", "csv", { from, to, view })}
+            pdfUrl={exportUrl(locationId, "sales", "pdf", { from, to, view })}
             disabled={!report.data?.rows.length}
           />
         }

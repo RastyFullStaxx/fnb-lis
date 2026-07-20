@@ -218,6 +218,35 @@ fixes applied across every page group. The headline pieces:
   feature + palette `?q=` seeding) and fixed the type errors in the teammate's `menus.ts`
   copy-from-location route. Teammate's Top Sellers report noted and left as-is.
 
+## Phase 11 — Client report suite (2026-07-20, evening)
+
+The client's two sample XLSX files + 11-report list turned into working software in one pass
+(spec + decisions: [client-report-formats.md](client-report-formats.md)):
+
+- **Legacy 24-column layout** (`services/report-suite.ts` → `legacyAuditReport`): one dataset
+  serves both *Detailed Full Audit* and *Inventory Report* (only title + headline cost ratio
+  differ — exactly like the client's own files). All 24 columns project from `ReconRow`
+  (one additive core echo: `purchasedCost` — golden fixture re-verified byte-identical).
+  Formulas verified against the legacy PHP (`fnb-main` reports controller + ACOST procedure)
+  AND regression-tested against the sample files' own numbers. Exported from the Full Audit
+  page's new "Client Formats" menu (XLSX with two-row merged headers / CSV / PDF).
+- **Four new reports** with pages + XLSX/CSV/PDF: Beginning/Ending Cost (weighted-average
+  purchase cost basis with per-row fallback flags), Forfeited Bottles, Usage Cost, and
+  Sales by Item (Shot & Bottle). All are projections — no new reconciliation math.
+- **PDF everywhere**: pdfmake 0.2 generic table renderer (`services/pdf.ts`) + per-report
+  adapters; dedicated PDF button beside Excel/CSV on every report page. Cost Analysis and
+  Top Sellers PDFs deferred (multi-section layouts).
+- **Non-Revenue completed** per client #8: UOM + Est. Retail columns across screen and all
+  exports, plus the **Stock Transfer** fourth tab (transfer-out lines at cost & retail — the
+  legacy presentation of transfers, fed from our first-class Transfer records).
+- **Variance Report** (#10) finished: `?variance=only` now filters the screen AND every export
+  format, with subset totals recomputed from surviving rows.
+- Resolved the teammate's merge conflict (recipes) and their `menus.ts` type errors; Top Sellers
+  kept as-is. Live verification: legacy GRAND TOTAL cross-foots the golden fixture exactly
+  (18,561.50 / 16,699.70 / 7,248.54 / 17,520 / −330.69 / −869.57), averaging basis visibly
+  correct on the Ending Cost page (Absolut ₱615 avg vs ₱620 price), PDFs and XLSX magic bytes
+  verified, typecheck green both workspaces.
+
 ## Contributor history
 
 | Window | Who | What |

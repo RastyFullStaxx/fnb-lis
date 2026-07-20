@@ -63,6 +63,7 @@ export function OnHandReportPage() {
           <ExportButtons
             xlsxUrl={exportUrl(locationId, "on-hand", "xlsx")}
             csvUrl={exportUrl(locationId, "on-hand", "csv")}
+            pdfUrl={exportUrl(locationId, "on-hand", "pdf")}
             disabled={!report.data?.rows.length}
           />
         }

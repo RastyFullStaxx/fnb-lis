@@ -35,6 +35,38 @@ import {
   type ReportMeta,
 } from "../services/exports";
 import { getCompanyInfo } from "./settings";
+import {
+  costSnapshotReport,
+  forfeitsReport,
+  legacyAuditReport,
+  salesByItemReport,
+  usageCostReport,
+  type LegacyAuditVariant,
+} from "../services/report-suite";
+import {
+  costSnapshotCsv,
+  costSnapshotPdf,
+  costSnapshotWorkbook,
+  forfeitsCsv,
+  forfeitsPdf,
+  forfeitsWorkbook,
+  fullAuditPdfDoc,
+  legacyAuditCsv,
+  legacyAuditPdf,
+  legacyAuditTitle,
+  legacyAuditWorkbook,
+  nonRevenuePdfDoc,
+  onHandPdfDoc,
+  purchasePdfDoc,
+  salesByItemCsv,
+  salesByItemPdf,
+  salesByItemWorkbook,
+  salesPdfDoc,
+  transferPdfDoc,
+  usageCostCsv,
+  usageCostPdf,
+  usageCostWorkbook,
+} from "../services/exports-suite";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const exportGuard = requirePermission("reports.export");
@@ -56,6 +88,15 @@ function xlsxResponse(buffer: Buffer, filename: string): Response {
     headers: {
       "Content-Type": XLSX_TYPE,
       "Content-Disposition": `attachment; filename="${filename}.xlsx"`,
+    },
+  });
+}
+
+function pdfResponse(buffer: Buffer, filename: string): Response {
+  return new Response(new Uint8Array(buffer), {
+    headers: {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `attachment; filename="${filename}.pdf"`,
     },
   });
 }
@@ -120,11 +161,149 @@ export const reportRoutes = new Hono<AppEnv>()
     if (!DATE_RE.test(begin) || !DATE_RE.test(end) || end <= begin) throw new AppError(400, "Valid begin < end required");
     const productType = c.req.query("productType") || undefined;
     const allowed = allowedProductTypes(c.get("locationModules"));
-    const report = await buildFullAudit(location.id, begin, end, productType, allowed);
+    let report = await buildFullAudit(location.id, begin, end, productType, allowed);
+    // ?variance=only → the Variance Report (client req #10): only rows that
+    // carry a variance, with subset totals computed from the surviving rows.
+    const varianceOnly = c.req.query("variance") === "only";
+    if (varianceOnly) {
+      const rows = report.rows.filter((r) => r.variance !== 0);
+      const categories = report.categories
+        .map((g) => ({ ...g, rows: g.rows.filter((r) => r.variance !== 0) }))
+        .filter((g) => g.rows.length > 0);
+      const totals = rows.reduce(
+        (t, r) => ({
+          beginCost: t.beginCost + r.beginCost,
+          endCost: t.endCost + r.endCost,
+          usageCost: t.usageCost + r.usageCost,
+          revenue: t.revenue + r.revenue,
+          nonRevenueCost: t.nonRevenueCost + r.nonRevenueCost,
+          varianceCost: t.varianceCost + r.varianceCost,
+          varianceRetail: t.varianceRetail + r.varianceRetail,
+        }),
+        { beginCost: 0, endCost: 0, usageCost: 0, revenue: 0, nonRevenueCost: 0, varianceCost: 0, varianceRetail: 0 },
+      );
+      report = { ...report, rows, categories, totals };
+    }
     const user = c.get("user")!;
-    const name = `full-audit_${location.name}_${begin}_${end}`.replace(/[^\w.-]+/g, "-");
-    if (c.req.query("format") === "csv") return csvResponse(fullAuditCsv(report), name, fullName(user));
+    const base = varianceOnly ? "variance-report" : "full-audit";
+    const name = `${base}_${location.name}_${begin}_${end}`.replace(/[^\w.-]+/g, "-");
+    const format = c.req.query("format");
+    if (format === "csv") return csvResponse(fullAuditCsv(report), name, fullName(user));
+    if (format === "pdf") return pdfResponse(await fullAuditPdfDoc(report, await meta(client, location.name, user), varianceOnly), name);
     return xlsxResponse(await fullAuditWorkbook(report, await meta(client, location.name, user)), name);
+  })
+
+  // ── Legacy-layout audit exports (client reports #1 Detailed / #2 Inventory) ──
+  .get("/reports/legacy-audit/export", exportGuard, async (c) => {
+    const location = c.get("location");
+    const client = c.get("client");
+    const begin = c.req.query("begin") ?? "";
+    const end = c.req.query("end") ?? "";
+    if (!DATE_RE.test(begin) || !DATE_RE.test(end) || end <= begin) throw new AppError(400, "Valid begin < end required");
+    const variant: LegacyAuditVariant = c.req.query("variant") === "inventory" ? "inventory" : "detailed";
+    const allowed = allowedProductTypes(c.get("locationModules"));
+    const report = await legacyAuditReport(location.id, begin, end, allowed, variant);
+    const user = c.get("user")!;
+    const name = `${legacyAuditTitle(variant)}_${location.name}_${begin}_${end}`.replace(/[^\w.-]+/g, "-");
+    const format = c.req.query("format");
+    if (format === "csv") return csvResponse(legacyAuditCsv(report, variant), name, fullName(user));
+    if (format === "pdf") return pdfResponse(await legacyAuditPdf(report, await meta(client, location.name, user), variant), name);
+    return xlsxResponse(await legacyAuditWorkbook(report, await meta(client, location.name, user), variant), name);
+  })
+
+  // ── Cost snapshots (client reports #3 Beginning / #4 Ending) ──
+  .get("/reports/cost-snapshot", async (c) => {
+    const location = c.get("location");
+    const anchor = c.req.query("anchor") ?? "";
+    if (!DATE_RE.test(anchor)) throw new AppError(400, "anchor must be YYYY-MM-DD");
+    const allowed = allowedProductTypes(c.get("locationModules"));
+    return c.json(await costSnapshotReport(location.id, anchor, allowed));
+  })
+  .get("/reports/cost-snapshot/export", exportGuard, async (c) => {
+    const location = c.get("location");
+    const client = c.get("client");
+    const anchor = c.req.query("anchor") ?? "";
+    if (!DATE_RE.test(anchor)) throw new AppError(400, "anchor must be YYYY-MM-DD");
+    const side = c.req.query("side") === "ending" ? "Ending" : "Beginning";
+    const allowed = allowedProductTypes(c.get("locationModules"));
+    const report = await costSnapshotReport(location.id, anchor, allowed);
+    const user = c.get("user")!;
+    const name = `${side.toLowerCase()}-cost_${location.name}_${anchor}`.replace(/[^\w.-]+/g, "-");
+    const format = c.req.query("format");
+    if (format === "csv") return csvResponse(costSnapshotCsv(report, side), name, fullName(user));
+    if (format === "pdf") return pdfResponse(await costSnapshotPdf(report, await meta(client, location.name, user), side), name);
+    return xlsxResponse(await costSnapshotWorkbook(report, await meta(client, location.name, user), side), name);
+  })
+
+  // ── Forfeited Bottles (client report #5) ──
+  .get("/reports/forfeits", async (c) => {
+    const location = c.get("location");
+    const { from, to } = requireRange(c);
+    const allowed = allowedProductTypes(c.get("locationModules"));
+    return c.json(await forfeitsReport(location.id, from, to, allowed));
+  })
+  .get("/reports/forfeits/export", exportGuard, async (c) => {
+    const location = c.get("location");
+    const client = c.get("client");
+    const { from, to } = requireRange(c);
+    const allowed = allowedProductTypes(c.get("locationModules"));
+    const report = await forfeitsReport(location.id, from, to, allowed);
+    const user = c.get("user")!;
+    const name = `forfeited-bottles_${location.name}_${from}_${to}`.replace(/[^\w.-]+/g, "-");
+    const format = c.req.query("format");
+    if (format === "csv") return csvResponse(forfeitsCsv(report), name, fullName(user));
+    if (format === "pdf") return pdfResponse(await forfeitsPdf(report, await meta(client, location.name, user)), name);
+    return xlsxResponse(await forfeitsWorkbook(report, await meta(client, location.name, user)), name);
+  })
+
+  // ── Usage Cost (client report #6) ──
+  .get("/reports/usage-cost", async (c) => {
+    const location = c.get("location");
+    const begin = c.req.query("begin") ?? "";
+    const end = c.req.query("end") ?? "";
+    if (!DATE_RE.test(begin) || !DATE_RE.test(end) || end <= begin) throw new AppError(400, "Valid begin < end required");
+    const allowed = allowedProductTypes(c.get("locationModules"));
+    return c.json(await usageCostReport(location.id, begin, end, allowed));
+  })
+  .get("/reports/usage-cost/export", exportGuard, async (c) => {
+    const location = c.get("location");
+    const client = c.get("client");
+    const begin = c.req.query("begin") ?? "";
+    const end = c.req.query("end") ?? "";
+    if (!DATE_RE.test(begin) || !DATE_RE.test(end) || end <= begin) throw new AppError(400, "Valid begin < end required");
+    const allowed = allowedProductTypes(c.get("locationModules"));
+    const report = await usageCostReport(location.id, begin, end, allowed);
+    const user = c.get("user")!;
+    const name = `usage-cost_${location.name}_${begin}_${end}`.replace(/[^\w.-]+/g, "-");
+    const format = c.req.query("format");
+    if (format === "csv") return csvResponse(usageCostCsv(report), name, fullName(user));
+    if (format === "pdf") return pdfResponse(await usageCostPdf(report, await meta(client, location.name, user)), name);
+    return xlsxResponse(await usageCostWorkbook(report, await meta(client, location.name, user)), name);
+  })
+
+  // ── Sales by Item — shot & bottle (client report #7) ──
+  .get("/reports/sales-by-item", async (c) => {
+    const location = c.get("location");
+    const begin = c.req.query("begin") ?? "";
+    const end = c.req.query("end") ?? "";
+    if (!DATE_RE.test(begin) || !DATE_RE.test(end) || end <= begin) throw new AppError(400, "Valid begin < end required");
+    const allowed = allowedProductTypes(c.get("locationModules"));
+    return c.json(await salesByItemReport(location.id, begin, end, allowed));
+  })
+  .get("/reports/sales-by-item/export", exportGuard, async (c) => {
+    const location = c.get("location");
+    const client = c.get("client");
+    const begin = c.req.query("begin") ?? "";
+    const end = c.req.query("end") ?? "";
+    if (!DATE_RE.test(begin) || !DATE_RE.test(end) || end <= begin) throw new AppError(400, "Valid begin < end required");
+    const allowed = allowedProductTypes(c.get("locationModules"));
+    const report = await salesByItemReport(location.id, begin, end, allowed);
+    const user = c.get("user")!;
+    const name = `sales-by-item_${location.name}_${begin}_${end}`.replace(/[^\w.-]+/g, "-");
+    const format = c.req.query("format");
+    if (format === "csv") return csvResponse(salesByItemCsv(report), name, fullName(user));
+    if (format === "pdf") return pdfResponse(await salesByItemPdf(report, await meta(client, location.name, user)), name);
+    return xlsxResponse(await salesByItemWorkbook(report, await meta(client, location.name, user)), name);
   })
 
   // ── Cost Analysis (combined bar+kitchen, beverage/food cost %) ──
@@ -169,7 +348,9 @@ export const reportRoutes = new Hono<AppEnv>()
     const title =
       view === "discounted" ? "Discounted Sales Report" : view === "production" ? "Production Report" : "Sales Report";
     const name = `${view}_${location.name}_${from}_${to}`.replace(/[^\w.-]+/g, "-");
-    if (c.req.query("format") === "csv") return csvResponse(salesCsv(report, title), name, fullName(user));
+    const format = c.req.query("format");
+    if (format === "csv") return csvResponse(salesCsv(report, title), name, fullName(user));
+    if (format === "pdf") return pdfResponse(await salesPdfDoc(report, await meta(client, location.name, user), title), name);
     return xlsxResponse(await salesWorkbook(report, await meta(client, location.name, user), title), name);
   })
 
@@ -188,7 +369,9 @@ export const reportRoutes = new Hono<AppEnv>()
     const report = await purchaseReport(location.id, from, to, allowed);
     const user = c.get("user")!;
     const name = `purchases_${location.name}_${from}_${to}`.replace(/[^\w.-]+/g, "-");
-    if (c.req.query("format") === "csv") return csvResponse(purchaseCsv(report), name, fullName(user));
+    const format = c.req.query("format");
+    if (format === "csv") return csvResponse(purchaseCsv(report), name, fullName(user));
+    if (format === "pdf") return pdfResponse(await purchasePdfDoc(report, await meta(client, location.name, user)), name);
     return xlsxResponse(await purchaseWorkbook(report, await meta(client, location.name, user)), name);
   })
 
@@ -209,7 +392,9 @@ export const reportRoutes = new Hono<AppEnv>()
     const user = c.get("user")!;
     const title = group ? `Non-Revenue Report — ${NON_REVENUE_GROUP_LABELS[group]}` : "Non-Revenue Report";
     const name = `${group ? group.toLowerCase() : "non-revenue"}_${location.name}_${from}_${to}`.replace(/[^\w.-]+/g, "-");
-    if (c.req.query("format") === "csv") return csvResponse(nonRevenueCsv(report, title), name, fullName(user));
+    const format = c.req.query("format");
+    if (format === "csv") return csvResponse(nonRevenueCsv(report, title), name, fullName(user));
+    if (format === "pdf") return pdfResponse(await nonRevenuePdfDoc(report, await meta(client, location.name, user), title), name);
     return xlsxResponse(await nonRevenueWorkbook(report, await meta(client, location.name, user), title), name);
   })
 
@@ -230,7 +415,9 @@ export const reportRoutes = new Hono<AppEnv>()
     const report = await transferReport(location.id, from, to, direction, allowed);
     const user = c.get("user")!;
     const name = `transfers-${direction}_${location.name}_${from}_${to}`.replace(/[^\w.-]+/g, "-");
-    if (c.req.query("format") === "csv") return csvResponse(transferCsv(report), name, fullName(user));
+    const format = c.req.query("format");
+    if (format === "csv") return csvResponse(transferCsv(report), name, fullName(user));
+    if (format === "pdf") return pdfResponse(await transferPdfDoc(report, await meta(client, location.name, user), direction), name);
     return xlsxResponse(await transferWorkbook(report, await meta(client, location.name, user)), name);
   })
 
@@ -247,7 +434,9 @@ export const reportRoutes = new Hono<AppEnv>()
     const report = await onHandReport(location.id, allowed);
     const user = c.get("user")!;
     const name = `on-hand_${location.name}_${report.lastCountDate ?? "current"}`.replace(/[^\w.-]+/g, "-");
-    if (c.req.query("format") === "csv") return csvResponse(onHandCsv(report), name, fullName(user));
+    const format = c.req.query("format");
+    if (format === "csv") return csvResponse(onHandCsv(report), name, fullName(user));
+    if (format === "pdf") return pdfResponse(await onHandPdfDoc(report, await meta(client, location.name, user)), name);
     return xlsxResponse(await onHandWorkbook(report, await meta(client, location.name, user)), name);
   })
 

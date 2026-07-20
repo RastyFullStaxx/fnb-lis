@@ -37,7 +37,7 @@ export function exportStamp(): string {
 
 /** Branded print footer — company on the left, generated note on the right.
  *  Set on the sheet's headerFooter so it never disturbs the on-sheet layout. */
-function brandFooter(ws: ExcelJS.Worksheet, meta: ReportMeta) {
+export function brandFooter(ws: ExcelJS.Worksheet, meta: ReportMeta) {
   const left = [meta.legalName || meta.clientName, meta.address].filter(Boolean).join(" · ");
   const right = [
     meta.footer || "Prepared with Liquor Inventory Solution",
@@ -48,7 +48,7 @@ function brandFooter(ws: ExcelJS.Worksheet, meta: ReportMeta) {
   ws.headerFooter.oddFooter = `&L&8${left}&R&8${right}`;
 }
 
-function styleHeaderRow(row: ExcelJS.Row) {
+export function styleHeaderRow(row: ExcelJS.Row) {
   row.font = { bold: true, color: { argb: WHITE } };
   row.eachCell((cell) => {
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BLUE } };
@@ -56,7 +56,7 @@ function styleHeaderRow(row: ExcelJS.Row) {
   });
 }
 
-function titleBlock(ws: ExcelJS.Worksheet, title: string, subtitle: string, colCount: number, meta: ReportMeta) {
+export function titleBlock(ws: ExcelJS.Worksheet, title: string, subtitle: string, colCount: number, meta: ReportMeta) {
   const last = String.fromCharCode(64 + colCount);
   ws.mergeCells(`A1:${last}1`);
   ws.getCell("A1").value = title;
@@ -68,21 +68,21 @@ function titleBlock(ws: ExcelJS.Worksheet, title: string, subtitle: string, colC
   brandFooter(ws, meta);
 }
 
-function moneyCell(cell: Cell, value: number, negativeRed = true) {
+export function moneyCell(cell: Cell, value: number, negativeRed = true) {
   cell.value = round2(value);
   cell.numFmt = MONEY;
   cell.alignment = { horizontal: "right" };
   if (negativeRed && value < 0) cell.font = { color: { argb: RED } };
 }
 
-function qtyCell(cell: Cell, value: number, negativeRed = false) {
+export function qtyCell(cell: Cell, value: number, negativeRed = false) {
   cell.value = round2(value);
   cell.numFmt = QTY;
   cell.alignment = { horizontal: "right" };
   if (negativeRed && value < 0) cell.font = { color: { argb: RED } };
 }
 
-async function toBuffer(wb: ExcelJS.Workbook): Promise<Buffer> {
+export async function toBuffer(wb: ExcelJS.Workbook): Promise<Buffer> {
   wb.creator = "Liquor Inventory Solution";
   const ab = await wb.xlsx.writeBuffer();
   return Buffer.from(ab);
@@ -94,7 +94,7 @@ async function toBuffer(wb: ExcelJS.Workbook): Promise<Buffer> {
 // adding/renaming/moving a column is a single-array edit (the old builders
 // addressed cells by hardcoded index, which made any insertion a hazard).
 
-interface FullAuditColumn {
+export interface FullAuditColumn {
   header: string;
   kind: "qty" | "qtyRed" | "money" | "moneyPlain" | "pct";
   value: (r: ReconRow) => number | null;
@@ -102,7 +102,7 @@ interface FullAuditColumn {
   total?: (t: ReconTotals) => number;
 }
 
-const FULL_AUDIT_COLUMNS: FullAuditColumn[] = [
+export const FULL_AUDIT_COLUMNS: FullAuditColumn[] = [
   { header: "Begin full", kind: "qty", value: (r) => r.beginFull },
   { header: "Begin open", kind: "qty", value: (r) => r.beginOpenEquiv },
   { header: "Purchased", kind: "qty", value: (r) => r.purchased },
@@ -208,7 +208,7 @@ export function fullAuditCsv(report: ReconReport): string {
 
 // ───────────────────────── Sales ─────────────────────────
 
-const SALES_HEADERS = ["Date", "Item / Menu", "Type", "Category", "Qty", "Unit price", "Discount %", "Gross", "Net"];
+export const SALES_HEADERS = ["Date", "Item / Menu", "Type", "Category", "Qty", "Unit price", "Discount %", "Gross", "Net"];
 
 export async function salesWorkbook(report: SalesReport, meta: ReportMeta, title = "Sales Report"): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
@@ -248,7 +248,7 @@ export function salesCsv(report: SalesReport, title = "Sales Report"): string {
 
 // ───────────────────────── Purchases ─────────────────────────
 
-const PURCHASE_HEADERS = ["Date", "Supplier", "Ref", "Item", "Category", "Qty", "Unit cost", "Line total"];
+export const PURCHASE_HEADERS = ["Date", "Supplier", "Ref", "Item", "Category", "Qty", "Unit cost", "Line total"];
 
 export async function purchaseWorkbook(report: PurchaseReport, meta: ReportMeta): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
@@ -293,7 +293,7 @@ export function purchaseCsv(report: PurchaseReport): string {
 
 // ───────────────────────── Non-revenue ─────────────────────────
 
-const NONREV_HEADERS = ["Date", "Item / Menu", "Reason", "Qty", "Content/unit", "Est. cost"];
+export const NONREV_HEADERS = ["Date", "Item / Menu", "UOM", "Reason", "Qty", "Content/Unit", "Est. Cost", "Est. Retail"];
 
 export async function nonRevenueWorkbook(
   report: NonRevenueReport,
@@ -305,16 +305,18 @@ export async function nonRevenueWorkbook(
   titleBlock(ws, title, `${meta.clientName} · ${meta.locationName} · ${report.from} → ${report.to}`, NONREV_HEADERS.length, meta);
   styleHeaderRow(ws.addRow(NONREV_HEADERS));
   for (const row of report.rows) {
-    const r = ws.addRow([row.saleDate, row.name, row.reason]);
-    qtyCell(r.getCell(4), row.qty);
-    r.getCell(5).value = row.contentOverride ?? "";
-    r.getCell(5).alignment = { horizontal: "right" };
-    if (row.estimatedCost !== null) moneyCell(r.getCell(6), row.estimatedCost, false);
+    const r = ws.addRow([row.saleDate, row.name, row.uom ?? "", row.reason]);
+    qtyCell(r.getCell(5), row.qty);
+    r.getCell(6).value = row.contentOverride ?? "";
+    r.getCell(6).alignment = { horizontal: "right" };
+    if (row.estimatedCost !== null) moneyCell(r.getCell(7), row.estimatedCost, false);
+    if (row.estimatedRetail !== null) moneyCell(r.getCell(8), row.estimatedRetail, false);
   }
-  const t = ws.addRow(["Total", "", ""]);
+  const t = ws.addRow(["Total", "", "", ""]);
   t.font = { bold: true };
-  qtyCell(t.getCell(4), report.totals.qty);
-  moneyCell(t.getCell(6), report.totals.cost, false);
+  qtyCell(t.getCell(5), report.totals.qty);
+  moneyCell(t.getCell(7), report.totals.cost, false);
+  moneyCell(t.getCell(8), report.totals.retail, false);
 
   ws.addRow([]);
   const rh = ws.addRow(["By reason", "Count", "Qty", "Est. cost"]);
@@ -326,22 +328,26 @@ export async function nonRevenueWorkbook(
   }
   ws.getColumn(1).width = 14;
   ws.getColumn(2).width = 30;
-  for (const i of [3, 4, 5, 6]) ws.getColumn(i).width = 13;
+  for (const i of [3, 4, 5, 6, 7, 8]) ws.getColumn(i).width = 13;
   return toBuffer(wb);
 }
 
 export function nonRevenueCsv(report: NonRevenueReport, title = "Non-Revenue Report"): string {
   const rows: CsvValue[][] = [[`${title} · ${report.from} → ${report.to}`], NONREV_HEADERS];
   for (const row of report.rows) {
-    rows.push([row.saleDate, row.name, row.reason, round2(row.qty), row.contentOverride ?? "", row.estimatedCost === null ? "" : round2(row.estimatedCost)]);
+    rows.push([
+      row.saleDate, row.name, row.uom ?? "", row.reason, round2(row.qty), row.contentOverride ?? "",
+      row.estimatedCost === null ? "" : round2(row.estimatedCost),
+      row.estimatedRetail === null ? "" : round2(row.estimatedRetail),
+    ]);
   }
-  rows.push(["Total", "", "", round2(report.totals.qty), "", round2(report.totals.cost)]);
+  rows.push(["Total", "", "", "", round2(report.totals.qty), "", round2(report.totals.cost), round2(report.totals.retail)]);
   return toCsv(rows);
 }
 
 // ───────────────────────── Inventory on hand ─────────────────────────
 
-const ONHAND_HEADERS = ["Item", "Category", "Type", "On hand", "Cost", "Retail", "Cost value", "Retail value"];
+export const ONHAND_HEADERS = ["Item", "Category", "Type", "On hand", "Cost", "Retail", "Cost value", "Retail value"];
 
 export async function onHandWorkbook(report: OnHandReport, meta: ReportMeta): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
@@ -475,7 +481,7 @@ export function costAnalysisCsv(report: CostAnalysisReport): string {
 
 // ───────────────────────── Transfers ─────────────────────────
 
-const TRANSFER_HEADERS = ["Date", "Location", "Item", "Category", "Sent", "Received", "Unit cost", "At cost", "At retail"];
+export const TRANSFER_HEADERS = ["Date", "Location", "Item", "Category", "Sent", "Received", "Unit cost", "At cost", "At retail"];
 
 export async function transferWorkbook(report: TransferReport, meta: ReportMeta): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();

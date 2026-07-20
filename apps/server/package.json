@@ -23,11 +23,13 @@
     "exceljs": "^4.4.0",
     "hono": "^4.12.27",
     "papaparse": "^5.5.4",
+    "pdfmake": "^0.2.23",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^26.1.0",
     "@types/papaparse": "^5.5.2",
+    "@types/pdfmake": "^0.2.13",
     "prisma": "^7.8.0",
     "tsx": "^4.22.5",
     "typescript": "^6.0.3"

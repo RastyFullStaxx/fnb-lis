@@ -93,6 +93,9 @@ export interface ReconRow {
   beginOpenEquiv: number;
   beginCost: number;
   purchased: number;
+  /** Actual peso total of the period's purchase lines — an INPUT echo for
+      report layouts (legacy "Cost of Purchase" column); no math reads it. */
+  purchasedCost: number;
   forfeited: number;
   transferIn: number;
   transferOut: number;
@@ -177,6 +180,7 @@ export function reconcileItem(input: ReconItemInput): ReconRow {
     beginOpenEquiv,
     beginCost,
     purchased: input.purchasedQty,
+    purchasedCost: input.purchasedCost,
     forfeited,
     transferIn,
     transferOut,

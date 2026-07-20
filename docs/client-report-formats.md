@@ -40,28 +40,36 @@ row and a blank spacer between groups. Two-row header:
 (−47) + Non-Rev Usage (20)`. Legacy shows the sales-only gap first, then adds non-rev back.
 Our `variance` equals their **Overall** column; their col 18 = `variance − nonRevenue`
 (sign-check against `fnb-main` before shipping).
+## The 11-report list → status (BUILT 2026-07-20, second half)
 
-## The 11-report list → status
-
-| # | Report | Status / source |
+| # | Report | Status |
 |---|---|---|
-| 1 | Full Detailed Audit Report | Layout above; ~90% is existing `ReconRow` data. Needs: purchasedCost echo, Cost-of-Sold formula, legacy-layout export |
-| 2 | Inventory Report | SAME table; title + headline ratio differ. One builder, two titles |
-| 3 | Beginning Cost Report (item, uom, qty, cost) | New; **cost = averaged purchase price** — methodology differs from our count-time snapshots. Needs sign-off (deviation candidate) |
-| 4 | Ending Cost Report | Same as #3, ending side |
-| 5 | Forfeited Bottles Report (qty, cost, retail) | New simple listing from `Forfeit` records |
-| 6 | Usage Cost Report (item, uom, qty, cost) | Projection of recon rows (usage, usageCost) |
-| 7 | Sales Report — shot and bottle, cost AND retail | Ours exists; needs shot/bottle split + cost column |
-| 8 | Non-Revenue breakdown: Spoilage & Spillage / Trimmings / OTH & Marketing / **Stock Transfer** | Buckets shipped 2026-07-20 ✅; **Stock Transfer as a 4th group** = transfers presented in NR clothing (legacy recorded transfers as non-rev inputs; ours are first-class) — add a Stock Transfers tab fed from TransferLine |
-| 9 | Production Report (bar + kitchen) with cost and retail | View shipped ✅; needs cost/retail columns |
-| 10 | Variance Report (only items WITH variance) cost + retail | UI filter shipped ✅ (`Variance Only`); needs hub card + variance-only export |
-| 11 | Requisition Report (transfer out → in, cost & retail) | ✅ Our Transfers report IS this; consider "Requisition" alias in the UI |
-| — | All reports: grand total cost + retail; Excel / **PDF** / CSV | Excel+CSV exist. **PDF is new** — decide: print-stylesheet route (browser Save-as-PDF, cheap) vs server-side rendering (heavy). Recommend print-first |
-| — | Graphs: keep legacy's, add ideas from StockLedger prototype | Analytics layer shipped 2026-07-20 (trends, verdict strip, per-report charts); mine `C:\xampp\htdocs\StockLedger` for more |
+| 1 | Full Detailed Audit Report | ✅ 24-col legacy layout (XLSX two-row merged header + CSV + PDF) via legacyAuditReport → Full Audit page “Client Formats” menu. GRAND TOTAL cross-foots with recon totals |
+| 2 | Inventory Report | ✅ Same builder, variant=inventory — title + cost-of-usage/revenue ratio |
+| 3 | Beginning Cost Report | ✅ cost-snapshot (side=beginning): weighted avg of committed purchases ≤ anchor date; per-row basis flag; fallback = cost price (legacy ACOST behaviour) |
+| 4 | Ending Cost Report | ✅ Same page/endpoint, side=ending |
+| 5 | Forfeited Bottles Report | ✅ forfeits page + exports: qty, open-content equiv, at cost & retail |
+| 6 | Usage Cost Report | ✅ usage-cost page + exports (projection of recon usage/usageCost) |
+| 7 | Sales Report — shot & bottle with cost and retail | ✅ sales-by-item page + exports: Shot=soldPortion, Bottle=soldDirect, Cost of Sold=(shot+bottle)×costBasis |
+| 8 | Non-Revenue breakdown incl. Stock Transfer | ✅ Bucket tabs + Stock Transfer 4th tab (transfer-out lines at cost & retail); NR rows gained UOM + Est. Retail columns everywhere (screen, XLSX, CSV, PDF) |
+| 9 | Production Report with cost and retail | ✅ Sales view tab (transaction-level); per-item cost/retail carried by the legacy layout |
+| 10 | Variance Report | ✅ Hub card; ?variance=only filters screen AND all three export formats with honest subset totals |
+| 11 | Requisition Report | ✅ Transfers report (hub card labeled “Transfers (Requisition)”) |
+| — | Grand totals cost+retail; Excel / PDF / CSV | ✅ Dedicated PDF on every report (server-side pdfmake, Helvetica std fonts, exported-by footer). PDF still pending on Cost Analysis & Top Sellers (multi-section layouts) |
+| — | Graphs | ✅ Analytics layer + teammate’s Top Sellers; mine StockLedger for more ideas next round |
 
-## Open decisions for the client
+## Decisions taken (2026-07-20, per Rasty: “decide and tell me”)
 
-1. **Averaged purchase cost** (#3/#4) vs our snapshot costs — changes numbers; needs explicit OK.
-2. **Cost of Sold formula** — confirm from legacy code (`fnb-main`), not guessed.
-3. **PDF**: is browser print-to-PDF acceptable (recommended), or must the server emit PDFs?
-4. Shot = recipe-portion sales, Bottle = full-unit sales — confirm mapping matches their POS habits.
+1. **Cost basis for #3/#4 — weighted average of all committed purchases up to the anchor count
+   date, falling back to the item’s cost price where no purchase history exists.** The legacy
+   ACOST procedure used plain qty × default_cost; the client’s “averaging price in the purchased”
+   describes how they maintain that cost by hand. We implemented the averaging for real, flag
+   every row with its basis, and print the basis on the report. Used ONLY in these two reports —
+   reconciliation math untouched.
+2. **Cost of Sold = (shot + bottle) × unit cost basis.** Verified three ways: regression on both
+   sample files’ own numbers (Jack Daniels, Benchmark rows), the legacy controller’s
+   usage × default_cost pattern, and our recon’s costBasis.
+3. **PDF = dedicated server-side button** (client’s choice): pdfmake 0.2, standard-14 Helvetica
+   (WinAnsi has no ₱ glyph → money columns carry “(PHP)” headers), landscape auto for wide
+   tables, exported-by + page-count footer.
+4. **Shot = recipe-portion sales; Bottle = full-unit sales** (client confirmed).

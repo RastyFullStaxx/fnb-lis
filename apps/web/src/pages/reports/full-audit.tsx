@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
-import { BarChart3, Info } from "lucide-react";
-import { round2 } from "@fnb/core";
+import { BarChart3, ChevronDown, FileDown, Info } from "lucide-react";
+import { can, round2, type Role } from "@fnb/core";
+import { toast } from "sonner";
 import { useMe } from "@/api/auth";
 import { useCountDates, useFullAudit } from "@/api/ops";
 import { useLocationId } from "@/api/location";
 import { useProductTypes } from "@/api/master";
 import { useCompanyInfo } from "@/api/settings";
 import { exportUrl, useFullAuditDrill } from "@/api/reports";
+import { ApiError, downloadFile } from "@/api/http";
 import { formatMoney } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
@@ -24,6 +26,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -148,19 +159,41 @@ export function FullAuditPage() {
     );
   }
 
-  const exportParams = { begin: effectiveBegin ?? "", end: effectiveEnd ?? "", ...(productType !== ALL ? { productType } : {}) };
+  // Exports mirror the on-screen filters: with "Variance Only" armed, the
+  // downloaded file is the Variance Report (client req #10).
+  const exportParams = {
+    begin: effectiveBegin ?? "",
+    end: effectiveEnd ?? "",
+    ...(productType !== ALL ? { productType } : {}),
+    ...(varianceOnly ? { variance: "only" } : {}),
+  };
+  const legacyParams = { begin: effectiveBegin ?? "", end: effectiveEnd ?? "" };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col print:block">
       <PageHeader
         title="Full Audit"
         actions={
-          <ExportButtons
-            xlsxUrl={exportUrl(locationId, "full-audit", "xlsx", exportParams)}
-            csvUrl={exportUrl(locationId, "full-audit", "csv", exportParams)}
-            onPrint={() => window.print()}
-            disabled={!report.data?.rows.length}
-          />
+          <>
+            <LegacyFormatMenu
+              disabled={!report.data?.rows.length}
+              urls={{
+                detailedXlsx: exportUrl(locationId, "legacy-audit", "xlsx", { ...legacyParams, variant: "detailed" }),
+                detailedCsv: exportUrl(locationId, "legacy-audit", "csv", { ...legacyParams, variant: "detailed" }),
+                detailedPdf: exportUrl(locationId, "legacy-audit", "pdf", { ...legacyParams, variant: "detailed" }),
+                inventoryXlsx: exportUrl(locationId, "legacy-audit", "xlsx", { ...legacyParams, variant: "inventory" }),
+                inventoryCsv: exportUrl(locationId, "legacy-audit", "csv", { ...legacyParams, variant: "inventory" }),
+                inventoryPdf: exportUrl(locationId, "legacy-audit", "pdf", { ...legacyParams, variant: "inventory" }),
+              }}
+            />
+            <ExportButtons
+              xlsxUrl={exportUrl(locationId, "full-audit", "xlsx", exportParams)}
+              csvUrl={exportUrl(locationId, "full-audit", "csv", exportParams)}
+              pdfUrl={exportUrl(locationId, "full-audit", "pdf", exportParams)}
+              onPrint={() => window.print()}
+              disabled={!report.data?.rows.length}
+            />
+          </>
         }
       />
 
@@ -368,6 +401,55 @@ export function FullAuditPage() {
 
 type Report = NonNullable<ReturnType<typeof useFullAudit>["data"]>;
 type Group = Report["categories"][number];
+
+/**
+ * The two client-format downloads (Detailed Full Audit / Inventory Report —
+ * docs/client-report-formats.md): same 24-column legacy table, different
+ * title and headline cost ratio. Grouped in one menu so the title row stays
+ * calm.
+ */
+function LegacyFormatMenu({
+  urls,
+  disabled,
+}: {
+  urls: Record<"detailedXlsx" | "detailedCsv" | "detailedPdf" | "inventoryXlsx" | "inventoryCsv" | "inventoryPdf", string>;
+  disabled?: boolean;
+}) {
+  const me = useMe();
+  const role = (me.data?.user.role ?? "READONLY") as Role;
+  if (!can(role, "reports.export")) return null;
+
+  const download = async (url: string) => {
+    try {
+      await downloadFile(url);
+      toast.success("Export ready");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Export failed");
+    }
+  };
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" size="sm" disabled={disabled}>
+          <FileDown className="size-4" /> Client Formats
+          <ChevronDown className="size-3.5 text-muted-foreground" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-64">
+        <DropdownMenuLabel>Detailed Full Audit Report</DropdownMenuLabel>
+        <DropdownMenuItem onSelect={() => void download(urls.detailedXlsx)}>Excel</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => void download(urls.detailedCsv)}>CSV</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => void download(urls.detailedPdf)}>PDF</DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel>Inventory Report</DropdownMenuLabel>
+        <DropdownMenuItem onSelect={() => void download(urls.inventoryXlsx)}>Excel</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => void download(urls.inventoryCsv)}>CSV</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => void download(urls.inventoryPdf)}>PDF</DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 /**
  * The verdict before the evidence: period variance at cost and retail, how

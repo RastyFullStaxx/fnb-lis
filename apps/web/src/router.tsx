@@ -23,6 +23,10 @@ import { TransferReportPage } from "./pages/reports/transfers";
 import { CostAnalysisPage } from "./pages/reports/cost-analysis";
 import { OnHandReportPage } from "./pages/reports/on-hand";
 import { TopSellersPage } from "./pages/reports/top-sellers";
+import { CostSnapshotPage } from "./pages/reports/cost-snapshot";
+import { ForfeitsReportPage } from "./pages/reports/forfeits";
+import { UsageCostReportPage } from "./pages/reports/usage-cost";
+import { SalesByItemReportPage } from "./pages/reports/sales-by-item";
 import { RecipesPage } from "./pages/recipes";
 import { ImportsPage } from "./pages/imports";
 import { ImportReviewPage } from "./pages/imports/review";
@@ -62,6 +66,10 @@ export const router = createBrowserRouter([
       { path: "reports/cost-analysis", element: <CostAnalysisPage /> },
       { path: "reports/on-hand", element: <OnHandReportPage /> },
       { path: "reports/top-sellers", element: <TopSellersPage /> },
+      { path: "reports/cost-snapshot", element: <CostSnapshotPage /> },
+      { path: "reports/forfeits", element: <ForfeitsReportPage /> },
+      { path: "reports/usage-cost", element: <UsageCostReportPage /> },
+      { path: "reports/sales-by-item", element: <SalesByItemReportPage /> },
       { path: "reports/*", element: <ComingSoonPage title="This report" phase={5} /> },
       { path: "items", element: <ItemsPage /> },
       { path: "suppliers", element: <SuppliersPage /> },

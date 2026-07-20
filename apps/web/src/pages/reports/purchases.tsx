@@ -58,6 +58,7 @@ export function PurchaseReportPage() {
           <ExportButtons
             xlsxUrl={exportUrl(locationId, "purchases", "xlsx", { from, to })}
             csvUrl={exportUrl(locationId, "purchases", "csv", { from, to })}
+            pdfUrl={exportUrl(locationId, "purchases", "pdf", { from, to })}
             disabled={!report.data?.rows.length}
           />
         }

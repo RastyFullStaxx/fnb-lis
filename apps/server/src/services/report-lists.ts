@@ -184,17 +184,19 @@ const REASON_LABELS: Record<string, string> = {
 export interface NonRevenueRow {
   saleDate: string;
   name: string;
+  uom: string | null; // size + unit for direct item entries; null for menus
   reason: string;
   qty: number;
   contentOverride: number | null;
   estimatedCost: number | null; // qty × current cost for direct item entries
+  estimatedRetail: number | null; // qty × current retail (client req #8)
 }
 export interface NonRevenueReport {
   from: string;
   to: string;
   rows: NonRevenueRow[];
   byReason: Array<{ reason: string; count: number; qty: number; cost: number }>;
-  totals: { count: number; qty: number; cost: number };
+  totals: { count: number; qty: number; cost: number; retail: number };
 }
 
 export async function nonRevenueReport(
@@ -223,13 +225,16 @@ export async function nonRevenueReport(
 
   const rows: NonRevenueRow[] = records.map((r) => {
     const estimatedCost = r.locationItem ? r.qty * r.locationItem.cost : null;
+    const estimatedRetail = r.locationItem ? r.qty * r.locationItem.retail : null;
     return {
       saleDate: r.saleDate,
       name: r.locationItem ? itemLabel(r.locationItem) : (r.menuItem?.name ?? "—"),
+      uom: r.locationItem ? `${r.locationItem.itemVariant.size} ${r.locationItem.itemVariant.unit.name}` : null,
       reason: REASON_LABELS[r.reason ?? "OTHER"] ?? r.reason ?? "Other",
       qty: r.qty,
       contentOverride: r.contentOverride,
       estimatedCost,
+      estimatedRetail,
     };
   });
 
@@ -246,8 +251,13 @@ export async function nonRevenueReport(
     .sort((a, b) => b.qty - a.qty);
 
   const totals = rows.reduce(
-    (acc, r) => ({ count: acc.count + 1, qty: acc.qty + r.qty, cost: acc.cost + (r.estimatedCost ?? 0) }),
-    { count: 0, qty: 0, cost: 0 },
+    (acc, r) => ({
+      count: acc.count + 1,
+      qty: acc.qty + r.qty,
+      cost: acc.cost + (r.estimatedCost ?? 0),
+      retail: acc.retail + (r.estimatedRetail ?? 0),
+    }),
+    { count: 0, qty: 0, cost: 0, retail: 0 },
   );
   return { from, to, rows, byReason, totals };
 }

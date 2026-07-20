@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Download, FileSpreadsheet, Loader2, Printer } from "lucide-react";
+import { Download, FileSpreadsheet, FileText, Loader2, Printer } from "lucide-react";
 import { toast } from "sonner";
 import { can, type Role } from "@fnb/core";
 import { useMe } from "@/api/auth";
@@ -54,25 +54,27 @@ export function DateRangeControl({
   );
 }
 
-/** xlsx + csv download buttons, gated on the reports.export permission. */
+/** xlsx + csv (+ optional pdf) download buttons, gated on reports.export. */
 export function ExportButtons({
   xlsxUrl,
   csvUrl,
+  pdfUrl,
   onPrint,
   disabled,
 }: {
   xlsxUrl: string;
   csvUrl: string;
+  pdfUrl?: string;
   onPrint?: () => void;
   disabled?: boolean;
 }) {
   const me = useMe();
   const role = (me.data?.user.role ?? "READONLY") as Role;
   const canExport = can(role, "reports.export");
-  // Slow workbooks invite double-clicks — disable both buttons while one runs.
-  const [running, setRunning] = useState<"xlsx" | "csv" | null>(null);
+  // Slow workbooks invite double-clicks — disable every button while one runs.
+  const [running, setRunning] = useState<"xlsx" | "csv" | "pdf" | null>(null);
 
-  const run = async (kind: "xlsx" | "csv", url: string) => {
+  const run = async (kind: "xlsx" | "csv" | "pdf", url: string) => {
     setRunning(kind);
     try {
       await downloadFile(url);
@@ -99,6 +101,11 @@ export function ExportButtons({
           <Button variant="outline" size="sm" disabled={disabled || running !== null} onClick={() => void run("csv", csvUrl)}>
             {running === "csv" ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />} CSV
           </Button>
+          {pdfUrl && (
+            <Button variant="outline" size="sm" disabled={disabled || running !== null} onClick={() => void run("pdf", pdfUrl)}>
+              {running === "pdf" ? <Loader2 className="size-4 animate-spin" /> : <FileText className="size-4" />} PDF
+            </Button>
+          )}
         </>
       )}
     </div>
