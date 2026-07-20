@@ -1,5 +1,14 @@
-import { Hono } from "hono";
-import { allowedProductTypes, NON_REVENUE_GROUP_LABELS, NON_REVENUE_GROUPS, type NonRevenueGroup } from "@fnb/core";
+import { Hono, type Context } from "hono";
+import {
+  allowedProductTypes,
+  COST_BASIS_LABELS,
+  COST_BASIS_SLUGS,
+  isCostBasis,
+  NON_REVENUE_GROUP_LABELS,
+  NON_REVENUE_GROUPS,
+  type CostBasis,
+  type NonRevenueGroup,
+} from "@fnb/core";
 import { AppError } from "../lib/errors";
 import { requirePermission, type AppEnv } from "../middleware/auth";
 import { buildFullAudit, committedCountDates } from "../services/report-assembly";
@@ -81,6 +90,23 @@ function nrGroup(raw: string | undefined): NonRevenueGroup | undefined {
   return (NON_REVENUE_GROUPS as readonly string[]).includes(raw ?? "") ? (raw as NonRevenueGroup) : undefined;
 }
 
+/**
+ * The client's saved inventory cost basis — an accounting policy, never a
+ * query parameter: two people exporting the same report must not be able to
+ * produce different totals. Applies to VALUATION only (see @fnb/core
+ * COST_BASES); variance cost is basis-independent by design.
+ */
+function basisOf(c: Context<AppEnv>): CostBasis {
+  const raw = (c.get("client") as { costBasis?: string } | undefined)?.costBasis;
+  return isCostBasis(raw) ? raw : "PRICE";
+}
+
+/** Only a non-default basis is stamped into filenames — a "purchase-price"
+    suffix on every legacy file would be noise. */
+function basisSuffix(basis: CostBasis): string {
+  return basis === "PRICE" ? "" : `_${COST_BASIS_SLUGS[basis]}`;
+}
+
 const XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 function xlsxResponse(buffer: Buffer, filename: string): Response {
@@ -141,7 +167,7 @@ export const reportRoutes = new Hono<AppEnv>()
     if (end <= begin) throw new AppError(400, "The ending count date must be after the beginning date");
     const productType = c.req.query("productType") || undefined;
     const allowed = allowedProductTypes(c.get("locationModules"));
-    return c.json(await buildFullAudit(location.id, begin, end, productType, allowed));
+    return c.json(await buildFullAudit(location.id, begin, end, productType, allowed, basisOf(c)));
   })
 
   .get("/reports/full-audit/drill", async (c) => {
@@ -161,7 +187,7 @@ export const reportRoutes = new Hono<AppEnv>()
     if (!DATE_RE.test(begin) || !DATE_RE.test(end) || end <= begin) throw new AppError(400, "Valid begin < end required");
     const productType = c.req.query("productType") || undefined;
     const allowed = allowedProductTypes(c.get("locationModules"));
-    let report = await buildFullAudit(location.id, begin, end, productType, allowed);
+    let report = await buildFullAudit(location.id, begin, end, productType, allowed, basisOf(c));
     // ?variance=only → the Variance Report (client req #10): only rows that
     // carry a variance, with subset totals computed from the surviving rows.
     const varianceOnly = c.req.query("variance") === "only";
@@ -186,7 +212,7 @@ export const reportRoutes = new Hono<AppEnv>()
     }
     const user = c.get("user")!;
     const base = varianceOnly ? "variance-report" : "full-audit";
-    const name = `${base}_${location.name}_${begin}_${end}`.replace(/[^\w.-]+/g, "-");
+    const name = `${base}_${location.name}_${begin}_${end}${basisSuffix(basisOf(c))}`.replace(/[^\w.-]+/g, "-");
     const format = c.req.query("format");
     if (format === "csv") return csvResponse(fullAuditCsv(report), name, fullName(user));
     if (format === "pdf") return pdfResponse(await fullAuditPdfDoc(report, await meta(client, location.name, user), varianceOnly), name);
@@ -202,9 +228,9 @@ export const reportRoutes = new Hono<AppEnv>()
     if (!DATE_RE.test(begin) || !DATE_RE.test(end) || end <= begin) throw new AppError(400, "Valid begin < end required");
     const variant: LegacyAuditVariant = c.req.query("variant") === "inventory" ? "inventory" : "detailed";
     const allowed = allowedProductTypes(c.get("locationModules"));
-    const report = await legacyAuditReport(location.id, begin, end, allowed, variant);
+    const report = await legacyAuditReport(location.id, begin, end, allowed, variant, basisOf(c));
     const user = c.get("user")!;
-    const name = `${legacyAuditTitle(variant)}_${location.name}_${begin}_${end}`.replace(/[^\w.-]+/g, "-");
+    const name = `${legacyAuditTitle(variant)}_${location.name}_${begin}_${end}${basisSuffix(basisOf(c))}`.replace(/[^\w.-]+/g, "-");
     const format = c.req.query("format");
     if (format === "csv") return csvResponse(legacyAuditCsv(report, variant), name, fullName(user));
     if (format === "pdf") return pdfResponse(await legacyAuditPdf(report, await meta(client, location.name, user), variant), name);
@@ -217,7 +243,7 @@ export const reportRoutes = new Hono<AppEnv>()
     const anchor = c.req.query("anchor") ?? "";
     if (!DATE_RE.test(anchor)) throw new AppError(400, "anchor must be YYYY-MM-DD");
     const allowed = allowedProductTypes(c.get("locationModules"));
-    return c.json(await costSnapshotReport(location.id, anchor, allowed));
+    return c.json(await costSnapshotReport(location.id, anchor, allowed, basisOf(c)));
   })
   .get("/reports/cost-snapshot/export", exportGuard, async (c) => {
     const location = c.get("location");
@@ -226,9 +252,9 @@ export const reportRoutes = new Hono<AppEnv>()
     if (!DATE_RE.test(anchor)) throw new AppError(400, "anchor must be YYYY-MM-DD");
     const side = c.req.query("side") === "ending" ? "Ending" : "Beginning";
     const allowed = allowedProductTypes(c.get("locationModules"));
-    const report = await costSnapshotReport(location.id, anchor, allowed);
+    const report = await costSnapshotReport(location.id, anchor, allowed, basisOf(c));
     const user = c.get("user")!;
-    const name = `${side.toLowerCase()}-cost_${location.name}_${anchor}`.replace(/[^\w.-]+/g, "-");
+    const name = `${side.toLowerCase()}-cost_${location.name}_${anchor}${basisSuffix(basisOf(c))}`.replace(/[^\w.-]+/g, "-");
     const format = c.req.query("format");
     if (format === "csv") return csvResponse(costSnapshotCsv(report, side), name, fullName(user));
     if (format === "pdf") return pdfResponse(await costSnapshotPdf(report, await meta(client, location.name, user), side), name);
@@ -314,7 +340,7 @@ export const reportRoutes = new Hono<AppEnv>()
     if (!DATE_RE.test(begin) || !DATE_RE.test(end)) throw new AppError(400, "begin and end must be YYYY-MM-DD");
     if (end <= begin) throw new AppError(400, "The ending count date must be after the beginning date");
     const allowed = allowedProductTypes(c.get("locationModules"));
-    return c.json(await costAnalysisReport(location.id, begin, end, allowed));
+    return c.json(await costAnalysisReport(location.id, begin, end, allowed, basisOf(c)));
   })
   .get("/reports/cost-analysis/export", exportGuard, async (c) => {
     const location = c.get("location");
@@ -323,9 +349,9 @@ export const reportRoutes = new Hono<AppEnv>()
     const end = c.req.query("end") ?? "";
     if (!DATE_RE.test(begin) || !DATE_RE.test(end) || end <= begin) throw new AppError(400, "Valid begin < end required");
     const allowed = allowedProductTypes(c.get("locationModules"));
-    const report = await costAnalysisReport(location.id, begin, end, allowed);
+    const report = await costAnalysisReport(location.id, begin, end, allowed, basisOf(c));
     const user = c.get("user")!;
-    const name = `cost-analysis_${location.name}_${begin}_${end}`.replace(/[^\w.-]+/g, "-");
+    const name = `cost-analysis_${location.name}_${begin}_${end}${basisSuffix(basisOf(c))}`.replace(/[^\w.-]+/g, "-");
     if (c.req.query("format") === "csv") return csvResponse(costAnalysisCsv(report), name, fullName(user));
     return xlsxResponse(await costAnalysisWorkbook(report, await meta(client, location.name, user)), name);
   })
@@ -425,15 +451,15 @@ export const reportRoutes = new Hono<AppEnv>()
   .get("/reports/on-hand", async (c) => {
     const location = c.get("location");
     const allowed = allowedProductTypes(c.get("locationModules"));
-    return c.json(await onHandReport(location.id, allowed));
+    return c.json(await onHandReport(location.id, allowed, basisOf(c)));
   })
   .get("/reports/on-hand/export", exportGuard, async (c) => {
     const location = c.get("location");
     const client = c.get("client");
     const allowed = allowedProductTypes(c.get("locationModules"));
-    const report = await onHandReport(location.id, allowed);
+    const report = await onHandReport(location.id, allowed, basisOf(c));
     const user = c.get("user")!;
-    const name = `on-hand_${location.name}_${report.lastCountDate ?? "current"}`.replace(/[^\w.-]+/g, "-");
+    const name = `on-hand_${location.name}_${report.lastCountDate ?? "current"}${basisSuffix(basisOf(c))}`.replace(/[^\w.-]+/g, "-");
     const format = c.req.query("format");
     if (format === "csv") return csvResponse(onHandCsv(report), name, fullName(user));
     if (format === "pdf") return pdfResponse(await onHandPdfDoc(report, await meta(client, location.name, user)), name);
@@ -465,7 +491,7 @@ export const reportRoutes = new Hono<AppEnv>()
   .get("/stock/on-hand", async (c) => {
     const location = c.get("location");
     const allowed = allowedProductTypes(c.get("locationModules"));
-    const report = await onHandReport(location.id, allowed);
+    const report = await onHandReport(location.id, allowed, basisOf(c));
     return c.json(report.rows.map((r) => ({ locationItemId: r.locationItemId, onHand: r.onHand, lastCountDate: report.lastCountDate })));
   });
 

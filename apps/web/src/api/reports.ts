@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import type { CostBasis } from "@fnb/core";
 import { api } from "./http";
 import { useLocationId } from "./location";
 
@@ -282,6 +283,7 @@ export function exportUrl(
 
 export interface CostSnapshotReport {
   anchorDate: string;
+  costBasis: CostBasis;
   rows: Array<{
     name: string;
     uom: string;

@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
 import { Plus, X } from "lucide-react";
 import { toast } from "sonner";
-import { can, type Role } from "@fnb/core";
+import { can, COST_BASES, COST_BASIS_LABELS, type CostBasis, type Role } from "@fnb/core";
 import { useMe } from "@/api/auth";
 import { useCurrentClient } from "@/api/location";
 import { useProductTypes } from "@/api/master";
 import {
   useCompanyInfo,
+  useCostBasis,
   useUpdateCompanyInfo,
+  useUpdateCostBasis,
   useUpdateProductTypes,
   type CompanyInfo,
 } from "@/api/settings";
@@ -39,9 +41,76 @@ export function SettingsPage() {
       <div className="divide-y">
         <DisplayPreferencesSection />
         <CompanySection />
+        <CostBasisSection />
         {can(role, "admin.manage") && <ProductTypesSection />}
       </div>
     </div>
+  );
+}
+
+/**
+ * Inventory cost basis (client req, 2026-07-20). An accounting policy, not a
+ * view toggle: it is saved per client and restates every valuation figure, so
+ * changing it is confirmed and written to the activity log.
+ */
+function CostBasisSection() {
+  const client = useCurrentClient();
+  const clientId = client?.id ?? "";
+  const saved = useCostBasis(clientId);
+  const update = useUpdateCostBasis(clientId);
+  const me = useMe();
+  const role = (me.data?.user.role ?? "READONLY") as Role;
+  const canEdit = can(role, "master.write");
+
+  const current = saved.data?.costBasis ?? "PRICE";
+
+  const change = async (next: CostBasis) => {
+    if (next === current) return;
+    try {
+      await update.mutateAsync(next);
+      toast.success(`Cost basis set to ${COST_BASIS_LABELS[next]}`);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not save the cost basis");
+    }
+  };
+
+  return (
+    <SettingsSection
+      title="Inventory Cost Basis"
+      description="How stock is valued in the Beginning/Ending Cost, Inventory on Hand, Cost Analysis, and audit stock-value columns. Variance is never affected — an audit finding has one value regardless of this setting."
+    >
+      <div className="max-w-md space-y-2">
+        <Label htmlFor="cost-basis">Basis</Label>
+        {saved.isPending ? (
+          <Skeleton className="h-9 w-full" />
+        ) : (
+          <Select value={current} onValueChange={(v) => void change(v as CostBasis)} disabled={!canEdit || update.isPending}>
+            <SelectTrigger id="cost-basis">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {COST_BASES.map((b) => (
+                <SelectItem key={b} value={b}>
+                  {COST_BASIS_LABELS[b]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        <p className="text-xs leading-5 text-muted-foreground">
+          {current === "AVERAGE"
+            ? "Weighted average: (opening stock value + purchases value) ÷ total units, as of each report's date."
+            : "Purchase price: the cost recorded on the count line when the stock was counted."}
+        </p>
+        {!canEdit && (
+          <p className="text-xs text-muted-foreground">Only managers and administrators can change this.</p>
+        )}
+        <p className="text-xs leading-5 text-muted-foreground">
+          Accounting standards expect one basis applied consistently, so this is saved for the whole
+          client rather than chosen per download. Exports name the basis in the file and in the header.
+        </p>
+      </div>
+    </SettingsSection>
   );
 }
 

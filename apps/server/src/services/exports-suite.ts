@@ -1,5 +1,5 @@
 import ExcelJS from "exceljs";
-import { round2, toCsv, type CsvValue, type ReconReport } from "@fnb/core";
+import { COST_BASIS_LABELS, round2, toCsv, type CostBasis, type CsvValue, type ReconReport } from "@fnb/core";
 import {
   brandFooter,
   exportStamp,
@@ -113,7 +113,7 @@ export async function legacyAuditWorkbook(
   ws.getCell("A1").font = { bold: true, size: 15, color: { argb: BLUE } };
   ws.mergeCells("A2:R2");
   ws.getCell("A2").value =
-    `${meta.clientName} · ${meta.locationName} · ${report.begin} → ${report.end} (activity up to, not including, the ending date)`;
+    `${meta.clientName} · ${meta.locationName} · ${report.begin} → ${report.end} (activity up to, not including, the ending date) · Valuation: ${COST_BASIS_LABELS[report.costBasis]}`;
   ws.getCell("A2").font = { size: 10, color: { argb: "FF6B7280" } };
   ws.getCell("S1").value = legacyRatioLabel(variant);
   ws.getCell("S1").font = { bold: true, size: 10 };
@@ -179,7 +179,7 @@ export async function legacyAuditWorkbook(
 
 export function legacyAuditCsv(report: LegacyAuditReport, variant: LegacyAuditVariant): string {
   const rows: CsvValue[][] = [
-    [`${legacyAuditTitle(variant)} · ${report.begin} → ${report.end}`],
+    [`${legacyAuditTitle(variant)} · ${report.begin} → ${report.end} · Valuation: ${COST_BASIS_LABELS[report.costBasis]}`],
     [legacyRatioLabel(variant), report.costRatio === null ? "" : round2(report.costRatio)],
     LEGACY_HEADERS,
   ];
@@ -208,7 +208,7 @@ export function legacyAuditPdf(
   rows.push({ cells: legacyTotalCells("GRAND TOTAL", report.totals) as (string | number)[], kind: "total" });
   return tablePdf({
     title: legacyAuditTitle(variant),
-    subtitle: `${meta.clientName} · ${meta.locationName} · ${report.begin} → ${report.end} · ${legacyRatioLabel(variant)}: ${report.costRatio === null ? "—" : round2(report.costRatio)}`,
+    subtitle: `${meta.clientName} · ${meta.locationName} · ${report.begin} → ${report.end} · ${legacyRatioLabel(variant)}: ${report.costRatio === null ? "—" : round2(report.costRatio)} · Valuation: ${COST_BASIS_LABELS[report.costBasis]}`,
     columns: LEGACY_HEADERS.map((h, i) => ({ header: h, align: i < 2 ? "left" : "right", width: i === 0 ? "*" : "auto" })),
     rows,
     exportedBy: stampLine(meta),
@@ -220,7 +220,14 @@ export function legacyAuditPdf(
 // ───────────────── Cost snapshots (#3 Beginning / #4 Ending) ─────────────────
 
 const SNAPSHOT_HEADERS = ["Item", "UOM", "Qty", "Cost Price (PHP)", "Value (PHP)", "Cost Basis"];
-const SNAPSHOT_BASIS_NOTE = "Cost basis: weighted average of purchases to date (cost price where no purchases)";
+
+/** In-file disclosure of the valuation policy — two files with the same title
+    and different totals must be self-describing, not just differently named. */
+function basisNote(basis: CostBasis): string {
+  return basis === "AVERAGE"
+    ? "Cost basis: weighted average — (opening stock + purchases) ÷ total units, as of the report date"
+    : "Cost basis: purchase price — the cost recorded on the count line";
+}
 
 function snapshotRowCells(report: CostSnapshotReport): CsvValue[][] {
   return report.rows.map((r) => [
@@ -243,7 +250,7 @@ export async function costSnapshotWorkbook(
   titleBlock(
     ws,
     `${side} Cost Report`,
-    `${meta.clientName} · ${meta.locationName} · as of count ${report.anchorDate} · ${SNAPSHOT_BASIS_NOTE}`,
+    `${meta.clientName} · ${meta.locationName} · as of count ${report.anchorDate} · ${basisNote(report.costBasis)}`,
     SNAPSHOT_HEADERS.length,
     meta,
   );
@@ -268,7 +275,7 @@ export async function costSnapshotWorkbook(
 export function costSnapshotCsv(report: CostSnapshotReport, side: "Beginning" | "Ending"): string {
   return toCsv([
     [`${side} Cost Report · as of count ${report.anchorDate}`],
-    [SNAPSHOT_BASIS_NOTE],
+    [basisNote(report.costBasis)],
     SNAPSHOT_HEADERS,
     ...snapshotRowCells(report),
     ["Grand Total", "", report.totals.qty, "", report.totals.value, ""],
@@ -282,7 +289,7 @@ export function costSnapshotPdf(
 ): Promise<Buffer> {
   return tablePdf({
     title: `${side} Cost Report`,
-    subtitle: `${meta.clientName} · ${meta.locationName} · as of count ${report.anchorDate} · ${SNAPSHOT_BASIS_NOTE}`,
+    subtitle: `${meta.clientName} · ${meta.locationName} · as of count ${report.anchorDate} · ${basisNote(report.costBasis)}`,
     columns: SNAPSHOT_HEADERS.map((h, i) => ({ header: h, align: i < 2 ? "left" : "right", width: i === 0 ? "*" : "auto" })),
     rows: [
       ...snapshotRowCells(report).map((cells) => ({ cells: cells as (string | number)[] })),

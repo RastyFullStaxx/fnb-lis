@@ -247,6 +247,28 @@ The client's two sample XLSX files + 11-report list turned into working software
   correct on the Ending Cost page (Absolut ₱615 avg vs ₱620 price), PDFs and XLSX magic bytes
   verified, typecheck green both workspaces.
 
+## Phase 11 addendum — inventory cost basis (2026-07-20, late)
+
+Client answered the open questions: keep the new VAT treatment; offer both averaging and
+non-averaging cost ("may accountant na gusto based sa original price, meron naman na average").
+Verification before building surfaced two real defects, both fixed:
+
+- **The Cost Reports disagreed with the Full Audit.** Same date, same quantities, ₱16,699.70 vs
+  ₱16,589.47 — a ₱110 gap an accountant would read as a bug. Both now resolve through one basis
+  and tie exactly (verified: 16,699.70 = 16,699.70 on PRICE, 16,663.61 = 16,663.61 on AVERAGE).
+- **The averaging was the wrong figure.** It averaged purchase lines only, so Absolut's 14.25
+  units were valued entirely at a single 6-unit purchase (₱615), ignoring 8.25 units of opening
+  stock. Now true periodic weighted average — `(opening + purchases) ÷ total units` — giving
+  ₱618.38 for Absolut and ₱44.67 for San Miguel, both matching hand computation.
+
+Shipped: `Client.costBasis` (migration `20260720121446_client_cost_basis`, default `PRICE` so
+nothing previously shipped moved), `services/valuation.ts` (weighted average as of a date),
+optional `begin/endValuationUnitCost` on `ReconItemInput` (valuation columns only — variance is
+structurally unable to read them), a Settings section with the policy explained, ActivityLog on
+every change, and the basis stamped into export filenames *and* in-file headers so two files with
+the same title can never be confused. Deviations #21–23. Golden fixture byte-identical on the
+default basis; variance/usage/non-revenue costs bit-identical under both bases.
+
 ## Contributor history
 
 | Window | Who | What |

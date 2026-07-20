@@ -53,6 +53,22 @@ export interface ReconItemInput {
   currentCost: number;
   currentRetail: number;
 
+  /**
+   * VALUATION-ONLY unit costs (client cost-basis setting, 2026-07-20). When
+   * present they replace the snapshot/current cost for `beginCost` / `endCost`
+   * — the "what is this stock worth" columns — and NOTHING else.
+   *
+   * Two fields, not one: a weighted average moves as purchases land, so the
+   * opening stock and the closing stock are valued at their own as-of dates.
+   *
+   * They deliberately do NOT touch `costBasis`, so usage cost, non-revenue
+   * cost and variance cost are unaffected: an audit finding must have one
+   * value, not one per valuation policy. Absent ⇒ prior behaviour exactly
+   * (the golden fixtures run with both undefined).
+   */
+  beginValuationUnitCost?: number;
+  endValuationUnitCost?: number;
+
   purchasedQty: number;
   purchasedCost: number; // Σ qty × unitCost over the window
 
@@ -138,13 +154,25 @@ export function reconcileItem(input: ReconItemInput): ReconRow {
     input.beginFullQty + beginOpenEquiv + input.purchasedQty + forfeited + transferIn - transferOut -
     (input.endFullQty + endOpenEquiv);
 
+  // costBasis drives usage / non-revenue / VARIANCE cost — never the
+  // valuation override, so the audit finding stays single-valued.
   const costBasis = resolveCostBasis(input.endUnitCost, input.beginUnitCost, input.currentCost);
-  const beginCost =
-    (input.beginFullQty + beginOpenEquiv) *
-    (input.beginUnitCost !== null && input.beginUnitCost > 0 ? input.beginUnitCost : input.currentCost);
-  const endCost =
-    (input.endFullQty + endOpenEquiv) *
-    (input.endUnitCost !== null && input.endUnitCost > 0 ? input.endUnitCost : input.currentCost);
+  const beginValuation = input.beginValuationUnitCost;
+  const endValuation = input.endValuationUnitCost;
+  const beginUnit =
+    beginValuation !== undefined && beginValuation > 0
+      ? beginValuation
+      : input.beginUnitCost !== null && input.beginUnitCost > 0
+        ? input.beginUnitCost
+        : input.currentCost;
+  const endUnit =
+    endValuation !== undefined && endValuation > 0
+      ? endValuation
+      : input.endUnitCost !== null && input.endUnitCost > 0
+        ? input.endUnitCost
+        : input.currentCost;
+  const beginCost = (input.beginFullQty + beginOpenEquiv) * beginUnit;
+  const endCost = (input.endFullQty + endOpenEquiv) * endUnit;
 
   // Menu/recipe expansion (legacy shot logic).
   let soldPortion = 0;

@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
+import { COST_BASES, COST_BASIS_LABELS, isCostBasis } from "@fnb/core";
 import { prisma } from "../db";
 import { AppError } from "../lib/errors";
 import { logActivity } from "../services/activity";
@@ -22,6 +23,8 @@ const companyInfo = z.object({
 export type CompanyInfo = z.infer<typeof companyInfo>;
 
 const EMPTY: CompanyInfo = { legalName: "", address: "", phone: "", email: "", reportFooter: "" };
+
+const costBasisBody = z.object({ costBasis: z.enum(COST_BASES) });
 
 async function assertClientAccess(userId: string, role: string, clientId: string): Promise<void> {
   if (role === "ADMIN") return;
@@ -110,4 +113,43 @@ export const settingsRoutes = new Hono<AppEnv>()
       );
     });
     return c.json(body);
+  })
+
+  // ── Inventory cost basis (accounting policy — client req 2026-07-20) ──
+  // Stored on the Client, not passed per request: an accounting policy must
+  // not vary between two people exporting the same report.
+  .get("/cost-basis", async (c) => {
+    const user = c.get("user")!;
+    const clientId = c.req.query("clientId") ?? "";
+    if (!clientId) throw new AppError(400, "clientId is required");
+    await assertClientAccess(user.id, user.role, clientId);
+    const client = await prisma.client.findUnique({ where: { id: clientId }, select: { costBasis: true } });
+    return c.json({ costBasis: isCostBasis(client?.costBasis) ? client.costBasis : "PRICE" });
+  })
+
+  .put("/cost-basis", zValidator("json", costBasisBody), async (c) => {
+    const user = c.get("user")!;
+    const clientId = c.req.query("clientId") ?? "";
+    if (!clientId) throw new AppError(400, "clientId is required");
+    await assertClientAccess(user.id, user.role, clientId);
+    const { costBasis } = c.req.valid("json");
+    const before = await prisma.client.findUnique({ where: { id: clientId }, select: { costBasis: true } });
+    await prisma.$transaction(async (tx) => {
+      await tx.client.update({ where: { id: clientId }, data: { costBasis } });
+      // Changing the basis restates every valuation report — that is an
+      // accounting-policy change, so it is logged with old → new.
+      await logActivity(
+        {
+          user,
+          clientId,
+          action: "settings.costBasis",
+          entity: "Client",
+          entityId: clientId,
+          summary: `Inventory cost basis: ${COST_BASIS_LABELS[costBasis]}`,
+          details: { from: before?.costBasis ?? "PRICE", to: costBasis },
+        },
+        tx,
+      );
+    });
+    return c.json({ costBasis });
   });

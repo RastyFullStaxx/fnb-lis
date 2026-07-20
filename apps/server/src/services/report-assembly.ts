@@ -1,5 +1,6 @@
-import { reconcile, type MenuSaleAgg, type ReconItemInput, type ReconReport } from "@fnb/core";
+import { reconcile, type CostBasis, type MenuSaleAgg, type ReconItemInput, type ReconReport } from "@fnb/core";
 import { prisma } from "../db";
+import { weightedAverageCosts } from "./valuation";
 
 /**
  * Assembles reconciliation inputs for one location and period.
@@ -18,6 +19,13 @@ export async function buildFullAudit(
   endDate: string,
   productType?: string,
   allowedProductTypes?: readonly string[] | null,
+  /**
+   * Valuation basis for the beginning/ending stock-VALUE columns only (client
+   * setting, 2026-07-20). Omitted or "PRICE" ⇒ count-line snapshot costs, the
+   * behaviour every shipped number and golden fixture was computed with.
+   * Variance, usage and non-revenue costs never read this.
+   */
+  costBasis: CostBasis = "PRICE",
 ): Promise<ReconReport> {
   const [beginLines, endLines, purchaseLines, forfeits, sales, transferOutLines, transferReceipts] = await Promise.all([
     prisma.countLine.findMany({
@@ -185,6 +193,14 @@ export async function buildFullAudit(
   });
 
   const inputs: ReconItemInput[] = [];
+  // Weighted-average valuation (opt-in per client). Two as-of dates because a
+  // running average moves with each purchase. Both maps are empty on the
+  // default PRICE basis, so the spread below adds nothing.
+  const [beginWac, endWac] = await Promise.all([
+    weightedAverageCosts(locationId, beginDate, costBasis),
+    weightedAverageCosts(locationId, endDate, costBasis),
+  ]);
+
   for (const li of locationItems) {
     const category = li.itemVariant.item.category;
     if (productType && category.productType !== productType) continue;
@@ -201,6 +217,8 @@ export async function buildFullAudit(
       contentTracked: li.itemVariant.contentTracked,
       currentCost: li.cost,
       currentRetail: li.retail,
+      ...(beginWac.has(li.id) ? { beginValuationUnitCost: beginWac.get(li.id) } : {}),
+      ...(endWac.has(li.id) ? { endValuationUnitCost: endWac.get(li.id) } : {}),
       ...agg,
     });
   }

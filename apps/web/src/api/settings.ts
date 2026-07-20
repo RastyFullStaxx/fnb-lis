@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { CostBasis } from "@fnb/core";
 import { api, put } from "./http";
 
 export interface CompanyInfo {
@@ -22,6 +23,33 @@ export function useUpdateCompanyInfo(clientId: string) {
   return useMutation({
     mutationFn: (body: CompanyInfo) => put<CompanyInfo>(`/api/settings/company?clientId=${clientId}`, body),
     onSuccess: (data) => qc.setQueryData(["settings", "company", clientId], data),
+  });
+}
+
+/**
+ * Inventory cost basis — an accounting policy stored per client, applied to
+ * valuation reports only (see @fnb/core COST_BASES). Changing it restates
+ * every stock-value figure, so it lives in Settings, not on a report toolbar.
+ */
+export function useCostBasis(clientId: string) {
+  return useQuery({
+    queryKey: ["settings", "cost-basis", clientId],
+    queryFn: () => api<{ costBasis: CostBasis }>(`/api/settings/cost-basis?clientId=${clientId}`),
+    enabled: Boolean(clientId),
+  });
+}
+
+export function useUpdateCostBasis(clientId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (costBasis: CostBasis) =>
+      put<{ costBasis: CostBasis }>(`/api/settings/cost-basis?clientId=${clientId}`, { costBasis }),
+    onSuccess: (data) => {
+      qc.setQueryData(["settings", "cost-basis", clientId], data);
+      // Every valuation figure on screen just changed.
+      void qc.invalidateQueries({ queryKey: ["report"] });
+      void qc.invalidateQueries({ queryKey: ["dashboard-trends"] });
+    },
   });
 }
 

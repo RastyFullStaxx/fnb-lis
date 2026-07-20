@@ -1,6 +1,13 @@
-import { costLine, netOfVat, nonRevenueGroupOf, pctOf, type NonRevenueGroup } from "@fnb/core";
+import { costLine, netOfVat, nonRevenueGroupOf, pctOf, type CostBasis, type NonRevenueGroup } from "@fnb/core";
 import { buildFullAudit, committedCountDates } from "./report-assembly";
+import { weightedAverageCosts } from "./valuation";
 import { prisma } from "../db";
+
+/** Server-local calendar day — valuation as-of date for current stock. */
+function todayBusinessDate(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
 
 /**
  * Business-listing reports (sales, purchases, non-revenue, on-hand).
@@ -285,13 +292,18 @@ export interface OnHandReport {
 export async function onHandReport(
   locationId: string,
   allowedProductTypes?: readonly string[] | null,
+  // On-hand worth is a VALUATION, so it follows the client's cost basis.
+  costBasis: CostBasis = "PRICE",
 ): Promise<OnHandReport> {
   const dates = await committedCountDates(locationId);
   const lastDate = dates.at(-1) ?? null;
   if (!lastDate) return { lastCountDate: null, rows: [], totals: { costValue: 0, retailValue: 0 } };
 
   // On-hand = last count + everything committed since (report end date = far future).
-  const report = await buildFullAudit(locationId, lastDate, "9999-12-31", undefined, allowedProductTypes);
+  const report = await buildFullAudit(locationId, lastDate, "9999-12-31", undefined, allowedProductTypes, costBasis);
+  // Value today's stock at today's average (the far-future end date would
+  // include no later purchases anyway, but be explicit about the as-of date).
+  const wac = await weightedAverageCosts(locationId, todayBusinessDate(), costBasis);
 
   const priceRows = await prisma.locationItem.findMany({
     where: { id: { in: report.rows.map((r) => r.locationItemId) } },
@@ -304,7 +316,7 @@ export async function onHandReport(
     const onHand =
       row.beginFull + row.beginOpenEquiv + row.purchased + row.forfeited + row.transferIn - row.transferOut -
       (row.soldDirect + row.soldPortion + row.nonRevenue + row.production);
-    const cost = price?.cost ?? row.costBasis;
+    const cost = wac.get(row.locationItemId) ?? price?.cost ?? row.costBasis;
     const retail = price?.retail ?? 0;
     return {
       locationItemId: row.locationItemId,
@@ -489,8 +501,11 @@ export async function costAnalysisReport(
   begin: string,
   end: string,
   allowedProductTypes?: readonly string[] | null,
+  // Beginning/Ending cost here are VALUATIONS, so they follow the client's
+  // cost basis; the sales side and the cost % formula are unchanged.
+  costBasis: CostBasis = "PRICE",
 ): Promise<CostAnalysisReport> {
-  const audit = await buildFullAudit(locationId, begin, end, undefined, allowedProductTypes);
+  const audit = await buildFullAudit(locationId, begin, end, undefined, allowedProductTypes, costBasis);
 
   // Purchases cost per category over the same half-open window — from the
   // committed purchase lines directly (their lineTotal snapshots), not from

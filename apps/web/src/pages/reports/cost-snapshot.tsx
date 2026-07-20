@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { Coins } from "lucide-react";
 import { useCountDates } from "@/api/ops";
 import { useLocationId } from "@/api/location";
@@ -109,7 +109,12 @@ export function CostSnapshotPage() {
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              Cost basis: weighted average of purchases to date; cost price where none.
+              {report.data?.costBasis === "AVERAGE"
+                ? "Cost basis: weighted average — (opening stock + purchases) ÷ total units."
+                : "Cost basis: purchase price — the cost recorded on the count line."}{" "}
+              <Link to={`/l/${locationId}/settings`} className="underline underline-offset-2">
+                Change in Settings
+              </Link>
             </p>
           </>
         }

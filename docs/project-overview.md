@@ -102,10 +102,16 @@ From the client's 16-item list after the July check-up.
 1. **Transfers design sign-off.** Transfers have **no legacy precedent** — unlike everything else,
    there is no known-correct answer key. The hand-computed 10-sent/8-received fixture is the only
    correctness check this feature will ever have.
-2. **Cost Analysis VAT treatment.** We apply 12% uniformly; the legacy sheet divided some
-   (always-zero) rows by 1.22 and mislabelled net sales as "VAT" (architecture.md deviation #13).
+2. ~~**Cost Analysis VAT treatment.**~~ ✅ **RESOLVED 2026-07-20** — client: "Keep the new
+   approach. That is most pricely correct." Uniform 12% stays; the VAT cell shows the real VAT
+   amount (architecture.md deviation #13 is now confirmed, not provisional).
 3. **Request #11** — waiting on the client's sample of the legacy "full detailed" report before
    building a dedicated mode (the new analytics layer may already cover part of it).
 4. **Pending assets** — bar/kitchen flyers, Facebook page URL, promo video.
 5. **Legacy non-revenue reasons** (Staff use / Internal use / Other on historical rows) sit outside
    the three new buckets by design — confirm with the client whether they should fold somewhere.
+6. **Inventory cost basis** ✅ **RESOLVED 2026-07-20** — client asked for both options; shipped as a
+   per-client saved policy (Settings → Inventory Cost Basis), default *Purchase Price*. Tell each
+   client's accountant to nominate one: PAS 2 expects a single formula applied consistently, and
+   switching restates every valuation figure (logged with old → new). Valuation only — variance is
+   basis-independent by construction (architecture.md deviations #21–23).

@@ -25,6 +25,39 @@ export const IMPORT_KINDS = ["SALES", "PURCHASES", "NON_REVENUE", "COUNTS"] as c
 export const IMPORT_STATUSES = ["PROCESSING", "NEEDS_REVIEW", "COMMITTED", "REVERSED", "FAILED"] as const;
 export const MATCH_METHODS = ["EXACT", "ALIAS", "FUZZY", "MANUAL"] as const;
 
+/**
+ * Inventory cost basis (client decision, 2026-07-20). An accounting POLICY,
+ * so it is stored per client and applies to VALUATION only — stock worth,
+ * never variance. PAS 2 / IAS 2 permit FIFO or weighted average but require
+ * one formula applied consistently to inventories of similar nature, which is
+ * why this is a saved setting rather than a per-export button.
+ *
+ * PRICE   — the cost snapshotted on the count line (falls back to the catalog
+ *           cost price). The default: matches every number shipped to date.
+ * AVERAGE — periodic weighted average cost: (opening stock value + purchases
+ *           value) ÷ (opening qty + purchased qty), as of the valuation date.
+ *           Opening stock MUST participate; averaging purchases alone is
+ *           "average purchase price", a different (and wrong) figure.
+ */
+export const COST_BASES = ["PRICE", "AVERAGE"] as const;
+export type CostBasis = (typeof COST_BASES)[number];
+
+export const COST_BASIS_LABELS: Record<CostBasis, string> = {
+  PRICE: "Purchase Price",
+  AVERAGE: "Weighted Average",
+};
+
+/** Slug for export filenames — two files with the same title but different
+    totals must be tellable apart on disk. */
+export const COST_BASIS_SLUGS: Record<CostBasis, string> = {
+  PRICE: "purchase-price",
+  AVERAGE: "weighted-average",
+};
+
+export function isCostBasis(value: unknown): value is CostBasis {
+  return typeof value === "string" && (COST_BASES as readonly string[]).includes(value);
+}
+
 export const NON_REVENUE_REASONS = [
   // Canonical encoding options (client req, 2026-07-20) — the only three the
   // entry screens offer. Each generates its own report view; the Full Audit

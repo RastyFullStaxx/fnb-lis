@@ -65,6 +65,10 @@ model Client {
   id        String   @id @default(cuid())
   name      String
   status    String   @default("ACTIVE") // ACTIVE | ARCHIVED
+  // Inventory cost basis for VALUATION reports (see @fnb/core COST_BASES).
+  // PRICE = count-line snapshot cost (default, matches everything shipped so
+  // far); AVERAGE = periodic weighted average. Never affects variance.
+  costBasis String   @default("PRICE") // PRICE | AVERAGE
   createdAt DateTime @default(now())
 
   locations    Location[]

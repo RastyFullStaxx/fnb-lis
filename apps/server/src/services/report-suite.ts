@@ -1,5 +1,6 @@
-import { openEquivalent, round2 } from "@fnb/core";
+import { openEquivalent, round2, type CostBasis } from "@fnb/core";
 import { buildFullAudit } from "./report-assembly";
+import { weightedAverageCosts } from "./valuation";
 import { prisma } from "../db";
 
 /**
@@ -75,6 +76,7 @@ export type LegacyAuditTotals = Omit<LegacyAuditRow, "productName" | "sizeUom" |
 export interface LegacyAuditReport {
   begin: string;
   end: string;
+  costBasis: CostBasis;
   groups: LegacyAuditGroup[];
   totals: LegacyAuditTotals;
   /** Headline ratio: detailed = Σ cost of sold / Σ revenue; inventory = Σ cost of usage / Σ revenue. */
@@ -106,8 +108,9 @@ export async function legacyAuditReport(
   end: string,
   allowedProductTypes?: readonly string[] | null,
   variant: LegacyAuditVariant = "detailed",
+  costBasis: CostBasis = "PRICE",
 ): Promise<LegacyAuditReport> {
-  const report = await buildFullAudit(locationId, begin, end, undefined, allowedProductTypes);
+  const report = await buildFullAudit(locationId, begin, end, undefined, allowedProductTypes, costBasis);
 
   const groups: LegacyAuditGroup[] = report.categories.map((cat) => {
     const groupTotals = emptyLegacyTotals();
@@ -154,14 +157,18 @@ export async function legacyAuditReport(
   const numerator = variant === "detailed" ? totals.costOfSold : totals.costOfUsage;
   const costRatio = totals.revenue > 0 ? numerator / totals.revenue : null;
 
-  return { begin, end, groups, totals, costRatio };
+  return { begin, end, costBasis, groups, totals, costRatio };
 }
 
 // ── Beginning / Ending Cost Report (client reports #3 / #4) ──
-// Cost basis per the client's spec: WEIGHTED AVERAGE of all committed purchase
-// lines up to the anchor count date; items with no purchase history fall back
-// to their catalog cost price (the legacy ACOST behaviour). Reconciliation is
-// untouched — this basis exists only in these two reports.
+// Valued on the CLIENT'S SAVED COST BASIS (@fnb/core COST_BASES):
+//   PRICE   — the cost snapshotted on the count line (falls back to catalog
+//             cost). Ties exactly to the Full Audit's B-Cost / E-Cost columns.
+//   AVERAGE — periodic weighted average cost from services/valuation.ts:
+//             (opening stock value + purchases value) ÷ (opening + purchased
+//             qty). Opening stock participates — averaging purchase lines
+//             alone is "average purchase price", a different figure.
+// Either way this is VALUATION only; variance cost never reads it.
 
 export interface CostSnapshotRow {
   name: string;
@@ -169,11 +176,12 @@ export interface CostSnapshotRow {
   qty: number; // full + open equivalent, counted ON the anchor date
   cost: number; // per-unit cost on the basis below
   value: number; // qty × cost
-  basis: "average" | "price"; // average of purchases vs catalog cost price
+  basis: "average" | "price"; // which basis this row actually resolved to
 }
 
 export interface CostSnapshotReport {
   anchorDate: string;
+  costBasis: CostBasis;
   rows: CostSnapshotRow[];
   totals: { qty: number; value: number };
 }
@@ -182,8 +190,9 @@ export async function costSnapshotReport(
   locationId: string,
   anchorDate: string,
   allowedProductTypes?: readonly string[] | null,
+  costBasis: CostBasis = "PRICE",
 ): Promise<CostSnapshotReport> {
-  const [lines, purchaseAgg] = await Promise.all([
+  const [lines, wac] = await Promise.all([
     prisma.countLine.findMany({
       where: {
         status: "ACTIVE",
@@ -194,47 +203,35 @@ export async function costSnapshotReport(
       },
       include: { locationItem: { include: LI_INCLUDE } },
     }),
-    prisma.purchaseLine.groupBy({
-      by: ["locationItemId"],
-      where: {
-        status: "ACTIVE",
-        purchase: { locationId, status: "COMMITTED", purchaseDate: { lte: anchorDate } },
-      },
-      _sum: { lineTotal: true, qty: true },
-    }),
+    weightedAverageCosts(locationId, anchorDate, costBasis),
   ]);
 
-  const avgCost = new Map<string, number>();
-  for (const agg of purchaseAgg) {
-    const qty = agg._sum.qty ?? 0;
-    const total = agg._sum.lineTotal ?? 0;
-    if (qty > 0) avgCost.set(agg.locationItemId, total / qty);
-  }
-
   // One row per catalog item: FULL lines add whole units, WEIGH lines add the
-  // open-bottle equivalent — the same pool the reconciliation counts.
-  const byItem = new Map<string, { li: LocationItemWithVariant; qty: number }>();
+  // open-bottle equivalent — the same pool the reconciliation counts. The
+  // count-line snapshot cost is the PRICE basis, matching the Full Audit.
+  const byItem = new Map<string, { li: LocationItemWithVariant; qty: number; snapshotCost: number }>();
   for (const line of lines) {
     const li = line.locationItem as unknown as LocationItemWithVariant;
-    const entry = byItem.get(line.locationItemId) ?? { li, qty: 0 };
+    const entry = byItem.get(line.locationItemId) ?? { li, qty: 0, snapshotCost: 0 };
     entry.qty +=
       line.countType === "FULL"
         ? line.qtyFull
         : openEquivalent(line.remainingContent, li.itemVariant.size, li.itemVariant.contentTracked);
+    if (line.unitCost > 0) entry.snapshotCost = line.unitCost;
     byItem.set(line.locationItemId, entry);
   }
 
   const rows: CostSnapshotRow[] = [...byItem.entries()]
-    .map(([locationItemId, { li, qty }]) => {
-      const avg = avgCost.get(locationItemId);
-      const cost = avg ?? li.cost;
+    .map(([locationItemId, { li, qty, snapshotCost }]) => {
+      const average = wac.get(locationItemId);
+      const cost = average ?? (snapshotCost > 0 ? snapshotCost : li.cost);
       return {
         name: li.itemVariant.item.name,
         uom: uomLabel(li),
         qty: round2(qty),
         cost: round2(cost),
         value: round2(qty * cost),
-        basis: (avg !== undefined ? "average" : "price") as CostSnapshotRow["basis"],
+        basis: (average !== undefined ? "average" : "price") as CostSnapshotRow["basis"],
         _sort: `${li.itemVariant.item.category.sortOrder}`.padStart(4, "0") + li.itemVariant.item.name,
       };
     })
@@ -245,7 +242,7 @@ export async function costSnapshotReport(
     (acc, r) => ({ qty: acc.qty + r.qty, value: acc.value + r.value }),
     { qty: 0, value: 0 },
   );
-  return { anchorDate, rows, totals: { qty: round2(totals.qty), value: round2(totals.value) } };
+  return { anchorDate, costBasis, rows, totals: { qty: round2(totals.qty), value: round2(totals.value) } };
 }
 
 // ── Forfeited Bottles Report (client report #5) ──
