@@ -580,9 +580,6 @@ function CreateUserDialog({
           {role !== "ADMIN" && (
             <div className="space-y-2">
               <Label>Client Access</Label>
-              <p className="text-xs text-muted-foreground">
-                Package badges show each client's subscription tier.
-              </p>
               <ClientCheckboxes selected={clientIds} onToggle={toggle} />
             </div>
           )}
@@ -703,7 +700,6 @@ function EditUserDialog({
             {user.firstName} {user.lastName}{" "}
             <span className="text-sm font-normal text-muted-foreground">@{user.username}</span>
           </DialogTitle>
-          <DialogDescription>Change role, client access, status, or reset the password.</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -715,9 +711,6 @@ function EditUserDialog({
           {role !== "ADMIN" && (
             <div className="space-y-2">
               <Label>Client Access</Label>
-              <p className="text-xs text-muted-foreground">
-                Package badges show each client's subscription tier.
-              </p>
               <ClientCheckboxes selected={clientIds} onToggle={toggle} />
             </div>
           )}

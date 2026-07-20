@@ -37,22 +37,20 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
-const KIND_COPY: Record<SaleKind, { title: string; hint: string; button: string; saved: string }> = {
+const KIND_COPY: Record<SaleKind, { title: string; hint?: string; button: string; saved: string }> = {
   SALE: {
     title: "Record a Sale",
-    hint: "Revenue sales — price prefills from the item's retail.",
     button: "Save Sale",
     saved: "Sale recorded",
   },
   NON_REVENUE: {
     title: "Record Non-Revenue Use",
-    hint: "Comps, spillage, staff use… consumed but not sold. For a partial pour, enter the content amount per unit.",
+    hint: "For a partial pour, enter the content amount per unit.",
     button: "Save Non-Revenue",
     saved: "Non-revenue use recorded",
   },
   PRODUCTION: {
     title: "Record Production Use",
-    hint: "Ingredients consumed by prep/production — counted as usage, no revenue.",
     button: "Save Production",
     saved: "Production use recorded",
   },
@@ -255,7 +253,7 @@ function QuickEntry({ kind }: { kind: SaleKind }) {
     <div className="space-y-4">
       <div>
         <h3 className="font-medium">{copy.title}</h3>
-        <p className="text-sm text-muted-foreground">{copy.hint}</p>
+        {copy.hint ? <p className="text-sm text-muted-foreground">{copy.hint}</p> : null}
       </div>
 
       <div className="grid grid-cols-[1fr_auto] gap-2">

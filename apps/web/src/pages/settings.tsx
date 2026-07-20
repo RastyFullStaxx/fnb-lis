@@ -77,7 +77,7 @@ function CostBasisSection() {
   return (
     <SettingsSection
       title="Inventory Cost Basis"
-      description="How stock is valued in the Beginning/Ending Cost, Inventory on Hand, Cost Analysis, and audit stock-value columns. Variance is never affected — an audit finding has one value regardless of this setting."
+      description="Applies to valuation columns only — variance is never affected."
     >
       <div className="max-w-md space-y-2">
         <Label htmlFor="cost-basis">Basis</Label>
@@ -120,13 +120,15 @@ function SettingsSection({
   children,
 }: {
   title: string;
-  description: string;
+  description?: string;
   children: React.ReactNode;
 }) {
   return (
     <section className="py-6 first:pt-0 last:pb-0">
       <h2 className="text-sm font-semibold">{title}</h2>
-      <p className="mt-1 max-w-prose text-sm text-muted-foreground">{description}</p>
+      {description ? (
+        <p className="mt-1 max-w-prose text-sm text-muted-foreground">{description}</p>
+      ) : null}
       <div className="mt-4">{children}</div>
     </section>
   );
@@ -136,10 +138,7 @@ function DisplayPreferencesSection() {
   const { preferences, setPreferences, isSaving } = usePreferencesContext();
 
   return (
-    <SettingsSection
-      title="Display"
-      description="Personal preferences for how the app looks on this account — saved to your profile, so they follow you to any device you sign in on."
-    >
+    <SettingsSection title="Display">
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="pref-font-size">Text Size</Label>
@@ -159,10 +158,6 @@ function DisplayPreferencesSection() {
               <SelectItem value="x-large">Extra Large</SelectItem>
             </SelectContent>
           </Select>
-          <p className="text-xs text-muted-foreground">
-            Scales text and controls across the whole app — similar to macOS's Large Text display
-            setting.
-          </p>
         </div>
         <div className="space-y-2">
           <Label htmlFor="pref-unit-system">Preferred Unit of Measurement</Label>
@@ -181,9 +176,6 @@ function DisplayPreferencesSection() {
               <SelectItem value="imperial">Imperial (oz / lb)</SelectItem>
             </SelectContent>
           </Select>
-          <p className="text-xs text-muted-foreground">
-            Sets the default scale unit when weighing open bottles during counts.
-          </p>
         </div>
       </div>
     </SettingsSection>
@@ -225,8 +217,8 @@ function CompanySection() {
 
   return (
     <SettingsSection
-      title="Company information"
-      description={`Appears on printed and exported reports for ${client?.name ?? "this client"}.`}
+      title="Company Information"
+      description="Appears on printed and exported reports."
     >
       {info.isPending ? (
         <div className="space-y-4">
@@ -330,8 +322,8 @@ function ProductTypesSection() {
 
   return (
     <SettingsSection
-      title="Product types"
-      description="The universal classification behind categories and the Full Audit type filter (e.g. Beverage, Food, Supplies). Editing here is global across clients."
+      title="Product Types"
+      description="Editing here is global across all clients."
     >
       {types.isPending ? (
         <div className="space-y-4">

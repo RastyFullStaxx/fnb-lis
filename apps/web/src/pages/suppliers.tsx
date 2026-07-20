@@ -25,7 +25,6 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -217,7 +216,6 @@ function SupplierDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{supplier ? "Edit Supplier" : "New Supplier"}</DialogTitle>
-          <DialogDescription>Name plus any contact details worth keeping at hand.</DialogDescription>
         </DialogHeader>
         <form onSubmit={onSubmit} className="space-y-4">
           <div className="space-y-2">

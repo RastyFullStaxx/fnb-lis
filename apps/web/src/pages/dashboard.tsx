@@ -531,7 +531,7 @@ function AttentionQueue({
         </div>
       ) : data.readiness.activeItems === 0 || data.period.countDates === 0 ? (
         <p className="mt-4 text-sm leading-6 text-muted-foreground">
-          Finish the location setup before this dashboard can confirm that all operational checks are clear.
+          Finish the location setup first.
         </p>
       ) : (
         // Setup is done and the remaining unresolved work belongs to another
@@ -618,9 +618,6 @@ function SetupChecklist({
     <Card>
       <CardContent>
         <h2 className="text-base font-semibold">Finish Location Setup</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Complete these steps before the first reconciliation can be generated.
-        </p>
         <ol className="mt-5 space-y-4">
           {steps.map((step) => (
             <li key={step.title} className="flex gap-3">
