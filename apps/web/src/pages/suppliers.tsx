@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Truck } from "lucide-react";
@@ -43,7 +44,9 @@ export function SuppliersPage() {
   const suppliers = useSuppliers();
   const [editing, setEditing] = useState<Supplier | null>(null);
   const [creating, setCreating] = useState(false);
-  const [search, setSearch] = useState("");
+  // ?q= seeds the search — the command palette deep-links here with it.
+  const [params] = useSearchParams();
+  const [search, setSearch] = useState(params.get("q") ?? "");
   const [status, setStatus] = useState("ALL");
 
   const q = search.trim().toLowerCase();

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useParams } from "react-router";
+import { useParams, useSearchParams } from "react-router";
 import { Boxes, Copy, Plus, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { can, MODULE_TYPE_LABELS, type ModuleType, type Role } from "@fnb/core";
@@ -42,7 +42,9 @@ import { PriceEdit } from "./price-edit";
 export function StockPage() {
   const me = useMe();
   const location = useCurrentLocation();
-  const [search, setSearch] = useState("");
+  // ?q= seeds the search — the command palette deep-links here with it.
+  const [params] = useSearchParams();
+  const [search, setSearch] = useState(params.get("q") ?? "");
   const [missingOnly, setMissingOnly] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
   const [copyOpen, setCopyOpen] = useState(false);

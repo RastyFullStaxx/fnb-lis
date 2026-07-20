@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { allowedProductTypes, NON_REVENUE_GROUPS, type NonRevenueGroup } from "@fnb/core";
+import { allowedProductTypes, NON_REVENUE_GROUP_LABELS, NON_REVENUE_GROUPS, type NonRevenueGroup } from "@fnb/core";
 import { AppError } from "../lib/errors";
 import { requirePermission, type AppEnv } from "../middleware/auth";
 import { buildFullAudit, committedCountDates } from "../services/report-assembly";
@@ -163,9 +163,11 @@ export const reportRoutes = new Hono<AppEnv>()
     const view = salesView(c.req.query("view"));
     const report = await salesReport(location.id, from, to, allowed, view);
     const user = c.get("user")!;
+    const title =
+      view === "discounted" ? "Discounted Sales Report" : view === "production" ? "Production Report" : "Sales Report";
     const name = `${view}_${location.name}_${from}_${to}`.replace(/[^\w.-]+/g, "-");
-    if (c.req.query("format") === "csv") return csvResponse(salesCsv(report), name, fullName(user));
-    return xlsxResponse(await salesWorkbook(report, await meta(client, location.name, user)), name);
+    if (c.req.query("format") === "csv") return csvResponse(salesCsv(report, title), name, fullName(user));
+    return xlsxResponse(await salesWorkbook(report, await meta(client, location.name, user), title), name);
   })
 
   // ── Purchases ──
@@ -202,9 +204,10 @@ export const reportRoutes = new Hono<AppEnv>()
     const group = nrGroup(c.req.query("group"));
     const report = await nonRevenueReport(location.id, from, to, allowed, group);
     const user = c.get("user")!;
+    const title = group ? `Non-Revenue Report — ${NON_REVENUE_GROUP_LABELS[group]}` : "Non-Revenue Report";
     const name = `${group ? group.toLowerCase() : "non-revenue"}_${location.name}_${from}_${to}`.replace(/[^\w.-]+/g, "-");
-    if (c.req.query("format") === "csv") return csvResponse(nonRevenueCsv(report), name, fullName(user));
-    return xlsxResponse(await nonRevenueWorkbook(report, await meta(client, location.name, user)), name);
+    if (c.req.query("format") === "csv") return csvResponse(nonRevenueCsv(report, title), name, fullName(user));
+    return xlsxResponse(await nonRevenueWorkbook(report, await meta(client, location.name, user), title), name);
   })
 
   // ── Transfers (in/out at cost & retail) ──

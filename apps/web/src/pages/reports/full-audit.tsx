@@ -67,9 +67,11 @@ export function FullAuditPage() {
   const [drill, setDrill] = useState<{ id: string; name: string } | null>(null);
   const [query, setQuery] = useState("");
   const [varianceOnly, setVarianceOnly] = useState(false);
-  // Compact view: only the columns the verdict needs — Begin, End, Usage,
-  // Sold, and the variance block. The movement detail returns on demand.
-  const [compact, setCompact] = useState(false);
+  // Compact is the DEFAULT: only the columns the verdict needs — Begin, End,
+  // Usage, Sold, and the variance block — so the report fits without
+  // horizontal scrolling. "All Columns" brings the movement detail back;
+  // exports and print always carry every column.
+  const [compact, setCompact] = useState(true);
 
   const location = me.data?.clients.flatMap((c) => c.locations.map((l) => ({ ...l, clientName: c.name }))).find((l) => l.id === locationId);
   const company = useCompanyInfo(location?.clientId ?? "");
@@ -227,10 +229,10 @@ export function FullAuditPage() {
             className="w-48"
           />
           <Toggle pressed={varianceOnly} onPressedChange={setVarianceOnly}>
-            Variance only
+            Variance Only
           </Toggle>
-          <Toggle pressed={compact} onPressedChange={setCompact}>
-            Compact
+          <Toggle pressed={!compact} onPressedChange={(pressed) => setCompact(!pressed)}>
+            All Columns
           </Toggle>
         </div>
 
@@ -282,14 +284,14 @@ export function FullAuditPage() {
                     colSpan={compact ? 2 : 5}
                     className="sticky top-0 z-20 border-l bg-muted text-center text-xs font-medium text-muted-foreground"
                   >
-                    Stock movement
+                    Stock Movement
                   </TableHead>
                   <TableHead className="sticky top-0 z-20 border-l bg-muted" aria-label="Usage column group" />
                   <TableHead
                     colSpan={compact ? 1 : 4}
                     className="sticky top-0 z-20 border-l bg-muted text-center text-xs font-medium text-muted-foreground"
                   >
-                    Sold &amp; used
+                    Sold &amp; Used
                   </TableHead>
                   <TableHead
                     colSpan={compact ? 3 : 4}
@@ -300,20 +302,26 @@ export function FullAuditPage() {
                 </TableRow>
                 <TableRow className="hover:bg-transparent">
                   <TableHead className="sticky left-0 top-10 z-30 min-w-48 bg-muted">Item</TableHead>
-                  <TableHead className="sticky top-10 z-20 border-l bg-muted text-right">Begin (full + open)</TableHead>
+                  <TableHead className="sticky top-10 z-20 border-l bg-muted text-right">
+                    {compact ? "Begin" : "Begin (Full + Open)"}
+                  </TableHead>
                   {!compact && <TableHead className="sticky top-10 z-20 bg-muted text-right">Purchased</TableHead>}
                   {!compact && <TableHead className="sticky top-10 z-20 bg-muted text-right">Returns</TableHead>}
-                  {!compact && <TableHead className="sticky top-10 z-20 bg-muted text-right">Transfers (in − out)</TableHead>}
-                  <TableHead className="sticky top-10 z-20 bg-muted text-right">End (full + open)</TableHead>
+                  {!compact && <TableHead className="sticky top-10 z-20 bg-muted text-right">Transfers (In − Out)</TableHead>}
+                  <TableHead className="sticky top-10 z-20 bg-muted text-right">
+                    {compact ? "End" : "End (Full + Open)"}
+                  </TableHead>
                   <TableHead className="sticky top-10 z-20 border-l bg-muted text-right font-semibold">Usage</TableHead>
-                  <TableHead className="sticky top-10 z-20 border-l bg-muted text-right">Sold (direct + recipe)</TableHead>
-                  {!compact && <TableHead className="sticky top-10 z-20 bg-muted text-right">Non-revenue</TableHead>}
+                  <TableHead className="sticky top-10 z-20 border-l bg-muted text-right">
+                    {compact ? "Sold" : "Sold (Direct + Recipe)"}
+                  </TableHead>
+                  {!compact && <TableHead className="sticky top-10 z-20 bg-muted text-right">Non-Revenue</TableHead>}
                   {!compact && <TableHead className="sticky top-10 z-20 bg-muted text-right">Production</TableHead>}
                   {!compact && <TableHead className="sticky top-10 z-20 bg-muted text-right">Revenue</TableHead>}
                   <TableHead className="sticky top-10 z-20 border-l bg-muted text-right font-semibold">Variance vs Sold</TableHead>
                   {!compact && <TableHead className="sticky top-10 z-20 bg-muted text-right">%</TableHead>}
-                  <TableHead className="sticky top-10 z-20 bg-muted text-right">At cost</TableHead>
-                  <TableHead className="sticky top-10 z-20 bg-muted text-right">At retail</TableHead>
+                  <TableHead className="sticky top-10 z-20 bg-muted text-right">At Cost</TableHead>
+                  <TableHead className="sticky top-10 z-20 bg-muted text-right">At Retail</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -321,7 +329,7 @@ export function FullAuditPage() {
                   <CategoryRows key={group.categoryName} group={group} onDrill={setDrill} compact={compact} />
                 ))}
                 <TableRow className="bg-muted/60 font-semibold hover:bg-muted/60 [&_td]:border-t-2">
-                  <TableCell className="sticky left-0 z-10 bg-muted">Grand total</TableCell>
+                  <TableCell className="sticky left-0 z-10 bg-muted">Grand Total</TableCell>
                   {compact ? (
                     <TableCell colSpan={4} />
                   ) : (
@@ -399,7 +407,7 @@ function VerdictStrip({ report, begin, end }: { report: Report; begin: string; e
         </div>
         {categories.length > 0 ? (
           <div className="min-w-0">
-            <p className="text-xs font-medium text-muted-foreground">Variance by category (cost)</p>
+            <p className="text-xs font-medium text-muted-foreground">Variance by Category (Cost)</p>
             <div className="mt-2">
               <MagnitudeBars data={categories} name="Variance" diverging />
             </div>

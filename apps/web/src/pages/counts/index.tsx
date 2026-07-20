@@ -63,7 +63,7 @@ export function CountsPage() {
         title="Counts"
         actions={
           <Button onClick={() => setCreateOpen(true)}>
-            <Plus className="size-4" /> Start a count
+            <Plus className="size-4" /> Start a Count
           </Button>
         }
       />
@@ -73,11 +73,11 @@ export function CountsPage() {
           <>
             <ToolbarSearch value={search} onChange={setSearch} placeholder="Search date or encoder…" />
             <Select value={status} onValueChange={setStatus}>
-              <SelectTrigger className="w-40 bg-background">
+              <SelectTrigger className="w-40 bg-background" aria-label="Filter by status">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ALL">All statuses</SelectItem>
+                <SelectItem value="ALL">All Statuses</SelectItem>
                 <SelectItem value="OPEN">Counting</SelectItem>
                 <SelectItem value="COMMITTED">Committed</SelectItem>
                 <SelectItem value="VOID">Void</SelectItem>
@@ -102,7 +102,7 @@ export function CountsPage() {
             action={
               (sessions.data ?? []).length === 0 ? (
                 <Button onClick={() => setCreateOpen(true)}>
-                  <Plus className="size-4" /> Start a count
+                  <Plus className="size-4" /> Start a Count
                 </Button>
               ) : (
                 <Button
@@ -112,7 +112,7 @@ export function CountsPage() {
                     setStatus("ALL");
                   }}
                 >
-                  Clear filters
+                  Clear Filters
                 </Button>
               )
             }
@@ -121,10 +121,10 @@ export function CountsPage() {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted hover:bg-muted">
-                <TableHead>Count date</TableHead>
+                <TableHead>Count Date</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Lines</TableHead>
-                <TableHead>Encoded by</TableHead>
+                <TableHead>Encoded By</TableHead>
                 <TableHead className="w-24" />
               </TableRow>
             </TableHeader>
@@ -180,13 +180,13 @@ function NewCountDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle>Start a count</DialogTitle>
+          <DialogTitle>Start a Count</DialogTitle>
           <DialogDescription>
             The count date anchors reports: activity from this date onward belongs to the new period.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-2">
-          <Label htmlFor="count-date">Count date</Label>
+          <Label htmlFor="count-date">Count Date</Label>
           <Input
             id="count-date"
             type="date"
@@ -197,7 +197,7 @@ function NewCountDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
         </div>
         <DialogFooter>
           <Button onClick={start} disabled={!countDate || createSession.isPending}>
-            {createSession.isPending ? "Starting…" : "Start counting"}
+            {createSession.isPending ? "Starting…" : "Start Counting"}
           </Button>
         </DialogFooter>
       </DialogContent>

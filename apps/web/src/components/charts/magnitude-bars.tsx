@@ -38,7 +38,9 @@ export function MagnitudeBars({
   return (
     <ChartContainer
       config={{ value: { label: name, color: SERIES.primary } }}
-      className={cn("aspect-auto w-full", className)}
+      // overflow-hidden: a stale ResponsiveContainer measurement must clip,
+      // never widen the page (min-width feedback loops are real).
+      className={cn("aspect-auto w-full min-w-0 overflow-hidden", className)}
       style={{ height }}
     >
       <BarChart
@@ -113,9 +115,11 @@ function EndLabel({
     return null;
   }
   const negative = value < 0;
+  // Recharts hands negative bars their RAW geometry: x = the zero line and a
+  // NEGATIVE width — the data end is x + width, not x.
   return (
     <text
-      x={negative ? x - 6 : x + width + 6}
+      x={negative ? x + width - 6 : x + width + 6}
       y={y + height / 2}
       textAnchor={negative ? "end" : "start"}
       dominantBaseline="central"

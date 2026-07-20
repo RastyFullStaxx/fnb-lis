@@ -119,7 +119,10 @@ function ShellLayout({ me, current }: { me: MeResponse; current: CurrentLocation
         <SidebarRail />
       </Sidebar>
 
-      <SidebarInset>
+      {/* min-w-0: without it the <main> flex item refuses to shrink below its
+          widest descendant, so one wide table/chart drags the whole page into
+          horizontal scroll and pushes the header actions off-screen. */}
+      <SidebarInset className="min-w-0">
         <Topbar current={current} navItems={[...mainNav, ...catalogNav, ...adminNav]} />
         <div data-slot="page-content" className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4 sm:p-6">
           <Outlet />

@@ -51,6 +51,16 @@ export function useCountMutations(sessionId?: string) {
       mutationFn: (body: CountLineCreate) => post<CountLine>(`${base(locationId)}/counts/${sessionId}/lines`, body),
       onSuccess: invalidate,
     }),
+    // Atomic in-place edit — never add-then-remove (a failure between the two
+    // leaves a duplicate ACTIVE line that double-counts inventory).
+    updateLine: useMutation({
+      mutationFn: ({ lineId, ...body }: CountLineCreate & { lineId: string }) =>
+        api<CountLine>(`${base(locationId)}/counts/${sessionId}/lines/${lineId}`, {
+          method: "PUT",
+          body: JSON.stringify(body),
+        }),
+      onSuccess: invalidate,
+    }),
     removeLine: useMutation({
       mutationFn: (lineId: string) =>
         api<{ ok: boolean }>(`${base(locationId)}/counts/${sessionId}/lines/${lineId}`, { method: "DELETE" }),

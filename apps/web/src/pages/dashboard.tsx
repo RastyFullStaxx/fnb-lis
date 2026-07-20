@@ -325,10 +325,14 @@ function TrendsBand() {
             value={varianceVsSales === null ? "—" : `${varianceVsSales.toFixed(1)}%`}
             valueClassName={varianceVsSales !== null && varianceVsSales < 0 ? "text-destructive" : undefined}
             delta={
-              varianceVsSales !== null && priorVarianceVsSales !== null
+              // No delta for a move that rounds to 0.0 pts — an unchanged
+              // (often perfectly clean) ratio must never wear red.
+              varianceVsSales !== null &&
+              priorVarianceVsSales !== null &&
+              Math.abs(varianceVsSales - priorVarianceVsSales) >= 0.05
                 ? {
                     text: `${Math.abs(varianceVsSales - priorVarianceVsSales).toFixed(1)} pts`,
-                    direction: varianceVsSales > priorVarianceVsSales ? "up" : varianceVsSales < priorVarianceVsSales ? "down" : "flat",
+                    direction: varianceVsSales > priorVarianceVsSales ? "up" : "down",
                     good: Math.abs(varianceVsSales) < Math.abs(priorVarianceVsSales),
                     vs: "vs prior period",
                   }
@@ -357,10 +361,11 @@ function TrendsBand() {
   );
 }
 
-/** Signed compact delta vs the prior period; null when there's no move. */
+/** Signed compact delta vs the prior period; null when there's no move —
+    including moves that would ROUND to zero ("+₱0" with an arrow is a lie). */
 function tileDelta(latest: number, prior: number, upIsGood: boolean | null): StatTileDelta | null {
   const diff = latest - prior;
-  if (diff === 0) return null;
+  if (Math.abs(diff) < 0.5) return null;
   return {
     text: `${diff > 0 ? "+" : ""}${pesoCompact(diff)}`,
     direction: diff > 0 ? "up" : "down",

@@ -39,7 +39,7 @@ export function PeriodColumns({
   return (
     <ChartContainer
       config={{ value: { label: name, color: SERIES.primary } }}
-      className={cn("aspect-auto w-full", className)}
+      className={cn("aspect-auto w-full min-w-0 overflow-hidden", className)}
       style={{ height }}
     >
       <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 4 }}>

@@ -46,7 +46,8 @@ export function pesoFull(value: number): string {
 export function pesoCompact(value: number): string {
   const sign = value < 0 ? "−" : "";
   const abs = Math.abs(value);
-  if (abs >= 1_000_000) return `${sign}₱${trimZero((abs / 1_000_000).toFixed(1))}M`;
+  // Tier by the ROUNDED value: 999,999 must read ₱1M, never ₱1000K.
+  if (abs >= 999_950) return `${sign}₱${trimZero((abs / 1_000_000).toFixed(1))}M`;
   if (abs >= 10_000) return `${sign}₱${trimZero((abs / 1_000).toFixed(1))}K`;
   return `${sign}₱${abs.toLocaleString("en-PH", { maximumFractionDigits: 0 })}`;
 }

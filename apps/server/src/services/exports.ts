@@ -209,10 +209,12 @@ export function fullAuditCsv(report: ReconReport): string {
 
 const SALES_HEADERS = ["Date", "Item / Menu", "Type", "Category", "Qty", "Unit price", "Discount %", "Gross", "Net"];
 
-export async function salesWorkbook(report: SalesReport, meta: ReportMeta): Promise<Buffer> {
+export async function salesWorkbook(report: SalesReport, meta: ReportMeta, title = "Sales Report"): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("Sales", { views: [{ state: "frozen", ySplit: 4 }] });
-  titleBlock(ws, "Sales Report", `${meta.clientName} · ${meta.locationName} · ${report.from} → ${report.to}`, SALES_HEADERS.length, meta);
+  // The in-file title must name the view — a "Discounted" subset whose sheet
+  // says "Sales Report, Total X" misfiles as the period's full sales total.
+  titleBlock(ws, title, `${meta.clientName} · ${meta.locationName} · ${report.from} → ${report.to}`, SALES_HEADERS.length, meta);
   styleHeaderRow(ws.addRow(SALES_HEADERS));
   for (const row of report.rows) {
     const r = ws.addRow([row.saleDate, row.name, row.kind === "menu" ? "Menu" : "Item", row.category ?? ""]);
@@ -234,8 +236,8 @@ export async function salesWorkbook(report: SalesReport, meta: ReportMeta): Prom
   return toBuffer(wb);
 }
 
-export function salesCsv(report: SalesReport): string {
-  const rows: CsvValue[][] = [SALES_HEADERS];
+export function salesCsv(report: SalesReport, title = "Sales Report"): string {
+  const rows: CsvValue[][] = [[`${title} · ${report.from} → ${report.to}`], SALES_HEADERS];
   for (const row of report.rows) {
     rows.push([row.saleDate, row.name, row.kind === "menu" ? "Menu" : "Item", row.category ?? "", round2(row.qty), round2(row.unitPrice), row.discountPct, round2(row.gross), round2(row.net)]);
   }
@@ -292,10 +294,14 @@ export function purchaseCsv(report: PurchaseReport): string {
 
 const NONREV_HEADERS = ["Date", "Item / Menu", "Reason", "Qty", "Content/unit", "Est. cost"];
 
-export async function nonRevenueWorkbook(report: NonRevenueReport, meta: ReportMeta): Promise<Buffer> {
+export async function nonRevenueWorkbook(
+  report: NonRevenueReport,
+  meta: ReportMeta,
+  title = "Non-Revenue Report",
+): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("Non-revenue", { views: [{ state: "frozen", ySplit: 4 }] });
-  titleBlock(ws, "Non-Revenue Report", `${meta.clientName} · ${meta.locationName} · ${report.from} → ${report.to}`, NONREV_HEADERS.length, meta);
+  titleBlock(ws, title, `${meta.clientName} · ${meta.locationName} · ${report.from} → ${report.to}`, NONREV_HEADERS.length, meta);
   styleHeaderRow(ws.addRow(NONREV_HEADERS));
   for (const row of report.rows) {
     const r = ws.addRow([row.saleDate, row.name, row.reason]);
@@ -323,8 +329,8 @@ export async function nonRevenueWorkbook(report: NonRevenueReport, meta: ReportM
   return toBuffer(wb);
 }
 
-export function nonRevenueCsv(report: NonRevenueReport): string {
-  const rows: CsvValue[][] = [NONREV_HEADERS];
+export function nonRevenueCsv(report: NonRevenueReport, title = "Non-Revenue Report"): string {
+  const rows: CsvValue[][] = [[`${title} · ${report.from} → ${report.to}`], NONREV_HEADERS];
   for (const row of report.rows) {
     rows.push([row.saleDate, row.name, row.reason, round2(row.qty), row.contentOverride ?? "", row.estimatedCost === null ? "" : round2(row.estimatedCost)]);
   }

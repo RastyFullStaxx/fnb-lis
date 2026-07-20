@@ -88,7 +88,14 @@ The authenticated entry surface remains `/login`. A public marketing landing liv
 
 ## Voice
 
-Plain, specific, calm. "Commit count" not "Submit." "Void with reason" not "Delete." Explain the date rule where it matters: "Activity from Jun 1 up to — not including — Jun 8 (your ending count day)." Errors say what happened and what to do next. No jargon (`STOCK_IN`) outside the activity log's technical detail view.
+Plain, specific, calm. "Commit Count" not "Submit." "Void with Reason" not "Delete." Explain the date rule where it matters: "Activity from Jun 1 up to — not including — Jun 8 (your ending count day)." Errors say what happened and what to do next. No jargon (`STOCK_IN`) outside the activity log's technical detail view.
+
+**Casing (client preference, 2026-07-20): labels wear Title Case; sentences stay sentences.**
+Title Case for buttons, tabs, column headers, section/card headings, toggles, dialog and page
+titles, select labels, stat-tile labels, chart captions ("Start a Count", "All Statuses",
+"Net Revenue by Day" — minor words a/an/the/and/or/of/to/in/on/at/for/by/vs/with/from/per stay
+lowercase unless first). Sentence case for anything that talks to the user: hints, descriptions,
+empty-state messages, toasts, errors, the date-rule explainer.
 
 ## Accessibility floor
 

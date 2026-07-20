@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router";
 import { Martini, Plus } from "lucide-react";
 import { useMenus, type MenuSummary } from "@/api/menus";
 import { cn, formatMoney } from "@/lib/utils";
@@ -21,7 +22,9 @@ export function RecipesPage() {
   const menus = useMenus();
   const [building, setBuilding] = useState<MenuSummary | "new" | null>(null);
   const [viewing, setViewing] = useState<MenuSummary | null>(null);
-  const [search, setSearch] = useState("");
+  // ?q= seeds the search — the command palette deep-links here with it.
+  const [params] = useSearchParams();
+  const [search, setSearch] = useState(params.get("q") ?? "");
 
   const q = search.trim().toLowerCase();
   const filtered = (menus.data ?? []).filter((m) => !q || m.name.toLowerCase().includes(q));

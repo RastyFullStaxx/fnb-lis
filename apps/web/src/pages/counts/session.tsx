@@ -156,26 +156,29 @@ function OpenSession({ session }: { session: SessionWithLines }) {
   const save = async () => {
     if (!item) return;
     try {
-      // Edits add the replacement line FIRST, then remove the original — if the
-      // add fails, the counted line is still there. Never delete before saving.
+      // Edits go through the atomic PUT — one request updates the line in
+      // place. Add-then-remove (or the reverse) leaves either a lost count or
+      // a DUPLICATE line double-counting inventory if the second call fails.
       if (activeMode === "FULL") {
         const n = Number(qty);
         if (qty === "" || !Number.isFinite(n) || n < 0) return toast.error("Enter the counted quantity");
-        await mutations.addLine.mutateAsync({ locationItemId: item.id, countType: "FULL", qtyFull: n });
-        if (editingLineId) await mutations.removeLine.mutateAsync(editingLineId);
+        const body = { locationItemId: item.id, countType: "FULL" as const, qtyFull: n };
+        if (editingLineId) await mutations.updateLine.mutateAsync({ lineId: editingLineId, ...body });
+        else await mutations.addLine.mutateAsync(body);
       } else {
         if (!preview || !preview.ready || !preview.entered || preview.blocking) {
           return toast.error("Fix the scale reading first");
         }
-        await mutations.addLine.mutateAsync({
+        const body = {
           locationItemId: item.id,
-          countType: "WEIGH",
+          countType: "WEIGH" as const,
           scaleWeight: preview.scale,
           scaleUnit: preview.unit as "g" | "oz",
           tareWeight: preview.tare,
           densityFactor: preview.density ?? undefined,
-        });
-        if (editingLineId) await mutations.removeLine.mutateAsync(editingLineId);
+        };
+        if (editingLineId) await mutations.updateLine.mutateAsync({ lineId: editingLineId, ...body });
+        else await mutations.addLine.mutateAsync(body);
       }
       const wasEditing = editingLineId !== null;
       // Enter → saved → refocus the item picker: the counting rhythm.
