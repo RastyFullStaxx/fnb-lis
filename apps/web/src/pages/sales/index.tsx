@@ -12,6 +12,7 @@ import { formatMoney } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { TableSurface } from "@/components/table-surface";
 import { VoidDialog } from "@/components/void-dialog";
+import { EntryFact, EntryFacts } from "@/components/entry-fact";
 import {
   Dialog,
   DialogContent,
@@ -63,21 +64,6 @@ const KIND_COPY: Record<SaleKind, { title: string; button: string; saved: string
   },
 };
 
-/** One labelled fact in a Recent Entries row: "Quantity: 3".
- *
- *  Values wrap at word boundaries and never mid-token: `break-words` here let
- *  "−₱728.00" shatter one character per line once the column got narrow, which
- *  is worse than either truncating or wrapping. Amounts stay whole; a long
- *  value simply continues on the next line. */
-function EntryFact({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="flex gap-1.5">
-      <dt className="shrink-0">{label}:</dt>
-      <dd className="tnum min-w-0 text-foreground/80">{value}</dd>
-    </div>
-  );
-}
-
 /** Labels for every stored reason — canonical buckets plus legacy codes on
     historical rows (the entry select offers only the canonical three). */
 const REASON_LABELS: Record<string, string> = {
@@ -116,10 +102,13 @@ export function SalesPage() {
   const capped = rows.length < totalCount;
 
   return (
-    <div>
+    // Fill the viewport like every other list page: the surface takes the
+    // remaining height and only the Recent Entries list scrolls, so the page
+    // itself never gains a scrollbar.
+    <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader title="Sales" />
 
-      <Tabs value={kind} onValueChange={(v) => setKind(v as SaleKind)}>
+      <Tabs value={kind} onValueChange={(v) => setKind(v as SaleKind)} className="flex min-h-0 flex-1 flex-col">
         <TableSurface
           filters={
             <TabsList>
@@ -128,13 +117,16 @@ export function SalesPage() {
               <TabsTrigger value="PRODUCTION">Production</TabsTrigger>
             </TabsList>
           }
-          bodyClassName="grid gap-6 p-4 lg:grid-cols-[minmax(0,6fr)_minmax(0,6fr)]"
+          // On lg the body is a fixed-height two-column grid that never scrolls
+          // as a whole (lg:overflow-hidden); each pane manages its own overflow.
+          // Below lg it stacks and scrolls normally.
+          bodyClassName="grid gap-6 p-4 lg:min-h-0 lg:grid-cols-[minmax(0,6fr)_minmax(0,6fr)] lg:grid-rows-1 lg:overflow-hidden"
         >
           <QuickEntry kind={kind} />
 
-          <div className="lg:border-l lg:pl-6">
-            <div className="mb-2 text-sm font-medium">Recent Entries</div>
-            <div aria-live="polite" className="max-h-[28rem] divide-y overflow-y-auto">
+          <div className="flex min-h-0 flex-col lg:border-l lg:pl-6">
+            <div className="mb-2 shrink-0 text-sm font-medium">Recent Entries</div>
+            <div aria-live="polite" className="min-h-0 flex-1 divide-y overflow-y-auto max-lg:max-h-[28rem]">
             {sales.isPending ? (
               <div className="divide-y">
                 {Array.from({ length: 5 }).map((_, i) => (
@@ -156,7 +148,7 @@ export function SalesPage() {
                   ? `${sale.locationItem.itemVariant.item.name} ${variantLabel(sale.locationItem.itemVariant)}`
                   : (sale.menuItem?.name ?? "—");
                 return (
-                  <div key={sale.id} className={cn("flex items-start gap-3 px-4 py-2.5", voided && "opacity-50")}>
+                  <div key={sale.id} className={cn("flex items-stretch gap-3 px-4 py-2.5", voided && "opacity-50")}>
                     <div className="min-w-0 flex-1">
                       {/* Wraps rather than truncates — the row is already
                           multi-line, so a second line is cheaper than hiding
@@ -168,7 +160,7 @@ export function SalesPage() {
                       {/* Labels stay bare here — the entry form carries the
                           "each"/"whole sale" qualifiers, so this list reads as
                           data rather than instruction. */}
-                      <dl className="mt-0.5 space-y-px text-xs text-muted-foreground">
+                      <EntryFacts>
                         <EntryFact label="Date" value={sale.saleDate} />
                         <EntryFact label="Quantity" value={sale.qty} />
                         {sale.kind === "SALE" && (
@@ -199,12 +191,27 @@ export function SalesPage() {
                         {voided && sale.voidReason && (
                           <EntryFact label="Cancelled" value={sale.voidReason} />
                         )}
-                      </dl>
-                      {/* Actions sit at the bottom-left under the facts, in one
-                          row — that leaves the right column to just the total,
-                          so it stays narrow and the fact list keeps its width. */}
+                      </EntryFacts>
+                    </div>
+                    {/* Right column: total at the top, actions dropped to the
+                        bottom (mt-auto) so they line up with the last fact line
+                        on the left instead of floating up beside the total. */}
+                    <div className="flex shrink-0 flex-col items-end gap-2">
+                      {sale.kind === "SALE" && !voided && (() => {
+                        const gross = sale.unitPrice * sale.qty;
+                        const net = gross * (1 - sale.discountPct / 100);
+                        const hasDiscount = sale.discountPct > 0;
+                        return (
+                          <Badge variant="outline" className="tnum flex-col items-end gap-0 py-1 leading-tight">
+                            {hasDiscount && (
+                              <span className="text-muted-foreground line-through">{formatMoney(gross)}</span>
+                            )}
+                            <span className={hasDiscount ? "font-medium" : undefined}>{formatMoney(net)}</span>
+                          </Badge>
+                        );
+                      })()}
                       {!voided && (canVoid || canEdit) && (
-                        <div className="mt-2 flex gap-2">
+                        <div className="mt-auto flex gap-1">
                           {canVoid && (
                             <Button variant="destructive" size="xs" onClick={() => setVoiding(sale)}>
                               Cancel
@@ -218,28 +225,13 @@ export function SalesPage() {
                         </div>
                       )}
                     </div>
-                    {/* Right column: the line total only. Stacks its struck
-                        gross above the net rather than sitting beside it. */}
-                    {sale.kind === "SALE" && !voided && (() => {
-                      const gross = sale.unitPrice * sale.qty;
-                      const net = gross * (1 - sale.discountPct / 100);
-                      const hasDiscount = sale.discountPct > 0;
-                      return (
-                        <Badge variant="outline" className="tnum shrink-0 flex-col items-end gap-0 py-1 leading-tight">
-                          {hasDiscount && (
-                            <span className="text-muted-foreground line-through">{formatMoney(gross)}</span>
-                          )}
-                          <span className={hasDiscount ? "font-medium" : undefined}>{formatMoney(net)}</span>
-                        </Badge>
-                      );
-                    })()}
                   </div>
                 );
               })
             )}
           </div>
           {!sales.isPending && totalCount > 0 && (
-            <div className="tnum border-t px-4 py-2 text-sm text-muted-foreground">
+            <div className="tnum shrink-0 border-t px-4 py-2 text-sm text-muted-foreground">
               {totalCount} {totalCount === 1 ? "entry" : "entries"}
               {kind === "SALE" && ` · ${formatMoney(netTotal)} net`}
               {/* Say so when the list is a window onto a larger set — the count

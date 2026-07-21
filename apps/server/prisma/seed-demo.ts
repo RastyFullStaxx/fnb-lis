@@ -902,13 +902,30 @@ async function seedDepot() {
   return true;
 }
 
+/** A menu item and its current published recipe version, for open-period sales. */
+async function latestMenuVersion(locationId: string, name: string) {
+  const menu = await prisma.menuItem.findFirst({ where: { locationId, name } });
+  if (!menu) return null;
+  const version = await prisma.recipeVersion.findFirst({
+    where: { menuItemId: menu.id },
+    orderBy: { versionNo: "desc" },
+  });
+  return version ? { menuId: menu.id, versionId: version.id, srp: version.srp } : null;
+}
+
 /**
- * The live open period: entries recorded after the last committed count, so
- * the reports that default to "last count → today" open with data rather than
- * an empty state, and the dashboard has something in flight to show.
+ * The live open period for the Main Bar: entries recorded after the last
+ * committed count so every report that defaults to "last count → today" opens
+ * on data, not an empty state — and so does every TAB of every report. It
+ * deliberately carries one of each record kind:
+ *   direct sales · discounted sale · recipe (menu) sales · PRODUCTION ·
+ *   non-revenue across all three buckets · a purchase · a forfeit · a transfer.
+ * No closing count follows, so none of this touches a committed audit window;
+ * it is stock in flight, exactly what the open period represents.
  */
 async function seedOpenPeriod() {
   const location = await locationOf("Prime Hospitality Group", "Main Bar");
+  const depot = await locationOf("Prime Hospitality Group", "Depot");
   if (await prisma.saleRecord.findFirst({ where: { locationId: location.id, saleDate: "2026-07-21" } })) return false;
 
   const items = await resolveItems(location.id, BAR_ITEMS);
@@ -916,6 +933,11 @@ async function seedOpenPeriod() {
   const manager = await prisma.user.findUniqueOrThrow({ where: { username: "manager" } });
   const supplier = await prisma.supplier.findFirstOrThrow({ where: { name: "Metro Beverage Distribution" } });
 
+  // ── Purchases from TWO suppliers (Purchase report + its By-Supplier chart,
+  //    which needs ≥2 suppliers to draw) ──
+  const barEssentials = await prisma.supplier.findFirst({
+    where: { name: "Bar Essentials Supply", client: { name: "Prime Hospitality Group" } },
+  });
   const purchase = await prisma.purchase.create({
     data: {
       locationId: location.id, purchaseDate: "2026-07-20", supplierId: supplier.id,
@@ -924,16 +946,157 @@ async function seedOpenPeriod() {
   });
   for (const [key, qty, unitCost] of [["beer330", 48, 47], ["tonic200", 24, 33], ["absolut700", 6, 649]] as Array<[BarKey, number, number]>) {
     await prisma.purchaseLine.create({
-      data: { purchaseId: purchase.id, locationItemId: items[key].id, qty, unitCost, lineTotal: qty * unitCost, ...who },
+      data: { purchaseId: purchase.id, locationItemId: items[key].id, qty, unitCost, lineTotal: round2(qty * unitCost), ...who },
     });
   }
-  for (const [key, date, qty] of [["beer330", "2026-07-20", 22], ["beer330", "2026-07-21", 18], ["wine750", "2026-07-21", 3], ["cola1", "2026-07-20", 5]] as Array<[BarKey, string, number]>) {
+  const purchase2 = await prisma.purchase.create({
+    data: {
+      locationId: location.id, purchaseDate: "2026-07-21", supplierId: barEssentials?.id ?? null,
+      refNo: "BAR-0721-2", status: "COMMITTED", committedAt: new Date(), committedById: manager.id, ...who,
+    },
+  });
+  for (const [key, qty, unitCost] of [["cola1", 12, 45], ["oj1", 10, 85]] as Array<[BarKey, number, number]>) {
+    await prisma.purchaseLine.create({
+      data: { purchaseId: purchase2.id, locationItemId: items[key].id, qty, unitCost, lineTotal: round2(qty * unitCost), ...who },
+    });
+  }
+
+  // ── Direct item sales, one discounted (Sales report + Discounted view) ──
+  for (const [key, date, qty, disc] of [
+    ["beer330", "2026-07-20", 22, 0],
+    ["beer330", "2026-07-21", 18, 0],
+    ["wine750", "2026-07-21", 3, 0],
+    ["cola1", "2026-07-20", 5, 0],
+    ["absolut700", "2026-07-20", 2, 10], // the discounted line
+  ] as Array<[BarKey, string, number, number]>) {
     await prisma.saleRecord.create({
-      data: { locationId: location.id, saleDate: date, kind: "SALE", locationItemId: items[key].id, qty, unitPrice: items[key].retail, ...who },
+      data: {
+        locationId: location.id, saleDate: date, kind: "SALE", locationItemId: items[key].id,
+        qty, unitPrice: items[key].retail, discountPct: disc, ...who,
+      },
     });
   }
+
+  // ── Recipe (menu) sales — Top Sellers menus/ingredients + Sales-by-Item shot ──
+  for (const [name, date, qty, disc] of [
+    ["Vodka Tonic", "2026-07-20", 6, 0],
+    ["Cuba Libre", "2026-07-21", 4, 0],
+    ["Gin & Tonic", "2026-07-21", 3, 15], // discounted menu sale
+  ] as Array<[string, string, number, number]>) {
+    const mv = await latestMenuVersion(location.id, name);
+    if (!mv) continue;
+    await prisma.saleRecord.create({
+      data: {
+        locationId: location.id, saleDate: date, kind: "SALE", menuItemId: mv.menuId,
+        recipeVersionId: mv.versionId, qty, unitPrice: mv.srp, discountPct: disc, ...who,
+      },
+    });
+  }
+
+  // ── Production (Sales → Production view): a batch of grenadine + fresh OJ ──
+  for (const [key, date, qty] of [["grenadine750", "2026-07-20", 2], ["oj1", "2026-07-21", 1]] as Array<[BarKey, string, number]>) {
+    await prisma.saleRecord.create({
+      data: { locationId: location.id, saleDate: date, kind: "PRODUCTION", locationItemId: items[key].id, qty, unitPrice: 0, ...who },
+    });
+  }
+
+  // ── Non-revenue across ALL THREE buckets (Non-Revenue report tabs) ──
   await prisma.saleRecord.create({
     data: { locationId: location.id, saleDate: "2026-07-21", kind: "NON_REVENUE", locationItemId: items.beer330.id, qty: 2, unitPrice: 0, reason: "SPOILAGE_SPILLAGE", ...who },
+  });
+  await prisma.saleRecord.create({
+    data: { locationId: location.id, saleDate: "2026-07-20", kind: "NON_REVENUE", locationItemId: items.tonic200.id, qty: 1, unitPrice: 0, reason: "TRIMMING", ...who },
+  });
+  const vt = await latestMenuVersion(location.id, "Vodka Tonic");
+  if (vt) {
+    await prisma.saleRecord.create({
+      data: { locationId: location.id, saleDate: "2026-07-21", kind: "NON_REVENUE", menuItemId: vt.menuId, recipeVersionId: vt.versionId, qty: 1, unitPrice: 0, reason: "MARKETING_OTH", ...who },
+    });
+  }
+
+  // ── Forfeits (Forfeited Bottles report + its by-item chart, ≥2 items to
+  //    draw): two half-finished bottles returned ──
+  for (const [key, date, scale, tare, density, note] of [
+    ["absolut700", "2026-07-21", 22.0, 16.9, 30.12, "Customer left unfinished bottle (table 4)"],
+    ["jd700", "2026-07-20", 24.0, 17.2, 30.86, "Returned after last call (table 9)"],
+  ] as Array<[BarKey, string, number, number, number, string]>) {
+    await prisma.forfeit.create({
+      data: {
+        locationId: location.id, forfeitDate: date, locationItemId: items[key].id,
+        scaleWeight: scale, scaleUnit: "oz", tareWeight: tare, densityFactor: density,
+        remainingContent: weighContent(scale, tare, density),
+        note, ...who,
+      },
+    });
+  }
+
+  // ── Transfer Main Bar → Depot (Transfers report, both Out and In tabs) ──
+  const barBeer = items.beer330;
+  const depotBeer = await prisma.locationItem.findFirstOrThrow({
+    where: { locationId: depot.id, itemVariant: { size: 330, item: { name: "San Miguel Pale Pilsen" } } },
+  });
+  const transfer = await prisma.transfer.create({
+    data: {
+      fromLocationId: location.id, toLocationId: depot.id, businessDate: "2026-07-21",
+      status: "COMMITTED", committedAt: new Date(), committedById: manager.id, ...who,
+    },
+  });
+  const line = await prisma.transferLine.create({
+    data: { transferId: transfer.id, locationItemId: barBeer.id, qty: 10, unitCost: barBeer.cost, lineTotal: round2(10 * barBeer.cost), ...who },
+  });
+  await prisma.transferReceiptLine.create({
+    data: { transferLineId: line.id, toLocationItemId: depotBeer.id, qtyReceived: 10, receiptDate: "2026-07-21", note: null, ...who },
+  });
+  return true;
+}
+
+/**
+ * A light open period for the food locations (Kitchen, Casa Verde) so their
+ * range-based reports land on data too. Forfeits and Transfers stay empty for
+ * these on purpose — a kitchen books no bottle forfeits, and Casa Verde is a
+ * single-location client with nowhere to transfer to; those empties are the
+ * real state, not a seed gap.
+ */
+async function seedFoodOpenPeriod(clientName: string, locationName: string, refPrefix: string, supplierName: string, menuNames: string[]) {
+  const location = await locationOf(clientName, locationName);
+  if (await prisma.saleRecord.findFirst({ where: { locationId: location.id, saleDate: "2026-07-21" } })) return false;
+
+  const items = await resolveItems(location.id, KITCHEN_ITEMS);
+  const who = await actor("staff");
+  const manager = await prisma.user.findUniqueOrThrow({ where: { username: "manager" } });
+  const supplier = await prisma.supplier.findFirst({ where: { name: supplierName, client: { name: clientName } } });
+
+  const purchase = await prisma.purchase.create({
+    data: {
+      locationId: location.id, purchaseDate: "2026-07-20", supplierId: supplier?.id ?? null,
+      refNo: `${refPrefix}-0721-1`, status: "COMMITTED", committedAt: new Date(), committedById: manager.id, ...who,
+    },
+  });
+  for (const [key, qty, unitCost] of [["chicken", 12, 190], ["fries", 15, 117], ["salmon", 4, 655]] as Array<[KitchenKey, number, number]>) {
+    await prisma.purchaseLine.create({
+      data: { purchaseId: purchase.id, locationItemId: items[key].id, qty, unitCost, lineTotal: round2(qty * unitCost), ...who },
+    });
+  }
+
+  // Recipe sales, one discounted — Sales report + Top Sellers menus/ingredients.
+  for (const [i, name] of menuNames.entries()) {
+    const mv = await latestMenuVersion(location.id, name);
+    if (!mv) continue;
+    await prisma.saleRecord.create({
+      data: {
+        locationId: location.id, saleDate: i === 0 ? "2026-07-20" : "2026-07-21", kind: "SALE",
+        menuItemId: mv.menuId, recipeVersionId: mv.versionId, qty: 8 - i * 2, unitPrice: mv.srp,
+        discountPct: i === 1 ? 10 : 0, ...who,
+      },
+    });
+  }
+
+  // A trimming write-off (Non-Revenue) and a prep batch (Production).
+  await prisma.saleRecord.create({
+    data: { locationId: location.id, saleDate: "2026-07-20", kind: "NON_REVENUE", locationItemId: items.chicken.id, qty: 0.6, unitPrice: 0, reason: "TRIMMING", ...who },
+  });
+  await prisma.saleRecord.create({
+    data: { locationId: location.id, saleDate: "2026-07-21", kind: "PRODUCTION", locationItemId: items.oil.id, qty: 1, unitPrice: 0, ...who },
   });
   return true;
 }
@@ -972,9 +1135,21 @@ export async function seedDemoHistory() {
   const kitchen = await seedKitchen();
   const casa = await seedCasaVerde();
   const open = await seedOpenPeriod();
+  const kitchenOpen = await seedFoodOpenPeriod(
+    "Prime Hospitality Group", "Kitchen", "KITCH", "FreshFoods Corp",
+    ["Grilled Chicken Plate", "Ribeye Steak Plate", "Pan-Seared Salmon"],
+  );
+  const casaOpen = await seedFoodOpenPeriod(
+    "Casa Verde Restaurant", "Main", "CV", "Verde Fresh Market",
+    ["Chicken Adobo Rice Bowl", "Grilled Salmon Verde", "Truffle Fries"],
+  );
   await seedRicherActivity();
 
-  const done = [transfers && "transfers", bar && "Main Bar", depot && "Depot", kitchen && "Kitchen", casa && "Casa Verde", open && "open period"].filter(Boolean);
+  const done = [
+    transfers && "transfers", bar && "Main Bar", depot && "Depot", kitchen && "Kitchen",
+    casa && "Casa Verde", open && "open period",
+    (kitchenOpen || casaOpen) && "food open periods",
+  ].filter(Boolean);
   console.log(
     done.length > 0
       ? `Demo history seeded (${done.join(", ")}) — 5 audit periods, 2026-06-15 → 2026-07-20.`

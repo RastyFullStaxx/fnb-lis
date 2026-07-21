@@ -12,6 +12,7 @@ import { ApiError } from "@/api/http";
 import { formatMoney } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { TableSurface, TableLoading, TableEmpty, ToolbarField, ToolbarSearch } from "@/components/table-surface";
+import { EntryFact, EntryFacts } from "@/components/entry-fact";
 import { ItemCombobox } from "@/components/item-combobox";
 import { VoidDialog } from "@/components/void-dialog";
 import { useWeighPreview, WeighPreviewStrip } from "@/components/weigh-calculator";
@@ -410,25 +411,29 @@ function ForfeitsTab() {
               const variant = f.locationItem.itemVariant;
               const voided = f.status === "VOID";
               return (
-                <div key={f.id} className={cn("flex items-center gap-3 px-4 py-2.5", voided && "opacity-50")}>
+                <div key={f.id} className={cn("flex items-stretch gap-3 px-4 py-2.5", voided && "opacity-50")}>
                   <div className="min-w-0 flex-1">
-                    <p
-                      title={`${variant.item.name} ${variantLabel(variant)}`}
-                      className={cn("truncate text-sm font-medium", voided && "line-through")}
-                    >
+                    {/* Same labelled-fact format as Sales' Recent Entries, so
+                        every "Recent …" panel reads the same way. */}
+                    <p className={cn("text-sm font-medium", voided && "line-through")}>
                       {variant.item.name}
                       <span className="ml-1.5 font-normal text-muted-foreground">{variantLabel(variant)}</span>
                     </p>
-                    <p className="tnum text-xs text-muted-foreground">
-                      {f.forfeitDate} ·{" "}
-                      {f.remainingContent > 0
-                        ? `${f.remainingContent} ${variant.unit.name} back to stock`
-                        : `${f.qty} unit(s)`}
-                      {voided && f.voidReason && ` · cancelled: ${f.voidReason}`}
-                    </p>
+                    <EntryFacts>
+                      <EntryFact label="Date" value={f.forfeitDate} />
+                      <EntryFact
+                        label="Returned"
+                        value={
+                          f.remainingContent > 0
+                            ? `${f.remainingContent} ${variant.unit.name} (back to stock)`
+                            : `${f.qty} unit(s)`
+                        }
+                      />
+                      {voided && f.voidReason && <EntryFact label="Cancelled" value={f.voidReason} />}
+                    </EntryFacts>
                   </div>
                   {canVoid && !voided && (
-                    <Button variant="destructive" size="xs" onClick={() => setVoiding(f)}>
+                    <Button variant="destructive" size="xs" className="mt-auto shrink-0" onClick={() => setVoiding(f)}>
                       Cancel
                     </Button>
                   )}
