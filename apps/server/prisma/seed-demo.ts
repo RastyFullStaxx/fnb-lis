@@ -1127,6 +1127,64 @@ async function seedRicherActivity() {
 }
 
 /**
+ * A dedicated dead-stock item (client req 2026-07-21) so the Non-Moving report
+ * has something to show: stocked, but counted at the SAME quantity on the last
+ * closed period's boundaries (2026-07-14 and 07-20) with no sales — so its
+ * usage is zero and it lands on the report with value sitting idle. A brand-new
+ * item the ledger never touches, so it disturbs nothing else (its variance is
+ * zero, so no grand total moves). Idempotent.
+ */
+async function seedDeadStock(
+  clientName: string,
+  locationName: string,
+  spec: { item: string; category: string; size: number; unit: string; cost: number; retail: number; qty: number },
+) {
+  const location = await locationOf(clientName, locationName);
+  const admin = await prisma.user.findUniqueOrThrow({ where: { username: "admin" } });
+  const who = await actor("staff");
+  const category = await prisma.category.findUnique({ where: { name: spec.category } });
+  const unit = await prisma.unit.findUnique({ where: { name: spec.unit } });
+  if (!category || !unit) return;
+
+  const item =
+    (await prisma.item.findFirst({ where: { name: spec.item } })) ??
+    (await prisma.item.create({ data: { name: spec.item, categoryId: category.id, createdById: admin.id } }));
+  const variant = await prisma.itemVariant.upsert({
+    where: { itemId_size_unitId: { itemId: item.id, size: spec.size, unitId: unit.id } },
+    update: {},
+    create: { itemId: item.id, size: spec.size, unitId: unit.id, contentTracked: false },
+  });
+  const li = await prisma.locationItem.upsert({
+    where: { locationId_itemVariantId: { locationId: location.id, itemVariantId: variant.id } },
+    update: { cost: spec.cost, retail: spec.retail },
+    create: { locationId: location.id, itemVariantId: variant.id, cost: spec.cost, retail: spec.retail, parLevel: null },
+  });
+
+  // Equal counts on the latest closed period's boundaries → zero movement.
+  for (const date of ["2026-07-14", "2026-07-20"]) {
+    const session = await prisma.countSession.findFirst({
+      where: { locationId: location.id, countDate: date, status: "COMMITTED" },
+    });
+    if (!session) continue;
+    const exists = await prisma.countLine.findFirst({ where: { countSessionId: session.id, locationItemId: li.id } });
+    if (exists) continue;
+    await prisma.countLine.create({
+      data: {
+        countSessionId: session.id,
+        locationItemId: li.id,
+        countType: "FULL",
+        qtyFull: spec.qty,
+        remainingContent: 0,
+        unitCost: li.cost,
+        unitRetail: li.retail,
+        createdById: who.createdById,
+        createdByName: who.createdByName,
+      },
+    });
+  }
+}
+
+/**
  * Top-up entries that make the newest features visible in the demo even on a
  * database seeded before they existed (client req 2026-07-21). Idempotent and
  * additive — each guard checks for its own row, so a reseed adds nothing twice
@@ -1135,6 +1193,8 @@ async function seedRicherActivity() {
  *    Non-Revenue report's By-Bucket breakdown shows all four buckets (the three
  *    canonical ones plus Other). Dated inside the open period, after every
  *    fixture window, so no golden number moves.
+ *  - a dead-stock item per sales location (via seedDeadStock) so the Non-Moving
+ *    report has rows to show.
  */
 async function seedFeatureShowcase() {
   const who = await actor("staff");
@@ -1158,6 +1218,13 @@ async function seedFeatureShowcase() {
       data: { locationId: location.id, saleDate: "2026-07-21", kind: "NON_REVENUE", locationItemId: items.fries.id, qty: 0.5, unitPrice: 0, reason: "OTHER", ...who },
     });
   }
+
+  // Dead stock — one idle item per sales location so the Non-Moving report lists
+  // something. A dusty bottle of Blue Curaçao behind the bar; a jar of truffle
+  // paste in each kitchen — bought, counted, never used.
+  await seedDeadStock("Prime Hospitality Group", "Main Bar", { item: "Blue Curaçao", category: "Liqueur", size: 750, unit: "ml", cost: 480, retail: 950, qty: 6 });
+  await seedDeadStock("Prime Hospitality Group", "Kitchen", { item: "Truffle Paste", category: "Sauces & Dressings", size: 1, unit: "kg", cost: 1850, retail: 0, qty: 3 });
+  await seedDeadStock("Casa Verde Restaurant", "Main", { item: "Truffle Paste", category: "Sauces & Dressings", size: 1, unit: "kg", cost: 1850, retail: 0, qty: 3 });
 }
 
 export async function seedDemoHistory() {

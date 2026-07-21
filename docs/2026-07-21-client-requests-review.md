@@ -1,4 +1,4 @@
-# Client Requests — 2026-07-21 Round (Review Guide)
+# Client Requests — 2026-07-21 (Review Guide)
 
 > **Login for the demo:** `admin` / `Fnb!2026` (or `manager`, `staff`, `accountant`, `readonly` —
 > same password). Two establishments are seeded: **Prime Hospitality Group** (locations *Main Bar* +
@@ -6,7 +6,13 @@
 
 ---
 
-## The message we were answering
+## What this covers
+
+The client sent **two rounds of notes** on 2026-07-21. This guide collects *everything* we did across
+both — what was asked, what we found already in the system, what we built (or parked), and exactly
+**where to see each one**. Scorecards first; details below.
+
+### Round 1 — the five-item list (A–E)
 
 | # | Client ask (plain English) | Verdict going in | What we did | Status |
 |---|---|---|---|---|
@@ -16,8 +22,19 @@
 | **D** | Can the system integrate a 3rd-party **barcode scanner**? | 🟡 Field exists, nothing wired | Answered + wrote a build spec | 📋 Parked (spec ready) |
 | **E** | Count inventory offline on a device at a branch, then **upload** into the office system | ❌ Not built | Answered; tied to the future desktop phase | 📋 Parked |
 
-Then the client approved two follow-ups, which we also built: (A) making the threshold a **saved
-setting**, and (2) a **fully-loaded demo seeder** so all of this shows up with data.
+Two follow-ups the client then approved, also built: the threshold became a **saved per-establishment
+setting**, and a **fully-loaded demo seeder** so all of it shows with data.
+
+### Round 2 — four more notes (1–4)
+
+| # | Client note (plain English) | Verdict going in | What we did | Status |
+|---|---|---|---|---|
+| **1** | Force-enter an open item **by amount, with no liquid/tare weight** | 🟡 Already possible via a decimal count | Added a dedicated **"Open Amount"** count mode | ✅ Shipped |
+| **2** | Take subscription payment via **GCash / bank transfer**; verify before activating a client (staff creation exempt) | — | Gave design suggestions only, per the client | 💭 Thought only |
+| **3** | **Par Level report** — based on stock movement (begin/end) to guide purchasing | ❌ Not built | Built it | ✅ Shipped |
+| **4** | **Non-Moving items report** — stock that isn't moving | ❌ Not built | Built it (+ seeded dead stock so it shows) | ✅ Shipped |
+
+Round 1 detail is in the **A–E** sections; Round 2 detail is under **[Round 2 details](#round-2-details)**.
 
 ---
 
@@ -197,14 +214,89 @@ idempotent (safe to re-run). It adds:
 - an **"Other / Unspecified"** non-revenue entry on each sales location, so the By-Bucket breakdown
   shows all four buckets out of the box;
 - **distinct per-establishment thresholds** — Prime **11%** (default), Casa Verde **8%** — so the new
-  setting visibly differs between tenants.
+  setting visibly differs between tenants;
+- a **dead-stock item** per sales location (Blue Curaçao behind the bar, truffle paste in each
+  kitchen), counted equally at the period's start and end so it has stock but *zero* movement — so the
+  **Non-Moving report** has rows to show.
 
-**Proof the fixtures didn't move:** after re-seeding, Main Bar's Jun 1–8 Full Audit is still exactly
-**−₱330.69** at cost / **−₱869.57** at retail.
+**Proof the fixtures didn't move:** after every re-seed, Main Bar's Jun 1–8 Full Audit is still exactly
+**−₱330.69** at cost / **−₱869.57** at retail. (The dead-stock item has zero variance, so it moves no
+total either.)
 
 ---
 
-## Try it yourself (5-minute review path)
+## Round 2 details
+
+### 1 — Open-amount count entry
+
+**What the client asked:** *"In inventory input, I can force-enter open items by weight even without a
+liquid weight or tare weight."*
+
+**What we found:** a tare-free path already existed — you can type a **decimal** in a Full count (e.g.
+`2.5` for two-and-a-half bottles), which records an open item without weighing. But that's a fraction
+of a bottle, not the literal "enter the amount," so we closed the gap properly.
+
+**What we built:** a third count mode — **"Open Amount."** When counting a weighable item you now see
+three tabs: *Full Units · Weigh Partial · **Open Amount***. Open Amount is a single field ("Remaining
+ml") — type what's left in the container, no scale or empty weight. It's stored as a weigh line with
+the content set straight from the number, so **reconciliation reads it identically and no math moves**
+(the golden fixture is untouched).
+
+| | |
+|---|---|
+| **Where to see it** | Sidebar → **Counts** → open a count → pick a bottle/weighable item → the **"Open Amount"** tab. (Only shows for weighable items, in an open — not committed — session.) |
+| **Code** | Schema: [`schemas/ops.ts`](../packages/core/src/schemas/ops.ts) (`countLineCreate` → optional `remainingContent`) · Route: [`routes/counts.ts`](../apps/server/src/routes/counts.ts) (`buildLineData`) · UI: [`counts/session.tsx`](../apps/web/src/pages/counts/session.tsx) |
+
+### 2 — Payment method (thoughts only)
+
+**What the client asked:** clients pay the subscription/standalone fee via **GCash or bank transfer**,
+and the admin **verifies payment before activating** a client's account — while a client's own staff
+creating logins are **exempt** from this.
+
+Per the client ("just the thought for now"), we **did not build** this — here's the suggested shape:
+
+- **No payment gateway.** GCash/bank transfer settle offline; the system should only **record proof**
+  (method, reference no., amount, date, optional screenshot), never process money or store card/bank
+  credentials.
+- **Gate activation on the *subscription*, not the user** — which makes staff creation exempt for
+  free: a new client starts pending until the admin clicks "Verify & Activate"; staff logins are made
+  *inside* an already-active client and never touch payment.
+- The existing `paid` / `status` machinery on the subscription is the scaffolding — this is mostly
+  *capturing the method + a verify action*, not new billing logic.
+
+### 3 — Par Level report
+
+**What the client asked:** *"Par level report — based on the movement of stocks, beginning and ending,
+to guide purchasing."*
+
+**What we built:** a **purchasing guide** at **Reports → Par Level**. For every item with a reorder
+point it shows current **on-hand vs par**, **how much moved last closed period**, and a **suggested
+order** (`par − on-hand`) — below-par items sorted to the top, with a "total to buy" and an Excel/CSV/
+PDF export. It projects off the Full Audit engine, so its numbers cross-foot.
+
+| | |
+|---|---|
+| **Where to see it** | Reports → **Par Level** (under "Stock & Movement"). Demo shows **5 items below par, ₱5,797.40 to buy** — e.g. *Tonic Water: on-hand 19 / par 24, used 36 → buy 5*. |
+| **Code** | Server: [`report-lists.ts`](../apps/server/src/services/report-lists.ts) (`parLevelReport`, shared `stockSnapshot`) · Route + exports: [`routes/reports.ts`](../apps/server/src/routes/reports.ts) · Web: [`reports/par-level.tsx`](../apps/web/src/pages/reports/par-level.tsx) |
+
+### 4 — Non-Moving items report
+
+**What the client asked:** *"Non-moving items report — based on stocks that don't move."*
+
+**What we built:** a **dead-stock** report at **Reports → Non-Moving Items** — items still on hand that
+saw **zero movement** over the last closed period, ranked by the value sitting idle (cost + retail),
+with export. Same shared snapshot as Par Level, so it cross-foots too. Because the live demo had no
+dead stock (everything moved), the seeder now plants one idle item per location so the report is
+populated.
+
+| | |
+|---|---|
+| **Where to see it** | Reports → **Non-Moving Items**. Demo: Main Bar shows *Blue Curaçao 750 ml — on-hand 6, ₱2,880 idle*; each kitchen shows *Truffle Paste 1 kg — ₱5,550 idle*. |
+| **Code** | Server: [`report-lists.ts`](../apps/server/src/services/report-lists.ts) (`nonMovingReport`) · Route + exports: [`routes/reports.ts`](../apps/server/src/routes/reports.ts) · Web: [`reports/non-moving.tsx`](../apps/web/src/pages/reports/non-moving.tsx) · Seed: [`seed-demo.ts`](../apps/server/prisma/seed-demo.ts) (`seedDeadStock`) |
+
+---
+
+## Try it yourself (review path)
 
 1. **Log in** (`admin` / `Fnb!2026`).
 2. **Full Audit highlight** — Reports → Full Audit. You'll see red/amber rows (e.g. on the Kitchen/
@@ -216,18 +308,27 @@ idempotent (safe to re-run). It adds:
    (Try recording one: Sales → Non-revenue → Reason dropdown.)
 5. **Sales split** — Reports → Sales → the **By Price Type** strip above the table (Regular /
    Discounted / Total Discount Given).
+6. **Open-amount count** — Counts → open (or start) a count → pick a bottle → the **"Open Amount"** tab
+   → type the remaining amount, save. No scale needed.
+7. **Par Level** — Reports → **Par Level**: 5 items below par with suggested order quantities and a
+   "total to buy."
+8. **Non-Moving Items** — Reports → **Non-Moving Items**: the seeded dead stock (Blue Curaçao / Truffle
+   Paste) sitting idle.
 
 ---
 
 ## What we intentionally did *not* change
 
-- **Reconciliation math** — the highlight is a *presentation* layer only; it reads existing numbers
-  and moves none of them. The golden fixtures were re-verified after every change.
+- **Reconciliation math** — the highlight and the two new reports are a *presentation* layer only;
+  they read existing numbers and move none of them. The golden fixtures were re-verified after every
+  change.
 - **The Full Audit revenue column** — kept as a single figure (the regular/discounted split lives in
   the Sales report, where it belongs).
-- **The fixture seed data** — only the demo layer was enriched.
+- **The open-amount count entry** — stores the remaining content exactly the way a weighed line does,
+  so reconciliation math is unchanged; it's just a different way to *enter* the same value.
+- **The fixture seed data** — only the demo layer was enriched (including the dead-stock items).
 
 ## Where the canonical records live
 - Architecture rationale (incl. the additive-rule note): [architecture.md](architecture.md), deviation **#25**.
-- Shipped-history log: [build-log.md](build-log.md), **Phase 14**.
+- Shipped-history log: [build-log.md](build-log.md), **Phase 14** (Round 1) and **Phase 15** (Round 2).
 - Request tracker + the two parked specs (barcode, offline): [project-overview.md](project-overview.md), **2026-07-21 additions**.

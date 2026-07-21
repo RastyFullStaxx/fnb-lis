@@ -428,8 +428,11 @@ a **suggested order** (`par − on-hand`), below-par first, with an order-value 
 xlsx/csv/pdf + web page + hub + palette. Verified: Main Bar shows 5 below par, ₱5,797.40 to buy.
 
 **Non-Moving Items report (#4).** Dead stock: items still on hand with **zero** usage over the latest
-closed period, ranked by idle value. Same shared `stockSnapshot` helper. Verified working (returns 0
-on the current demo — everything's moving — which is a valid, not a broken, result).
+closed period, ranked by idle value. Same shared `stockSnapshot` helper. The demo had no dead stock
+(everything moved), so `seedDeadStock` adds one deliberately-idle item per sales location — Blue
+Curaçao behind the bar, truffle paste in each kitchen — counted equally on the period's boundaries so
+usage is zero and variance is zero (a brand-new item the ledger never touches; golden fixture still
+−₱330.69). The report now lists them (Main Bar: ₱2,880 idle).
 
 **Client note #2 (GCash / bank-transfer payment gate)** stayed a thought exercise per the client:
 record method + proof, gate activation on the subscription (staff creation is inherently exempt), no
