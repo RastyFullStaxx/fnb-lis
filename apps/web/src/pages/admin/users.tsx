@@ -21,6 +21,7 @@ import {
 } from "@/api/admin";
 import { ApiError } from "@/api/http";
 import { PageHeader } from "@/components/page-header";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import {
   TableSurface,
   TableLoading,
@@ -642,6 +643,7 @@ function EditUserDialog({
   const updateAccess = useUpdateUserAccess();
   const [role, setRole] = useState<Role>("STAFF");
   const [resetPw, setResetPw] = useState<string | null>(null);
+  const [confirmReset, setConfirmReset] = useState(false);
   const [clientIds, setClientIds] = useState<Set<string>>(new Set());
   const [modules, setModules] = useState<Set<ModuleType>>(new Set());
 
@@ -747,10 +749,23 @@ function EditUserDialog({
               <KeyRound className="size-4 text-muted-foreground" />
               Reset password
             </div>
-            <Button variant="outline" size="sm" onClick={doReset} disabled={update.isPending}>
+            <Button variant="outline" size="sm" onClick={() => setConfirmReset(true)} disabled={update.isPending}>
               Generate & Reset
             </Button>
           </div>
+          <ConfirmDialog
+            open={confirmReset}
+            onOpenChange={setConfirmReset}
+            title={`Reset ${user.firstName}'s password?`}
+            description="A new temporary password is generated and the current one stops working immediately. Share the new password with the user."
+            confirmLabel="Reset Password"
+            destructive
+            pending={update.isPending}
+            onConfirm={() => {
+              setConfirmReset(false);
+              void doReset();
+            }}
+          />
 
           <div className="flex items-center justify-between rounded-lg border p-3">
             <div className="text-sm">
