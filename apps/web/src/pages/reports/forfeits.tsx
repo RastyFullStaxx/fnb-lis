@@ -44,15 +44,19 @@ export function ForfeitsReportPage() {
   // The report lists one line per return, so the same bottle recurs across
   // dates — rolled up by item it answers the question the table can't: which
   // items are bleeding the most value back out of stock.
+  // Ranked off the FULL payload, not the search-filtered `rows`: like every
+  // other report's chart, the ranking names the period's real top items while
+  // a search only narrows the table beneath it. Ranking the filtered set would
+  // quietly redefine "top" to mean "top within my search".
   const itemValue = useMemo(() => {
     const byItem = new Map<string, number>();
-    for (const r of rows) byItem.set(r.name, (byItem.get(r.name) ?? 0) + r.costValue);
+    for (const r of report.data?.rows ?? []) byItem.set(r.name, (byItem.get(r.name) ?? 0) + r.costValue);
     const bars = [...byItem]
       .map(([label, value]) => ({ label, value: round2(value) }))
       .sort((a, b) => b.value - a.value)
       .slice(0, ITEM_BAR_CAP);
     return { bars, itemCount: byItem.size };
-  }, [rows]);
+  }, [report.data]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">

@@ -102,8 +102,10 @@ export function SalesByItemReportPage() {
       />
 
       {/* Reads once as page copy — it defines two column headings, so it belongs
-          with the title, not repeated inside the filter strip. */}
-      <p className="-mt-2 mb-3 text-sm text-muted-foreground">
+          with the title, not repeated inside the filter strip. print:hidden
+          preserves its prior behaviour (it lived in the print-hidden toolbar)
+          and matches the cost-basis note on Cost Snapshot. */}
+      <p className="-mt-2 mb-3 text-sm text-muted-foreground print:hidden">
         Shot = recipe portions · Bottle = whole units.
       </p>
 

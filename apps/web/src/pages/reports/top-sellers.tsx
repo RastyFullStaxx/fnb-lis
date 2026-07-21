@@ -100,7 +100,11 @@ export function TopSellersPage() {
             {brandBars.length >= 2 && (
               <ChartBlock
                 title="Top Brands by Revenue"
-                hint={`Top ${brandBars.length} of ${report.data!.topBrands.length} by revenue`}
+                // The pool (topBrands) is ranked by QUANTITY server-side and cut
+                // to the 10/25/50 toggle; the bars re-rank that pool by revenue.
+                // "of N by revenue" would imply N candidates were weighed on
+                // revenue, so the hint names the volume selection it actually is.
+                hint={`Top ${brandBars.length} by revenue, within the top ${report.data!.topBrands.length} by volume`}
               >
                 <MagnitudeBars data={brandBars} name="Revenue" />
               </ChartBlock>

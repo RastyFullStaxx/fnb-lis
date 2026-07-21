@@ -1,4 +1,4 @@
-import { forwardRef, useRef, useState } from "react";
+import { forwardRef, useEffect, useRef, useState } from "react";
 import { ChevronsUpDown, Martini, Receipt } from "lucide-react";
 import { toast } from "sonner";
 import { can, NON_REVENUE_GROUP_LABELS, NON_REVENUE_GROUPS, NON_REVENUE_REASONS, type Role, type SaleKind } from "@fnb/core";
@@ -12,6 +12,14 @@ import { formatMoney } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { TableSurface } from "@/components/table-surface";
 import { VoidDialog } from "@/components/void-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Command,
   CommandEmpty,
@@ -92,15 +100,20 @@ export function SalesPage() {
   const sales = useSales({ kind });
   const mutations = useSaleMutations();
   const [voiding, setVoiding] = useState<SaleRecord | null>(null);
+  const [editing, setEditing] = useState<SaleRecord | null>(null);
 
   const role = (me.data?.user.role ?? "READONLY") as Role;
   const canVoid = can(role, "entries.void");
+  // Editing voids the original and creates a replacement, so it needs both.
+  const canEdit = canVoid && can(role, "entries.create");
 
-  const activeEntries = (sales.data ?? []).filter((s) => s.status !== "VOID");
-  const netTotal = activeEntries.reduce(
-    (sum, s) => sum + s.unitPrice * s.qty * (1 - s.discountPct / 100),
-    0,
-  );
+  // rows is the displayed page (≤300); totalCount and netTotal come from the
+  // server and cover every non-void entry, so the footer never quietly
+  // under-reports once a busy location scrolls past the cap.
+  const rows = sales.data?.rows ?? [];
+  const totalCount = sales.data?.totalCount ?? 0;
+  const netTotal = sales.data?.netTotal ?? 0;
+  const capped = rows.length < totalCount;
 
   return (
     <div>
@@ -131,13 +144,13 @@ export function SalesPage() {
                   </div>
                 ))}
               </div>
-            ) : (sales.data ?? []).length === 0 ? (
+            ) : rows.length === 0 ? (
               <div className="p-6 text-center">
                 <Receipt className="mx-auto mb-2 size-6 text-muted-foreground/50" />
                 <p className="text-sm text-muted-foreground">Nothing recorded yet for this tab.</p>
               </div>
             ) : (
-              sales.data!.map((sale) => {
+              rows.map((sale) => {
                 const voided = sale.status === "VOID";
                 const name = sale.locationItem
                   ? `${sale.locationItem.itemVariant.item.name} ${variantLabel(sale.locationItem.itemVariant)}`
@@ -187,40 +200,51 @@ export function SalesPage() {
                           <EntryFact label="Cancelled" value={sale.voidReason} />
                         )}
                       </dl>
-                    </div>
-                    {/* Total and action share one shrink-0 column. The total
-                        stacks its struck gross above the net instead of sitting
-                        beside it — side by side it was ~140px wide and starved
-                        the fact list, which then broke mid-number. */}
-                    <div className="flex shrink-0 items-center gap-2">
-                      {sale.kind === "SALE" && !voided && (() => {
-                        const gross = sale.unitPrice * sale.qty;
-                        const net = gross * (1 - sale.discountPct / 100);
-                        const hasDiscount = sale.discountPct > 0;
-                        return (
-                          <Badge variant="outline" className="tnum flex-col items-end gap-0 py-1 leading-tight">
-                            {hasDiscount && (
-                              <span className="text-muted-foreground line-through">{formatMoney(gross)}</span>
-                            )}
-                            <span className={hasDiscount ? "font-medium" : undefined}>{formatMoney(net)}</span>
-                          </Badge>
-                        );
-                      })()}
-                      {canVoid && !voided && (
-                        <Button variant="destructive" size="xs" onClick={() => setVoiding(sale)}>
-                          Cancel
-                        </Button>
+                      {/* Actions sit at the bottom-left under the facts, in one
+                          row — that leaves the right column to just the total,
+                          so it stays narrow and the fact list keeps its width. */}
+                      {!voided && (canVoid || canEdit) && (
+                        <div className="mt-2 flex gap-2">
+                          {canVoid && (
+                            <Button variant="destructive" size="xs" onClick={() => setVoiding(sale)}>
+                              Cancel
+                            </Button>
+                          )}
+                          {canEdit && (
+                            <Button variant="outline" size="xs" onClick={() => setEditing(sale)}>
+                              Edit
+                            </Button>
+                          )}
+                        </div>
                       )}
                     </div>
+                    {/* Right column: the line total only. Stacks its struck
+                        gross above the net rather than sitting beside it. */}
+                    {sale.kind === "SALE" && !voided && (() => {
+                      const gross = sale.unitPrice * sale.qty;
+                      const net = gross * (1 - sale.discountPct / 100);
+                      const hasDiscount = sale.discountPct > 0;
+                      return (
+                        <Badge variant="outline" className="tnum shrink-0 flex-col items-end gap-0 py-1 leading-tight">
+                          {hasDiscount && (
+                            <span className="text-muted-foreground line-through">{formatMoney(gross)}</span>
+                          )}
+                          <span className={hasDiscount ? "font-medium" : undefined}>{formatMoney(net)}</span>
+                        </Badge>
+                      );
+                    })()}
                   </div>
                 );
               })
             )}
           </div>
-          {!sales.isPending && activeEntries.length > 0 && (
+          {!sales.isPending && totalCount > 0 && (
             <div className="tnum border-t px-4 py-2 text-sm text-muted-foreground">
-              {activeEntries.length} {activeEntries.length === 1 ? "entry" : "entries"}
+              {totalCount} {totalCount === 1 ? "entry" : "entries"}
               {kind === "SALE" && ` · ${formatMoney(netTotal)} net`}
+              {/* Say so when the list is a window onto a larger set — the count
+                  and net above are the true totals, but only 300 rows render. */}
+              {capped && ` · showing latest ${rows.length}`}
             </div>
           )}
           </div>
@@ -242,7 +266,171 @@ export function SalesPage() {
           }
         }}
       />
+
+      <EditSaleDialog sale={editing} onOpenChange={(open) => !open && setEditing(null)} />
     </div>
+  );
+}
+
+/**
+ * Edit a committed entry. The item/menu is fixed — you're correcting the
+ * numbers of an entry, not changing what it was for (to reassign, cancel and
+ * re-enter). Saving voids the original and writes a linked replacement, so the
+ * audit trail is identical to any other correction; a reason is required, the
+ * same way a cancel requires one.
+ */
+function EditSaleDialog({
+  sale,
+  onOpenChange,
+}: {
+  sale: SaleRecord | null;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const mutations = useSaleMutations();
+  const [qty, setQty] = useState("");
+  const [price, setPrice] = useState("");
+  const [discount, setDiscount] = useState("");
+  const [content, setContent] = useState("");
+  const [reason, setReason] = useState<string>("SPOILAGE_SPILLAGE");
+  const [date, setDate] = useState("");
+  const [changeReason, setChangeReason] = useState("");
+
+  // Re-seed every field when a different entry opens the dialog.
+  useEffect(() => {
+    if (!sale) return;
+    setQty(String(sale.qty));
+    setPrice(sale.unitPrice ? String(sale.unitPrice) : "");
+    setDiscount(sale.discountPct ? String(sale.discountPct) : "");
+    setContent(sale.contentOverride ? String(sale.contentOverride) : "");
+    setReason(sale.reason ?? "SPOILAGE_SPILLAGE");
+    setDate(sale.saleDate);
+    setChangeReason("");
+  }, [sale]);
+
+  if (!sale) return null;
+  const kind = sale.kind;
+  const name = sale.locationItem
+    ? `${sale.locationItem.itemVariant.item.name} ${variantLabel(sale.locationItem.itemVariant)}`
+    : (sale.menuItem?.name ?? "—");
+  const isItem = Boolean(sale.locationItem);
+  const contentTracked = sale.locationItem?.itemVariant.contentTracked ?? false;
+
+  const submit = async () => {
+    const q = Number(qty);
+    if (!q || q <= 0) return toast.error("Enter a quantity");
+    if (kind === "SALE" && price.trim() === "")
+      return toast.error("Enter the unit price");
+    if (changeReason.trim().length < 3) return toast.error("Add a reason for the change");
+    try {
+      await mutations.correct.mutateAsync({
+        id: sale.id,
+        body: {
+          saleDate: date,
+          kind,
+          locationItemId: sale.locationItem?.id,
+          menuItemId: sale.menuItem?.id,
+          qty: q,
+          unitPrice: kind === "SALE" ? Number(price) || 0 : 0,
+          discountPct: kind === "SALE" ? Number(discount) || 0 : 0,
+          contentOverride:
+            kind === "NON_REVENUE" && isItem && content !== "" ? Number(content) : undefined,
+          reason: kind === "NON_REVENUE" ? (reason as (typeof NON_REVENUE_REASONS)[number]) : undefined,
+          voidReason: changeReason.trim(),
+        },
+      });
+      toast.success("Entry updated — the original is kept, marked corrected");
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not save the change");
+    }
+  };
+
+  return (
+    <Dialog open={sale !== null} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit Entry</DialogTitle>
+          <DialogDescription>{name}</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="e-date">Date</Label>
+              <Input id="e-date" type="date" className="tnum" value={date} onChange={(e) => setDate(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="e-qty">Quantity</Label>
+              <QuantityInput id="e-qty" className="tnum" value={qty} onChange={(e) => setQty(e.target.value)} />
+            </div>
+          </div>
+
+          {kind === "SALE" && (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="e-price">Price</Label>
+                <QuantityInput id="e-price" className="tnum" value={price} onChange={(e) => setPrice(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="e-disc">Sale Discount %</Label>
+                <QuantityInput id="e-disc" className="tnum" placeholder="0" value={discount} onChange={(e) => setDiscount(e.target.value)} />
+              </div>
+            </div>
+          )}
+
+          {kind === "NON_REVENUE" && (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="e-reason">Reason</Label>
+                <Select value={reason} onValueChange={setReason}>
+                  <SelectTrigger id="e-reason">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {NON_REVENUE_GROUPS.map((r) => (
+                      <SelectItem key={r} value={r}>
+                        {NON_REVENUE_GROUP_LABELS[r]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {isItem && (
+                <div className="space-y-2">
+                  <Label htmlFor="e-content">Content per Unit</Label>
+                  <QuantityInput
+                    id="e-content"
+                    className="tnum"
+                    placeholder={contentTracked ? "Whole units, or e.g. 350" : "Whole units"}
+                    value={content}
+                    onChange={(e) => setContent(e.target.value)}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <Label htmlFor="e-change">Reason for change</Label>
+            <Input
+              id="e-change"
+              placeholder="e.g. Wrong quantity entered"
+              value={changeReason}
+              onChange={(e) => setChangeReason(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button onClick={submit} disabled={mutations.correct.isPending}>
+            {mutations.correct.isPending ? "Saving…" : "Save Changes"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

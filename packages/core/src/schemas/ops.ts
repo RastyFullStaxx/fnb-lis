@@ -101,6 +101,19 @@ export const saleCreate = z
   });
 export type SaleCreate = z.infer<typeof saleCreate>;
 
+/**
+ * Correcting a committed sale = void the old + create the replacement in one
+ * step. The replacement is a full saleCreate; the void needs its own reason,
+ * kept under `voidReason` so it never collides with saleCreate's `reason`
+ * (the non-revenue bucket). Intersecting saleCreate with a plain `reason`
+ * would force the void reason to satisfy the non-revenue enum — the source of
+ * a latent bug that made SALE corrections un-submittable.
+ */
+export const saleCorrect = saleCreate.and(
+  z.object({ voidReason: z.string().trim().min(3, "A reason for the change is required") }),
+);
+export type SaleCorrect = z.infer<typeof saleCorrect>;
+
 // ── Inter-location transfers ──
 
 export const transferCreate = z.object({

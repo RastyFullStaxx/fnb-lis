@@ -6,6 +6,7 @@ import type {
   PurchaseCreate,
   PurchaseLineCreate,
   ReconReport,
+  SaleCorrect,
   SaleCreate,
   TransferCreate,
   TransferLineCreate,
@@ -243,6 +244,14 @@ export function useTransferMutations(transferId?: string) {
 
 // ── Sales ──
 
+/** rows is capped at the latest 300; totalCount and netTotal cover every
+ *  non-void entry, so the summary stays true past the display cap. */
+export interface SalesResponse {
+  rows: SaleRecord[];
+  totalCount: number;
+  netTotal: number;
+}
+
 export function useSales(filters: { kind?: string; date?: string } = {}) {
   const locationId = useLocationId();
   const params = new URLSearchParams();
@@ -250,7 +259,7 @@ export function useSales(filters: { kind?: string; date?: string } = {}) {
   if (filters.date) params.set("date", filters.date);
   return useQuery({
     queryKey: ["sales", locationId, filters],
-    queryFn: () => api<SaleRecord[]>(`${base(locationId)}/sales?${params}`),
+    queryFn: () => api<SalesResponse>(`${base(locationId)}/sales?${params}`),
   });
 }
 
@@ -269,6 +278,12 @@ export function useSaleMutations() {
     voidSale: useMutation({
       mutationFn: ({ id, reason }: { id: string; reason: string }) =>
         post<SaleRecord>(`${base(locationId)}/sales/${id}/void`, { reason }),
+      onSuccess: invalidate,
+    }),
+    // Edit = void original + create replacement, server-side in one transaction.
+    correct: useMutation({
+      mutationFn: ({ id, body }: { id: string; body: SaleCorrect }) =>
+        post<SaleRecord>(`${base(locationId)}/sales/${id}/correct`, body),
       onSuccess: invalidate,
     }),
   };

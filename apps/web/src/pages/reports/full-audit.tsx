@@ -390,7 +390,16 @@ export function FullAuditPage() {
                   <CategoryRows key={group.categoryName} group={group} onDrill={setDrill} compact={compact} />
                 ))}
                 <TableRow className="bg-muted/60 font-semibold hover:bg-muted/60 [&_td]:border-t-2">
-                  <TableCell className="sticky left-0 z-10 bg-muted">Grand Total</TableCell>
+                  {/* The total is always the WHOLE PERIOD (payload totals,
+                      never recomputed client-side — that is the audit-grade
+                      guarantee). When a search or Variance Only hides rows, the
+                      label says so, so the figure can't be misread as the
+                      visible subset's total. Siblings hide their footer when
+                      filtered; the sacred report keeps its variance on screen
+                      and disambiguates instead. */}
+                  <TableCell className="sticky left-0 z-10 bg-muted">
+                    {filteredOut > 0 ? "Grand Total · all rows" : "Grand Total"}
+                  </TableCell>
                   {compact ? (
                     <TableCell colSpan={4} />
                   ) : (

@@ -41,8 +41,11 @@ const STATUS_VARIANTS: Record<string, BadgeVariant> = {
   GRACE: "warning",
   SUSPENDED: "warning",
   UNMATCHED: "warning",
-  UNPRICED: "warning",
   VIEW_ONLY: "warning",
+
+  // Missing price — client wants this read as red, not amber: an item that
+  // can't be valued is a hole in the audit, not a soft to-do.
+  UNPRICED: "destructive",
 
   // In progress.
   OPEN: "default",

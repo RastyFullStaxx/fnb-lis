@@ -142,7 +142,7 @@ export function StockPage() {
               {rows.data!.map((row) => {
                 const missing = row.cost === 0 || row.retail === 0;
                 return (
-                  <TableRow key={row.id} className={cn("group", missing && "bg-warning/5")}>
+                  <TableRow key={row.id} className={cn("group", missing && "bg-destructive/5")}>
                     {/* Wrap rather than truncate — an auditor has to read the whole item name. */}
                     <TableCell className="max-w-[22rem] break-words">
                       <span className="font-medium">{row.itemVariant.item.name}</span>
@@ -159,7 +159,7 @@ export function StockPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       {missing ? (
-                        <Badge variant="warning">No price</Badge>
+                        <Badge variant="destructive">No price</Badge>
                       ) : (
                         <Badge variant="success">Ready</Badge>
                       )}

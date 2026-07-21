@@ -45,15 +45,17 @@ export function NonRevenueReportPage() {
 
   // Cost by reason: which write-off bucket is eating the most money. Capped so
   // the ranking stays readable — the tail is listed in full under the table.
-  const reasonBars = useMemo(
-    () =>
-      (report.data?.byReason ?? [])
-        .filter((g) => g.cost > 0)
-        .sort((a, b) => b.cost - a.cost)
-        .slice(0, 8)
-        .map((g) => ({ label: g.reason, value: round2(g.cost) })),
-    [report.data],
-  );
+  const reasonBars = useMemo(() => {
+    // Only reasons that carry cost can appear as a bar, so the "of N" in the
+    // hint counts THAT pool — not the raw bucket list, which would imply the
+    // ranking cut reasons it actually just left empty-valued.
+    const eligible = (report.data?.byReason ?? []).filter((g) => g.cost > 0);
+    const bars = [...eligible]
+      .sort((a, b) => b.cost - a.cost)
+      .slice(0, 8)
+      .map((g) => ({ label: g.reason, value: round2(g.cost) }));
+    return { bars, reasonCount: eligible.length };
+  }, [report.data]);
 
   return (
     <div>
@@ -152,12 +154,12 @@ export function NonRevenueReportPage() {
           <TableEmpty icon={Wine} title="No non-revenue use in this range" description="Adjust the dates to find recorded entries." />
         ) : (
           <>
-            {reasonBars.length >= 2 && (
+            {reasonBars.bars.length >= 2 && (
               <ChartBlock
                 title="Cost by Reason"
-                hint={`Top ${reasonBars.length} of ${report.data.byReason.length} reasons`}
+                hint={`Top ${reasonBars.bars.length} of ${reasonBars.reasonCount} reasons`}
               >
-                <MagnitudeBars data={reasonBars} name="Est. cost" />
+                <MagnitudeBars data={reasonBars.bars} name="Est. cost" />
               </ChartBlock>
             )}
             <Table>

@@ -64,11 +64,12 @@ export function ItemsPage() {
                   />
                   <ToolbarField label="Product Type" htmlFor="items-product-type">
                     <Select value={productType} onValueChange={setProductType}>
-                      <SelectTrigger
-                        id="items-product-type"
-                        className="w-40 bg-background"
-                        aria-label="Filter by product type"
-                      >
+                      {/* No aria-label: the visible "Product Type" caption is
+                          the accessible name now (ToolbarField's htmlFor points
+                          at this id). An aria-label would override it, so a
+                          screen reader would announce different words than the
+                          eye reads. */}
+                      <SelectTrigger id="items-product-type" className="w-40 bg-background">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
