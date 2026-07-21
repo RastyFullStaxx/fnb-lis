@@ -20,17 +20,19 @@ export function DateRangeControl({
   onTo: (v: string) => void;
 }) {
   const inverted = Boolean(from && to && from > to);
-  // Captions stack above their inputs (ToolbarField) rather than sitting inline
-  // before them: inline labels made the strip long enough to wrap onto a second
-  // and third row, and every wrapped row is height stolen from the table.
+  // From and To live in ONE flex unit, not as two loose toolbar items. Loose,
+  // they wrap independently — on a narrow strip From stays up top and To
+  // orphans onto a second row on its own. As a unit the pair always wraps
+  // together, so a strip that must break reads as clean rows (e.g. Reason /
+  // From-To) instead of a stray input. Captions stack over each input.
   return (
-    <>
+    <div className="flex items-end gap-3">
       <ToolbarField label="From" htmlFor="range-from">
         <Input
           id="range-from"
           type="date"
           max={to || undefined}
-          className="tnum w-[9.5rem] bg-background"
+          className="tnum w-[8.5rem] bg-background"
           value={from}
           onChange={(e) => onFrom(e.target.value)}
         />
@@ -40,7 +42,7 @@ export function DateRangeControl({
           id="range-to"
           type="date"
           min={from || undefined}
-          className="tnum w-[9.5rem] bg-background"
+          className="tnum w-[8.5rem] bg-background"
           value={to}
           onChange={(e) => onTo(e.target.value)}
         />
@@ -50,7 +52,7 @@ export function DateRangeControl({
           From is after To — swap the dates to see results.
         </p>
       )}
-    </>
+    </div>
   );
 }
 

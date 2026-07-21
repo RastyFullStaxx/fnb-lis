@@ -143,39 +143,50 @@ export function WeighPreviewStrip({
     );
   }
   const warning = preview.warnings[0];
+  // Thousands separators — "9,284" reads faster than "9284" at a glance.
+  const fmt = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 2 });
   return (
     <div aria-live="polite" className="space-y-1.5">
       <div
         className={cn(
-          "flex items-center gap-2 rounded-md border px-3 py-2",
+          "flex items-start gap-2 rounded-md border px-3 py-2",
           preview.blocking ? "border-destructive/50 bg-destructive/5" : "bg-muted",
         )}
       >
-        <Scale className="size-4 shrink-0 text-primary" />
+        <Scale className="mt-0.5 size-4 shrink-0 text-primary" />
         {preview.blocking ? (
           <span className="text-sm text-destructive">{warning?.message}</span>
-        ) : preview.mode === "NET" ? (
-          <span className="tnum text-sm">
-            scale {preview.scale} − empty {preview.tare} {preview.unit} →{" "}
-            {/* Keyed on the result so every recomputation visibly ticks (DESIGN.md motion). */}
-            <span
-              key={preview.remaining}
-              className="inline-block font-semibold duration-150 animate-in fade-in slide-in-from-bottom-0.5 motion-reduce:animate-none"
-            >
-              {preview.remaining} {contentUnit}
-            </span>
-          </span>
         ) : (
-          <span className="tnum text-sm">
-            (scale {preview.scale} − empty {preview.tare}) × Liquid Weight {preview.density} →{" "}
-            <span
-              key={preview.remaining}
-              className="inline-block font-semibold duration-150 animate-in fade-in slide-in-from-bottom-0.5 motion-reduce:animate-none"
-            >
-              {preview.remaining} {contentUnit}
-            </span>{" "}
-            · {preview.equivalent.toFixed(2)} of {size} {contentUnit}
-          </span>
+          // The calculation on one line with its parts named, the result bold,
+          // and (for bar bottles) how many containers that is on a second,
+          // quieter line — instead of one dense dot-separated run.
+          <div className="min-w-0 flex-1 space-y-0.5 tnum text-sm">
+            <div>
+              <span className="text-muted-foreground">
+                {preview.mode === "NET"
+                  ? `scale ${fmt(preview.scale)} − empty ${fmt(preview.tare)} ${preview.unit}`
+                  : `(scale ${fmt(preview.scale)} − empty ${fmt(preview.tare)} ${preview.unit}) × Liquid Weight ${fmt(preview.density)}`}
+              </span>{" "}
+              ={" "}
+              {/* Keyed on the result so every recomputation visibly ticks (DESIGN.md motion). */}
+              <span
+                key={preview.remaining}
+                className="inline-block font-semibold text-foreground duration-150 animate-in fade-in slide-in-from-bottom-0.5 motion-reduce:animate-none"
+              >
+                {fmt(preview.remaining)} {contentUnit}
+              </span>
+            </div>
+            {preview.mode !== "NET" && size > 0 && (
+              // Fullness gauge, not a bottle count: you're weighing ONE open
+              // bottle, so this liquid should fill UNDER 100% of it. Framing it
+              // as "% of the bottle" ties the ml result back to the bottle and
+              // makes the error obvious (1,238% can't fit; 62% is a normal pour).
+              <div className="text-xs text-muted-foreground">
+                fills ≈ {(preview.equivalent * 100).toLocaleString(undefined, { maximumFractionDigits: 0 })}% of the{" "}
+                {fmt(size)} {contentUnit} bottle
+              </div>
+            )}
+          </div>
         )}
       </div>
       {!preview.blocking && warning && (

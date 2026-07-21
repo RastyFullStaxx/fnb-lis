@@ -10,7 +10,13 @@ import { TableSurface, TableLoading, TableEmpty, TableError, ToolbarField } from
 import { DateRangeControl, ExportButtons } from "@/components/report-toolbar";
 import { ChartBlock } from "@/components/charts/chart-block";
 import { MagnitudeBars } from "@/components/charts/magnitude-bars";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -84,18 +90,25 @@ export function NonRevenueReportPage() {
         className="max-h-[70vh]"
         filters={
           <>
-            <ToolbarField label="Reason">
-              <Tabs value={group} onValueChange={setGroup}>
-                <TabsList>
-                  <TabsTrigger value={ALL_GROUPS}>All</TabsTrigger>
+            {/* A Select, not tabs: five long reason labels plus the date range
+                can't share one row on a smaller/mobile viewport, and would wrap.
+                A dropdown is the right control for this many options and keeps
+                the strip one row everywhere. */}
+            <ToolbarField label="Reason" htmlFor="nr-reason">
+              <Select value={group} onValueChange={setGroup}>
+                <SelectTrigger id="nr-reason" className="w-48 bg-background">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_GROUPS}>All Reasons</SelectItem>
                   {NON_REVENUE_GROUPS.map((g) => (
-                    <TabsTrigger key={g} value={g}>
+                    <SelectItem key={g} value={g}>
                       {NON_REVENUE_GROUP_LABELS[g]}
-                    </TabsTrigger>
+                    </SelectItem>
                   ))}
-                  <TabsTrigger value={STOCK_TRANSFER}>Stock Transfer</TabsTrigger>
-                </TabsList>
-              </Tabs>
+                  <SelectItem value={STOCK_TRANSFER}>Stock Transfer</SelectItem>
+                </SelectContent>
+              </Select>
             </ToolbarField>
             <DateRangeControl from={from} to={to} onFrom={setFrom} onTo={setTo} />
           </>

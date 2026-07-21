@@ -113,7 +113,7 @@ export type NonRevenueGroup = (typeof NON_REVENUE_GROUPS)[number];
 export const NON_REVENUE_GROUP_LABELS: Record<NonRevenueGroup, string> = {
   SPOILAGE_SPILLAGE: "Spoilage & Spillages",
   TRIMMING: "Trimming",
-  MARKETING_OTH: "Marketing & OTH (On the House)",
+  MARKETING_OTH: "Marketing & OTH",
 };
 
 /**

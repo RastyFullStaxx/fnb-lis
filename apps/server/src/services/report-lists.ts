@@ -220,7 +220,7 @@ const REASON_LABELS: Record<string, string> = {
   // Canonical buckets (client req, 2026-07-20)
   SPOILAGE_SPILLAGE: "Spoilage & Spillages",
   TRIMMING: "Trimming",
-  MARKETING_OTH: "Marketing & OTH (On the House)",
+  MARKETING_OTH: "Marketing & OTH",
   // Legacy codes on historical rows
   COMPLIMENTARY: "Complimentary",
   SPILLAGE: "Spillage",

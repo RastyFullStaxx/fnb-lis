@@ -32,7 +32,7 @@ export function validateWeigh(
     warnings.push({
       code: "SCALE_BELOW_TARE",
       blocking: true,
-      message: "Scale reading is below the empty-container weight — check the tare weight or the reading.",
+      message: "Scale reading is below the empty weight — check the empty weight or the reading.",
     });
     return warnings;
   }
@@ -42,7 +42,7 @@ export function validateWeigh(
       warnings.push({
         code: "CONTENT_EXCEEDS_SIZE",
         blocking: false,
-        message: `Computed content (${remaining}) exceeds the container size (${variantSize}) — the density factor or tare weight may be off.`,
+        message: "That's more than a full container holds — check the Liquid Weight or empty weight.",
       });
     }
   }

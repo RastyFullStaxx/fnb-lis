@@ -134,6 +134,16 @@ export function ImportReviewPage() {
       })
       .catch((e) => toast.error(e instanceof ApiError ? e.message : "Failed"));
 
+  // The rows each bulk button would act on. Kept as live counts so the button
+  // can show how many it will affect and disable itself when there's nothing
+  // to do — the missing "did that work?" cue: a lit button with a count means
+  // there's work; a greyed one means every matched/unmatched row is already
+  // handled.
+  const matchedPending = rows.filter(
+    (r) => r.status !== "REJECTED" && r.status !== "APPROVED" && Boolean(r.matchedLocationItemId || r.matchedMenuItemId),
+  );
+  const unmatchedActive = rows.filter((r) => !r.matchedLocationItemId && !r.matchedMenuItemId && r.status !== "REJECTED");
+
   const runBulk = async (verb: string, targets: ImportRow[], status: "APPROVED" | "REJECTED") => {
     if (targets.length === 0 || bulk) return;
     setBulk({ verb, done: 0, total: targets.length });
@@ -142,24 +152,13 @@ export function ImportReviewPage() {
         await setStatus(row, status);
         setBulk((prev) => (prev ? { ...prev, done: prev.done + 1 } : prev));
       }
+      toast.success(`${status === "APPROVED" ? "Approved" : "Declined"} ${targets.length} row${targets.length === 1 ? "" : "s"}`);
     } finally {
       setBulk(null);
     }
   };
-  const approveAllMatched = () =>
-    runBulk(
-      "Approving",
-      rows.filter(
-        (r) => r.status !== "REJECTED" && r.status !== "APPROVED" && Boolean(r.matchedLocationItemId || r.matchedMenuItemId),
-      ),
-      "APPROVED",
-    );
-  const rejectUnmatched = () =>
-    runBulk(
-      "Rejecting",
-      rows.filter((r) => !r.matchedLocationItemId && !r.matchedMenuItemId && r.status !== "REJECTED"),
-      "REJECTED",
-    );
+  const approveAllMatched = () => runBulk("Approving", matchedPending, "APPROVED");
+  const rejectUnmatched = () => runBulk("Rejecting", unmatchedActive, "REJECTED");
 
   const commit = async () => {
     try {
@@ -196,19 +195,33 @@ export function ImportReviewPage() {
         <div className="ml-auto flex items-center gap-2">
           {editable && (
             <>
-              <Button variant="outline" size="sm" onClick={approveAllMatched} disabled={bulk !== null}>
+              {/* Bulk shortcuts for a large file — the per-row Approve/Reject
+                  do the same for one row. "Matched"/"Unmatched" name the set
+                  each acts on. */}
+              <Button
+                variant="outline"
+                size="sm"
+                title="Approve every row that already has a confident match"
+                onClick={approveAllMatched}
+                disabled={bulk !== null || matchedPending.length === 0}
+              >
                 <Check className="size-4" />
-                {bulk?.verb === "Approving" ? `Approving ${bulk.done}/${bulk.total}…` : "Approve Matched"}
+                {bulk?.verb === "Approving"
+                  ? `Approving ${bulk.done}/${bulk.total}…`
+                  : `Approve All Matched${matchedPending.length > 0 ? ` (${matchedPending.length})` : ""}`}
               </Button>
               <Button
                 variant="outline"
                 size="sm"
                 className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                title="Decline every row that has no match"
                 onClick={rejectUnmatched}
-                disabled={bulk !== null}
+                disabled={bulk !== null || unmatchedActive.length === 0}
               >
                 <X className="size-4" />
-                {bulk?.verb === "Rejecting" ? `Rejecting ${bulk.done}/${bulk.total}…` : "Reject Unmatched"}
+                {bulk?.verb === "Rejecting"
+                  ? `Declining ${bulk.done}/${bulk.total}…`
+                  : `Decline All Unmatched${unmatchedActive.length > 0 ? ` (${unmatchedActive.length})` : ""}`}
               </Button>
               <AlertDialog>
                 <AlertDialogTrigger asChild>
@@ -269,16 +282,20 @@ export function ImportReviewPage() {
               <TableHead>Matched To</TableHead>
               <TableHead className="w-16 text-right">Qty</TableHead>
               <TableHead className="w-24 text-right">{b.kind === "PURCHASES" ? "Cost" : "Price"}</TableHead>
-              <TableHead className="w-28">Date</TableHead>
-              <TableHead className="w-24 text-right">Status</TableHead>
+              <TableHead className="w-24">Date</TableHead>
+              <TableHead className="w-28 text-right">{editable ? "Action" : "Status"}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {rows.map((row) => (
               <TableRow key={row.id} className={cn(row.status === "REJECTED" && "opacity-45")}>
-                <TableCell className="align-top break-words">
+                {/* whitespace-normal is load-bearing: TableCell defaults to
+                    whitespace-nowrap, so without it the warning line runs
+                    straight across into the Matched To column instead of
+                    wrapping inside this one. */}
+                <TableCell className="align-top whitespace-normal break-words">
                   <span className="font-medium">{row.itemText}</span>
-                  {row.warning && <p className="text-xs text-warning-text">{row.warning}</p>}
+                  {row.warning && <p className="mt-0.5 text-xs break-words text-warning-text">{row.warning}</p>}
                 </TableCell>
                 <TableCell>
                   {editable ? (
@@ -297,12 +314,16 @@ export function ImportReviewPage() {
                   {money(b.kind === "PURCHASES" ? row.unitCost : row.unitPrice)}
                 </TableCell>
                 <TableCell className="tnum text-muted-foreground">{row.rowDate ?? "—"}</TableCell>
-                <TableCell className="text-right">
+                <TableCell className="align-top">
                   {editable ? (
-                    <div className="flex items-center justify-end gap-1">
-                      {/* Disabled buttons don't fire tooltips — the span carries the why. */}
+                    // Small worded chips (xs, like the Sales row Cancel/Edit),
+                    // green Approve / red Decline. The chosen one fills solid so
+                    // the row's state reads at a glance; the other stays a tinted
+                    // outline. They sit side by side and wrap to stacked only when
+                    // the column is too narrow. A row with no match can't be
+                    // approved yet.
+                    <div className="flex flex-wrap justify-end gap-1">
                       <span
-                        className="inline-flex"
                         title={
                           !row.matchedLocationItemId && !row.matchedMenuItemId
                             ? "Match this row to an item first"
@@ -310,30 +331,37 @@ export function ImportReviewPage() {
                         }
                       >
                         <Button
-                          variant={row.status === "APPROVED" ? "default" : "ghost"}
-                          size="icon"
-                          className="size-8"
-                          aria-label="Approve"
+                          variant="outline"
+                          size="xs"
                           disabled={!row.matchedLocationItemId && !row.matchedMenuItemId}
+                          className={cn(
+                            row.status === "APPROVED"
+                              ? "border-transparent bg-success-text text-white hover:bg-success-text/90"
+                              : "border-success-text/40 text-success-text hover:bg-success/10 hover:text-success-text",
+                          )}
                           onClick={() => setStatus(row, row.status === "APPROVED" ? "PENDING" : "APPROVED")}
                         >
-                          <Check className="size-4" />
+                          Approve
                         </Button>
                       </span>
                       <Button
-                        variant={row.status === "REJECTED" ? "destructive" : "ghost"}
-                        size="icon"
-                        className="size-8"
-                        aria-label="Reject"
+                        variant={row.status === "REJECTED" ? "destructive" : "outline"}
+                        size="xs"
+                        className={cn(
+                          row.status !== "REJECTED" &&
+                            "border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive",
+                        )}
                         onClick={() => setStatus(row, row.status === "REJECTED" ? "PENDING" : "REJECTED")}
                       >
-                        <X className="size-4" />
+                        Decline
                       </Button>
                     </div>
                   ) : (
-                    <Badge variant={row.status === "COMMITTED" ? "success" : "outline"}>
-                      {ROW_STATUS_LABELS[row.status] ?? row.status}
-                    </Badge>
+                    <div className="text-right">
+                      <Badge variant={row.status === "COMMITTED" ? "success" : "outline"}>
+                        {ROW_STATUS_LABELS[row.status] ?? row.status}
+                      </Badge>
+                    </div>
                   )}
                 </TableCell>
               </TableRow>

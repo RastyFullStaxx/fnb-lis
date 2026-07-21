@@ -69,7 +69,7 @@ const KIND_COPY: Record<SaleKind, { title: string; button: string; saved: string
 const REASON_LABELS: Record<string, string> = {
   SPOILAGE_SPILLAGE: "Spoilage & Spillages",
   TRIMMING: "Trimming",
-  MARKETING_OTH: "Marketing & OTH (On the House)",
+  MARKETING_OTH: "Marketing & OTH",
   COMPLIMENTARY: "Complimentary",
   SPILLAGE: "Spillage",
   STAFF_USE: "Staff use",

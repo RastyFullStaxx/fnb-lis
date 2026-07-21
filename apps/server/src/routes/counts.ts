@@ -81,7 +81,7 @@ async function buildLineData(locationId: string, body: CountLineCreate) {
     }
     const tare = body.tareWeight ?? variant.tareWeight;
     if (tare === null || tare === undefined) throw new AppError(400, "No tare weight configured for this item");
-    if (body.scaleWeight! < tare) throw new AppError(400, "Scale reading is below the empty-container weight");
+    if (body.scaleWeight! < tare) throw new AppError(400, "Scale reading is below the empty weight");
     const scaleUnit = body.scaleUnit ?? variant.tareWeightUnit ?? "oz";
 
     if (mode === "NET") {

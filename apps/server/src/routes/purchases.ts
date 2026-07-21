@@ -225,7 +225,7 @@ export const purchaseRoutes = new Hono<AppEnv>()
       if (!mode) throw new AppError(400, "This item is counted whole — enable Liquid Weight or Net Weight on the variant to weigh it");
       const tare = body.tareWeight ?? variant.tareWeight;
       if (tare === null || tare === undefined) throw new AppError(400, "No tare weight configured for this item");
-      if (body.scaleWeight < tare) throw new AppError(400, "Scale reading is below the empty-container weight");
+      if (body.scaleWeight < tare) throw new AppError(400, "Scale reading is below the empty weight");
       const scaleUnit = body.scaleUnit ?? variant.tareWeightUnit ?? "oz";
       if (mode === "NET") {
         weighFields = {
