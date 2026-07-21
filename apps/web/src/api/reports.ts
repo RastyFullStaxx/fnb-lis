@@ -94,6 +94,40 @@ export interface OnHandReport {
   totals: { costValue: number; retailValue: number };
 }
 
+export interface ParLevelReport {
+  lastCountDate: string | null;
+  periodBegin: string | null;
+  periodEnd: string | null;
+  rows: Array<{
+    locationItemId: string;
+    name: string;
+    category: string;
+    onHand: number;
+    parLevel: number;
+    usage: number;
+    suggestedOrder: number;
+    orderValue: number;
+    belowPar: boolean;
+  }>;
+  totals: { belowParCount: number; orderValue: number };
+}
+
+export interface NonMovingReport {
+  lastCountDate: string | null;
+  periodBegin: string | null;
+  periodEnd: string | null;
+  rows: Array<{
+    locationItemId: string;
+    name: string;
+    category: string;
+    onHand: number;
+    cost: number;
+    costValue: number;
+    retailValue: number;
+  }>;
+  totals: { count: number; costValue: number; retailValue: number };
+}
+
 export interface CostAnalysisReport {
   begin: string;
   end: string;
@@ -220,6 +254,22 @@ export function useOnHandReport() {
   });
 }
 
+export function useParLevelReport() {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["report", "par-level", locationId],
+    queryFn: () => api<ParLevelReport>(`${base(locationId)}/reports/par-level`),
+  });
+}
+
+export function useNonMovingReport() {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["report", "non-moving", locationId],
+    queryFn: () => api<NonMovingReport>(`${base(locationId)}/reports/non-moving`),
+  });
+}
+
 export function useFullAuditDrill(begin: string, end: string, locationItemId: string | null) {
   const locationId = useLocationId();
   return useQuery({
@@ -283,6 +333,8 @@ export function exportUrl(
     | "purchases"
     | "non-revenue"
     | "on-hand"
+    | "par-level"
+    | "non-moving"
     | "transfers"
     | "cost-analysis"
     | "top-sellers"

@@ -8,9 +8,6 @@
 
 ## The message we were answering
 
-The client sent a Taglish GC message with five asks. We ran a coverage audit first (was any of it
-already built?), then built three, and parked two with written specs. Here's the scorecard:
-
 | # | Client ask (plain English) | Verdict going in | What we did | Status |
 |---|---|---|---|---|
 | **A** | Highlight over/short in the Full Audit when it's material (~11%), on screen **and** in downloads; whole-bottle items highlight when off by a single bottle | ❌ Not built (and *not* in the legacy code, despite the client's belief) | Built the highlight + made the 11% a **per-establishment setting** | ✅ Shipped |

@@ -123,9 +123,11 @@ function SessionHeader({ session }: { session: SessionWithLines }) {
 function OpenSession({ session }: { session: SessionWithLines }) {
   const mutations = useCountMutations(session.id);
   const [item, setItem] = useState<LocationItem | null>(null);
-  const [mode, setMode] = useState<"FULL" | "WEIGH">("FULL");
+  const [mode, setMode] = useState<"FULL" | "WEIGH" | "OPEN">("FULL");
   const [qty, setQty] = useState("");
   const [scale, setScale] = useState("");
+  // Direct open-amount entry — remaining content typed in, no weighing.
+  const [openAmount, setOpenAmount] = useState("");
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
   const comboRef = useRef<HTMLButtonElement>(null);
 
@@ -136,6 +138,7 @@ function OpenSession({ session }: { session: SessionWithLines }) {
   const resetForm = () => {
     setQty("");
     setScale("");
+    setOpenAmount("");
     setItem(null);
     setEditingLineId(null);
   };
@@ -147,10 +150,18 @@ function OpenSession({ session }: { session: SessionWithLines }) {
       setMode("FULL");
       setQty(String(line.qtyFull));
       setScale("");
+      setOpenAmount("");
+    } else if (line.scaleWeight == null) {
+      // Weigh line entered as a direct amount (no scale/tare).
+      setMode("OPEN");
+      setOpenAmount(String(line.remainingContent));
+      setScale("");
+      setQty("");
     } else {
       setMode("WEIGH");
-      setScale(line.scaleWeight != null ? String(line.scaleWeight) : "");
+      setScale(String(line.scaleWeight));
       setQty("");
+      setOpenAmount("");
     }
     comboRef.current?.focus();
   };
@@ -165,6 +176,14 @@ function OpenSession({ session }: { session: SessionWithLines }) {
         const n = Number(qty);
         if (qty === "" || !Number.isFinite(n) || n < 0) return toast.error("Enter the counted quantity");
         const body = { locationItemId: item.id, countType: "FULL" as const, qtyFull: n };
+        if (editingLineId) await mutations.updateLine.mutateAsync({ lineId: editingLineId, ...body });
+        else await mutations.addLine.mutateAsync(body);
+      } else if (activeMode === "OPEN") {
+        // Direct amount — no weighing. Stored as a weigh line with the content
+        // set straight from what the counter typed.
+        const n = Number(openAmount);
+        if (openAmount === "" || !Number.isFinite(n) || n < 0) return toast.error("Enter the remaining amount");
+        const body = { locationItemId: item.id, countType: "WEIGH" as const, remainingContent: n };
         if (editingLineId) await mutations.updateLine.mutateAsync({ lineId: editingLineId, ...body });
         else await mutations.addLine.mutateAsync(body);
       } else {
@@ -227,13 +246,16 @@ function OpenSession({ session }: { session: SessionWithLines }) {
           </div>
 
           {weighable && (
-            <Tabs value={activeMode} onValueChange={(v) => setMode(v as "FULL" | "WEIGH")}>
+            <Tabs value={activeMode} onValueChange={(v) => setMode(v as "FULL" | "WEIGH" | "OPEN")}>
               <TabsList className="w-full">
                 <TabsTrigger value="FULL" className="flex-1">
                   Full Units
                 </TabsTrigger>
                 <TabsTrigger value="WEIGH" className="flex-1">
                   Weigh Partial
+                </TabsTrigger>
+                <TabsTrigger value="OPEN" className="flex-1">
+                  Open Amount
                 </TabsTrigger>
               </TabsList>
             </Tabs>
@@ -250,6 +272,23 @@ function OpenSession({ session }: { session: SessionWithLines }) {
                 onChange={(e) => setQty(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && save()}
               />
+            </div>
+          ) : activeMode === "OPEN" ? (
+            <div className="space-y-2">
+              <Label htmlFor="count-open">
+                Remaining {item?.itemVariant.unit.name ?? "content"}
+              </Label>
+              <QuantityInput
+                id="count-open"
+                className="tnum h-11 text-lg"
+                placeholder={item?.itemVariant.size ? `e.g. ${item.itemVariant.size} = a full one` : "Amount left"}
+                value={openAmount}
+                onChange={(e) => setOpenAmount(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && save()}
+              />
+              <p className="text-xs text-muted-foreground">
+                Type the amount left in the open container — no scale or empty weight needed.
+              </p>
             </div>
           ) : (
             <div className="space-y-2">
@@ -427,6 +466,9 @@ function LineRow({
         <EntryFacts>
           {line.countType === "FULL" ? (
             <EntryFact label="Count" value={`${line.qtyFull} full`} />
+          ) : line.scaleWeight == null ? (
+            // Direct open-amount entry — no scale/tare to show.
+            <EntryFact label="Open amount" value={`${line.remainingContent} ${variant.unit.name}`} />
           ) : (
             <EntryFact
               label="Weighed"

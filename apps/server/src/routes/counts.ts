@@ -79,6 +79,25 @@ async function buildLineData(locationId: string, body: CountLineCreate) {
     if (!mode) {
       throw new AppError(400, "This item is counted whole — enable Liquid Weight or Net Weight on the variant to weigh it");
     }
+
+    // Direct open-amount entry (client req 2026-07-21): the counter typed the
+    // remaining content itself, no scale/tare. Stored as a weigh line with the
+    // content set directly — reconciliation reads remainingContent identically.
+    if (body.remainingContent !== undefined) {
+      return {
+        locationItem,
+        data: {
+          countType: "WEIGH",
+          qtyFull: 0,
+          scaleWeight: null,
+          scaleUnit: null,
+          tareWeight: null,
+          densityFactor: null,
+          remainingContent: body.remainingContent,
+        },
+      };
+    }
+
     const tare = body.tareWeight ?? variant.tareWeight;
     if (tare === null || tare === undefined) throw new AppError(400, "No tare weight configured for this item");
     if (body.scaleWeight! < tare) throw new AppError(400, "Scale reading is below the empty weight");

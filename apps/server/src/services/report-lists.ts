@@ -1,11 +1,14 @@
 import {
   costLine,
+  hasVariance,
   isPaymentTerms,
   netOfVat,
   NON_REVENUE_GROUP_LABELS,
   NON_REVENUE_GROUPS,
   nonRevenueGroupOf,
   pctOf,
+  round2,
+  VARIANCE_EPSILON,
   type CostBasis,
   type NonRevenueGroup,
   type PaymentTerms,
@@ -425,6 +428,181 @@ export async function onHandReport(
     { costValue: 0, retailValue: 0 },
   );
   return { lastCountDate: lastDate, rows, totals };
+}
+
+// ── Par Level (#3) & Non-Moving (#4) — stock-movement reports ──
+// Both read the same snapshot: current on-hand (last count → now) plus each
+// item's usage over the latest CLOSED period (the "beginning-and-ending
+// movement" the client named). On-hand is computed exactly as onHandReport
+// does, so all three reports cross-foot.
+
+interface StockSnapshotItem {
+  locationItemId: string;
+  name: string;
+  category: string;
+  productType: string;
+  onHand: number;
+  cost: number;
+  retail: number;
+  parLevel: number | null;
+  usage: number; // consumption over the latest closed period; 0 if no closed period
+}
+
+async function stockSnapshot(
+  locationId: string,
+  allowedProductTypes?: readonly string[] | null,
+  costBasis: CostBasis = "PRICE",
+): Promise<{ lastCountDate: string | null; periodBegin: string | null; periodEnd: string | null; items: StockSnapshotItem[] }> {
+  const dates = await committedCountDates(locationId);
+  const lastDate = dates.at(-1) ?? null;
+  if (!lastDate) return { lastCountDate: null, periodBegin: null, periodEnd: null, items: [] };
+  const periodBegin = dates.at(-2) ?? null;
+
+  // On-hand = last count + everything committed since (far-future end date).
+  const onHandAudit = await buildFullAudit(locationId, lastDate, "9999-12-31", undefined, allowedProductTypes, costBasis);
+  const wac = await weightedAverageCosts(locationId, todayBusinessDate(), costBasis);
+
+  // Movement = reconciled usage over the latest closed period, if one exists.
+  const usageByItem = new Map<string, number>();
+  if (periodBegin) {
+    const periodAudit = await buildFullAudit(locationId, periodBegin, lastDate, undefined, allowedProductTypes, costBasis);
+    for (const r of periodAudit.rows) usageByItem.set(r.locationItemId, r.usage);
+  }
+
+  const priceRows = await prisma.locationItem.findMany({
+    where: { id: { in: onHandAudit.rows.map((r) => r.locationItemId) } },
+    select: { id: true, cost: true, retail: true, parLevel: true },
+  });
+  const priceMap = new Map(priceRows.map((p) => [p.id, p]));
+
+  const items: StockSnapshotItem[] = onHandAudit.rows.map((row) => {
+    const price = priceMap.get(row.locationItemId);
+    const onHand =
+      row.beginFull + row.beginOpenEquiv + row.purchased + row.forfeited + row.transferIn - row.transferOut -
+      (row.soldDirect + row.soldPortion + row.nonRevenue + row.production);
+    const average = wac.get(row.locationItemId);
+    const cost = average !== undefined && average > 0 ? average : (price?.cost ?? row.costBasis);
+    return {
+      locationItemId: row.locationItemId,
+      name: row.itemName,
+      category: row.categoryName,
+      productType: row.productType,
+      onHand,
+      cost,
+      retail: price?.retail ?? 0,
+      parLevel: price?.parLevel ?? null,
+      usage: usageByItem.get(row.locationItemId) ?? 0,
+    };
+  });
+  return { lastCountDate: lastDate, periodBegin, periodEnd: lastDate, items };
+}
+
+export interface ParLevelRow {
+  locationItemId: string;
+  name: string;
+  category: string;
+  onHand: number;
+  parLevel: number;
+  usage: number; // movement over the last closed period — how fast it depletes
+  suggestedOrder: number; // max(0, par − on hand)
+  orderValue: number; // suggestedOrder × cost
+  belowPar: boolean;
+}
+export interface ParLevelReport {
+  lastCountDate: string | null;
+  periodBegin: string | null;
+  periodEnd: string | null;
+  rows: ParLevelRow[];
+  totals: { belowParCount: number; orderValue: number };
+}
+
+/**
+ * Par Level report (client req 2026-07-21) — a purchasing guide. For every
+ * item that has a reorder point set, shows current on-hand against par, how
+ * much moved last period, and a suggested order quantity (par − on-hand).
+ * Items with no par level set are omitted (nothing to reorder against).
+ */
+export async function parLevelReport(
+  locationId: string,
+  allowedProductTypes?: readonly string[] | null,
+  costBasis: CostBasis = "PRICE",
+): Promise<ParLevelReport> {
+  const snap = await stockSnapshot(locationId, allowedProductTypes, costBasis);
+  const rows: ParLevelRow[] = snap.items
+    .filter((it) => it.parLevel != null)
+    .map((it) => {
+      const par = it.parLevel!;
+      const suggestedOrder = Math.max(0, round2(par - it.onHand));
+      return {
+        locationItemId: it.locationItemId,
+        name: it.name,
+        category: it.category,
+        onHand: round2(it.onHand),
+        parLevel: par,
+        usage: round2(it.usage),
+        suggestedOrder,
+        orderValue: round2(suggestedOrder * it.cost),
+        belowPar: it.onHand < par,
+      };
+    })
+    // Below-par first, then by the biggest gap to fill, then by name.
+    .sort((a, b) => Number(b.belowPar) - Number(a.belowPar) || b.suggestedOrder - a.suggestedOrder || a.name.localeCompare(b.name));
+
+  const totals = rows.reduce(
+    (acc, r) => ({ belowParCount: acc.belowParCount + (r.belowPar ? 1 : 0), orderValue: acc.orderValue + r.orderValue }),
+    { belowParCount: 0, orderValue: 0 },
+  );
+  return { lastCountDate: snap.lastCountDate, periodBegin: snap.periodBegin, periodEnd: snap.periodEnd, rows, totals: { belowParCount: totals.belowParCount, orderValue: round2(totals.orderValue) } };
+}
+
+export interface NonMovingRow {
+  locationItemId: string;
+  name: string;
+  category: string;
+  onHand: number;
+  cost: number;
+  costValue: number;
+  retailValue: number;
+}
+export interface NonMovingReport {
+  lastCountDate: string | null;
+  periodBegin: string | null;
+  periodEnd: string | null;
+  rows: NonMovingRow[];
+  totals: { count: number; costValue: number; retailValue: number };
+}
+
+/**
+ * Non-Moving items report (client req 2026-07-21) — dead stock. Items still on
+ * hand that saw NO movement (zero usage) over the latest closed period: cash
+ * tied up in stock that isn't selling. Needs a closed period to judge movement;
+ * with only one committed count, nothing has moved through a full period, so
+ * every held item qualifies.
+ */
+export async function nonMovingReport(
+  locationId: string,
+  allowedProductTypes?: readonly string[] | null,
+  costBasis: CostBasis = "PRICE",
+): Promise<NonMovingReport> {
+  const snap = await stockSnapshot(locationId, allowedProductTypes, costBasis);
+  const rows: NonMovingRow[] = snap.items
+    .filter((it) => !hasVariance(it.usage) && it.onHand > VARIANCE_EPSILON)
+    .map((it) => ({
+      locationItemId: it.locationItemId,
+      name: it.name,
+      category: it.category,
+      onHand: round2(it.onHand),
+      cost: round2(it.cost),
+      costValue: round2(it.onHand * it.cost),
+      retailValue: round2(it.onHand * it.retail),
+    }))
+    .sort((a, b) => b.costValue - a.costValue || a.name.localeCompare(b.name));
+
+  const totals = rows.reduce(
+    (acc, r) => ({ count: acc.count + 1, costValue: acc.costValue + r.costValue, retailValue: acc.retailValue + r.retailValue }),
+    { count: 0, costValue: 0, retailValue: 0 },
+  );
+  return { lastCountDate: snap.lastCountDate, periodBegin: snap.periodBegin, periodEnd: snap.periodEnd, rows, totals: { count: totals.count, costValue: round2(totals.costValue), retailValue: round2(totals.retailValue) } };
 }
 
 // ── Transfer report (in/out at cost & retail — client req #10) ──

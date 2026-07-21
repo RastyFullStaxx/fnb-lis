@@ -15,8 +15,10 @@ import {
 } from "@fnb/core";
 import type {
   CostAnalysisReport,
+  NonMovingReport,
   NonRevenueReport,
   OnHandReport,
+  ParLevelReport,
   PurchaseReport,
   SalesReport,
   TransferReport,
@@ -494,6 +496,91 @@ export function onHandCsv(report: OnHandReport): string {
     rows.push([row.name, row.category, row.productType, round2(row.onHand), round2(row.cost), round2(row.retail), round2(row.costValue), round2(row.retailValue)]);
   }
   rows.push(["Total", "", "", "", "", "", round2(report.totals.costValue), round2(report.totals.retailValue)]);
+  return toCsv(rows);
+}
+
+// ───────────────────────── Par Level (#3) ─────────────────────────
+
+export const PAR_LEVEL_HEADERS = ["Item", "Category", "On Hand", "Par Level", "Used (last period)", "Suggested Order", "Order Value", "Status"];
+
+export async function parLevelWorkbook(report: ParLevelReport, meta: ReportMeta): Promise<Buffer> {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Par Level", { views: [{ state: "frozen", ySplit: 4 }] });
+  titleBlock(
+    ws,
+    "Par Level Report",
+    `${meta.clientName} · ${meta.locationName} · on hand as of last count ${report.lastCountDate ?? "—"}${report.periodBegin ? ` · movement over ${report.periodBegin} → ${report.periodEnd}` : ""}`,
+    PAR_LEVEL_HEADERS.length,
+    meta,
+  );
+  styleHeaderRow(ws.addRow(PAR_LEVEL_HEADERS));
+  for (const row of report.rows) {
+    const r = ws.addRow([row.name, row.category]);
+    qtyCell(r.getCell(3), row.onHand);
+    qtyCell(r.getCell(4), row.parLevel);
+    qtyCell(r.getCell(5), row.usage);
+    qtyCell(r.getCell(6), row.suggestedOrder);
+    moneyCell(r.getCell(7), row.orderValue, false);
+    r.getCell(8).value = row.belowPar ? "Below Par" : "OK";
+    if (row.belowPar) r.getCell(8).font = { color: { argb: AMBER }, bold: true };
+  }
+  const t = ws.addRow(["Total", ""]);
+  t.font = { bold: true };
+  moneyCell(t.getCell(7), report.totals.orderValue, false);
+  t.getCell(8).value = `${report.totals.belowParCount} below par`;
+  ws.getColumn(1).width = 30;
+  ws.getColumn(2).width = 18;
+  for (const i of [3, 4, 5, 6, 7, 8]) ws.getColumn(i).width = 15;
+  return toBuffer(wb);
+}
+
+export function parLevelCsv(report: ParLevelReport): string {
+  const rows: CsvValue[][] = [PAR_LEVEL_HEADERS];
+  for (const row of report.rows) {
+    rows.push([row.name, row.category, round2(row.onHand), round2(row.parLevel), round2(row.usage), round2(row.suggestedOrder), round2(row.orderValue), row.belowPar ? "Below Par" : "OK"]);
+  }
+  rows.push(["Total", "", "", "", "", "", round2(report.totals.orderValue), `${report.totals.belowParCount} below par`]);
+  return toCsv(rows);
+}
+
+// ───────────────────────── Non-Moving (#4) ─────────────────────────
+
+export const NON_MOVING_HEADERS = ["Item", "Category", "On Hand", "Cost", "Cost Value", "Retail Value"];
+
+export async function nonMovingWorkbook(report: NonMovingReport, meta: ReportMeta): Promise<Buffer> {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Non-Moving", { views: [{ state: "frozen", ySplit: 4 }] });
+  titleBlock(
+    ws,
+    "Non-Moving Items Report",
+    `${meta.clientName} · ${meta.locationName} · no movement over ${report.periodBegin ?? "—"} → ${report.periodEnd ?? "—"} · on hand as of ${report.lastCountDate ?? "—"}`,
+    NON_MOVING_HEADERS.length,
+    meta,
+  );
+  styleHeaderRow(ws.addRow(NON_MOVING_HEADERS));
+  for (const row of report.rows) {
+    const r = ws.addRow([row.name, row.category]);
+    qtyCell(r.getCell(3), row.onHand);
+    moneyCell(r.getCell(4), row.cost, false);
+    moneyCell(r.getCell(5), row.costValue, false);
+    moneyCell(r.getCell(6), row.retailValue, false);
+  }
+  const t = ws.addRow(["Total", ""]);
+  t.font = { bold: true };
+  moneyCell(t.getCell(5), report.totals.costValue, false);
+  moneyCell(t.getCell(6), report.totals.retailValue, false);
+  ws.getColumn(1).width = 30;
+  ws.getColumn(2).width = 18;
+  for (const i of [3, 4, 5, 6]) ws.getColumn(i).width = 15;
+  return toBuffer(wb);
+}
+
+export function nonMovingCsv(report: NonMovingReport): string {
+  const rows: CsvValue[][] = [NON_MOVING_HEADERS];
+  for (const row of report.rows) {
+    rows.push([row.name, row.category, round2(row.onHand), round2(row.cost), round2(row.costValue), round2(row.retailValue)]);
+  }
+  rows.push(["Total", "", "", "", round2(report.totals.costValue), round2(report.totals.retailValue)]);
   return toCsv(rows);
 }
 

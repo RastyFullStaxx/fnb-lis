@@ -25,6 +25,8 @@ const REPORTS = [
   { title: "Purchases Report", path: "reports/purchases" },
   { title: "Non-Revenue Report", path: "reports/non-revenue" },
   { title: "Inventory on Hand", path: "reports/on-hand" },
+  { title: "Par Level", path: "reports/par-level" },
+  { title: "Non-Moving Items", path: "reports/non-moving" },
 ];
 
 // Computed once — the handler accepts metaKey too, so macOS shows its own chord.

@@ -17,8 +17,10 @@ import { buildFullAudit, committedCountDates } from "../services/report-assembly
 import {
   costAnalysisReport,
   fullAuditDrill,
+  nonMovingReport,
   nonRevenueReport,
   onHandReport,
+  parLevelReport,
   purchaseReport,
   salesReport,
   transferReport,
@@ -30,10 +32,14 @@ import {
   costAnalysisWorkbook,
   fullAuditCsv,
   fullAuditWorkbook,
+  nonMovingCsv,
+  nonMovingWorkbook,
   nonRevenueCsv,
   nonRevenueWorkbook,
   onHandCsv,
   onHandWorkbook,
+  parLevelCsv,
+  parLevelWorkbook,
   purchaseCsv,
   purchaseWorkbook,
   salesCsv,
@@ -66,8 +72,10 @@ import {
   legacyAuditPdf,
   legacyAuditTitle,
   legacyAuditWorkbook,
+  nonMovingPdfDoc,
   nonRevenuePdfDoc,
   onHandPdfDoc,
+  parLevelPdfDoc,
   purchasePdfDoc,
   salesByItemCsv,
   salesByItemPdf,
@@ -473,6 +481,44 @@ export const reportRoutes = new Hono<AppEnv>()
     if (format === "csv") return csvResponse(onHandCsv(report), name, fullName(user));
     if (format === "pdf") return pdfResponse(await onHandPdfDoc(report, await meta(client, location.name, user)), name);
     return xlsxResponse(await onHandWorkbook(report, await meta(client, location.name, user)), name);
+  })
+
+  // ── Par Level (#3 — purchasing guide) ──
+  .get("/reports/par-level", async (c) => {
+    const location = c.get("location");
+    const allowed = allowedProductTypes(c.get("locationModules"));
+    return c.json(await parLevelReport(location.id, allowed, basisOf(c)));
+  })
+  .get("/reports/par-level/export", exportGuard, async (c) => {
+    const location = c.get("location");
+    const client = c.get("client");
+    const allowed = allowedProductTypes(c.get("locationModules"));
+    const report = await parLevelReport(location.id, allowed, basisOf(c));
+    const user = c.get("user")!;
+    const name = `par-level_${location.name}_${report.lastCountDate ?? "current"}`.replace(/[^\w.-]+/g, "-");
+    const format = c.req.query("format");
+    if (format === "csv") return csvResponse(parLevelCsv(report), name, fullName(user));
+    if (format === "pdf") return pdfResponse(await parLevelPdfDoc(report, await meta(client, location.name, user)), name);
+    return xlsxResponse(await parLevelWorkbook(report, await meta(client, location.name, user)), name);
+  })
+
+  // ── Non-Moving items (#4 — dead stock) ──
+  .get("/reports/non-moving", async (c) => {
+    const location = c.get("location");
+    const allowed = allowedProductTypes(c.get("locationModules"));
+    return c.json(await nonMovingReport(location.id, allowed, basisOf(c)));
+  })
+  .get("/reports/non-moving/export", exportGuard, async (c) => {
+    const location = c.get("location");
+    const client = c.get("client");
+    const allowed = allowedProductTypes(c.get("locationModules"));
+    const report = await nonMovingReport(location.id, allowed, basisOf(c));
+    const user = c.get("user")!;
+    const name = `non-moving_${location.name}_${report.lastCountDate ?? "current"}`.replace(/[^\w.-]+/g, "-");
+    const format = c.req.query("format");
+    if (format === "csv") return csvResponse(nonMovingCsv(report), name, fullName(user));
+    if (format === "pdf") return pdfResponse(await nonMovingPdfDoc(report, await meta(client, location.name, user)), name);
+    return xlsxResponse(await nonMovingWorkbook(report, await meta(client, location.name, user)), name);
   })
 
   // ── Top Sellers (replaces legacy Graph report) ──

@@ -16,8 +16,10 @@ import {
   exportStamp,
   fullAuditColumns,
   moneyCell,
+  NON_MOVING_HEADERS,
   NONREV_HEADERS,
   ONHAND_HEADERS,
+  PAR_LEVEL_HEADERS,
   PURCHASE_HEADERS,
   qtyCell,
   SALES_HEADERS,
@@ -29,7 +31,7 @@ import {
   varianceFlagLabel,
   type ReportMeta,
 } from "./exports";
-import type { NonRevenueReport, OnHandReport, PurchaseReport, SalesReport, TransferReport } from "./report-lists";
+import type { NonMovingReport, NonRevenueReport, OnHandReport, ParLevelReport, PurchaseReport, SalesReport, TransferReport } from "./report-lists";
 import type {
   CostSnapshotReport,
   ForfeitsReport,
@@ -628,6 +630,42 @@ export function onHandPdfDoc(report: OnHandReport, meta: ReportMeta): Promise<Bu
         cells: ["Total Valuation", "", "", "", "", "", round2(report.totals.costValue), round2(report.totals.retailValue)],
         kind: "total" as const,
       },
+    ],
+    exportedBy: stampLine(meta),
+    reportFooter: meta.footer,
+  });
+}
+
+export function parLevelPdfDoc(report: ParLevelReport, meta: ReportMeta): Promise<Buffer> {
+  return tablePdf({
+    title: "Par Level Report",
+    subtitle: `${meta.clientName} · ${meta.locationName} · on hand as of ${report.lastCountDate ?? "—"}${report.periodBegin ? ` · movement ${report.periodBegin} → ${report.periodEnd}` : ""}`,
+    columns: PAR_LEVEL_HEADERS.map((h, i) => ({ header: String(h), align: i < 2 ? "left" : "right", width: i === 0 ? "*" : "auto" })),
+    rows: [
+      ...report.rows.map((r) => ({
+        cells: [r.name, r.category, round2(r.onHand), round2(r.parLevel), round2(r.usage), round2(r.suggestedOrder), round2(r.orderValue), r.belowPar ? "Below Par" : "OK"] as (string | number)[],
+      })),
+      {
+        cells: ["Total", "", "", "", "", "", round2(report.totals.orderValue), `${report.totals.belowParCount} below par`],
+        kind: "total" as const,
+      },
+    ],
+    exportedBy: stampLine(meta),
+    reportFooter: meta.footer,
+    landscape: true,
+  });
+}
+
+export function nonMovingPdfDoc(report: NonMovingReport, meta: ReportMeta): Promise<Buffer> {
+  return tablePdf({
+    title: "Non-Moving Items Report",
+    subtitle: `${meta.clientName} · ${meta.locationName} · no movement over ${report.periodBegin ?? "—"} → ${report.periodEnd ?? "—"} · on hand as of ${report.lastCountDate ?? "—"}`,
+    columns: NON_MOVING_HEADERS.map((h, i) => ({ header: String(h), align: i < 2 ? "left" : "right", width: i === 0 ? "*" : "auto" })),
+    rows: [
+      ...report.rows.map((r) => ({
+        cells: [r.name, r.category, round2(r.onHand), round2(r.cost), round2(r.costValue), round2(r.retailValue)] as (string | number)[],
+      })),
+      { cells: ["Total", "", "", "", round2(report.totals.costValue), round2(report.totals.retailValue)], kind: "total" as const },
     ],
     exportedBy: stampLine(meta),
     reportFooter: meta.footer,

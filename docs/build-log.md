@@ -407,6 +407,36 @@ buckets (legacy Staff/Internal-use rows fold into Other too), and **distinct per
 (Prime 11%, Casa Verde 8%) so the new setting shows variety. Golden fixtures re-verified after the
 reseed — Main Bar Jun 1–8 still −₱330.69.
 
+## Phase 15 — Open-amount counts, Par Level & Non-Moving reports (2026-07-21)
+
+A second batch of client notes. One was a confirm-and-extend, two were net-new reports.
+
+**Open-amount count entry (client note #1).** The client wanted to record an open item "by weight
+without liquid/tare weight." The tare-free path already existed (a decimal FULL count), but to close
+the literal ask we added a third count mode, **"Open Amount"**: the counter types the remaining
+content directly, no scale/tare. Stored as a WEIGH line with `remainingContent` set straight from
+input (scale/tare null) — reconciliation reads it identically, so no math moved (`countLineCreate`
+gained an optional `remainingContent`; the WEIGH `superRefine` skips the scale/tare requirement when
+it's present; `buildLineData` short-circuits to store it). Verified live: a line saved as
+`{countType:"WEIGH", remainingContent:350}` persisted with null scale/tare; golden fixture still
+−₱330.69.
+
+**Par Level report (#3).** A purchasing guide: for every item with a reorder point, current on-hand
+vs par, how much moved last closed period (the "beginning-and-ending movement" the client named), and
+a **suggested order** (`par − on-hand`), below-par first, with an order-value total. New
+`parLevelReport` in report-lists (projects `buildFullAudit`, so it cross-foots), full route +
+xlsx/csv/pdf + web page + hub + palette. Verified: Main Bar shows 5 below par, ₱5,797.40 to buy.
+
+**Non-Moving Items report (#4).** Dead stock: items still on hand with **zero** usage over the latest
+closed period, ranked by idle value. Same shared `stockSnapshot` helper. Verified working (returns 0
+on the current demo — everything's moving — which is a valid, not a broken, result).
+
+**Client note #2 (GCash / bank-transfer payment gate)** stayed a thought exercise per the client:
+record method + proof, gate activation on the subscription (staff creation is inherently exempt), no
+gateway, never store instruments. Not built.
+
+Both workspaces typecheck clean.
+
 ## Contributor history
 
 | Window | Who | What |

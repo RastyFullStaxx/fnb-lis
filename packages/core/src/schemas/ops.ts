@@ -20,13 +20,22 @@ export const countLineCreate = z
     scaleUnit: z.enum(["g", "oz"]).optional(),
     tareWeight: nonNegative.optional(),
     densityFactor: positive.optional(),
+    /**
+     * Direct open-amount entry (client req 2026-07-21): the counter types the
+     * remaining content itself, without weighing — so an open item can be
+     * recorded even with no liquid/tare weight. When present on a WEIGH line it
+     * replaces the scale/tare calculation; reconciliation reads it identically.
+     */
+    remainingContent: nonNegative.optional(),
   })
   .superRefine((val, ctx) => {
     if (val.countType === "FULL") {
       if (val.qtyFull === undefined) {
         ctx.addIssue({ code: "custom", path: ["qtyFull"], message: "Enter the counted quantity" });
       }
-    } else {
+    } else if (val.remainingContent === undefined) {
+      // Weighing path — needs scale + tare. (Skipped entirely when the counter
+      // enters the remaining amount directly.)
       if (val.scaleWeight === undefined) {
         ctx.addIssue({ code: "custom", path: ["scaleWeight"], message: "Enter the scale reading" });
       }
