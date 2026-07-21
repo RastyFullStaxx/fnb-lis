@@ -10,7 +10,7 @@ import { variantLabel, type Transfer } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { formatMoney } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
-import { TableSurface, TableLoading, TableEmpty } from "@/components/table-surface";
+import { TableSurface, TableLoading, TableEmpty, ToolbarField } from "@/components/table-surface";
 import { QuantityInput } from "@/components/quantity-input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -107,10 +107,12 @@ export function TransfersPage() {
       <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col">
         <TableSurface
           filters={
-            <TabsList>
-              <TabsTrigger value="out">Outgoing</TabsTrigger>
-              <TabsTrigger value="in">Incoming</TabsTrigger>
-            </TabsList>
+            <ToolbarField label="Direction">
+              <TabsList>
+                <TabsTrigger value="out">Outgoing</TabsTrigger>
+                <TabsTrigger value="in">Incoming</TabsTrigger>
+              </TabsList>
+            </ToolbarField>
           }
         >
           <TabsContent value="out" className="m-0">

@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { Link, useParams } from "react-router";
-import { ArrowLeft, Check, Pencil, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { can, type Role } from "@fnb/core";
 import { statusVariant } from "@/lib/status";
@@ -11,6 +11,8 @@ import { variantLabel, type CountLine, type LocationItem } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { ItemCombobox } from "@/components/item-combobox";
 import { VoidDialog } from "@/components/void-dialog";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { EntryFact, EntryFacts } from "@/components/entry-fact";
 import { useWeighPreview, WeighPreviewStrip } from "@/components/weigh-calculator";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -202,12 +204,13 @@ function OpenSession({ session }: { session: SessionWithLines }) {
   const activeLines = session.lines.filter((l) => l.status === "ACTIVE");
 
   return (
-    <div>
+    // Fit the viewport: only the panes scroll, never the page (like Sales).
+    <div className="flex min-h-0 flex-1 flex-col">
       <SessionHeader session={session} />
       {/* One bordered surface, two panes split by a hairline — never two stacked cards. */}
-      <div className="grid gap-6 rounded-lg border p-4 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
-        {/* Entry pane */}
-        <div className="space-y-4">
+      <div className="grid gap-6 rounded-lg border p-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] lg:grid-rows-1 lg:overflow-hidden">
+        {/* Entry pane — scrolls on its own if the weigh form runs tall. */}
+        <div className="space-y-4 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
           {editingLineId && (
             <div className="flex items-center justify-between rounded-md bg-accent px-3 py-2 text-sm text-accent-foreground">
               <span className="flex items-center gap-1.5">
@@ -306,12 +309,12 @@ function OpenSession({ session }: { session: SessionWithLines }) {
         </div>
 
         {/* Recent entries pane (modernized legacy live preview) */}
-        <div className="lg:border-l lg:pl-6">
-          <div className="mb-2 text-sm font-medium">
+        <div className="flex min-h-0 flex-col lg:border-l lg:pl-6">
+          <div className="mb-2 shrink-0 text-sm font-medium">
             Entered lines
             <span className="ml-2 tnum text-muted-foreground">{activeLines.length}</span>
           </div>
-          <div aria-live="polite" className="max-h-[28rem] divide-y overflow-y-auto">
+          <div aria-live="polite" className="min-h-0 flex-1 divide-y overflow-y-auto max-lg:max-h-[28rem]">
             {activeLines.length === 0 ? (
               <p className="p-4 text-sm text-muted-foreground">Nothing counted yet.</p>
             ) : (
@@ -352,10 +355,11 @@ function ReadOnlySession({ session }: { session: SessionWithLines }) {
   const canVoid = can(role, "entries.void") && session.status === "COMMITTED";
 
   return (
-    <div>
+    <div className="flex min-h-0 flex-1 flex-col">
       <SessionHeader session={session} />
-      <div className="rounded-lg border">
-        <div className="divide-y">
+      {/* Card fills the viewport; only the line list inside scrolls. */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border">
+        <div className="min-h-0 flex-1 divide-y overflow-y-auto">
           {session.lines.map((line) => (
             <LineRow
               key={line.id}
@@ -402,51 +406,78 @@ function LineRow({
 }) {
   const variant = line.locationItem.itemVariant;
   const voided = line.status === "VOID";
+  const [confirmRemove, setConfirmRemove] = useState(false);
   return (
     <div
       className={cn(
-        "flex items-center gap-3 px-4 py-2.5",
+        "flex flex-col gap-1 px-4 py-2.5",
         voided && "opacity-50",
         editing && "bg-accent/60",
       )}
     >
-      <div className="min-w-0 flex-1">
-        <p
-          title={`${variant.item.name} ${variantLabel(variant)}`}
-          className={cn("truncate text-sm font-medium", voided && "line-through")}
-        >
-          {variant.item.name}
-          <span className="ml-1.5 font-normal text-muted-foreground">{variantLabel(variant)}</span>
-        </p>
-        <p className="tnum text-xs text-muted-foreground">
-          {line.countType === "FULL"
-            ? `${line.qtyFull} full`
-            : `scale ${line.scaleWeight} ${line.scaleUnit} → ${line.remainingContent} ${variant.unit.name}`}
-          {line.correctionOfId && " · correction"}
-          {voided && line.voidReason && ` · cancelled: ${line.voidReason}`}
-          {" · "}
-          {line.createdByName}
-        </p>
+      {/* Same labelled layout as Sales / Purchases recent panels: name on its
+          own full-width line (size unbroken), facts stacked, actions bottom-right. */}
+      <p className={cn("text-sm font-medium", voided && "line-through")}>
+        {variant.item.name}
+        <span className="ml-1.5 whitespace-nowrap font-normal text-muted-foreground">
+          {variantLabel(variant)}
+        </span>
+      </p>
+      <div className="flex items-end justify-between gap-3">
+        <EntryFacts>
+          {line.countType === "FULL" ? (
+            <EntryFact label="Count" value={`${line.qtyFull} full`} />
+          ) : (
+            <EntryFact
+              label="Weighed"
+              value={`${line.scaleWeight} ${line.scaleUnit} → ${line.remainingContent} ${variant.unit.name}`}
+            />
+          )}
+          {line.correctionOfId && <EntryFact label="Type" value="Correction" />}
+          <EntryFact label="By" value={line.createdByName} />
+          {voided && line.voidReason && <EntryFact label="Cancelled" value={line.voidReason} />}
+        </EntryFacts>
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          {line.countType === "WEIGH" && !voided && (
+            <Badge variant="outline" className="tnum">
+              {(line.remainingContent / (variant.size || 1)).toFixed(2)} of {variantLabel(variant)}
+            </Badge>
+          )}
+          {(onVoid || (removable && (onEdit || onRemove))) && (
+            <div className="mt-auto flex gap-1">
+              {onVoid && (
+                <Button variant="destructive" size="xs" onClick={onVoid}>
+                  Cancel
+                </Button>
+              )}
+              {removable && onRemove && (
+                <Button variant="destructive" size="xs" onClick={() => setConfirmRemove(true)}>
+                  Remove
+                </Button>
+              )}
+              {removable && onEdit && (
+                <Button variant="outline" size="xs" onClick={onEdit}>
+                  Edit
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
       </div>
-      {line.countType === "WEIGH" && !voided && (
-        <Badge variant="outline" className="tnum shrink-0">
-          {(line.remainingContent / (variant.size || 1)).toFixed(2)} of {variantLabel(variant)}
-        </Badge>
-      )}
-      {removable && onEdit && (
-        <Button variant="ghost" size="icon" aria-label="Edit line" onClick={onEdit}>
-          <Pencil className="size-4" />
-        </Button>
-      )}
-      {removable && onRemove && (
-        <Button variant="ghost" size="icon" aria-label="Remove line" onClick={onRemove}>
-          <Trash2 className="size-4" />
-        </Button>
-      )}
-      {onVoid && (
-        <Button variant="destructive" size="xs" onClick={onVoid}>
-          Cancel
-        </Button>
+
+      {onRemove && (
+        <ConfirmDialog
+          open={confirmRemove}
+          onOpenChange={setConfirmRemove}
+          title="Remove this line?"
+          description={`${variant.item.name} ${variantLabel(variant)} will be taken off this count.`}
+          confirmLabel="Remove"
+          destructive
+          onConfirm={() => {
+            setConfirmRemove(false);
+            onRemove();
+          }}
+        />
       )}
     </div>
   );

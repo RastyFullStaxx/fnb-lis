@@ -80,10 +80,12 @@ export function PurchasesPage() {
         <TableSurface
           filters={
             <>
-              <TabsList>
-                <TabsTrigger value="purchases">Deliveries</TabsTrigger>
-                <TabsTrigger value="forfeits">Returned Bottles</TabsTrigger>
-              </TabsList>
+              <ToolbarField label="View">
+                <TabsList>
+                  <TabsTrigger value="purchases">Deliveries</TabsTrigger>
+                  <TabsTrigger value="forfeits">Returned Bottles</TabsTrigger>
+                </TabsList>
+              </ToolbarField>
               {tab === "purchases" && (
                 <>
                   <ToolbarSearch

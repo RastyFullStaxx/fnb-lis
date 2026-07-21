@@ -10,7 +10,7 @@ import { variantLabel, type LocationItem, type SaleRecord } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { formatMoney } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
-import { TableSurface } from "@/components/table-surface";
+import { TableSurface, ToolbarField } from "@/components/table-surface";
 import { VoidDialog } from "@/components/void-dialog";
 import { EntryFact, EntryFacts } from "@/components/entry-fact";
 import {
@@ -111,11 +111,13 @@ export function SalesPage() {
       <Tabs value={kind} onValueChange={(v) => setKind(v as SaleKind)} className="flex min-h-0 flex-1 flex-col">
         <TableSurface
           filters={
-            <TabsList>
-              <TabsTrigger value="SALE">Sales</TabsTrigger>
-              <TabsTrigger value="NON_REVENUE">Non-revenue</TabsTrigger>
-              <TabsTrigger value="PRODUCTION">Production</TabsTrigger>
-            </TabsList>
+            <ToolbarField label="Record">
+              <TabsList>
+                <TabsTrigger value="SALE">Sales</TabsTrigger>
+                <TabsTrigger value="NON_REVENUE">Non-revenue</TabsTrigger>
+                <TabsTrigger value="PRODUCTION">Production</TabsTrigger>
+              </TabsList>
+            </ToolbarField>
           }
           // On lg the body is a fixed-height two-column grid that never scrolls
           // as a whole (lg:overflow-hidden); each pane manages its own overflow.

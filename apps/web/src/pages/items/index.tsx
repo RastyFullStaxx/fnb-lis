@@ -49,11 +49,13 @@ export function ItemsPage() {
         <TableSurface
           filters={
             <>
-              <TabsList>
-                <TabsTrigger value="items">Items</TabsTrigger>
-                <TabsTrigger value="categories">Categories</TabsTrigger>
-                <TabsTrigger value="units">Units</TabsTrigger>
-              </TabsList>
+              <ToolbarField label="Section">
+                <TabsList>
+                  <TabsTrigger value="items">Items</TabsTrigger>
+                  <TabsTrigger value="categories">Categories</TabsTrigger>
+                  <TabsTrigger value="units">Units</TabsTrigger>
+                </TabsList>
+              </ToolbarField>
               {tab === "items" && (
                 <>
                   <ToolbarSearch
