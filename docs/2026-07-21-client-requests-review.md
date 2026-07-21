@@ -1,10 +1,5 @@
 # Client Requests — 2026-07-21 Round (Review Guide)
 
-**For:** whoever reviews this branch. **Read time:** ~10 min.
-**What this is:** every client ask we handled in this round, what we found already in the system,
-what we built, *why* the tricky bits are the way they are, and exactly **where to see each one** in
-the app and the code.
-
 > **Login for the demo:** `admin` / `Fnb!2026` (or `manager`, `staff`, `accountant`, `readonly` —
 > same password). Two establishments are seeded: **Prime Hospitality Group** (locations *Main Bar* +
 > *Kitchen*) and **Casa Verde Restaurant** (location *Main*).
