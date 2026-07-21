@@ -56,6 +56,13 @@ async function seedClients() {
   // carries the client's whole module set (just {KITCHEN} here).
   await upsertLocationWithModules(casa.id, "Main", ["KITCHEN"]);
 
+  // Per-establishment over/short highlight threshold (client req 2026-07-21).
+  // Distinct values so the per-tenant setting is visible in the demo: Prime
+  // keeps the 11% default; Casa Verde, a small produce-forward kitchen that
+  // watches spoilage closely, runs a tighter 8%. Idempotent.
+  await prisma.client.update({ where: { id: prime.id }, data: { varianceThresholdPct: 11 } });
+  await prisma.client.update({ where: { id: casa.id }, data: { varianceThresholdPct: 8 } });
+
   // Non-admin users are scoped via UserClientAccess (ADMIN bypasses).
   const assign: Record<string, string[]> = {
     manager: [prime.id, casa.id],

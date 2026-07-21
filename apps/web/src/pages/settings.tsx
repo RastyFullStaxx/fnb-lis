@@ -11,6 +11,8 @@ import {
   useUpdateCompanyInfo,
   useUpdateCostBasis,
   useUpdateProductTypes,
+  useUpdateVarianceThreshold,
+  useVarianceThreshold,
   type CompanyInfo,
 } from "@/api/settings";
 import { usePreferencesContext } from "@/lib/preferences";
@@ -42,6 +44,7 @@ export function SettingsPage() {
         <DisplayPreferencesSection />
         <CompanySection />
         <CostBasisSection />
+        <VarianceThresholdSection />
         {can(role, "admin.manage") && <ProductTypesSection />}
       </div>
     </div>
@@ -109,6 +112,84 @@ function CostBasisSection() {
           Accounting standards expect one basis applied consistently, so this is saved for the whole
           client rather than chosen per download. Exports name the basis in the file and in the header.
         </p>
+      </div>
+    </SettingsSection>
+  );
+}
+
+/**
+ * Over/short highlight threshold (client req, 2026-07-21). An audit policy
+ * saved per establishment — a bar and a fine-dining kitchen tolerate different
+ * variance. Presentation only; never touches the reconciliation math.
+ */
+function VarianceThresholdSection() {
+  const client = useCurrentClient();
+  const clientId = client?.id ?? "";
+  const saved = useVarianceThreshold(clientId);
+  const update = useUpdateVarianceThreshold(clientId);
+  const me = useMe();
+  const role = (me.data?.user.role ?? "READONLY") as Role;
+  const canEdit = can(role, "master.write");
+
+  const [value, setValue] = useState("");
+  useEffect(() => {
+    if (saved.data) setValue(String(saved.data.varianceThresholdPct));
+  }, [saved.data]);
+
+  const parsed = Number(value);
+  const valid = value.trim() !== "" && Number.isFinite(parsed) && parsed >= 0 && parsed <= 100;
+  const isDirty = !!saved.data && valid && parsed !== saved.data.varianceThresholdPct;
+
+  const save = async () => {
+    if (!valid) return;
+    try {
+      await update.mutateAsync(parsed);
+      toast.success(`Variance highlight threshold set to ${parsed}%`);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not save the threshold");
+    }
+  };
+
+  return (
+    <SettingsSection
+      title="Variance Highlight Threshold"
+      description="How large an over/short must be, as a percent of usage, before the Full Audit highlights the row — on screen and in every download."
+    >
+      <div className="max-w-md space-y-2">
+        <Label htmlFor="variance-threshold">Threshold</Label>
+        {saved.isPending ? (
+          <Skeleton className="h-9 w-full" />
+        ) : (
+          <div className="flex items-center gap-2">
+            <Input
+              id="variance-threshold"
+              type="number"
+              min={0}
+              max={100}
+              step={0.5}
+              inputMode="decimal"
+              className="tnum max-w-[7rem]"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && isDirty && void save()}
+              disabled={!canEdit || update.isPending}
+            />
+            <span className="text-sm text-muted-foreground">%</span>
+            <Button onClick={() => void save()} disabled={!canEdit || !isDirty || update.isPending}>
+              Save
+            </Button>
+          </div>
+        )}
+        {value.trim() !== "" && !valid && (
+          <p className="text-xs text-destructive">Enter a percent between 0 and 100.</p>
+        )}
+        <p className="text-xs leading-5 text-muted-foreground">
+          A material short shows red, an over shows amber. Whole-unit items (e.g. bottles sold whole)
+          always highlight when off by a single unit, regardless of this percent. Default is 11%.
+        </p>
+        {!canEdit && (
+          <p className="text-xs text-muted-foreground">Only managers and administrators can change this.</p>
+        )}
       </div>
     </SettingsSection>
   );

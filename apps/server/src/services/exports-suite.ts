@@ -1,19 +1,32 @@
 import ExcelJS from "exceljs";
-import { COST_BASIS_LABELS, hasVariance, round2, toCsv, type CostBasis, type CsvValue, type ReconReport } from "@fnb/core";
+import {
+  COST_BASIS_LABELS,
+  hasVariance,
+  MATERIAL_VARIANCE_PCT,
+  round2,
+  toCsv,
+  varianceSeverity,
+  type CostBasis,
+  type CsvValue,
+  type ReconReport,
+  type VarianceSeverity,
+} from "@fnb/core";
 import {
   brandFooter,
   exportStamp,
-  FULL_AUDIT_COLUMNS,
+  fullAuditColumns,
   moneyCell,
   NONREV_HEADERS,
   ONHAND_HEADERS,
   PURCHASE_HEADERS,
   qtyCell,
   SALES_HEADERS,
+  severityFill,
   styleHeaderRow,
   titleBlock,
   toBuffer,
   TRANSFER_HEADERS,
+  varianceFlagLabel,
   type ReportMeta,
 } from "./exports";
 import type { NonRevenueReport, OnHandReport, PurchaseReport, SalesReport, TransferReport } from "./report-lists";
@@ -40,6 +53,11 @@ import { tablePdf, type PdfRow } from "./pdf";
 const BLUE = "FF3A56E4";
 const LIGHT = "FFEEF1FD";
 
+/** ExcelJS ARGB (e.g. "FFFDECEA") → pdfmake hex ("#FDECEA") for row fills. */
+function pdfFill(argb: string): string {
+  return `#${argb.slice(2)}`;
+}
+
 function stampLine(meta: ReportMeta): string {
   return meta.exportedBy ? `Exported by ${meta.exportedBy} · ${exportStamp()}` : "";
 }
@@ -55,12 +73,23 @@ const LEGACY_HEADERS: string[] = [
   "Shot", "Bottle", "Cost of Sold", "Revenue",
   "Used vs Sales", "Non Rev Usage", "Non Rev Cost",
   "Over/Short", "%Over/Short", "Cost", "At Retail",
+  "Flag",
 ];
 
 /** 1-based indices of peso columns; the rest of the numbers are quantities. */
 const LEGACY_MONEY_COLS = new Set([5, 7, 11, 13, 16, 17, 20, 23, 24]);
 
-function legacyRowCells(r: LegacyAuditRow): CsvValue[] {
+/** Over/short materiality of a legacy audit row (client req 2026-07-21) —
+    drives both the "Flag" column and the row highlight. Threshold is the
+    establishment's saved policy (falls back to the core default). */
+function legacyRowSeverity(r: LegacyAuditRow, thresholdPct: number = MATERIAL_VARIANCE_PCT): VarianceSeverity {
+  return varianceSeverity(
+    { variance: r.overallVariance, variancePct: r.variancePct, contentTracked: r.contentTracked },
+    thresholdPct,
+  );
+}
+
+function legacyRowCells(r: LegacyAuditRow, thresholdPct: number = MATERIAL_VARIANCE_PCT): CsvValue[] {
   return [
     r.productName, r.sizeUom,
     round2(r.beginFull), round2(r.beginOpen), round2(r.bCost),
@@ -71,6 +100,7 @@ function legacyRowCells(r: LegacyAuditRow): CsvValue[] {
     round2(r.usedVsSales), round2(r.nonRevUsage), round2(r.nonRevCost),
     round2(r.overallVariance), r.variancePct === null ? "" : `${Math.round(r.variancePct)}%`,
     round2(r.varianceCost), round2(r.varianceRetail),
+    varianceFlagLabel(legacyRowSeverity(r, thresholdPct)),
   ];
 }
 
@@ -85,6 +115,7 @@ function legacyTotalCells(label: string, t: LegacyAuditTotals): CsvValue[] {
     round2(t.usedVsSales), round2(t.nonRevUsage), round2(t.nonRevCost),
     round2(t.overallVariance), "",
     round2(t.varianceCost), round2(t.varianceRetail),
+    "",
   ];
 }
 
@@ -126,15 +157,15 @@ export async function legacyAuditWorkbook(
   const groupRow = ws.addRow([
     "Product Name", "Size/UOM", "Beginning Inventory", "", "B-Cost", "Purchased", "Cost of Purchase", "F",
     "Ending Inventory", "", "E-Cost", "USAGE", "Cost of Usage", "SALES", "", "Cost of Sold", "Revenue",
-    "Variance", "Non Rev", "Non Rev", "Overall Variance", "", "", "",
+    "Variance", "Non Rev", "Non Rev", "Overall Variance", "", "", "", "Flag",
   ]);
   const subRow = ws.addRow([
     "", "", "Full", "Open", "", "", "", "", "Full", "Open", "", "", "",
-    "Shot", "Bottle", "", "", "Used vs Sales", "Usage", "Cost", "Over/Short", "%Over/Short", "Cost", "At Retail",
+    "Shot", "Bottle", "", "", "Used vs Sales", "Usage", "Cost", "Over/Short", "%Over/Short", "Cost", "At Retail", "",
   ]);
   for (const range of [
     "A4:A5", "B4:B5", "C4:D4", "E4:E5", "F4:F5", "G4:G5", "H4:H5", "I4:J4",
-    "K4:K5", "L4:L5", "M4:M5", "N4:O4", "P4:P5", "Q4:Q5", "R4:R5", "U4:X4",
+    "K4:K5", "L4:L5", "M4:M5", "N4:O4", "P4:P5", "Q4:Q5", "R4:R5", "U4:X4", "Y4:Y5",
   ]) {
     ws.mergeCells(range);
   }
@@ -154,8 +185,16 @@ export async function legacyAuditWorkbook(
     });
   };
 
+  const threshold = meta.varianceThresholdPct ?? MATERIAL_VARIANCE_PCT;
   for (const group of report.groups) {
-    for (const r of group.rows) writeCells(legacyRowCells(r), ws.addRow([]));
+    for (const r of group.rows) {
+      const dataRow = ws.addRow([]);
+      writeCells(legacyRowCells(r, threshold), dataRow);
+      // Highlight a material over/short row (client req 2026-07-21) — the same
+      // rule and colours as the on-screen Full Audit.
+      const fill = severityFill(legacyRowSeverity(r, threshold));
+      if (fill) dataRow.eachCell((cell) => { cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fill } }; });
+    }
     const totalRow = ws.addRow([]);
     writeCells(legacyTotalCells(`${group.categoryName.toUpperCase()} TOTAL`, group.totals), totalRow);
     totalRow.font = { bold: true };
@@ -174,17 +213,22 @@ export async function legacyAuditWorkbook(
   ws.getColumn(1).width = 34;
   ws.getColumn(2).width = 10;
   for (let c = 3; c <= 24; c++) ws.getColumn(c).width = 11;
+  ws.getColumn(25).width = 8;
   return toBuffer(wb);
 }
 
-export function legacyAuditCsv(report: LegacyAuditReport, variant: LegacyAuditVariant): string {
+export function legacyAuditCsv(
+  report: LegacyAuditReport,
+  variant: LegacyAuditVariant,
+  thresholdPct: number = MATERIAL_VARIANCE_PCT,
+): string {
   const rows: CsvValue[][] = [
     [`${legacyAuditTitle(variant)} · ${report.begin} → ${report.end} · Valuation: ${COST_BASIS_LABELS[report.costBasis]}`],
     [legacyRatioLabel(variant), report.costRatio === null ? "" : round2(report.costRatio)],
     LEGACY_HEADERS,
   ];
   for (const group of report.groups) {
-    for (const r of group.rows) rows.push(legacyRowCells(r));
+    for (const r of group.rows) rows.push(legacyRowCells(r, thresholdPct));
     rows.push(legacyTotalCells(`${group.categoryName.toUpperCase()} TOTAL`, group.totals));
     rows.push([]);
   }
@@ -197,9 +241,16 @@ export function legacyAuditPdf(
   meta: ReportMeta,
   variant: LegacyAuditVariant,
 ): Promise<Buffer> {
+  const threshold = meta.varianceThresholdPct ?? MATERIAL_VARIANCE_PCT;
   const rows: PdfRow[] = [];
   for (const group of report.groups) {
-    for (const r of group.rows) rows.push({ cells: legacyRowCells(r) as (string | number)[] });
+    for (const r of group.rows) {
+      const fill = severityFill(legacyRowSeverity(r, threshold));
+      rows.push({
+        cells: legacyRowCells(r, threshold) as (string | number)[],
+        ...(fill ? { fill: pdfFill(fill) } : {}),
+      });
+    }
     rows.push({
       cells: legacyTotalCells(`${group.categoryName.toUpperCase()} TOTAL`, group.totals) as (string | number)[],
       kind: "total",
@@ -584,32 +635,36 @@ export function onHandPdfDoc(report: OnHandReport, meta: ReportMeta): Promise<Bu
 }
 
 export function fullAuditPdfDoc(report: ReconReport, meta: ReportMeta, varianceOnly = false): Promise<Buffer> {
+  const threshold = meta.varianceThresholdPct ?? MATERIAL_VARIANCE_PCT;
+  const columns = fullAuditColumns(threshold);
   const rows: PdfRow[] = [];
   for (const group of report.categories) {
     const groupRows = varianceOnly ? group.rows.filter((r) => hasVariance(r.variance)) : group.rows;
     if (groupRows.length === 0) continue;
     rows.push({ cells: [group.categoryName.toUpperCase()], kind: "group" });
     for (const r of groupRows) {
+      const fill = severityFill(varianceSeverity(r, threshold));
       rows.push({
         cells: [
           r.itemName,
-          ...FULL_AUDIT_COLUMNS.map((c) => {
+          ...columns.map((c) => {
             const v = c.value(r);
-            return v === null ? "—" : round2(v);
+            return v === null ? "—" : typeof v === "string" ? v : round2(v);
           }),
         ] as (string | number)[],
+        ...(fill ? { fill: pdfFill(fill) } : {}),
       });
     }
   }
   const totalCells: (string | number)[] = [varianceOnly ? "Variance Total" : "Grand Total"];
-  for (const c of FULL_AUDIT_COLUMNS) totalCells.push(c.total ? round2(c.total(report.totals)) : "");
+  for (const c of columns) totalCells.push(c.total ? round2(c.total(report.totals)) : "");
   rows.push({ cells: totalCells, kind: "total" });
   return tablePdf({
     title: varianceOnly ? "Variance Report" : "Full Audit Report",
     subtitle: `${meta.clientName} · ${meta.locationName} · ${report.period.beginDate} → ${report.period.endDate} (activity up to, not including, the ending date)`,
     columns: [
       { header: "Item", align: "left", width: "*" },
-      ...FULL_AUDIT_COLUMNS.map((c) => ({ header: c.header, align: "right" as const, width: "auto" as const })),
+      ...columns.map((c) => ({ header: c.header, align: "right" as const, width: "auto" as const })),
     ],
     rows,
     exportedBy: stampLine(meta),

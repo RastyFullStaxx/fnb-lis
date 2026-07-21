@@ -21,6 +21,15 @@ export interface SalesReport {
     gross: number;
     net: number;
   }>;
+  // Regular-vs-discounted split (client req 2026-07-21).
+  byPriceType: Array<{
+    type: "REGULAR" | "DISCOUNTED";
+    count: number;
+    qty: number;
+    gross: number;
+    discount: number;
+    net: number;
+  }>;
   totals: { qty: number; gross: number; discount: number; net: number };
 }
 
@@ -63,7 +72,8 @@ export interface NonRevenueReport {
     estimatedCost: number | null;
     estimatedRetail: number | null;
   }>;
-  byReason: Array<{ reason: string; count: number; qty: number; cost: number }>;
+  // Grouped by canonical bucket (+ "Other"); `group` is the stable key.
+  byReason: Array<{ group: string; reason: string; count: number; qty: number; cost: number }>;
   totals: { count: number; qty: number; cost: number; retail: number };
 }
 

@@ -37,6 +37,9 @@ export interface PdfColumn {
 export interface PdfRow {
   cells: (string | number)[];
   kind?: "data" | "group" | "total";
+  /** Optional row background (hex) — used to highlight material over/short rows
+      in the Full Audit, so the download matches the on-screen tint. */
+  fill?: string;
 }
 
 export interface PdfTableSpec {
@@ -89,7 +92,7 @@ export function tablePdf(spec: PdfTableSpec): Promise<Buffer> {
         fontSize: 7.5,
         bold: row.kind === "total",
         color: row.kind === "total" ? INK : undefined,
-        fillColor: row.kind === "total" ? HEADER_FILL : undefined,
+        fillColor: row.kind === "total" ? HEADER_FILL : row.fill,
         alignment: c.align ?? "left",
       }));
     }),

@@ -2,6 +2,8 @@ import {
   costLine,
   isPaymentTerms,
   netOfVat,
+  NON_REVENUE_GROUP_LABELS,
+  NON_REVENUE_GROUPS,
   nonRevenueGroupOf,
   pctOf,
   type CostBasis,
@@ -52,10 +54,18 @@ export interface SalesReportRow {
   gross: number; // unitPrice × qty (legacy getSales basis)
   net: number; // gross × (1 − discount/100)
 }
+/** Regular = no discount, Discounted = any discount (client req 2026-07-21).
+    Derived from discountPct, so it's a view of the same rows, not a new query. */
+export type SalesPriceType = "REGULAR" | "DISCOUNTED";
+const PRICE_TYPE_ORDER: SalesPriceType[] = ["REGULAR", "DISCOUNTED"];
+
 export interface SalesReport {
   from: string;
   to: string;
   rows: SalesReportRow[];
+  // Regular-vs-discounted split so a manager sees how much revenue is being
+  // discounted away — the `discount` field is the money given up.
+  byPriceType: Array<{ type: SalesPriceType; count: number; qty: number; gross: number; discount: number; net: number }>;
   totals: { qty: number; gross: number; discount: number; net: number };
 }
 
@@ -100,6 +110,19 @@ export async function salesReport(
     };
   });
 
+  const ptMap = new Map<SalesPriceType, { count: number; qty: number; gross: number; discount: number; net: number }>();
+  for (const r of rows) {
+    const type: SalesPriceType = r.discountPct > 0 ? "DISCOUNTED" : "REGULAR";
+    const agg = ptMap.get(type) ?? { count: 0, qty: 0, gross: 0, discount: 0, net: 0 };
+    agg.count += 1;
+    agg.qty += r.qty;
+    agg.gross += r.gross;
+    agg.discount += r.gross - r.net;
+    agg.net += r.net;
+    ptMap.set(type, agg);
+  }
+  const byPriceType = PRICE_TYPE_ORDER.filter((t) => ptMap.has(t)).map((t) => ({ type: t, ...ptMap.get(t)! }));
+
   const totals = rows.reduce(
     (acc, r) => ({
       qty: acc.qty + r.qty,
@@ -109,7 +132,7 @@ export async function salesReport(
     }),
     { qty: 0, gross: 0, discount: 0, net: 0 },
   );
-  return { from, to, rows, totals };
+  return { from, to, rows, byPriceType, totals };
 }
 
 // ── Purchase report (committed lines, with supplier rollup) ──
@@ -242,11 +265,22 @@ export interface NonRevenueRow {
   estimatedCost: number | null; // qty × current cost for direct item entries
   estimatedRetail: number | null; // qty × current retail (client req #8)
 }
+/** All three canonical buckets, plus an "Other / Unspecified" catch-all. */
+export type NonRevenueBucket = NonRevenueGroup | "OTHER";
+const BUCKET_ORDER: NonRevenueBucket[] = [...NON_REVENUE_GROUPS, "OTHER"];
+const BUCKET_LABELS: Record<NonRevenueBucket, string> = {
+  ...NON_REVENUE_GROUP_LABELS,
+  OTHER: "Other / Unspecified",
+};
+
 export interface NonRevenueReport {
   from: string;
   to: string;
   rows: NonRevenueRow[];
-  byReason: Array<{ reason: string; count: number; qty: number; cost: number }>;
+  // Breakdown by the canonical buckets (+ Other), NOT by raw reason label, so
+  // legacy-coded rows roll up into the bucket they report under (client req
+  // 2026-07-21). `group` is the stable key; `reason` is its display label.
+  byReason: Array<{ group: NonRevenueBucket; reason: string; count: number; qty: number; cost: number }>;
   totals: { count: number; qty: number; cost: number; retail: number };
 }
 
@@ -289,17 +323,24 @@ export async function nonRevenueReport(
     };
   });
 
-  const reasonMap = new Map<string, { count: number; qty: number; cost: number }>();
-  for (const r of rows) {
-    const agg = reasonMap.get(r.reason) ?? { count: 0, qty: 0, cost: 0 };
+  // Aggregate from the raw records (which carry the reason CODE) so each row
+  // folds into its canonical bucket via nonRevenueGroupOf; the display rows
+  // above only kept the reason's label. Ordered canonically, Other last.
+  const bucketMap = new Map<NonRevenueBucket, { count: number; qty: number; cost: number }>();
+  for (const r of records) {
+    const bucket: NonRevenueBucket = nonRevenueGroupOf(r.reason) ?? "OTHER";
+    const cost = r.locationItem ? r.qty * r.locationItem.cost : 0;
+    const agg = bucketMap.get(bucket) ?? { count: 0, qty: 0, cost: 0 };
     agg.count += 1;
     agg.qty += r.qty;
-    agg.cost += r.estimatedCost ?? 0;
-    reasonMap.set(r.reason, agg);
+    agg.cost += cost;
+    bucketMap.set(bucket, agg);
   }
-  const byReason = [...reasonMap.entries()]
-    .map(([reason, v]) => ({ reason, ...v }))
-    .sort((a, b) => b.qty - a.qty);
+  const byReason = BUCKET_ORDER.filter((b) => bucketMap.has(b)).map((b) => ({
+    group: b,
+    reason: BUCKET_LABELS[b],
+    ...bucketMap.get(b)!,
+  }));
 
   const totals = rows.reduce(
     (acc, r) => ({

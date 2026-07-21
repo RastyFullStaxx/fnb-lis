@@ -106,6 +106,33 @@ export function SalesReportPage() {
                 <PeriodColumns data={byDay} name="Net revenue" height={160} />
               </ChartBlock>
             )}
+            {/* Regular-vs-discounted split (client req 2026-07-21): the share of
+                sales given a discount, and the peso value handed away. Always
+                the full range, not the search subset. Hidden for Production
+                (no prices). */}
+            {view !== "production" && report.data.byPriceType.length > 0 && (
+              <div className="mb-4 flex flex-wrap items-start gap-x-8 gap-y-3 rounded-lg border bg-muted/20 px-4 py-3">
+                {report.data.byPriceType.map((pt) => (
+                  <div key={pt.type}>
+                    <p className="text-xs font-medium text-muted-foreground">
+                      {pt.type === "REGULAR" ? "Regular Price" : "Discounted"}
+                    </p>
+                    <p className="tnum text-lg font-semibold">{formatMoney(pt.net)}</p>
+                    <p className="tnum text-xs text-muted-foreground">
+                      {pt.count} {pt.count === 1 ? "sale" : "sales"} · qty {n2(pt.qty)}
+                    </p>
+                  </div>
+                ))}
+                {report.data.totals.discount > 0 && (
+                  <div className="sm:ml-auto sm:text-right">
+                    <p className="text-xs font-medium text-muted-foreground">Total Discount Given</p>
+                    <p className="tnum text-lg font-semibold text-warning-text">
+                      −{formatMoney(report.data.totals.discount)}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
             {rows.length === 0 ? (
               <TableEmpty icon={Receipt} title="No rows match the search" description="Try a different item or menu name." />
             ) : (

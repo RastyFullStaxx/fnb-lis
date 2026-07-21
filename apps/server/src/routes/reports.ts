@@ -5,6 +5,7 @@ import {
   hasVariance,
   COST_BASIS_SLUGS,
   isCostBasis,
+  MATERIAL_VARIANCE_PCT,
   NON_REVENUE_GROUP_LABELS,
   NON_REVENUE_GROUPS,
   type CostBasis,
@@ -100,6 +101,13 @@ function nrGroup(raw: string | undefined): NonRevenueGroup | undefined {
 function basisOf(c: Context<AppEnv>): CostBasis {
   const raw = (c.get("client") as { costBasis?: string } | undefined)?.costBasis;
   return isCostBasis(raw) ? raw : "PRICE";
+}
+
+/** The establishment's saved over/short highlight threshold (%), for exports
+    that take it directly rather than through ReportMeta. Falls back to default. */
+function thresholdOf(c: Context<AppEnv>): number {
+  const raw = (c.get("client") as { varianceThresholdPct?: number } | undefined)?.varianceThresholdPct;
+  return typeof raw === "number" ? raw : MATERIAL_VARIANCE_PCT;
 }
 
 /** Only a non-default basis is stamped into filenames — a "purchase-price"
@@ -215,7 +223,7 @@ export const reportRoutes = new Hono<AppEnv>()
     const base = varianceOnly ? "variance-report" : "full-audit";
     const name = `${base}_${location.name}_${begin}_${end}${basisSuffix(basisOf(c))}`.replace(/[^\w.-]+/g, "-");
     const format = c.req.query("format");
-    if (format === "csv") return csvResponse(fullAuditCsv(report), name, fullName(user));
+    if (format === "csv") return csvResponse(fullAuditCsv(report, thresholdOf(c)), name, fullName(user));
     if (format === "pdf") return pdfResponse(await fullAuditPdfDoc(report, await meta(client, location.name, user), varianceOnly), name);
     return xlsxResponse(await fullAuditWorkbook(report, await meta(client, location.name, user)), name);
   })
@@ -233,7 +241,7 @@ export const reportRoutes = new Hono<AppEnv>()
     const user = c.get("user")!;
     const name = `${legacyAuditTitle(variant)}_${location.name}_${begin}_${end}${basisSuffix(basisOf(c))}`.replace(/[^\w.-]+/g, "-");
     const format = c.req.query("format");
-    if (format === "csv") return csvResponse(legacyAuditCsv(report, variant), name, fullName(user));
+    if (format === "csv") return csvResponse(legacyAuditCsv(report, variant, thresholdOf(c)), name, fullName(user));
     if (format === "pdf") return pdfResponse(await legacyAuditPdf(report, await meta(client, location.name, user), variant), name);
     return xlsxResponse(await legacyAuditWorkbook(report, await meta(client, location.name, user), variant), name);
   })
@@ -497,7 +505,7 @@ export const reportRoutes = new Hono<AppEnv>()
   });
 
 async function meta(
-  client: { id: string; name: string; costBasis?: string },
+  client: { id: string; name: string; costBasis?: string; varianceThresholdPct?: number },
   locationName: string,
   user?: { firstName: string; lastName: string },
 ): Promise<ReportMeta> {
@@ -512,5 +520,8 @@ async function meta(
     // Every export built from this meta discloses a non-default basis in its
     // title block — see basisSubtitle().
     costBasis: isCostBasis(client.costBasis) ? client.costBasis : "PRICE",
+    // The Full Audit exports highlight material over/short at this threshold.
+    varianceThresholdPct:
+      typeof client.varianceThresholdPct === "number" ? client.varianceThresholdPct : undefined,
   };
 }

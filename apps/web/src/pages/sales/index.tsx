@@ -395,6 +395,7 @@ function EditSaleDialog({
                         {NON_REVENUE_GROUP_LABELS[r]}
                       </SelectItem>
                     ))}
+                    <SelectItem value="OTHER">Other / Unspecified</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -580,9 +581,11 @@ function QuickEntry({ kind }: { kind: SaleKind }) {
             <>
               <div className="space-y-2">
                 <Label htmlFor="s-reason">Reason</Label>
-                {/* Client req (2026-07-20): exactly three encoding options —
-                    each drives its own report; legacy reasons remain readable
-                    on historical rows but can no longer be entered. */}
+                {/* The three canonical buckets, each of which drives its own
+                    report, plus "Other / Unspecified" — the plain input the
+                    client asked for (2026-07-21) when the user doesn't want to
+                    classify. Legacy reasons stay readable on historical rows
+                    but can no longer be entered. */}
                 <Select value={reason} onValueChange={setReason}>
                   <SelectTrigger id="s-reason">
                     <SelectValue />
@@ -593,6 +596,7 @@ function QuickEntry({ kind }: { kind: SaleKind }) {
                         {NON_REVENUE_GROUP_LABELS[r]}
                       </SelectItem>
                     ))}
+                    <SelectItem value="OTHER">Other / Unspecified</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

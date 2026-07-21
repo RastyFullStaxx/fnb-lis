@@ -52,15 +52,14 @@ export function NonRevenueReportPage() {
   // Cost by reason: which write-off bucket is eating the most money. Capped so
   // the ranking stays readable — the tail is listed in full under the table.
   const reasonBars = useMemo(() => {
-    // Only reasons that carry cost can appear as a bar, so the "of N" in the
-    // hint counts THAT pool — not the raw bucket list, which would imply the
-    // ranking cut reasons it actually just left empty-valued.
+    // Only buckets that carry cost can appear as a bar, so the "of N" in the
+    // hint counts THAT pool — not the full bucket list, which would imply the
+    // ranking cut buckets it actually just left empty-valued.
     const eligible = (report.data?.byReason ?? []).filter((g) => g.cost > 0);
     const bars = [...eligible]
       .sort((a, b) => b.cost - a.cost)
-      .slice(0, 8)
       .map((g) => ({ label: g.reason, value: round2(g.cost) }));
-    return { bars, reasonCount: eligible.length };
+    return { bars, bucketCount: eligible.length };
   }, [report.data]);
 
   return (
@@ -171,8 +170,8 @@ export function NonRevenueReportPage() {
           <>
             {reasonBars.bars.length >= 2 && (
               <ChartBlock
-                title="Cost by Reason"
-                hint={`Top ${reasonBars.bars.length} of ${reasonBars.reasonCount} reasons`}
+                title="Cost by Bucket"
+                hint={`${reasonBars.bars.length} of ${reasonBars.bucketCount} buckets`}
               >
                 <MagnitudeBars data={reasonBars.bars} name="Est. cost" />
               </ChartBlock>
@@ -230,10 +229,10 @@ export function NonRevenueReportPage() {
 
       {!transferTab && report.data && report.data.rows.length > 0 && (
         <div className="mt-8">
-          <h3 className="mb-3 text-sm font-semibold">By Reason</h3>
+          <h3 className="mb-3 text-sm font-semibold">By Bucket</h3>
           <div className="flex flex-wrap gap-x-10 gap-y-3">
             {report.data.byReason.map((g) => (
-              <div key={g.reason}>
+              <div key={g.group}>
                 <p className="text-sm font-medium">{g.reason}</p>
                 <p className="tnum text-xs text-muted-foreground">
                   {g.count} entr{g.count === 1 ? "y" : "ies"} · qty {n2(g.qty)}

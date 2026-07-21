@@ -1,7 +1,14 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
-import { COST_BASES, COST_BASIS_LABELS, isCostBasis } from "@fnb/core";
+import {
+  COST_BASES,
+  COST_BASIS_LABELS,
+  isCostBasis,
+  MATERIAL_VARIANCE_PCT,
+  VARIANCE_THRESHOLD_MAX,
+  VARIANCE_THRESHOLD_MIN,
+} from "@fnb/core";
 import { prisma } from "../db";
 import { AppError } from "../lib/errors";
 import { logActivity } from "../services/activity";
@@ -25,6 +32,10 @@ export type CompanyInfo = z.infer<typeof companyInfo>;
 const EMPTY: CompanyInfo = { legalName: "", address: "", phone: "", email: "", reportFooter: "" };
 
 const costBasisBody = z.object({ costBasis: z.enum(COST_BASES) });
+
+const varianceThresholdBody = z.object({
+  varianceThresholdPct: z.number().min(VARIANCE_THRESHOLD_MIN).max(VARIANCE_THRESHOLD_MAX),
+});
 
 async function assertClientAccess(userId: string, role: string, clientId: string): Promise<void> {
   if (role === "ADMIN") return;
@@ -95,6 +106,21 @@ export const preferencesRoutes = new Hono<AppEnv>()
     await assertClientAccess(user.id, user.role, clientId);
     const client = await prisma.client.findUnique({ where: { id: clientId }, select: { costBasis: true } });
     return c.json({ costBasis: isCostBasis(client?.costBasis) ? client.costBasis : "PRICE" });
+  })
+
+  // Read-only like cost-basis: the Full Audit highlight (screen + downloads)
+  // needs the threshold, so anyone who can read the report must be able to read
+  // it. Writing stays gated (settingsRoutes).
+  .get("/variance-threshold", async (c) => {
+    const user = c.get("user")!;
+    const clientId = c.req.query("clientId") ?? "";
+    if (!clientId) throw new AppError(400, "clientId is required");
+    await assertClientAccess(user.id, user.role, clientId);
+    const client = await prisma.client.findUnique({
+      where: { id: clientId },
+      select: { varianceThresholdPct: true },
+    });
+    return c.json({ varianceThresholdPct: client?.varianceThresholdPct ?? MATERIAL_VARIANCE_PCT });
   });
 
 export const settingsRoutes = new Hono<AppEnv>()
@@ -157,4 +183,35 @@ export const settingsRoutes = new Hono<AppEnv>()
       );
     });
     return c.json({ costBasis });
+  })
+
+  // ── Variance highlight threshold (audit policy — client req 2026-07-21) ──
+  // Per-establishment, like the cost basis: a bar and a fine-dining kitchen
+  // tolerate different over/short. Presentation only — never the sacred math.
+  .put("/variance-threshold", zValidator("json", varianceThresholdBody), async (c) => {
+    const user = c.get("user")!;
+    const clientId = c.req.query("clientId") ?? "";
+    if (!clientId) throw new AppError(400, "clientId is required");
+    await assertClientAccess(user.id, user.role, clientId);
+    const { varianceThresholdPct } = c.req.valid("json");
+    const before = await prisma.client.findUnique({
+      where: { id: clientId },
+      select: { varianceThresholdPct: true },
+    });
+    await prisma.$transaction(async (tx) => {
+      await tx.client.update({ where: { id: clientId }, data: { varianceThresholdPct } });
+      await logActivity(
+        {
+          user,
+          clientId,
+          action: "settings.varianceThreshold",
+          entity: "Client",
+          entityId: clientId,
+          summary: `Variance highlight threshold: ${varianceThresholdPct}%`,
+          details: { from: before?.varianceThresholdPct ?? MATERIAL_VARIANCE_PCT, to: varianceThresholdPct },
+        },
+        tx,
+      );
+    });
+    return c.json({ varianceThresholdPct });
   });

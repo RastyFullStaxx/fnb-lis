@@ -53,6 +53,32 @@ export function useUpdateCostBasis(clientId: string) {
   });
 }
 
+/**
+ * Over/short highlight threshold (%) — an audit policy saved per establishment
+ * (client req 2026-07-21). Read by the Full Audit to decide which rows light
+ * up; writing is restricted to managers/admins. Presentation only.
+ */
+export function useVarianceThreshold(clientId: string) {
+  return useQuery({
+    queryKey: ["settings", "variance-threshold", clientId],
+    queryFn: () =>
+      api<{ varianceThresholdPct: number }>(`/api/settings/variance-threshold?clientId=${clientId}`),
+    enabled: Boolean(clientId),
+  });
+}
+
+export function useUpdateVarianceThreshold(clientId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (varianceThresholdPct: number) =>
+      put<{ varianceThresholdPct: number }>(`/api/settings/variance-threshold?clientId=${clientId}`, {
+        varianceThresholdPct,
+      }),
+    onSuccess: (data) =>
+      qc.setQueryData(["settings", "variance-threshold", clientId], data),
+  });
+}
+
 export interface UserPreferences {
   fontSize: "default" | "large" | "x-large";
   unitSystem: "metric" | "imperial";

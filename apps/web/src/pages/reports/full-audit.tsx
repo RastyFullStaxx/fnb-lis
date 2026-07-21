@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { BarChart3, ChevronDown, FileDown, Info } from "lucide-react";
-import { can, hasVariance, round2, type Role } from "@fnb/core";
+import { can, hasVariance, MATERIAL_VARIANCE_PCT, round2, varianceSeverity, type Role } from "@fnb/core";
 import { toast } from "sonner";
 import { useMe } from "@/api/auth";
 import { useCountDates, useFullAudit } from "@/api/ops";
 import { useLocationId } from "@/api/location";
 import { useProductTypes } from "@/api/master";
-import { useCompanyInfo } from "@/api/settings";
+import { useCompanyInfo, useVarianceThreshold } from "@/api/settings";
 import { exportUrl, useFullAuditDrill } from "@/api/reports";
 import { ApiError, downloadFile } from "@/api/http";
 import { formatMoney } from "@/lib/utils";
@@ -58,13 +58,15 @@ const n2 = (v: number) => round2(v).toLocaleString("en-US", { maximumFractionDig
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-/** Solid tint for sticky cells on short rows — translucent destructive/5 would
+/** Solid tint for sticky cells on highlighted rows — translucent tints would
     let scrolled columns bleed through a pinned cell.
-    Hand-matched to `bg-destructive/5` over `--background` in the LIGHT theme,
-    which is the only theme the app ships (no `.dark` toggle exists). If a dark
-    theme is ever added this literal must gain a `dark:` twin, or short rows
-    will pin a near-white cell against a dark table. */
+    Hand-matched to `bg-destructive/5` (short) and `bg-warning/10` (over) over
+    `--background` in the LIGHT theme, which is the only theme the app ships (no
+    `.dark` toggle exists). If a dark theme is ever added these literals must
+    gain a `dark:` twin, or highlighted rows will pin a near-white cell against
+    a dark table. */
 const SHORT_ROW_STICKY_BG = "bg-[oklch(0.977_0.011_25)]";
+const OVER_ROW_STICKY_BG = "bg-[oklch(0.972_0.024_75)]";
 
 export function FullAuditPage() {
   const me = useMe();
@@ -91,6 +93,10 @@ export function FullAuditPage() {
 
   const location = me.data?.clients.flatMap((c) => c.locations.map((l) => ({ ...l, clientName: c.name }))).find((l) => l.id === locationId);
   const company = useCompanyInfo(location?.clientId ?? "");
+  // Per-establishment over/short highlight threshold — the same policy the
+  // exports apply. Falls back to the core default until it loads.
+  const varianceThreshold = useVarianceThreshold(location?.clientId ?? "");
+  const thresholdPct = varianceThreshold.data?.varianceThresholdPct ?? MATERIAL_VARIANCE_PCT;
 
   const dates = countDates.data?.dates ?? [];
   const effectiveBegin = begin ?? (dates.length >= 2 ? dates[dates.length - 2] : undefined);
@@ -386,7 +392,7 @@ export function FullAuditPage() {
               </TableHeader>
               <TableBody>
                 {visibleGroups.map((group) => (
-                  <CategoryRows key={group.categoryName} group={group} onDrill={setDrill} compact={compact} />
+                  <CategoryRows key={group.categoryName} group={group} onDrill={setDrill} compact={compact} thresholdPct={thresholdPct} />
                 ))}
                 <TableRow className="bg-muted/60 font-semibold hover:bg-muted/60 [&_td]:border-t-2">
                   {/* The total is always the WHOLE PERIOD (payload totals,
@@ -545,10 +551,12 @@ function CategoryRows({
   group,
   onDrill,
   compact,
+  thresholdPct,
 }: {
   group: Group;
   onDrill: (item: { id: string; name: string }) => void;
   compact: boolean;
+  thresholdPct: number;
 }) {
   return (
     <>
@@ -558,13 +566,28 @@ function CategoryRows({
         </TableCell>
         <TableCell colSpan={compact ? 7 : 14} className="py-1.5" />
       </TableRow>
-      {group.rows.map((row) => (
+      {group.rows.map((row) => {
+        // Materiality highlight (client req 2026-07-21): only a variance that
+        // breaches the threshold lights up — a material short in red, a
+        // material over in amber — so the eye lands on findings, not on every
+        // sub-percent pour delta. Same rule feeds every download.
+        const sev = varianceSeverity(row, thresholdPct);
+        const rowTint =
+          sev === "short"
+            ? "bg-destructive/5 hover:bg-destructive/10"
+            : sev === "over"
+              ? "bg-warning/10 hover:bg-warning/15"
+              : "hover:bg-muted/40";
+        const stickyBg =
+          sev === "short" ? SHORT_ROW_STICKY_BG : sev === "over" ? OVER_ROW_STICKY_BG : "bg-background";
+        const varInk = sev === "short" ? "text-destructive" : sev === "over" ? "text-warning-text" : undefined;
+        return (
         <TableRow
           key={row.locationItemId}
           tabIndex={0}
           className={cn(
             "cursor-pointer focus-visible:outline-2 focus-visible:outline-primary focus-visible:-outline-offset-2",
-            row.flags.short ? "bg-destructive/5 hover:bg-destructive/10" : "hover:bg-muted/40",
+            rowTint,
           )}
           onClick={() => onDrill({ id: row.locationItemId, name: row.itemName })}
           onKeyDown={(e) => {
@@ -582,7 +605,7 @@ function CategoryRows({
           <TableCell
             className={cn(
               "sticky left-0 z-10 max-w-[15rem] whitespace-normal break-words",
-              row.flags.short ? SHORT_ROW_STICKY_BG : "bg-background",
+              stickyBg,
             )}
           >
             <span className="font-medium">{row.itemName}</span>
@@ -631,22 +654,23 @@ function CategoryRows({
           {!compact && (
             <TableCell className="tnum text-right">{row.revenue > 0 ? formatMoney(round2(row.revenue)) : "—"}</TableCell>
           )}
-          <TableCell className={cn("tnum border-l text-right font-medium", row.flags.short && "text-destructive")}>
+          <TableCell className={cn("tnum border-l text-right font-medium", varInk)}>
             {n2(row.variance)}
           </TableCell>
           {!compact && (
-            <TableCell className={cn("tnum text-right", row.flags.short && "text-destructive")}>
+            <TableCell className={cn("tnum text-right", varInk)}>
               {row.variancePct === null ? "—" : `${n2(row.variancePct)}%`}
             </TableCell>
           )}
-          <TableCell className={cn("tnum text-right", row.varianceCost < 0 && "text-destructive")}>
+          <TableCell className={cn("tnum text-right", varInk)}>
             {formatMoney(round2(row.varianceCost))}
           </TableCell>
-          <TableCell className={cn("tnum text-right", row.varianceRetail < 0 && "text-destructive")}>
+          <TableCell className={cn("tnum text-right", varInk)}>
             {formatMoney(round2(row.varianceRetail))}
           </TableCell>
         </TableRow>
-      ))}
+        );
+      })}
     </>
   );
 }

@@ -69,6 +69,11 @@ model Client {
   // PRICE = count-line snapshot cost (default, matches everything shipped so
   // far); AVERAGE = periodic weighted average. Never affects variance.
   costBasis String   @default("PRICE") // PRICE | AVERAGE
+  // Over/short materiality threshold (%) for the Full Audit highlight — an
+  // audit policy, so it is per-establishment (client req 2026-07-21). Default
+  // 11 = @fnb/core MATERIAL_VARIANCE_PCT. Presentation only; never touches the
+  // reconciliation math.
+  varianceThresholdPct Float @default(11)
   createdAt DateTime @default(now())
 
   locations    Location[]

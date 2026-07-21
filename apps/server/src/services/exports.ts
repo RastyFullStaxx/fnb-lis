@@ -1,14 +1,17 @@
 import ExcelJS from "exceljs";
 import {
   COST_BASIS_LABELS,
+  MATERIAL_VARIANCE_PCT,
   PAYMENT_TERMS_LABELS,
   round2,
   toCsv,
+  varianceSeverity,
   type CostBasis,
   type CsvValue,
   type ReconReport,
   type ReconRow,
   type ReconTotals,
+  type VarianceSeverity,
 } from "@fnb/core";
 import type {
   CostAnalysisReport,
@@ -24,9 +27,27 @@ import type { TopSellersReport } from "./top-sellers";
 const BLUE = "FF3A56E4";
 const LIGHT = "FFEEF1FD";
 const RED = "FFB42318";
+const AMBER = "FFB45309";
 const WHITE = "FFFFFFFF";
 const MONEY = "#,##0.00";
 const QTY = "#,##0.######";
+
+// Materiality highlight (client req 2026-07-21): a material short row is tinted
+// light red, a material over row light amber — the download analog of the
+// on-screen row tint. Hex twins in pdf.ts (PDF) / full-audit.tsx (screen).
+const FILL_SHORT = "FFFDECEA";
+const FILL_OVER = "FFFEF3C7";
+
+/** ARGB row fill for a material over/short row, or null when not material. */
+export function severityFill(sev: VarianceSeverity): string | null {
+  return sev === "short" ? FILL_SHORT : sev === "over" ? FILL_OVER : null;
+}
+
+/** Short text token for the over/short highlight — the CSV/print analog of a
+    fill (a plain-text file cannot carry a colour). */
+export function varianceFlagLabel(sev: VarianceSeverity): string {
+  return sev === "short" ? "Short" : sev === "over" ? "Over" : "";
+}
 
 export interface ReportMeta {
   clientName: string;
@@ -43,6 +64,9 @@ export interface ReportMeta {
    * "Purchase Price" on every legacy file would be noise.
    */
   costBasis?: CostBasis;
+  /** Per-establishment over/short highlight threshold (%). Absent ⇒ the
+      MATERIAL_VARIANCE_PCT default. Drives which rows the export highlights. */
+  varianceThresholdPct?: number;
 }
 
 type Cell = ExcelJS.Cell;
@@ -120,13 +144,16 @@ export async function toBuffer(wb: ExcelJS.Workbook): Promise<Buffer> {
 
 export interface FullAuditColumn {
   header: string;
-  kind: "qty" | "qtyRed" | "money" | "moneyPlain" | "pct";
-  value: (r: ReconRow) => number | null;
+  kind: "qty" | "qtyRed" | "money" | "moneyPlain" | "pct" | "flag";
+  value: (r: ReconRow) => number | string | null;
   /** Present only on columns that appear in the grand-total row. */
   total?: (t: ReconTotals) => number;
 }
 
-export const FULL_AUDIT_COLUMNS: FullAuditColumn[] = [
+/** The Full Audit's column spec. A function, not a constant, because the Flag
+    column's value depends on the establishment's materiality threshold. */
+export function fullAuditColumns(thresholdPct: number = MATERIAL_VARIANCE_PCT): FullAuditColumn[] {
+  return [
   { header: "Begin full", kind: "qty", value: (r) => r.beginFull },
   { header: "Begin open", kind: "qty", value: (r) => r.beginOpenEquiv },
   { header: "Purchased", kind: "qty", value: (r) => r.purchased },
@@ -147,29 +174,45 @@ export const FULL_AUDIT_COLUMNS: FullAuditColumn[] = [
   { header: "%", kind: "pct", value: (r) => r.variancePct },
   { header: "At cost", kind: "money", value: (r) => r.varianceCost, total: (t) => t.varianceCost },
   { header: "At retail", kind: "money", value: (r) => r.varianceRetail, total: (t) => t.varianceRetail },
-];
+  // Over/Short highlight (client req 2026-07-21): the materiality flag as text,
+  // so the CSV and PDF carry the finding a colour fill alone can't (and Excel
+  // can be sorted/filtered on it).
+  { header: "Flag", kind: "flag", value: (r) => varianceFlagLabel(varianceSeverity(r, thresholdPct)) },
+  ];
+}
 
-function fullAuditCell(cell: Cell, kind: FullAuditColumn["kind"], value: number | null) {
-  if (kind === "pct") {
-    cell.value = value === null ? "—" : round2(value);
-    if (value !== null) cell.numFmt = '0.00"%"';
-    cell.alignment = { horizontal: "right" };
-    if (value !== null && value < 0) cell.font = { color: { argb: RED } };
+function fullAuditCell(cell: Cell, kind: FullAuditColumn["kind"], value: number | string | null) {
+  if (kind === "flag") {
+    const label = typeof value === "string" ? value : "";
+    cell.value = label;
+    cell.alignment = { horizontal: "center" };
+    if (label === "Short") cell.font = { color: { argb: RED }, bold: true };
+    else if (label === "Over") cell.font = { color: { argb: AMBER }, bold: true };
     return;
   }
-  const v = value ?? 0;
+  if (kind === "pct") {
+    const v = typeof value === "number" ? value : null;
+    cell.value = v === null ? "—" : round2(v);
+    if (v !== null) cell.numFmt = '0.00"%"';
+    cell.alignment = { horizontal: "right" };
+    if (v !== null && v < 0) cell.font = { color: { argb: RED } };
+    return;
+  }
+  const v = typeof value === "number" ? value : 0;
   if (kind === "money") moneyCell(cell, v);
   else if (kind === "moneyPlain") moneyCell(cell, v, false);
   else qtyCell(cell, v, kind === "qtyRed");
 }
 
 export async function fullAuditWorkbook(report: ReconReport, meta: ReportMeta): Promise<Buffer> {
+  const threshold = meta.varianceThresholdPct ?? MATERIAL_VARIANCE_PCT;
+  const columns = fullAuditColumns(threshold);
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("Full Audit", {
     views: [{ state: "frozen", ySplit: 4 }],
     pageSetup: { orientation: "landscape", paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: 0.3, right: 0.3, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } },
   });
-  const colCount = FULL_AUDIT_COLUMNS.length + 1; // + Item column
+  const colCount = columns.length + 1; // + Item column
 
   titleBlock(
     ws,
@@ -178,7 +221,7 @@ export async function fullAuditWorkbook(report: ReconReport, meta: ReportMeta): 
     colCount,
     meta,
   );
-  styleHeaderRow(ws.addRow(["Item", ...FULL_AUDIT_COLUMNS.map((c) => c.header)]));
+  styleHeaderRow(ws.addRow(["Item", ...columns.map((c) => c.header)]));
 
   for (const group of report.categories) {
     const groupRow = ws.addRow([group.categoryName]);
@@ -188,14 +231,18 @@ export async function fullAuditWorkbook(report: ReconReport, meta: ReportMeta): 
     });
     for (const row of group.rows) {
       const r = ws.addRow([row.itemName]);
-      FULL_AUDIT_COLUMNS.forEach((col, i) => fullAuditCell(r.getCell(i + 2), col.kind, col.value(row)));
+      columns.forEach((col, i) => fullAuditCell(r.getCell(i + 2), col.kind, col.value(row)));
+      // Highlight the whole row when the over/short is material — the download
+      // twin of the on-screen tint.
+      const fill = severityFill(varianceSeverity(row, threshold));
+      if (fill) r.eachCell((cell) => { cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fill } }; });
     }
   }
 
   const totalRow = ws.addRow(["Grand total"]);
   totalRow.font = { bold: true };
   const INK = "FF111827";
-  FULL_AUDIT_COLUMNS.forEach((col, i) => {
+  columns.forEach((col, i) => {
     if (!col.total) return;
     const value = col.total(report.totals);
     const cell = totalRow.getCell(i + 2);
@@ -209,23 +256,24 @@ export async function fullAuditWorkbook(report: ReconReport, meta: ReportMeta): 
   return toBuffer(wb);
 }
 
-export function fullAuditCsv(report: ReconReport): string {
-  const rows: CsvValue[][] = [["Item", ...FULL_AUDIT_COLUMNS.map((c) => c.header)]];
+export function fullAuditCsv(report: ReconReport, thresholdPct: number = MATERIAL_VARIANCE_PCT): string {
+  const columns = fullAuditColumns(thresholdPct);
+  const rows: CsvValue[][] = [["Item", ...columns.map((c) => c.header)]];
   for (const group of report.categories) {
     rows.push([group.categoryName]);
     for (const row of group.rows) {
       rows.push([
         row.itemName,
-        ...FULL_AUDIT_COLUMNS.map((col): CsvValue => {
+        ...columns.map((col): CsvValue => {
           const v = col.value(row);
-          return v === null ? "" : round2(v);
+          return v === null ? "" : typeof v === "string" ? v : round2(v);
         }),
       ]);
     }
   }
   rows.push([
     "Grand total",
-    ...FULL_AUDIT_COLUMNS.map((col): CsvValue => (col.total ? round2(col.total(report.totals)) : "")),
+    ...columns.map((col): CsvValue => (col.total ? round2(col.total(report.totals)) : "")),
   ]);
   return toCsv(rows);
 }
@@ -255,7 +303,20 @@ export async function salesWorkbook(report: SalesReport, meta: ReportMeta, title
   qtyCell(t.getCell(5), report.totals.qty);
   moneyCell(t.getCell(8), report.totals.gross, false);
   moneyCell(t.getCell(9), report.totals.net, false);
-  ws.getColumn(1).width = 12;
+
+  // Regular-vs-discounted split (client req 2026-07-21).
+  ws.addRow([]);
+  const ph = ws.addRow(["By Price Type", "Count", "Qty", "Gross", "Discount", "Net"]);
+  styleHeaderRow(ph);
+  for (const pt of report.byPriceType) {
+    const r = ws.addRow([pt.type === "REGULAR" ? "Regular Price" : "Discounted", pt.count]);
+    qtyCell(r.getCell(3), pt.qty);
+    moneyCell(r.getCell(4), pt.gross, false);
+    moneyCell(r.getCell(5), pt.discount, false);
+    moneyCell(r.getCell(6), pt.net, false);
+  }
+
+  ws.getColumn(1).width = 14;
   ws.getColumn(2).width = 32;
   for (let i = 3; i <= SALES_HEADERS.length; i++) ws.getColumn(i).width = 12;
   return toBuffer(wb);
@@ -267,6 +328,15 @@ export function salesCsv(report: SalesReport, title = "Sales Report"): string {
     rows.push([row.saleDate, row.name, row.kind === "menu" ? "Menu" : "Item", row.category ?? "", round2(row.qty), round2(row.unitPrice), row.discountPct, round2(row.gross), round2(row.net)]);
   }
   rows.push(["Total", "", "", "", round2(report.totals.qty), "", "", round2(report.totals.gross), round2(report.totals.net)]);
+  // Regular-vs-discounted split (client req 2026-07-21).
+  rows.push([]);
+  rows.push(["By Price Type", "Count", "Qty", "Gross", "Discount", "Net"]);
+  for (const pt of report.byPriceType) {
+    rows.push([
+      pt.type === "REGULAR" ? "Regular Price" : "Discounted",
+      pt.count, round2(pt.qty), round2(pt.gross), round2(pt.discount), round2(pt.net),
+    ]);
+  }
   return toCsv(rows);
 }
 
@@ -365,7 +435,7 @@ export async function nonRevenueWorkbook(
   moneyCell(t.getCell(8), report.totals.retail, false);
 
   ws.addRow([]);
-  const rh = ws.addRow(["By reason", "Count", "Qty", "Est. cost"]);
+  const rh = ws.addRow(["By bucket", "Count", "Qty", "Est. cost"]);
   styleHeaderRow(rh);
   for (const g of report.byReason) {
     const r = ws.addRow([g.reason, g.count]);

@@ -156,6 +156,61 @@ export function hasVariance(variance: number): boolean {
   return Math.abs(variance) > VARIANCE_EPSILON;
 }
 
+/**
+ * DEFAULT materiality threshold (%) for the over/short highlight (client req,
+ * 2026-07-21). A shot-poured bar is inherently imprecise, so a small over/short
+ * is noise; the auditor's eye should be pulled only to a MATERIAL one. The
+ * client named 11% of usage.
+ *
+ * This is only the fallback: the live threshold is a per-establishment policy
+ * (`Client.varianceThresholdPct`) passed into `varianceSeverity`. This constant
+ * is used when no client value is available (previews, the seed default, and
+ * any call that doesn't thread one through).
+ */
+export const MATERIAL_VARIANCE_PCT = 11;
+
+/** Bounds for a saved variance threshold (percent). */
+export const VARIANCE_THRESHOLD_MIN = 0;
+export const VARIANCE_THRESHOLD_MAX = 100;
+
+export type VarianceSeverity = "none" | "over" | "short";
+
+/**
+ * Whether a row's over/short is a MATERIAL finding worth highlighting, and in
+ * which direction — the rule behind the Full Audit's over/short highlight on
+ * screen and in every download. The two triggers are ADDITIVE (either lights
+ * the row up):
+ *
+ *  - PERCENTAGE — |variance / usage| ≥ MATERIAL_VARIANCE_PCT (11%). Applies to
+ *    every item with usage, so a −26% short on a weighed kitchen item is caught
+ *    just like one on a poured spirit; a sub-threshold pour delta stays calm.
+ *  - ONE WHOLE UNIT — |variance| ≥ 1, for items that are NOT content-tracked
+ *    (a bottle of beer, a canned good, a tray — counted whole, no pour
+ *    tolerance): being off by a single unit is already the finding, even below
+ *    11%. This is the client's "1:1 item, off by one bottle" case. Content
+ *    items skip it (their variance is bottle-EQUIVALENTS, and a fractional
+ *    pour discrepancy shouldn't trip an absolute rule) EXCEPT when there is no
+ *    usage to take a percentage of, where any ≥1 discrepancy is suspicious.
+ *
+ * Pure predicate over already-computed outputs — it changes no reconciliation
+ * number and touches none of the sacred math (sibling of `hasVariance`).
+ */
+export function varianceSeverity(
+  row: {
+    variance: number;
+    variancePct: number | null;
+    contentTracked: boolean;
+  },
+  thresholdPct: number = MATERIAL_VARIANCE_PCT,
+): VarianceSeverity {
+  if (!hasVariance(row.variance)) return "none";
+  const byPct = row.variancePct !== null && Math.abs(row.variancePct) >= thresholdPct;
+  const byUnit =
+    (!row.contentTracked || row.variancePct === null) && Math.abs(row.variance) >= 1 - VARIANCE_EPSILON;
+  if (!byPct && !byUnit) return "none";
+  return row.variance < 0 ? "short" : "over";
+}
+
 export function reconcileItem(input: ReconItemInput): ReconRow {
   const { size, contentTracked } = input;
 

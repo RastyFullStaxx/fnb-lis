@@ -353,6 +353,60 @@ Metro's details *and* its name. Repaired by restoring the row rather than deleti
 ActivityLog with before/after. The ID-keyed rollup from Phase 12 meant reports stayed correct
 throughout.
 
+## Phase 14 — Variance highlight & report breakdowns (2026-07-21)
+
+The client's 2026-07-21 GC message brought five asks; a coverage audit (12-agent fan-out, each
+finding adversarially re-verified) sorted them into three builds and two parks.
+
+**A — Over/short materiality highlight.** New pure predicate `@fnb/core varianceSeverity(row)`:
+content-tracked items are material at `|variancePct| ≥ MATERIAL_VARIANCE_PCT` (11%), 1:1 whole-unit
+items at `|variance| ≥ 1` (a single bottle is the finding; content items with zero usage fall back
+to the same absolute rule). Material **short = red, over = amber** — richer than the legacy's
+sign-only red, which the client *believed* was an 11% rule but never was (it was `$short < 0 →
+"danger"`; there was no legacy formula to port). Drives the Full Audit **row tint on screen** and,
+in **every download** (modern Full Audit *and* the legacy Detailed/Inventory format, all of
+xlsx/csv/pdf), a **row fill + a "Flag" column** — the Flag carries the finding into CSV, which can't
+hold a colour, and makes Excel sortable on it. Sibling of `hasVariance`: reads only computed
+outputs, moves no reconciliation number; golden fixtures re-verified (deviation #25).
+
+**B — Non-revenue "Other / Unspecified".** The encode select gained a fourth option so a user can
+record a plain input without forcing one of the three buckets — but it's a *named* reason, never a
+null, so nothing escapes the audit trail. The Non-Revenue report's breakdown now rolls up by the
+**canonical bucket** (`nonRevenueGroupOf`) instead of the raw reason label, so mixed legacy data
+(Complimentary, Spillage, Staff use…) collapses into its parent bucket / Other. Full Audit rollup
+untouched.
+
+**C — Sales regular-vs-discounted.** `salesReport` gained a `byPriceType` split derived from
+`discountPct > 0` (no schema change, no toggle — the split is automatic). The Sales page shows a
+**By Price Type** strip (Regular vs Discounted: count / qty / net) plus **Total Discount Given**;
+the Sales Excel/CSV carry a matching block. Full Audit revenue stays a single figure.
+
+**D (barcode) and E (offline count → upload) parked** with specs in
+[project-overview.md](project-overview.md) — barcode is greenfield and cheap (keyboard-wedge HID,
+nothing to "install"); offline is the deferred Electron phase plus the parked `COUNTS` import kind.
+
+Both workspaces typecheck clean.
+
+**Threshold as a per-establishment setting (same day).** The client asked to make the 11% tunable and
+per-tenant. Added `Client.varianceThresholdPct` (migration `20260721072637`, default 11) with a
+GET/PUT on `/settings/variance-threshold` — read-only for report viewers, `master.write` to change,
+scoped by `assertClientAccess` (so a system ADMIN can set any establishment's, a MANAGER only their
+own). `varianceSeverity(row, thresholdPct)` now takes the value; the screen threads it via a
+`useVarianceThreshold` hook and the exports via `ReportMeta.varianceThresholdPct` / `thresholdOf(c)`.
+A *Variance Highlight Threshold* control sits in Settings next to the cost basis. Verified live per
+tenant: at 15% Butter (−11.4%) drops, at 30% only the 1-bottle-off Salmon survives — and the
+`STANDALONE`-style caution doesn't apply here, this is a plain Float policy. The one real bug during
+the build was mine: `contentTracked` is *not* a whole-unit discriminator (kitchen NET items and the
+beer bottle are both content-tracked=false), which first hid Butter/Cooking Oil's material shorts —
+fixed by making the % and ±1 rules additive.
+
+**Demo seeder loaded for the new features.** The fixture layer is sacred, so the enrichment went in
+the demo layer (`seed-demo.ts`, additive + idempotent, dated inside the open period): an
+**"Other / Unspecified"** non-revenue on each sales location so the By-Bucket breakdown shows all four
+buckets (legacy Staff/Internal-use rows fold into Other too), and **distinct per-tenant thresholds**
+(Prime 11%, Casa Verde 8%) so the new setting shows variety. Golden fixtures re-verified after the
+reseed — Main Bar Jun 1–8 still −₱330.69.
+
 ## Contributor history
 
 | Window | Who | What |

@@ -39,6 +39,9 @@ export type LegacyAuditVariant = "detailed" | "inventory";
 export interface LegacyAuditRow {
   productName: string;
   sizeUom: string;
+  /** Passed through from the recon row so the over/short highlight can tell a
+      1:1 whole-unit item (absolute ±1 rule) from a content-tracked one (%). */
+  contentTracked: boolean;
   beginFull: number;
   beginOpen: number;
   bCost: number;
@@ -69,7 +72,10 @@ export interface LegacyAuditGroup {
   totals: LegacyAuditTotals;
 }
 
-export type LegacyAuditTotals = Omit<LegacyAuditRow, "productName" | "sizeUom" | "variancePct"> & {
+export type LegacyAuditTotals = Omit<
+  LegacyAuditRow,
+  "productName" | "sizeUom" | "variancePct" | "contentTracked"
+> & {
   variancePct: null;
 };
 
@@ -118,6 +124,7 @@ export async function legacyAuditReport(
       const row: LegacyAuditRow = {
         productName: r.itemName,
         sizeUom: `${r.size} ${r.unitName}`,
+        contentTracked: r.contentTracked,
         beginFull: r.beginFull,
         beginOpen: r.beginOpenEquiv,
         bCost: r.beginCost,

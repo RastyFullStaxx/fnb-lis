@@ -1126,6 +1126,40 @@ async function seedRicherActivity() {
   }
 }
 
+/**
+ * Top-up entries that make the newest features visible in the demo even on a
+ * database seeded before they existed (client req 2026-07-21). Idempotent and
+ * additive — each guard checks for its own row, so a reseed adds nothing twice
+ * and it runs whether or not the open-period seeders above skipped:
+ *  - an "Other / Unspecified" non-revenue on each sales location, so the
+ *    Non-Revenue report's By-Bucket breakdown shows all four buckets (the three
+ *    canonical ones plus Other). Dated inside the open period, after every
+ *    fixture window, so no golden number moves.
+ */
+async function seedFeatureShowcase() {
+  const who = await actor("staff");
+
+  const bar = await locationOf("Prime Hospitality Group", "Main Bar");
+  if (!(await prisma.saleRecord.findFirst({ where: { locationId: bar.id, kind: "NON_REVENUE", reason: "OTHER" } }))) {
+    const items = await resolveItems(bar.id, BAR_ITEMS);
+    await prisma.saleRecord.create({
+      data: { locationId: bar.id, saleDate: "2026-07-20", kind: "NON_REVENUE", locationItemId: items.cola1.id, qty: 1, unitPrice: 0, reason: "OTHER", ...who },
+    });
+  }
+
+  for (const [clientName, locationName] of [
+    ["Prime Hospitality Group", "Kitchen"],
+    ["Casa Verde Restaurant", "Main"],
+  ] as const) {
+    const location = await locationOf(clientName, locationName);
+    if (await prisma.saleRecord.findFirst({ where: { locationId: location.id, kind: "NON_REVENUE", reason: "OTHER" } })) continue;
+    const items = await resolveItems(location.id, KITCHEN_ITEMS);
+    await prisma.saleRecord.create({
+      data: { locationId: location.id, saleDate: "2026-07-21", kind: "NON_REVENUE", locationItemId: items.fries.id, qty: 0.5, unitPrice: 0, reason: "OTHER", ...who },
+    });
+  }
+}
+
 export async function seedDemoHistory() {
   // Transfers first: the Main Bar ledger reads them back when it decides each
   // closing count, so they have to exist before it runs.
@@ -1144,6 +1178,7 @@ export async function seedDemoHistory() {
     ["Chicken Adobo Rice Bowl", "Grilled Salmon Verde", "Truffle Fries"],
   );
   await seedRicherActivity();
+  await seedFeatureShowcase();
 
   const done = [
     transfers && "transfers", bar && "Main Bar", depot && "Depot", kitchen && "Kitchen",
