@@ -6,7 +6,7 @@ import { useCountDates } from "@/api/ops";
 import { exportUrl, useTransferReport } from "@/api/reports";
 import { formatMoney } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
-import { TableSurface, TableLoading, TableEmpty, TableError } from "@/components/table-surface";
+import { TableSurface, TableLoading, TableEmpty, TableError, ToolbarField } from "@/components/table-surface";
 import { DateRangeControl, ExportButtons } from "@/components/report-toolbar";
 import { ChartBlock } from "@/components/charts/chart-block";
 import { MagnitudeBars } from "@/components/charts/magnitude-bars";
@@ -32,18 +32,28 @@ export function TransferReportPage() {
   const [direction, setDirection] = useState<"out" | "in">("out");
   const report = useTransferReport(from, to, direction);
 
-  // Where the value actually went (or came from) — the flat list buries that
-  // ranking in a per-line table. Ranked by magnitude so a credit-side
-  // correction can't hide at the bottom, and capped so a wide estate of
-  // outlets still fits above the rows.
-  const counterpartyBars = useMemo(
-    () =>
-      (report.data?.byCounterparty ?? [])
-        .map((g) => ({ label: g.counterparty, value: round2(g.cost) }))
-        .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
-        .slice(0, 8),
-    [report.data],
-  );
+  // Dispatched vs received at cost — the signature transfer metric. The gap
+  // between the two bars is stock that left one location and never arrived at
+  // the other: the leakage the linked-transfer design exists to surface. Always
+  // two bars, so it draws even for a single transfer — unlike a by-counterparty
+  // ranking, which needs ≥2 destinations and so never rendered for a client
+  // that only ships to one stockroom.
+  const movement = useMemo(() => {
+    let dispatched = 0;
+    let received = 0;
+    for (const r of report.data?.rows ?? []) {
+      dispatched += r.qtySent * r.unitCost;
+      received += (r.qtyReceived ?? 0) * r.unitCost;
+    }
+    return {
+      bars: [
+        { label: "Dispatched", value: round2(dispatched) },
+        { label: "Received", value: round2(received) },
+      ],
+      hasValue: dispatched > 0 || received > 0,
+      shortfall: round2(dispatched - received),
+    };
+  }, [report.data]);
 
   return (
     <div>
@@ -63,12 +73,14 @@ export function TransferReportPage() {
         className="max-h-[70vh]"
         filters={
           <>
-            <Tabs value={direction} onValueChange={(v) => setDirection(v as "out" | "in")}>
-              <TabsList>
-                <TabsTrigger value="out">Out (Dispatched)</TabsTrigger>
-                <TabsTrigger value="in">In (Received)</TabsTrigger>
-              </TabsList>
-            </Tabs>
+            <ToolbarField label="Direction">
+              <Tabs value={direction} onValueChange={(v) => setDirection(v as "out" | "in")}>
+                <TabsList>
+                  <TabsTrigger value="out">Out (Dispatched)</TabsTrigger>
+                  <TabsTrigger value="in">In (Received)</TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </ToolbarField>
             <DateRangeControl from={from} to={to} onFrom={setFrom} onTo={setTo} />
           </>
         }
@@ -85,16 +97,16 @@ export function TransferReportPage() {
           />
         ) : (
           <>
-            {counterpartyBars.length >= 2 && (
+            {movement.hasValue && (
               <ChartBlock
-                title={direction === "out" ? "Value by Destination" : "Value by Source"}
+                title="Dispatched vs Received"
                 hint={
-                  counterpartyBars.length < report.data.byCounterparty.length
-                    ? `Top ${counterpartyBars.length} of ${report.data.byCounterparty.length} locations, at cost`
-                    : "At cost"
+                  movement.shortfall > 0
+                    ? `${formatMoney(movement.shortfall)} at cost didn't arrive`
+                    : "At cost — everything dispatched arrived"
                 }
               >
-                <MagnitudeBars data={counterpartyBars} name="At cost" />
+                <MagnitudeBars data={movement.bars} name="At cost" />
               </ChartBlock>
             )}
             <Table>

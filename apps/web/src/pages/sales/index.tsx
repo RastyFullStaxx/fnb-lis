@@ -144,19 +144,28 @@ export function SalesPage() {
             ) : (
               rows.map((sale) => {
                 const voided = sale.status === "VOID";
-                const name = sale.locationItem
-                  ? `${sale.locationItem.itemVariant.item.name} ${variantLabel(sale.locationItem.itemVariant)}`
+                // Split name and size so the size ("750 ml") can stay unbroken.
+                const itemName = sale.locationItem
+                  ? sale.locationItem.itemVariant.item.name
                   : (sale.menuItem?.name ?? "—");
+                const sizeSuffix = sale.locationItem
+                  ? variantLabel(sale.locationItem.itemVariant)
+                  : "";
                 return (
-                  <div key={sale.id} className={cn("flex items-stretch gap-3 px-4 py-2.5", voided && "opacity-50")}>
-                    <div className="min-w-0 flex-1">
-                      {/* Wraps rather than truncates — the row is already
-                          multi-line, so a second line is cheaper than hiding
-                          which item the entry is for. */}
-                      <p className={cn("text-sm font-medium", voided && "line-through")}>{name}</p>
-                      {/* Labelled rows — an entry's numbers are read one at a
-                          time (which price? what discount?), so each fact gets
-                          its own line instead of a run-on dot-separated string. */}
+                  <div key={sale.id} className={cn("flex flex-col gap-1 px-4 py-2.5", voided && "opacity-50")}>
+                    {/* Name on its own full-width line so it uses the whole
+                        panel before wrapping; the size never splits (750 / ml). */}
+                    <p className={cn("text-sm font-medium", voided && "line-through")}>
+                      {itemName}
+                      {sizeSuffix && (
+                        <span className="ml-1.5 whitespace-nowrap font-normal text-muted-foreground">
+                          {sizeSuffix}
+                        </span>
+                      )}
+                    </p>
+                    {/* Facts left; total + actions on the right, actions dropped
+                        to the bottom (mt-auto) to line up with the last fact. */}
+                    <div className="flex items-stretch justify-between gap-3">
                       {/* Labels stay bare here — the entry form carries the
                           "each"/"whole sale" qualifiers, so this list reads as
                           data rather than instruction. */}
@@ -192,38 +201,38 @@ export function SalesPage() {
                           <EntryFact label="Cancelled" value={sale.voidReason} />
                         )}
                       </EntryFacts>
-                    </div>
-                    {/* Right column: total at the top, actions dropped to the
-                        bottom (mt-auto) so they line up with the last fact line
-                        on the left instead of floating up beside the total. */}
-                    <div className="flex shrink-0 flex-col items-end gap-2">
-                      {sale.kind === "SALE" && !voided && (() => {
-                        const gross = sale.unitPrice * sale.qty;
-                        const net = gross * (1 - sale.discountPct / 100);
-                        const hasDiscount = sale.discountPct > 0;
-                        return (
-                          <Badge variant="outline" className="tnum flex-col items-end gap-0 py-1 leading-tight">
-                            {hasDiscount && (
-                              <span className="text-muted-foreground line-through">{formatMoney(gross)}</span>
+                      {/* Right column inside the facts row: total at the top,
+                          actions pushed to the bottom (mt-auto) so they line up
+                          with the last fact rather than floating by the total. */}
+                      <div className="flex shrink-0 flex-col items-end gap-2">
+                        {sale.kind === "SALE" && !voided && (() => {
+                          const gross = sale.unitPrice * sale.qty;
+                          const net = gross * (1 - sale.discountPct / 100);
+                          const hasDiscount = sale.discountPct > 0;
+                          return (
+                            <Badge variant="outline" className="tnum flex-col items-end gap-0 py-1 leading-tight">
+                              {hasDiscount && (
+                                <span className="text-muted-foreground line-through">{formatMoney(gross)}</span>
+                              )}
+                              <span className={hasDiscount ? "font-medium" : undefined}>{formatMoney(net)}</span>
+                            </Badge>
+                          );
+                        })()}
+                        {!voided && (canVoid || canEdit) && (
+                          <div className="mt-auto flex gap-1">
+                            {canVoid && (
+                              <Button variant="destructive" size="xs" onClick={() => setVoiding(sale)}>
+                                Cancel
+                              </Button>
                             )}
-                            <span className={hasDiscount ? "font-medium" : undefined}>{formatMoney(net)}</span>
-                          </Badge>
-                        );
-                      })()}
-                      {!voided && (canVoid || canEdit) && (
-                        <div className="mt-auto flex gap-1">
-                          {canVoid && (
-                            <Button variant="destructive" size="xs" onClick={() => setVoiding(sale)}>
-                              Cancel
-                            </Button>
-                          )}
-                          {canEdit && (
-                            <Button variant="outline" size="xs" onClick={() => setEditing(sale)}>
-                              Edit
-                            </Button>
-                          )}
-                        </div>
-                      )}
+                            {canEdit && (
+                              <Button variant="outline" size="xs" onClick={() => setEditing(sale)}>
+                                Edit
+                              </Button>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );

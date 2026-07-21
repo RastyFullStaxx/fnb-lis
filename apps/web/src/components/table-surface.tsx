@@ -74,21 +74,30 @@ export function ToolbarField({
   className,
   children,
 }: {
-  /** Omit for controls that read themselves (toggles, tabs, buttons). */
+  /** The stacked caption. Pass for every slot — even tabs and toggle groups —
+      so the whole strip reads on one baseline; only truly self-evident lone
+      controls omit it. */
   label?: string;
+  /** The id of a single labelable control beneath (a Select/Input trigger).
+      Omit for groups (tabs, several buttons): the caption then renders as a
+      plain span, since a <label for> pointing at nothing is invalid. */
   htmlFor?: string;
   /** Take the row's leftover width — the search field, normally. */
   grow?: boolean;
   className?: string;
   children: ReactNode;
 }) {
+  const captionClass = "text-[11px] leading-none font-medium text-muted-foreground";
   return (
     <div className={cn("flex min-w-0 flex-col gap-1", grow && "flex-1", className)}>
-      {label && (
-        <Label htmlFor={htmlFor} className="text-[11px] leading-none font-medium text-muted-foreground">
-          {label}
-        </Label>
-      )}
+      {label &&
+        (htmlFor ? (
+          <Label htmlFor={htmlFor} className={captionClass}>
+            {label}
+          </Label>
+        ) : (
+          <span className={captionClass}>{label}</span>
+        ))}
       {children}
     </div>
   );

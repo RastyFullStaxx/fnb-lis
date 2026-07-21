@@ -104,6 +104,7 @@ export function UsageCostReportPage() {
       <TableSurface
         filters={
           <>
+            <ToolbarSearch label="Search" value={query} onChange={setQuery} placeholder="Find an item…" />
             <ToolbarField label="Beginning" htmlFor="uc-begin">
               <Select value={effectiveBegin} onValueChange={(v) => { setBegin(v); if (effectiveEnd && effectiveEnd <= v) setEnd(undefined); }}>
                 <SelectTrigger id="uc-begin" className="tnum w-40 bg-background">
@@ -128,7 +129,6 @@ export function UsageCostReportPage() {
                 </SelectContent>
               </Select>
             </ToolbarField>
-            <ToolbarSearch label="Search" value={query} onChange={setQuery} placeholder="Find an item…" />
           </>
         }
       >

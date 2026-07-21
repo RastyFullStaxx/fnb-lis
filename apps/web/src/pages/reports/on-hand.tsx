@@ -130,7 +130,7 @@ export function OnHandReportPage() {
                         {row.name}
                         {row.belowPar && (
                           <Badge variant="warning" className="ml-2">
-                            below par
+                            Low stock
                           </Badge>
                         )}
                       </TableCell>

@@ -46,7 +46,7 @@ import { cn } from "@/lib/utils";
 const METHOD_BADGE: Record<string, { label: string; className: string }> = {
   EXACT: { label: "Exact", className: "border-primary text-primary" },
   ALIAS: { label: "Alias", className: "border-primary/60 text-primary" },
-  FUZZY: { label: "Fuzzy", className: "border-warning/35 bg-warning/10 text-warning-text" },
+  FUZZY: { label: "Similar", className: "border-warning/35 bg-warning/10 text-warning-text" },
   MANUAL: { label: "Manual", className: "border-primary text-primary" },
 };
 
@@ -197,10 +197,18 @@ export function ImportReviewPage() {
           {editable && (
             <>
               <Button variant="outline" size="sm" onClick={approveAllMatched} disabled={bulk !== null}>
-                {bulk?.verb === "Approving" ? `Approving ${bulk.done}/${bulk.total}…` : "Approve matched"}
+                <Check className="size-4" />
+                {bulk?.verb === "Approving" ? `Approving ${bulk.done}/${bulk.total}…` : "Approve Matched"}
               </Button>
-              <Button variant="outline" size="sm" onClick={rejectUnmatched} disabled={bulk !== null}>
-                {bulk?.verb === "Rejecting" ? `Rejecting ${bulk.done}/${bulk.total}…` : "Reject unmatched"}
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                onClick={rejectUnmatched}
+                disabled={bulk !== null}
+              >
+                <X className="size-4" />
+                {bulk?.verb === "Rejecting" ? `Rejecting ${bulk.done}/${bulk.total}…` : "Reject Unmatched"}
               </Button>
               <AlertDialog>
                 <AlertDialogTrigger asChild>
@@ -251,21 +259,24 @@ export function ImportReviewPage() {
       </div>
 
       <TableSurface>
-        <Table>
+        {/* Fixed widths + capped text columns so the six columns fit a 13"
+            laptop instead of scrolling sideways. From File and Matched To share
+            the flexible width and wrap; the numeric columns stay tight. */}
+        <Table className="w-full table-fixed">
           <TableHeader>
             <TableRow className="bg-muted hover:bg-muted">
               <TableHead>From File</TableHead>
               <TableHead>Matched To</TableHead>
-              <TableHead className="text-right">Qty</TableHead>
-              <TableHead className="text-right">{b.kind === "PURCHASES" ? "Cost" : "Price"}</TableHead>
-              <TableHead>Date</TableHead>
-              <TableHead className="w-28 text-right">Status</TableHead>
+              <TableHead className="w-16 text-right">Qty</TableHead>
+              <TableHead className="w-24 text-right">{b.kind === "PURCHASES" ? "Cost" : "Price"}</TableHead>
+              <TableHead className="w-28">Date</TableHead>
+              <TableHead className="w-24 text-right">Status</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {rows.map((row) => (
               <TableRow key={row.id} className={cn(row.status === "REJECTED" && "opacity-45")}>
-                <TableCell>
+                <TableCell className="align-top break-words">
                   <span className="font-medium">{row.itemText}</span>
                   {row.warning && <p className="text-xs text-warning-text">{row.warning}</p>}
                 </TableCell>
@@ -338,11 +349,11 @@ function MatchLabel({ row, labelMap }: { row: ImportRow; labelMap: Map<string, s
   const id = row.matchedLocationItemId ?? row.matchedMenuItemId;
   if (!id) return <span className="text-sm text-muted-foreground">— unmatched —</span>;
   return (
-    <span className="flex items-center gap-1.5 text-sm">
-      {row.matchedMenuItemId && <Martini className="size-3.5 text-primary" />}
-      {labelMap.get(id) ?? "—"}
+    <span className="flex min-w-0 items-center gap-1.5 text-sm">
+      {row.matchedMenuItemId && <Martini className="size-3.5 shrink-0 text-primary" />}
+      <span className="truncate">{labelMap.get(id) ?? "—"}</span>
       {row.matchMethod && (
-        <Badge variant="outline" className={cn("ml-1", METHOD_BADGE[row.matchMethod]?.className)}>
+        <Badge variant="outline" className={cn("ml-1 shrink-0", METHOD_BADGE[row.matchMethod]?.className)}>
           {METHOD_BADGE[row.matchMethod]?.label}
           {row.matchMethod === "FUZZY" && row.confidence != null && ` ${Math.round(row.confidence * 100)}%`}
         </Badge>
@@ -375,7 +386,7 @@ function MatchPicker({
           variant="outline"
           size="sm"
           role="combobox"
-          className="h-8 max-w-72 justify-between font-normal"
+          className="h-8 w-full justify-between font-normal"
           title={currentId ? labelMap.get(currentId) : undefined}
         >
           <span className="flex items-center gap-1.5 truncate">

@@ -75,8 +75,8 @@ export function ForfeitsReportPage() {
       <TableSurface
         filters={
           <>
-            <DateRangeControl from={from} to={to} onFrom={setFrom} onTo={setTo} />
             <ToolbarSearch value={query} onChange={setQuery} placeholder="Find an item…" label="Search" />
+            <DateRangeControl from={from} to={to} onFrom={setFrom} onTo={setTo} />
           </>
         }
       >

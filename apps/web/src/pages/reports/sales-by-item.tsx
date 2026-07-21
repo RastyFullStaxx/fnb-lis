@@ -112,6 +112,7 @@ export function SalesByItemReportPage() {
       <TableSurface
         filters={
           <>
+            <ToolbarSearch value={query} onChange={setQuery} placeholder="Find an item…" label="Search" />
             <ToolbarField label="Beginning" htmlFor="sbi-begin">
               <Select value={effectiveBegin} onValueChange={(v) => { setBegin(v); if (effectiveEnd && effectiveEnd <= v) setEnd(undefined); }}>
                 <SelectTrigger id="sbi-begin" className="tnum w-40 bg-background">
@@ -136,7 +137,6 @@ export function SalesByItemReportPage() {
                 </SelectContent>
               </Select>
             </ToolbarField>
-            <ToolbarSearch value={query} onChange={setQuery} placeholder="Find an item…" label="Search" />
           </>
         }
       >

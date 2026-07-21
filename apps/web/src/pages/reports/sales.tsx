@@ -6,7 +6,7 @@ import { useCountDates } from "@/api/ops";
 import { exportUrl, useSalesReport, type SalesReportView } from "@/api/reports";
 import { formatMoney } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
-import { TableSurface, TableLoading, TableEmpty, TableError, ToolbarSearch } from "@/components/table-surface";
+import { TableSurface, TableLoading, TableEmpty, TableError, ToolbarField, ToolbarSearch } from "@/components/table-surface";
 import { DateRangeControl, ExportButtons } from "@/components/report-toolbar";
 import { ChartBlock } from "@/components/charts/chart-block";
 import { PeriodColumns } from "@/components/charts/period-columns";
@@ -77,15 +77,17 @@ export function SalesReportPage() {
       <TableSurface
         filters={
           <>
-            <Tabs value={view} onValueChange={(v) => setView(v as SalesReportView)}>
-              <TabsList>
-                <TabsTrigger value="sales">Sales</TabsTrigger>
-                <TabsTrigger value="discounted">Discounted</TabsTrigger>
-                <TabsTrigger value="production">Production</TabsTrigger>
-              </TabsList>
-            </Tabs>
-            <DateRangeControl from={from} to={to} onFrom={setFrom} onTo={setTo} />
+            <ToolbarField label="View">
+              <Tabs value={view} onValueChange={(v) => setView(v as SalesReportView)}>
+                <TabsList>
+                  <TabsTrigger value="sales">Sales</TabsTrigger>
+                  <TabsTrigger value="discounted">Discounted</TabsTrigger>
+                  <TabsTrigger value="production">Production</TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </ToolbarField>
             <ToolbarSearch value={query} onChange={setQuery} placeholder="Find an item or menu…" label="Search" />
+            <DateRangeControl from={from} to={to} onFrom={setFrom} onTo={setTo} />
           </>
         }
       >

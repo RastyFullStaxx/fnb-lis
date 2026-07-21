@@ -6,7 +6,7 @@ import { useCountDates } from "@/api/ops";
 import { exportUrl, useNonRevenueReport, useTransferReport } from "@/api/reports";
 import { formatMoney } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
-import { TableSurface, TableLoading, TableEmpty, TableError } from "@/components/table-surface";
+import { TableSurface, TableLoading, TableEmpty, TableError, ToolbarField } from "@/components/table-surface";
 import { DateRangeControl, ExportButtons } from "@/components/report-toolbar";
 import { ChartBlock } from "@/components/charts/chart-block";
 import { MagnitudeBars } from "@/components/charts/magnitude-bars";
@@ -84,17 +84,19 @@ export function NonRevenueReportPage() {
         className="max-h-[70vh]"
         filters={
           <>
-            <Tabs value={group} onValueChange={setGroup}>
-              <TabsList>
-                <TabsTrigger value={ALL_GROUPS}>All</TabsTrigger>
-                {NON_REVENUE_GROUPS.map((g) => (
-                  <TabsTrigger key={g} value={g}>
-                    {NON_REVENUE_GROUP_LABELS[g]}
-                  </TabsTrigger>
-                ))}
-                <TabsTrigger value={STOCK_TRANSFER}>Stock Transfer</TabsTrigger>
-              </TabsList>
-            </Tabs>
+            <ToolbarField label="Reason">
+              <Tabs value={group} onValueChange={setGroup}>
+                <TabsList>
+                  <TabsTrigger value={ALL_GROUPS}>All</TabsTrigger>
+                  {NON_REVENUE_GROUPS.map((g) => (
+                    <TabsTrigger key={g} value={g}>
+                      {NON_REVENUE_GROUP_LABELS[g]}
+                    </TabsTrigger>
+                  ))}
+                  <TabsTrigger value={STOCK_TRANSFER}>Stock Transfer</TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </ToolbarField>
             <DateRangeControl from={from} to={to} onFrom={setFrom} onTo={setTo} />
           </>
         }

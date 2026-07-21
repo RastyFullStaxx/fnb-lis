@@ -119,7 +119,11 @@ export function PurchasesPage() {
               onClearFilters={clearFilters}
             />
           </TabsContent>
-          <TabsContent value="forfeits" className="m-0 p-4">
+          {/* h-full + overflow-hidden: the pane fills the surface and never
+              scrolls as a whole, so only its Recent Returns list gets a bar —
+              no stacked scrollbars. (Radix unmounts the inactive Deliveries
+              table, so the shared body still scrolls normally for that tab.) */}
+          <TabsContent value="forfeits" className="m-0 h-full overflow-hidden p-4">
             <ForfeitsTab />
           </TabsContent>
         </TableSurface>
@@ -339,7 +343,7 @@ function ForfeitsTab() {
   };
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
+    <div className="grid gap-6 lg:h-full lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] lg:grid-rows-1 lg:overflow-hidden">
       <div className="space-y-4">
         <div className="grid grid-cols-[1fr_auto] gap-2">
           <div className="space-y-2">
@@ -389,9 +393,9 @@ function ForfeitsTab() {
         </div>
       </div>
 
-      <div className="lg:border-l lg:pl-6">
-        <div className="mb-2 text-sm font-medium">Recent Returns</div>
-        <div aria-live="polite" className="max-h-[28rem] divide-y overflow-y-auto">
+      <div className="flex min-h-0 flex-col lg:border-l lg:pl-6">
+        <div className="mb-2 shrink-0 text-sm font-medium">Recent Returns</div>
+        <div aria-live="polite" className="min-h-0 flex-1 divide-y overflow-y-auto max-lg:max-h-[28rem]">
           {forfeits.isPending ? (
             <div className="divide-y">
               {Array.from({ length: 5 }).map((_, i) => (
@@ -411,14 +415,17 @@ function ForfeitsTab() {
               const variant = f.locationItem.itemVariant;
               const voided = f.status === "VOID";
               return (
-                <div key={f.id} className={cn("flex items-stretch gap-3 px-4 py-2.5", voided && "opacity-50")}>
-                  <div className="min-w-0 flex-1">
-                    {/* Same labelled-fact format as Sales' Recent Entries, so
-                        every "Recent …" panel reads the same way. */}
-                    <p className={cn("text-sm font-medium", voided && "line-through")}>
-                      {variant.item.name}
-                      <span className="ml-1.5 font-normal text-muted-foreground">{variantLabel(variant)}</span>
-                    </p>
+                <div key={f.id} className={cn("flex flex-col gap-1 px-4 py-2.5", voided && "opacity-50")}>
+                  {/* Name on its own full-width line so it uses the whole panel
+                      before wrapping; the variant label never splits (700 / ml). */}
+                  <p className={cn("text-sm font-medium", voided && "line-through")}>
+                    {variant.item.name}
+                    <span className="ml-1.5 whitespace-nowrap font-normal text-muted-foreground">
+                      {variantLabel(variant)}
+                    </span>
+                  </p>
+                  {/* Facts left, action bottom-right on the last fact's line. */}
+                  <div className="flex items-end justify-between gap-3">
                     <EntryFacts>
                       <EntryFact label="Date" value={f.forfeitDate} />
                       <EntryFact
@@ -431,12 +438,12 @@ function ForfeitsTab() {
                       />
                       {voided && f.voidReason && <EntryFact label="Cancelled" value={f.voidReason} />}
                     </EntryFacts>
+                    {canVoid && !voided && (
+                      <Button variant="destructive" size="xs" className="shrink-0" onClick={() => setVoiding(f)}>
+                        Cancel
+                      </Button>
+                    )}
                   </div>
-                  {canVoid && !voided && (
-                    <Button variant="destructive" size="xs" className="mt-auto shrink-0" onClick={() => setVoiding(f)}>
-                      Cancel
-                    </Button>
-                  )}
                 </div>
               );
             })

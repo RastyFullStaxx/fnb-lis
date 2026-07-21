@@ -70,8 +70,8 @@ export function PurchaseReportPage() {
         className="max-h-[70vh]"
         filters={
           <>
-            <DateRangeControl from={from} to={to} onFrom={setFrom} onTo={setTo} />
             <ToolbarSearch label="Search" value={query} onChange={setQuery} placeholder="Find an item or supplier…" />
+            <DateRangeControl from={from} to={to} onFrom={setFrom} onTo={setTo} />
           </>
         }
       >

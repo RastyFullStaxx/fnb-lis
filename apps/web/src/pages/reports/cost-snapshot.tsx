@@ -121,18 +121,21 @@ export function CostSnapshotPage() {
       <TableSurface
         filters={
           <>
-            <Tabs
-              value={side}
-              onValueChange={(v) => {
-                setSide(v as "begin" | "end");
-                setAnchorOverride(undefined); // re-seed the natural anchor
-              }}
-            >
-              <TabsList>
-                <TabsTrigger value="begin">Beginning</TabsTrigger>
-                <TabsTrigger value="end">Ending</TabsTrigger>
-              </TabsList>
-            </Tabs>
+            <ToolbarField label="Show">
+              <Tabs
+                value={side}
+                onValueChange={(v) => {
+                  setSide(v as "begin" | "end");
+                  setAnchorOverride(undefined); // re-seed the natural anchor
+                }}
+              >
+                <TabsList>
+                  <TabsTrigger value="begin">Beginning</TabsTrigger>
+                  <TabsTrigger value="end">Ending</TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </ToolbarField>
+            <ToolbarSearch label="Search" value={query} onChange={setQuery} placeholder="Find an item…" />
             <ToolbarField label="Count Date" htmlFor="cs-anchor">
               <Select value={anchor} onValueChange={setAnchorOverride}>
                 <SelectTrigger id="cs-anchor" className="tnum w-40 bg-background">
@@ -147,7 +150,6 @@ export function CostSnapshotPage() {
                 </SelectContent>
               </Select>
             </ToolbarField>
-            <ToolbarSearch label="Search" value={query} onChange={setQuery} placeholder="Find an item…" />
           </>
         }
       >

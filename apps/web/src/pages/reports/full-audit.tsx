@@ -224,15 +224,15 @@ export function FullAuditPage() {
       )}
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border print:block print:overflow-visible print:rounded-none print:border-0">
-        {/* One row, captions stacked over their controls. Inline labels made
-            this strip wrap onto a second line at 1280px, and every wrapped row
-            is height taken from the table. items-end keeps the boxes level
-            whether or not a control carries a caption. */}
+        {/* Standard toolbar order (DESIGN.md): tabs · search · filters · options.
+            Full Audit has no tabs, so search leads. The search grows to fill the
+            row's slack (flex-1), pinning the filters and options to the right so
+            the strip reads full instead of ragged. Captions stack over every
+            control — the parent's items-end keeps their boxes on one baseline. */}
         <div className="flex shrink-0 flex-wrap items-end gap-x-3 gap-y-2 border-b bg-muted/30 px-3 py-2.5 print:hidden">
+          <ToolbarSearch value={query} onChange={setQuery} placeholder="Find an item…" label="Search" />
           <ToolbarField label="Beginning" htmlFor="fa-begin">
             <Select value={effectiveBegin} onValueChange={(v) => { setBegin(v); if (effectiveEnd && effectiveEnd <= v) setEnd(undefined); }}>
-              {/* w-32 fits YYYY-MM-DD with room to spare; w-40 was buying
-                  nothing but pushing the search off the row. */}
               <SelectTrigger id="fa-begin" className="tnum w-32 bg-background">
                 <SelectValue placeholder="Pick a date" />
               </SelectTrigger>
@@ -274,17 +274,16 @@ export function FullAuditPage() {
               </SelectContent>
             </Select>
           </ToolbarField>
-          <Toggle pressed={varianceOnly} onPressedChange={setVarianceOnly}>
-            Variance Only
-          </Toggle>
-          <Toggle pressed={!compact} onPressedChange={(pressed) => setCompact(!pressed)}>
-            All Columns
-          </Toggle>
-          {/* Search sits LAST because it is the only control that grows. A
-              growing item placed mid-row consumes the whole remainder of its
-              line and pushes everything after it onto a second row — which is
-              exactly the wrapping this strip was meant to stop. */}
-          <ToolbarSearch value={query} onChange={setQuery} placeholder="Find an item…" label="Search" />
+          <ToolbarField label="Options">
+            <div className="flex items-center gap-2">
+              <Toggle pressed={varianceOnly} onPressedChange={setVarianceOnly}>
+                Variance Only
+              </Toggle>
+              <Toggle pressed={!compact} onPressedChange={(pressed) => setCompact(!pressed)}>
+                All Columns
+              </Toggle>
+            </div>
+          </ToolbarField>
         </div>
 
         <div className="scrollbar-thin min-h-0 flex-1 overflow-auto [&_[data-slot=table-container]]:overflow-visible print:overflow-visible">
