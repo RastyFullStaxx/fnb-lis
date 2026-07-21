@@ -288,6 +288,7 @@ export function ImportReviewPage() {
           </TableHeader>
           <TableBody>
             {rows.map((row) => (
+              // Rows stay white; a declined row just fades back.
               <TableRow key={row.id} className={cn(row.status === "REJECTED" && "opacity-45")}>
                 {/* whitespace-normal is load-bearing: TableCell defaults to
                     whitespace-nowrap, so without it the warning line runs
@@ -314,43 +315,26 @@ export function ImportReviewPage() {
                   {money(b.kind === "PURCHASES" ? row.unitCost : row.unitPrice)}
                 </TableCell>
                 <TableCell className="tnum text-muted-foreground">{row.rowDate ?? "—"}</TableCell>
-                <TableCell className="align-top">
+                <TableCell className="align-top text-right">
                   {editable ? (
-                    // Small worded chips (xs, like the Sales row Cancel/Edit),
-                    // green Approve / red Decline. The chosen one fills solid so
-                    // the row's state reads at a glance; the other stays a tinted
-                    // outline. They sit side by side and wrap to stacked only when
-                    // the column is too narrow. A row with no match can't be
-                    // approved yet.
-                    <div className="flex flex-wrap justify-end gap-1">
-                      <span
-                        title={
-                          !row.matchedLocationItemId && !row.matchedMenuItemId
-                            ? "Match this row to an item first"
-                            : undefined
-                        }
-                      >
-                        <Button
-                          variant="outline"
-                          size="xs"
-                          disabled={!row.matchedLocationItemId && !row.matchedMenuItemId}
-                          className={cn(
-                            row.status === "APPROVED"
-                              ? "border-transparent bg-success-text text-white hover:bg-success-text/90"
-                              : "border-success-text/40 text-success-text hover:bg-success/10 hover:text-success-text",
-                          )}
-                          onClick={() => setStatus(row, row.status === "APPROVED" ? "PENDING" : "APPROVED")}
-                        >
-                          Approve
-                        </Button>
-                      </span>
+                    // Small solid chips: green Approve / red Decline, white text
+                    // that stays white on hover. A one-column grid sizes the pair
+                    // to the wider label ("Approve") — grid items stretch to the
+                    // column, so Decline adopts the same width with no fixed
+                    // number, and the stack lines up. Row with no match can't be
+                    // approved yet (the From File warning says why).
+                    <div className="inline-grid gap-1.5">
                       <Button
-                        variant={row.status === "REJECTED" ? "destructive" : "outline"}
                         size="xs"
-                        className={cn(
-                          row.status !== "REJECTED" &&
-                            "border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive",
-                        )}
+                        disabled={!row.matchedLocationItemId && !row.matchedMenuItemId}
+                        className="bg-success-text text-white hover:bg-success-text/85 hover:text-white"
+                        onClick={() => setStatus(row, row.status === "APPROVED" ? "PENDING" : "APPROVED")}
+                      >
+                        Approve
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="xs"
                         onClick={() => setStatus(row, row.status === "REJECTED" ? "PENDING" : "REJECTED")}
                       >
                         Decline

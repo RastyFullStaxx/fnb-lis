@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useParams, useSearchParams } from "react-router";
-import { Boxes, Copy, Plus, TriangleAlert } from "lucide-react";
+import { Boxes, Copy, Info, Plus, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { can, MODULE_TYPE_LABELS, type ModuleType, type Role } from "@fnb/core";
 import { useMe } from "@/api/auth";
@@ -9,6 +9,7 @@ import { variantLabel } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { TableSurface, TableLoading, TableEmpty, ToolbarSearch } from "@/components/table-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -134,7 +135,22 @@ export function StockPage() {
                 <TableHead>Item</TableHead>
                 <TableHead>Category</TableHead>
                 <TableHead className="text-right">Cost / Retail</TableHead>
-                <TableHead className="text-right">Par</TableHead>
+                <TableHead className="text-right">
+                  {/* "Par" is bar-trade jargon — keep it for the pros, but a
+                      hover note spells it out for everyone else. */}
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="inline-flex cursor-help items-center gap-1">
+                          Par <Info className="size-3.5 text-muted-foreground" />
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        Stock level to keep on hand — restock when it drops below this.
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </TableHead>
                 <TableHead className="text-right">Status</TableHead>
               </TableRow>
             </TableHeader>

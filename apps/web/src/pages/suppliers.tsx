@@ -140,7 +140,7 @@ export function SuppliersPage() {
             </TableHeader>
             <TableBody>
               {filtered.map((s) => (
-                <TableRow key={s.id}>
+                <TableRow key={s.id} className={s.isActive ? undefined : "opacity-60"}>
                   <TableCell className="max-w-[22rem] font-medium break-words">{s.name}</TableCell>
                   <TableCell
                     className="max-w-xs text-muted-foreground break-words"
@@ -157,7 +157,9 @@ export function SuppliersPage() {
                     )}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Badge variant={s.isActive ? "secondary" : "outline"}>
+                    {/* Same status vocabulary as Users' Active/Disabled:
+                        green = enabled, red = deactivated. */}
+                    <Badge variant={s.isActive ? "success" : "destructive"}>
                       {s.isActive ? "Active" : "Inactive"}
                     </Badge>
                   </TableCell>
