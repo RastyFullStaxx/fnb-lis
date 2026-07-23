@@ -456,11 +456,14 @@ event — Date · Item · Reason · **What Happened** · Qty · Value — plus a
 loss-by-reason chart, filtered to the Asset product type (empty on bar/kitchen locations).
 `assetBreakageReport` in report-lists + route + xlsx/csv/pdf + web page + hub + palette.
 
-**Demo** — the module wasn't turned on anywhere, so `seedAssets` enables it: adds ASSET to Prime's
-subscription + a **"Bar Equipment"** location (ASSET module) with glassware/blender/shaker, opening +
-closing counts, and breakage events dated in the open period (so they show in the report's default
-range and reconcile the closed period to zero variance). Verified live: 5 items written off, ₱775;
-golden fixture still −₱330.69; Bar Equipment closed period variance 0/0.
+**Demo / real data** — the module wasn't on anywhere, so `seedAssets` enables it: adds ASSET to
+Prime's subscription + an **"Assets"** register location. The client then sent two Asset Management
+reports, so the register is now their **70 real items** (`prisma/asset-seed-data.ts`) — name /
+category / UOM kept verbatim (typos and all; costs are demo placeholders by category since their
+report left cost blank) — across 21 asset categories, with opening counts and a few breakage/loss
+events dated in the open period (so they show in the report's default range and the closed period
+reconciles to zero variance). Verified live: 70 items / 21 categories, ₱2.13M on hand; 7 breakage
+events / ₱16,280 written off; golden fixture still −₱330.69; Assets closed period variance 0/0.
 
 Not touched: the packaging-tier mismatch (Basic 1 / Medium 5 / **Full 10** vs. our Basic/Medium/
 One-Time) — parked pending the client's confirmation of the intended tier structure.

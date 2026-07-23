@@ -23,6 +23,7 @@
  * "last count → today" are not empty on arrival.
  */
 import { prisma } from "../src/db";
+import { ASSET_BREAKAGE, ASSET_CATEGORY_COST, ASSET_ITEMS } from "./asset-seed-data";
 
 // ── Deterministic jitter ──────────────────────────────────────────────────
 // Seeded LCG rather than Math.random: a reseed must reproduce the same
@@ -1185,13 +1186,14 @@ async function seedDeadStock(
 }
 
 /**
- * Turns on the ASSET module for a demo client and stocks a small equipment
- * register with breakage (client req 2026-07-21), so the Asset Breakage report
- * has data. Assets aren't consumed — they leave the register when they break,
- * go missing, or are retired, recorded as non-revenue with a "what happened"
- * note. Opening (07-14) and closing (07-20) counts differ by exactly the
- * breakage, so the period reconciles to zero variance. Idempotent; a brand-new
- * location, so no fixture is touched.
+ * The client's asset register (2026-07-21) — 70 equipment items imported from
+ * the two Asset Management reports, plus a few breakage events so the Asset
+ * Breakage report has data. Assets aren't consumed; they leave the register
+ * when they break, go missing, or are retired (non-revenue, with a "what
+ * happened" note). Counts are equal on the period boundaries and breakage sits
+ * after 07-20, so the closed period reconciles to zero variance. Idempotent —
+ * item rows may be reused, but categories/units/counts are guarded — and the
+ * only location touched is the demo "Assets" register, so no fixture moves.
  */
 async function seedAssets() {
   const prime = await prisma.client.findFirst({ where: { name: "Prime Hospitality Group" } });
@@ -1200,7 +1202,7 @@ async function seedAssets() {
   const manager = await actor("manager");
   const staff = await actor("staff");
 
-  // 1. Prime's subscription gains the ASSET module.
+  // Prime's subscription gains the ASSET module.
   const sub = await prisma.subscription.findUnique({ where: { clientId: prime.id } });
   if (sub) {
     await prisma.subscriptionModule.upsert({
@@ -1210,21 +1212,40 @@ async function seedAssets() {
     });
   }
 
-  // 2. A dedicated asset location with the ASSET module.
+  // The asset-register location.
   const location =
-    (await prisma.location.findFirst({ where: { clientId: prime.id, name: "Bar Equipment" } })) ??
-    (await prisma.location.create({ data: { clientId: prime.id, name: "Bar Equipment", kind: "STOCKROOM" } }));
+    (await prisma.location.findFirst({ where: { clientId: prime.id, name: "Assets" } })) ??
+    (await prisma.location.create({ data: { clientId: prime.id, name: "Assets", kind: "STOCKROOM" } }));
   await prisma.locationModule.upsert({
     where: { locationId_module: { locationId: location.id, module: "ASSET" } },
     update: {},
     create: { locationId: location.id, module: "ASSET" },
   });
 
-  const category = await prisma.category.findUnique({ where: { name: "Equipment" } });
-  const pc = await prisma.unit.findUnique({ where: { name: "pc" } });
-  if (!category || !pc) return;
+  // Asset categories (productType Asset) — from the client's data, verbatim.
+  const categoryId = new Map<string, string>();
+  let sort = 41;
+  for (const name of [...new Set(ASSET_ITEMS.map((i) => i.category))]) {
+    const c = await prisma.category.upsert({
+      where: { name },
+      update: {},
+      create: { name, productType: "Asset", sortOrder: sort++ },
+    });
+    categoryId.set(name, c.id);
+  }
 
-  // Committed opening (07-14) and closing (07-20) counts for this location.
+  // UOM units (each a whole-count unit, base 1).
+  const unitId = new Map<string, string>();
+  for (const name of [...new Set(ASSET_ITEMS.map((i) => i.uom))]) {
+    const u = await prisma.unit.upsert({
+      where: { name },
+      update: {},
+      create: { name, kind: "COUNT", factorToBase: 1 },
+    });
+    unitId.set(name, u.id);
+  }
+
+  // Committed opening (07-14) and closing (07-20) counts.
   const ensureSession = async (date: string) => {
     const found = await prisma.countSession.findFirst({
       where: { locationId: location.id, countDate: date, status: "COMMITTED" },
@@ -1232,7 +1253,7 @@ async function seedAssets() {
     if (found) return found;
     return prisma.countSession.create({
       data: {
-        locationId: location.id, countDate: date, name: "Equipment count", status: "COMMITTED",
+        locationId: location.id, countDate: date, name: "Asset count", status: "COMMITTED",
         committedAt: new Date(), committedById: manager.createdById,
         createdById: manager.createdById, createdByName: manager.createdByName,
       },
@@ -1241,65 +1262,50 @@ async function seedAssets() {
   const open = await ensureSession("2026-07-14");
   const close = await ensureSession("2026-07-20");
 
-  type Breakage = { date: string; qty: number; reason: string; note: string };
-  const ASSETS: Array<{ name: string; cost: number; begin: number; breakage: Breakage[] }> = [
-    {
-      // Breakage is dated in the OPEN period (after the 07-20 count), so it lands
-      // in the report's default range and reduces current on-hand.
-      name: "Wine Glass", cost: 85, begin: 48, breakage: [
-        { date: "2026-07-21", qty: 2, reason: "BREAKAGE", note: "Shattered in the dishwasher" },
-        { date: "2026-07-22", qty: 1, reason: "BREAKAGE", note: "Dropped at table 6 during service" },
-      ],
-    },
-    {
-      name: "Highball Glass", cost: 70, begin: 36, breakage: [
-        { date: "2026-07-21", qty: 1, reason: "LOST", note: "Unaccounted for after a private function" },
-      ],
-    },
-    {
-      name: "Cocktail Shaker", cost: 450, begin: 6, breakage: [
-        { date: "2026-07-22", qty: 1, reason: "RETIRED", note: "Lid cracked — disposed" },
-      ],
-    },
-    { name: "Bar Blender", cost: 3200, begin: 2, breakage: [] },
-  ];
-
-  for (const a of ASSETS) {
-    const item =
-      (await prisma.item.findFirst({ where: { name: a.name } })) ??
-      (await prisma.item.create({ data: { name: a.name, categoryId: category.id, createdById: admin.id } }));
+  const liByName = new Map<string, string>();
+  for (const a of ASSET_ITEMS) {
+    const catId = categoryId.get(a.category)!;
+    const unId = unitId.get(a.uom)!;
+    const cost = ASSET_CATEGORY_COST[a.category] ?? 500;
+    let item = await prisma.item.findFirst({ where: { name: a.name } });
+    if (!item) item = await prisma.item.create({ data: { name: a.name, categoryId: catId, createdById: admin.id } });
+    else if (item.categoryId !== catId) item = await prisma.item.update({ where: { id: item.id }, data: { categoryId: catId } });
     const variant = await prisma.itemVariant.upsert({
-      where: { itemId_size_unitId: { itemId: item.id, size: 1, unitId: pc.id } },
+      where: { itemId_size_unitId: { itemId: item.id, size: 1, unitId: unId } },
       update: {},
-      create: { itemId: item.id, size: 1, unitId: pc.id, contentTracked: false },
+      create: { itemId: item.id, size: 1, unitId: unId, contentTracked: false },
     });
     const li = await prisma.locationItem.upsert({
       where: { locationId_itemVariantId: { locationId: location.id, itemVariantId: variant.id } },
-      update: { cost: a.cost, retail: 0 },
-      create: { locationId: location.id, itemVariantId: variant.id, cost: a.cost, retail: 0, parLevel: null },
+      update: { cost, retail: 0 },
+      create: { locationId: location.id, itemVariantId: variant.id, cost, retail: 0, parLevel: null },
     });
-    // Both boundary counts equal the opening quantity — nothing broke inside the
-    // closed period, so it reconciles to zero variance; the breakage sits after.
+    liByName.set(a.name, li.id);
+    // Both boundary counts equal the reported quantity — breakage happens after.
     for (const session of [open, close]) {
       const exists = await prisma.countLine.findFirst({ where: { countSessionId: session.id, locationItemId: li.id } });
       if (exists) continue;
       await prisma.countLine.create({
         data: {
-          countSessionId: session.id, locationItemId: li.id, countType: "FULL", qtyFull: a.begin,
+          countSessionId: session.id, locationItemId: li.id, countType: "FULL", qtyFull: a.qty,
           remainingContent: 0, unitCost: li.cost, unitRetail: li.retail,
           createdById: manager.createdById, createdByName: manager.createdByName,
         },
       });
     }
-    for (const b of a.breakage) {
-      const exists = await prisma.saleRecord.findFirst({
-        where: { locationId: location.id, locationItemId: li.id, kind: "NON_REVENUE", saleDate: b.date, reason: b.reason, note: b.note },
-      });
-      if (exists) continue;
-      await prisma.saleRecord.create({
-        data: { locationId: location.id, saleDate: b.date, kind: "NON_REVENUE", locationItemId: li.id, qty: b.qty, unitPrice: 0, reason: b.reason, note: b.note, ...staff },
-      });
-    }
+  }
+
+  // Breakage / loss events (open period) so the Asset Breakage report shows data.
+  for (const b of ASSET_BREAKAGE) {
+    const liId = liByName.get(b.name);
+    if (!liId) continue;
+    const exists = await prisma.saleRecord.findFirst({
+      where: { locationId: location.id, locationItemId: liId, kind: "NON_REVENUE", saleDate: b.date, reason: b.reason, note: b.note },
+    });
+    if (exists) continue;
+    await prisma.saleRecord.create({
+      data: { locationId: location.id, saleDate: b.date, kind: "NON_REVENUE", locationItemId: liId, qty: b.qty, unitPrice: 0, reason: b.reason, note: b.note, ...staff },
+    });
   }
 }
 
