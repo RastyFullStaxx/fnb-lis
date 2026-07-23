@@ -24,6 +24,7 @@ import { CostAnalysisPage } from "./pages/reports/cost-analysis";
 import { OnHandReportPage } from "./pages/reports/on-hand";
 import { ParLevelReportPage } from "./pages/reports/par-level";
 import { NonMovingReportPage } from "./pages/reports/non-moving";
+import { AssetBreakageReportPage } from "./pages/reports/asset-breakage";
 import { TopSellersPage } from "./pages/reports/top-sellers";
 import { CostSnapshotPage } from "./pages/reports/cost-snapshot";
 import { ForfeitsReportPage } from "./pages/reports/forfeits";
@@ -69,6 +70,7 @@ export const router = createBrowserRouter([
       { path: "reports/on-hand", element: <OnHandReportPage /> },
       { path: "reports/par-level", element: <ParLevelReportPage /> },
       { path: "reports/non-moving", element: <NonMovingReportPage /> },
+      { path: "reports/asset-breakage", element: <AssetBreakageReportPage /> },
       { path: "reports/top-sellers", element: <TopSellersPage /> },
       { path: "reports/cost-snapshot", element: <CostSnapshotPage /> },
       { path: "reports/forfeits", element: <ForfeitsReportPage /> },

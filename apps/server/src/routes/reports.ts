@@ -15,6 +15,7 @@ import { AppError } from "../lib/errors";
 import { requirePermission, type AppEnv } from "../middleware/auth";
 import { buildFullAudit, committedCountDates } from "../services/report-assembly";
 import {
+  assetBreakageReport,
   costAnalysisReport,
   fullAuditDrill,
   nonMovingReport,
@@ -32,6 +33,8 @@ import {
   costAnalysisWorkbook,
   fullAuditCsv,
   fullAuditWorkbook,
+  assetBreakageCsv,
+  assetBreakageWorkbook,
   nonMovingCsv,
   nonMovingWorkbook,
   nonRevenueCsv,
@@ -72,6 +75,7 @@ import {
   legacyAuditPdf,
   legacyAuditTitle,
   legacyAuditWorkbook,
+  assetBreakagePdfDoc,
   nonMovingPdfDoc,
   nonRevenuePdfDoc,
   onHandPdfDoc,
@@ -297,6 +301,25 @@ export const reportRoutes = new Hono<AppEnv>()
     if (format === "csv") return csvResponse(forfeitsCsv(report), name, fullName(user));
     if (format === "pdf") return pdfResponse(await forfeitsPdf(report, await meta(client, location.name, user)), name);
     return xlsxResponse(await forfeitsWorkbook(report, await meta(client, location.name, user)), name);
+  })
+
+  // ── Asset Breakage (client req 2026-07-21) ──
+  .get("/reports/asset-breakage", async (c) => {
+    const location = c.get("location");
+    const { from, to } = requireRange(c);
+    return c.json(await assetBreakageReport(location.id, from, to));
+  })
+  .get("/reports/asset-breakage/export", exportGuard, async (c) => {
+    const location = c.get("location");
+    const client = c.get("client");
+    const { from, to } = requireRange(c);
+    const report = await assetBreakageReport(location.id, from, to);
+    const user = c.get("user")!;
+    const name = `asset-breakage_${location.name}_${from}_${to}`.replace(/[^\w.-]+/g, "-");
+    const format = c.req.query("format");
+    if (format === "csv") return csvResponse(assetBreakageCsv(report), name, fullName(user));
+    if (format === "pdf") return pdfResponse(await assetBreakagePdfDoc(report, await meta(client, location.name, user)), name);
+    return xlsxResponse(await assetBreakageWorkbook(report, await meta(client, location.name, user)), name);
   })
 
   // ── Usage Cost (client report #6) ──

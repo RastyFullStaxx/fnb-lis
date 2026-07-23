@@ -1185,6 +1185,125 @@ async function seedDeadStock(
 }
 
 /**
+ * Turns on the ASSET module for a demo client and stocks a small equipment
+ * register with breakage (client req 2026-07-21), so the Asset Breakage report
+ * has data. Assets aren't consumed — they leave the register when they break,
+ * go missing, or are retired, recorded as non-revenue with a "what happened"
+ * note. Opening (07-14) and closing (07-20) counts differ by exactly the
+ * breakage, so the period reconciles to zero variance. Idempotent; a brand-new
+ * location, so no fixture is touched.
+ */
+async function seedAssets() {
+  const prime = await prisma.client.findFirst({ where: { name: "Prime Hospitality Group" } });
+  if (!prime) return;
+  const admin = await prisma.user.findUniqueOrThrow({ where: { username: "admin" } });
+  const manager = await actor("manager");
+  const staff = await actor("staff");
+
+  // 1. Prime's subscription gains the ASSET module.
+  const sub = await prisma.subscription.findUnique({ where: { clientId: prime.id } });
+  if (sub) {
+    await prisma.subscriptionModule.upsert({
+      where: { subscriptionId_module: { subscriptionId: sub.id, module: "ASSET" } },
+      update: {},
+      create: { subscriptionId: sub.id, module: "ASSET" },
+    });
+  }
+
+  // 2. A dedicated asset location with the ASSET module.
+  const location =
+    (await prisma.location.findFirst({ where: { clientId: prime.id, name: "Bar Equipment" } })) ??
+    (await prisma.location.create({ data: { clientId: prime.id, name: "Bar Equipment", kind: "STOCKROOM" } }));
+  await prisma.locationModule.upsert({
+    where: { locationId_module: { locationId: location.id, module: "ASSET" } },
+    update: {},
+    create: { locationId: location.id, module: "ASSET" },
+  });
+
+  const category = await prisma.category.findUnique({ where: { name: "Equipment" } });
+  const pc = await prisma.unit.findUnique({ where: { name: "pc" } });
+  if (!category || !pc) return;
+
+  // Committed opening (07-14) and closing (07-20) counts for this location.
+  const ensureSession = async (date: string) => {
+    const found = await prisma.countSession.findFirst({
+      where: { locationId: location.id, countDate: date, status: "COMMITTED" },
+    });
+    if (found) return found;
+    return prisma.countSession.create({
+      data: {
+        locationId: location.id, countDate: date, name: "Equipment count", status: "COMMITTED",
+        committedAt: new Date(), committedById: manager.createdById,
+        createdById: manager.createdById, createdByName: manager.createdByName,
+      },
+    });
+  };
+  const open = await ensureSession("2026-07-14");
+  const close = await ensureSession("2026-07-20");
+
+  type Breakage = { date: string; qty: number; reason: string; note: string };
+  const ASSETS: Array<{ name: string; cost: number; begin: number; breakage: Breakage[] }> = [
+    {
+      // Breakage is dated in the OPEN period (after the 07-20 count), so it lands
+      // in the report's default range and reduces current on-hand.
+      name: "Wine Glass", cost: 85, begin: 48, breakage: [
+        { date: "2026-07-21", qty: 2, reason: "BREAKAGE", note: "Shattered in the dishwasher" },
+        { date: "2026-07-22", qty: 1, reason: "BREAKAGE", note: "Dropped at table 6 during service" },
+      ],
+    },
+    {
+      name: "Highball Glass", cost: 70, begin: 36, breakage: [
+        { date: "2026-07-21", qty: 1, reason: "LOST", note: "Unaccounted for after a private function" },
+      ],
+    },
+    {
+      name: "Cocktail Shaker", cost: 450, begin: 6, breakage: [
+        { date: "2026-07-22", qty: 1, reason: "RETIRED", note: "Lid cracked — disposed" },
+      ],
+    },
+    { name: "Bar Blender", cost: 3200, begin: 2, breakage: [] },
+  ];
+
+  for (const a of ASSETS) {
+    const item =
+      (await prisma.item.findFirst({ where: { name: a.name } })) ??
+      (await prisma.item.create({ data: { name: a.name, categoryId: category.id, createdById: admin.id } }));
+    const variant = await prisma.itemVariant.upsert({
+      where: { itemId_size_unitId: { itemId: item.id, size: 1, unitId: pc.id } },
+      update: {},
+      create: { itemId: item.id, size: 1, unitId: pc.id, contentTracked: false },
+    });
+    const li = await prisma.locationItem.upsert({
+      where: { locationId_itemVariantId: { locationId: location.id, itemVariantId: variant.id } },
+      update: { cost: a.cost, retail: 0 },
+      create: { locationId: location.id, itemVariantId: variant.id, cost: a.cost, retail: 0, parLevel: null },
+    });
+    // Both boundary counts equal the opening quantity — nothing broke inside the
+    // closed period, so it reconciles to zero variance; the breakage sits after.
+    for (const session of [open, close]) {
+      const exists = await prisma.countLine.findFirst({ where: { countSessionId: session.id, locationItemId: li.id } });
+      if (exists) continue;
+      await prisma.countLine.create({
+        data: {
+          countSessionId: session.id, locationItemId: li.id, countType: "FULL", qtyFull: a.begin,
+          remainingContent: 0, unitCost: li.cost, unitRetail: li.retail,
+          createdById: manager.createdById, createdByName: manager.createdByName,
+        },
+      });
+    }
+    for (const b of a.breakage) {
+      const exists = await prisma.saleRecord.findFirst({
+        where: { locationId: location.id, locationItemId: li.id, kind: "NON_REVENUE", saleDate: b.date, reason: b.reason, note: b.note },
+      });
+      if (exists) continue;
+      await prisma.saleRecord.create({
+        data: { locationId: location.id, saleDate: b.date, kind: "NON_REVENUE", locationItemId: li.id, qty: b.qty, unitPrice: 0, reason: b.reason, note: b.note, ...staff },
+      });
+    }
+  }
+}
+
+/**
  * Top-up entries that make the newest features visible in the demo even on a
  * database seeded before they existed (client req 2026-07-21). Idempotent and
  * additive — each guard checks for its own row, so a reseed adds nothing twice
@@ -1246,6 +1365,7 @@ export async function seedDemoHistory() {
   );
   await seedRicherActivity();
   await seedFeatureShowcase();
+  await seedAssets();
 
   const done = [
     transfers && "transfers", bar && "Main Bar", depot && "Depot", kitchen && "Kitchen",

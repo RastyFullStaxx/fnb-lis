@@ -14,6 +14,7 @@ import {
   type VarianceSeverity,
 } from "@fnb/core";
 import type {
+  AssetBreakageReport,
   CostAnalysisReport,
   NonMovingReport,
   NonRevenueReport,
@@ -581,6 +582,57 @@ export function nonMovingCsv(report: NonMovingReport): string {
     rows.push([row.name, row.category, round2(row.onHand), round2(row.cost), round2(row.costValue), round2(row.retailValue)]);
   }
   rows.push(["Total", "", "", "", round2(report.totals.costValue), round2(report.totals.retailValue)]);
+  return toCsv(rows);
+}
+
+// ───────────────────────── Asset Breakage ─────────────────────────
+
+export const ASSET_BREAKAGE_HEADERS = ["Date", "Item", "Category", "UOM", "Qty", "Reason", "What Happened", "Value"];
+
+export async function assetBreakageWorkbook(report: AssetBreakageReport, meta: ReportMeta): Promise<Buffer> {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Asset Breakage", { views: [{ state: "frozen", ySplit: 4 }] });
+  titleBlock(ws, "Asset Breakage Report", `${meta.clientName} · ${meta.locationName} · ${report.from} → ${report.to}`, ASSET_BREAKAGE_HEADERS.length, meta);
+  styleHeaderRow(ws.addRow(ASSET_BREAKAGE_HEADERS));
+  for (const row of report.rows) {
+    const r = ws.addRow([row.date, row.name, row.category, row.uom]);
+    qtyCell(r.getCell(5), row.qty);
+    r.getCell(6).value = row.reason;
+    r.getCell(7).value = row.note ?? "";
+    moneyCell(r.getCell(8), row.costValue, false);
+  }
+  const t = ws.addRow(["Total", "", "", ""]);
+  t.font = { bold: true };
+  qtyCell(t.getCell(5), report.totals.qty);
+  moneyCell(t.getCell(8), report.totals.costValue, false);
+
+  // Summary by reason (what happened, at a glance).
+  ws.addRow([]);
+  const rh = ws.addRow(["By reason", "Count", "Qty", "Value"]);
+  styleHeaderRow(rh);
+  for (const g of report.byReason) {
+    const r = ws.addRow([g.reason, g.count]);
+    qtyCell(r.getCell(3), g.qty);
+    moneyCell(r.getCell(4), g.costValue, false);
+  }
+  ws.getColumn(1).width = 12;
+  ws.getColumn(2).width = 22;
+  ws.getColumn(7).width = 34;
+  for (const i of [3, 4, 5, 6, 8]) ws.getColumn(i).width = 13;
+  return toBuffer(wb);
+}
+
+export function assetBreakageCsv(report: AssetBreakageReport): string {
+  const rows: CsvValue[][] = [[`Asset Breakage Report · ${report.from} → ${report.to}`], ASSET_BREAKAGE_HEADERS];
+  for (const row of report.rows) {
+    rows.push([row.date, row.name, row.category, row.uom, round2(row.qty), row.reason, row.note ?? "", round2(row.costValue)]);
+  }
+  rows.push(["Total", "", "", "", round2(report.totals.qty), "", "", round2(report.totals.costValue)]);
+  rows.push([]);
+  rows.push(["By reason", "Count", "Qty", "Value"]);
+  for (const g of report.byReason) {
+    rows.push([g.reason, g.count, round2(g.qty), round2(g.costValue)]);
+  }
   return toCsv(rows);
 }
 

@@ -215,6 +215,32 @@ export function usePurchaseReport(from: string, to: string, enabled = true) {
   });
 }
 
+export interface AssetBreakageReport {
+  from: string;
+  to: string;
+  rows: Array<{
+    date: string;
+    name: string;
+    category: string;
+    uom: string;
+    qty: number;
+    reason: string;
+    note: string | null;
+    costValue: number;
+  }>;
+  byReason: Array<{ reason: string; count: number; qty: number; costValue: number }>;
+  totals: { qty: number; costValue: number };
+}
+
+export function useAssetBreakageReport(from: string, to: string, enabled = true) {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["report", "asset-breakage", locationId, from, to],
+    queryFn: () => api<AssetBreakageReport>(`${base(locationId)}/reports/asset-breakage?from=${from}&to=${to}`),
+    enabled: enabled && Boolean(from && to),
+  });
+}
+
 export function useNonRevenueReport(from: string, to: string, group?: string, enabled = true) {
   const locationId = useLocationId();
   return useQuery({
@@ -335,6 +361,7 @@ export function exportUrl(
     | "on-hand"
     | "par-level"
     | "non-moving"
+    | "asset-breakage"
     | "transfers"
     | "cost-analysis"
     | "top-sellers"

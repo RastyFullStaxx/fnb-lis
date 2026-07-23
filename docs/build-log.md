@@ -440,6 +440,31 @@ gateway, never store instruments. Not built.
 
 Both workspaces typecheck clean.
 
+## Phase 16 — Asset breakage & the Asset module, live (2026-07-21)
+
+The client clarified that the **Asset** inventory module (equipment, alongside Bar/Kitchen) needs a
+**"usage" column = breakage** in the reports — "what happened to the item." Assets aren't consumed;
+they leave the register when they break, go missing, or are retired.
+
+**Recording** reuses non-revenue (no new record type, no reconciliation change): a breakage is a
+non-revenue entry on an asset item, with a **note** = what happened. The encode is now asset-aware —
+when the selected item's `category.productType === "Asset"`, the reason list becomes **Broken / Lost /
+Stolen / Retired** (`ASSET_LOSS_REASONS`) instead of the consumable buckets.
+
+**The report** — Reports → **Asset Breakage** (new, in "Losses & Returns"): one row per breakage
+event — Date · Item · Reason · **What Happened** · Qty · Value — plus a By-Reason summary and a
+loss-by-reason chart, filtered to the Asset product type (empty on bar/kitchen locations).
+`assetBreakageReport` in report-lists + route + xlsx/csv/pdf + web page + hub + palette.
+
+**Demo** — the module wasn't turned on anywhere, so `seedAssets` enables it: adds ASSET to Prime's
+subscription + a **"Bar Equipment"** location (ASSET module) with glassware/blender/shaker, opening +
+closing counts, and breakage events dated in the open period (so they show in the report's default
+range and reconcile the closed period to zero variance). Verified live: 5 items written off, ₱775;
+golden fixture still −₱330.69; Bar Equipment closed period variance 0/0.
+
+Not touched: the packaging-tier mismatch (Basic 1 / Medium 5 / **Full 10** vs. our Basic/Medium/
+One-Time) — parked pending the client's confirmation of the intended tier structure.
+
 ## Contributor history
 
 | Window | Who | What |

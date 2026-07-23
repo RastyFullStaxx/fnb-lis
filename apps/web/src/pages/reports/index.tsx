@@ -14,6 +14,7 @@ import {
   TrendingUp,
   Undo2,
   Wine,
+  Wrench,
   type LucideIcon,
 } from "lucide-react";
 import { useLocationId } from "@/api/location";
@@ -134,6 +135,12 @@ const SECTIONS: Array<{ title: string; blurb: string; reports: Report[] }> = [
         icon: Undo2,
         title: "Forfeited Bottles",
         description: "Returned bottles and their open content, valued at cost and retail.",
+      },
+      {
+        path: "asset-breakage",
+        icon: Wrench,
+        title: "Asset Breakage",
+        description: "Equipment that broke, went missing, or was retired — what happened, valued at cost. (Asset locations.)",
       },
     ],
   },

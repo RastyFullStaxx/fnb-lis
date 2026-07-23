@@ -1,4 +1,5 @@
 import {
+  ASSET_LOSS_REASON_LABELS,
   costLine,
   hasVariance,
   isPaymentTerms,
@@ -9,6 +10,7 @@ import {
   pctOf,
   round2,
   VARIANCE_EPSILON,
+  type AssetLossReason,
   type CostBasis,
   type NonRevenueGroup,
   type PaymentTerms,
@@ -603,6 +605,75 @@ export async function nonMovingReport(
     { count: 0, costValue: 0, retailValue: 0 },
   );
   return { lastCountDate: snap.lastCountDate, periodBegin: snap.periodBegin, periodEnd: snap.periodEnd, rows, totals: { count: totals.count, costValue: round2(totals.costValue), retailValue: round2(totals.retailValue) } };
+}
+
+// ── Asset Breakage (client req 2026-07-21) ──
+// Equipment that left the register: non-revenue records on ASSET-type items,
+// showing "what happened" (the note) — the asset equivalent of usage. Filters
+// to the Asset product type, so it's empty on a bar/kitchen location.
+
+export interface AssetBreakageRow {
+  date: string;
+  name: string;
+  category: string;
+  uom: string;
+  qty: number;
+  reason: string; // display label ("Broken / Damaged", …)
+  note: string | null; // what happened
+  costValue: number; // qty × cost — value written off
+}
+export interface AssetBreakageReport {
+  from: string;
+  to: string;
+  rows: AssetBreakageRow[];
+  byReason: Array<{ reason: string; count: number; qty: number; costValue: number }>;
+  totals: { qty: number; costValue: number };
+}
+
+export async function assetBreakageReport(
+  locationId: string,
+  from: string,
+  to: string,
+): Promise<AssetBreakageReport> {
+  const records = await prisma.saleRecord.findMany({
+    where: {
+      locationId,
+      status: "ACTIVE",
+      kind: "NON_REVENUE",
+      saleDate: { gte: from, lte: to },
+      // Assets only — this is the report's whole point.
+      locationItem: { itemVariant: { item: { category: { productType: "Asset" } } } },
+    },
+    include: { locationItem: { include: LI_INCLUDE } },
+    orderBy: [{ saleDate: "asc" }, { createdAt: "asc" }],
+  });
+
+  const rows: AssetBreakageRow[] = records.map((r) => {
+    const li = r.locationItem!;
+    return {
+      date: r.saleDate,
+      name: li.itemVariant.item.name,
+      category: li.itemVariant.item.category.name,
+      uom: `${li.itemVariant.size} ${li.itemVariant.unit.name}`,
+      qty: r.qty,
+      reason: ASSET_LOSS_REASON_LABELS[r.reason as AssetLossReason] ?? REASON_LABELS[r.reason ?? "OTHER"] ?? r.reason ?? "Other",
+      note: r.note,
+      costValue: round2(r.qty * li.cost),
+    };
+  });
+
+  const reasonMap = new Map<string, { count: number; qty: number; costValue: number }>();
+  for (const r of rows) {
+    const agg = reasonMap.get(r.reason) ?? { count: 0, qty: 0, costValue: 0 };
+    agg.count += 1;
+    agg.qty += r.qty;
+    agg.costValue += r.costValue;
+    reasonMap.set(r.reason, agg);
+  }
+  const byReason = [...reasonMap.entries()].map(([reason, v]) => ({ reason, ...v })).sort((a, b) => b.qty - a.qty);
+
+  const totals = rows.reduce((acc, r) => ({ qty: acc.qty + r.qty, costValue: acc.costValue + r.costValue }), { qty: 0, costValue: 0 });
+  return { from, to, rows, byReason, totals: { qty: round2(totals.qty), costValue: round2(totals.costValue) } };
 }
 
 // ── Transfer report (in/out at cost & retail — client req #10) ──

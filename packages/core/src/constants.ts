@@ -103,6 +103,12 @@ export const NON_REVENUE_REASONS = [
   "TASTING",
   "INTERNAL_USE",
   "OTHER",
+  // Asset-loss reasons (client req 2026-07-21) — "what happened" to a piece of
+  // equipment. Assets aren't consumed; they leave the register when they break,
+  // go missing, or are retired. Recorded as non-revenue like any stock-out.
+  "LOST",
+  "STOLEN",
+  "RETIRED",
 ] as const;
 export type NonRevenueReason = (typeof NON_REVENUE_REASONS)[number];
 
@@ -114,6 +120,21 @@ export const NON_REVENUE_GROUP_LABELS: Record<NonRevenueGroup, string> = {
   SPOILAGE_SPILLAGE: "Spoilage & Spillages",
   TRIMMING: "Trimming",
   MARKETING_OTH: "Marketing & OTH",
+};
+
+/**
+ * Reasons an ASSET (equipment) leaves the register — "what happened to the
+ * item" (client req 2026-07-21). Offered when recording non-revenue for an
+ * asset item, and shown in the Asset Breakage report.
+ */
+export const ASSET_LOSS_REASONS = ["BREAKAGE", "LOST", "STOLEN", "RETIRED"] as const;
+export type AssetLossReason = (typeof ASSET_LOSS_REASONS)[number];
+
+export const ASSET_LOSS_REASON_LABELS: Record<AssetLossReason, string> = {
+  BREAKAGE: "Broken / Damaged",
+  LOST: "Lost / Missing",
+  STOLEN: "Stolen",
+  RETIRED: "Retired / Disposed",
 };
 
 /**

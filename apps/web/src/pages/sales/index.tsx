@@ -1,7 +1,16 @@
 import { forwardRef, useEffect, useRef, useState } from "react";
 import { ChevronsUpDown, Martini, Receipt } from "lucide-react";
 import { toast } from "sonner";
-import { can, NON_REVENUE_GROUP_LABELS, NON_REVENUE_GROUPS, NON_REVENUE_REASONS, type Role, type SaleKind } from "@fnb/core";
+import {
+  ASSET_LOSS_REASON_LABELS,
+  ASSET_LOSS_REASONS,
+  can,
+  NON_REVENUE_GROUP_LABELS,
+  NON_REVENUE_GROUPS,
+  NON_REVENUE_REASONS,
+  type Role,
+  type SaleKind,
+} from "@fnb/core";
 import { useMe } from "@/api/auth";
 import { useLocationItems } from "@/api/location";
 import { useMenus, type MenuSummary } from "@/api/menus";
@@ -453,11 +462,18 @@ function QuickEntry({ kind }: { kind: SaleKind }) {
   const copy = KIND_COPY[kind];
 
   const item = target?.type === "item" ? target.item : null;
+  // Assets aren't consumed — when a non-revenue entry targets an asset, the
+  // reason list becomes "what happened" (Broken / Lost / Stolen / Retired).
+  const isAsset = item?.itemVariant.item.category.productType === "Asset";
 
   const pickTarget = (t: SaleTarget) => {
     setTarget(t);
     if (kind === "SALE") {
       setPrice(t.type === "item" ? String(t.item.retail || "") : String(t.menu.current?.srp || ""));
+    }
+    if (kind === "NON_REVENUE") {
+      const asset = t.type === "item" && t.item.itemVariant.item.category.productType === "Asset";
+      setReason(asset ? "BREAKAGE" : "SPOILAGE_SPILLAGE");
     }
   };
 
@@ -580,23 +596,32 @@ function QuickEntry({ kind }: { kind: SaleKind }) {
           {kind === "NON_REVENUE" && (
             <>
               <div className="space-y-2">
-                <Label htmlFor="s-reason">Reason</Label>
-                {/* The three canonical buckets, each of which drives its own
-                    report, plus "Other / Unspecified" — the plain input the
-                    client asked for (2026-07-21) when the user doesn't want to
-                    classify. Legacy reasons stay readable on historical rows
-                    but can no longer be entered. */}
+                <Label htmlFor="s-reason">{isAsset ? "What Happened" : "Reason"}</Label>
+                {/* Assets get loss reasons (Broken / Lost / Stolen / Retired);
+                    consumables get the three canonical buckets plus "Other /
+                    Unspecified" (client req 2026-07-21). Legacy reasons stay
+                    readable on historical rows but can no longer be entered. */}
                 <Select value={reason} onValueChange={setReason}>
                   <SelectTrigger id="s-reason">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {NON_REVENUE_GROUPS.map((r) => (
-                      <SelectItem key={r} value={r}>
-                        {NON_REVENUE_GROUP_LABELS[r]}
-                      </SelectItem>
-                    ))}
-                    <SelectItem value="OTHER">Other / Unspecified</SelectItem>
+                    {isAsset ? (
+                      ASSET_LOSS_REASONS.map((r) => (
+                        <SelectItem key={r} value={r}>
+                          {ASSET_LOSS_REASON_LABELS[r]}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <>
+                        {NON_REVENUE_GROUPS.map((r) => (
+                          <SelectItem key={r} value={r}>
+                            {NON_REVENUE_GROUP_LABELS[r]}
+                          </SelectItem>
+                        ))}
+                        <SelectItem value="OTHER">Other / Unspecified</SelectItem>
+                      </>
+                    )}
                   </SelectContent>
                 </Select>
               </div>

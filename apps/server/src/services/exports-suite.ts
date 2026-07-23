@@ -16,6 +16,7 @@ import {
   exportStamp,
   fullAuditColumns,
   moneyCell,
+  ASSET_BREAKAGE_HEADERS,
   NON_MOVING_HEADERS,
   NONREV_HEADERS,
   ONHAND_HEADERS,
@@ -31,7 +32,7 @@ import {
   varianceFlagLabel,
   type ReportMeta,
 } from "./exports";
-import type { NonMovingReport, NonRevenueReport, OnHandReport, ParLevelReport, PurchaseReport, SalesReport, TransferReport } from "./report-lists";
+import type { AssetBreakageReport, NonMovingReport, NonRevenueReport, OnHandReport, ParLevelReport, PurchaseReport, SalesReport, TransferReport } from "./report-lists";
 import type {
   CostSnapshotReport,
   ForfeitsReport,
@@ -669,6 +670,23 @@ export function nonMovingPdfDoc(report: NonMovingReport, meta: ReportMeta): Prom
     ],
     exportedBy: stampLine(meta),
     reportFooter: meta.footer,
+  });
+}
+
+export function assetBreakagePdfDoc(report: AssetBreakageReport, meta: ReportMeta): Promise<Buffer> {
+  return tablePdf({
+    title: "Asset Breakage Report",
+    subtitle: `${meta.clientName} · ${meta.locationName} · ${report.from} → ${report.to}`,
+    columns: ASSET_BREAKAGE_HEADERS.map((h, i) => ({ header: String(h), align: i === 4 || i === 7 ? "right" : "left", width: i === 6 ? "*" : "auto" })),
+    rows: [
+      ...report.rows.map((r) => ({
+        cells: [r.date, r.name, r.category, r.uom, round2(r.qty), r.reason, r.note ?? "", round2(r.costValue)] as (string | number)[],
+      })),
+      { cells: ["Total", "", "", "", round2(report.totals.qty), "", "", round2(report.totals.costValue)], kind: "total" as const },
+    ],
+    exportedBy: stampLine(meta),
+    reportFooter: meta.footer,
+    landscape: true,
   });
 }
 
