@@ -244,6 +244,11 @@ model ItemVariant {
   tareWeightUnit String? // g | oz
   densityFactor  Float? // per-item override of Category.defaultDensityFactor
   barcode        String?
+  // Asset-only, nullable (architecture.md deviation #26) — intrinsic to the
+  // product line, so these live here rather than on LocationItem. Ignored by
+  // Bar/Kitchen/Supplies rows, same treatment as weighMode above for non-Bar items.
+  brand          String?
+  model          String?
   isActive       Boolean @default(true)
 
   locationItems LocationItem[]
@@ -262,6 +267,17 @@ model LocationItem {
   cost          Float       @default(0)
   retail        Float       @default(0)
   parLevel      Float?
+  // Asset-only, nullable (architecture.md deviation #26). assetCode is the
+  // human-readable AST-### register number: unique when set, sequential across
+  // the whole client, not per-category (see asset-module-proposal.md). `cost`
+  // above doubles as "current cost"; initialCost is the fixed purchase price.
+  assetCode     String?     @unique
+  initialCost   Float?
+  serialNo      String?     // per asset TYPE not per unit — see asset-module-proposal.md
+  condition     String?     // data-driven list, Setting "conditionOptions"
+  status        String?     // data-driven list, Setting "statusOptions" — distinct from isActive
+  industry      String?     // data-driven list, Setting "industryOptions" (client req 2026-07-24)
+  remarks       String?
   isActive      Boolean     @default(true)
   updatedById   String?
   createdAt     DateTime    @default(now())

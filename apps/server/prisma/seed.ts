@@ -2,6 +2,8 @@ import { prisma } from "../src/db";
 import { hashPassword } from "../src/auth/password";
 import { allowedProductTypes, derivePackageType } from "@fnb/core";
 import { seedDemoHistory } from "./seed-demo";
+import { generateAssetCode } from "../src/services/asset-supplier";
+import { ASSET_ITEMS, ASSET_CATEGORY_COST, ASSET_BREAKAGE } from "./asset-seed-data";
 
 const PASSWORD = "Fnb!2026"; // documented demo password for all seeded roles
 
@@ -56,17 +58,29 @@ async function seedClients() {
   // carries the client's whole module set (just {KITCHEN} here).
   await upsertLocationWithModules(casa.id, "Main", ["KITCHEN"]);
 
+  // Asset module demo — deliberately its own client rather than a third
+  // module bolted onto Prime or Casa Verde (asset-module-phases.md Phase 7.3
+  // pickup decision, 2026-07-24): cleanest separation for the register demo,
+  // same Basic-tier/single-location shape Casa Verde already establishes.
+  const aurora = await upsertClientWithSubscription(
+    "Aurora Asset Holdings",
+    { billingCycle: "MONTHLY", modules: ["ASSET"], maxEntities: 1 },
+    admin?.id,
+  );
+  await upsertLocationWithModules(aurora.id, "Main Warehouse", ["ASSET"]);
+
   // Per-establishment over/short highlight threshold (client req 2026-07-21).
   // Distinct values so the per-tenant setting is visible in the demo: Prime
   // keeps the 11% default; Casa Verde, a small produce-forward kitchen that
   // watches spoilage closely, runs a tighter 8%. Idempotent.
   await prisma.client.update({ where: { id: prime.id }, data: { varianceThresholdPct: 11 } });
   await prisma.client.update({ where: { id: casa.id }, data: { varianceThresholdPct: 8 } });
+  await prisma.client.update({ where: { id: aurora.id }, data: { varianceThresholdPct: 11 } });
 
   // Non-admin users are scoped via UserClientAccess (ADMIN bypasses).
   const assign: Record<string, string[]> = {
-    manager: [prime.id, casa.id],
-    staff: [prime.id],
+    manager: [prime.id, casa.id, aurora.id],
+    staff: [prime.id, aurora.id],
     accountant: [prime.id],
     readonly: [prime.id],
   };
@@ -151,6 +165,13 @@ async function seedUnits() {
     { name: "tray", kind: "COUNT", factorToBase: 1 },
     { name: "can", kind: "COUNT", factorToBase: 1 },
     { name: "dozen", kind: "COUNT", factorToBase: 12 },
+    // Asset register UOM vocabulary (asset-seed-data.ts) — distinct from the
+    // Beverage/Food/Supplies count units above; the client's sheet uses these
+    // exact words rather than "pc"/"box".
+    { name: "Unit", kind: "COUNT", factorToBase: 1 },
+    { name: "Piece", kind: "COUNT", factorToBase: 1 },
+    { name: "Kit", kind: "COUNT", factorToBase: 1 },
+    { name: "Set", kind: "COUNT", factorToBase: 1 },
   ];
   for (const u of units) {
     await prisma.unit.upsert({
@@ -192,6 +213,32 @@ async function seedCategories() {
     // tools, and other non-consumable items, distinct from the consumable
     // Supplies above (Table Napkins, Disposable Gloves).
     { name: "Equipment", productType: "Asset", sortOrder: 40 },
+    // Full AST-001->070 register categories (Phase 7.3) — one category per
+    // item, per the client's own sheet and the proposal's explicit
+    // recommendation not to invent a consolidated scheme. Kept distinct from
+    // the flat "Equipment" category above, which predates this and already
+    // holds its own two demo items (Bar Blender, Commercial Ice Machine).
+    { name: "POS Equipment", productType: "Asset", sortOrder: 41 },
+    { name: "IT Equipment", productType: "Asset", sortOrder: 42 },
+    { name: "Security CCTV", productType: "Asset", sortOrder: 43 },
+    { name: "Security DVR/NVR", productType: "Asset", sortOrder: 44 },
+    { name: "Audio System", productType: "Asset", sortOrder: 45 },
+    { name: "Entertainment", productType: "Asset", sortOrder: 46 },
+    { name: "Coffee Equipment", productType: "Asset", sortOrder: 47 },
+    { name: "Beverage Equipment", productType: "Asset", sortOrder: 48 },
+    { name: "Refrigeration Upright", productType: "Asset", sortOrder: 49 },
+    { name: "Refrigeration Chest", productType: "Asset", sortOrder: 50 },
+    { name: "Refrigeration Wine", productType: "Asset", sortOrder: 51 },
+    { name: "Refrigeration", productType: "Asset", sortOrder: 52 },
+    { name: "Kitchen Equipment", productType: "Asset", sortOrder: 53 },
+    { name: "Furniture", productType: "Asset", sortOrder: 54 },
+    { name: "Bar Tools", productType: "Asset", sortOrder: 55 },
+    { name: "Glassware", productType: "Asset", sortOrder: 56 },
+    { name: "Dinning Ware", productType: "Asset", sortOrder: 57 },
+    { name: "Safety Fire", productType: "Asset", sortOrder: 58 },
+    { name: "Safety — First Aid", productType: "Asset", sortOrder: 59 },
+    { name: "Cleaning Equipment", productType: "Asset", sortOrder: 60 },
+    { name: "Office Equipment", productType: "Asset", sortOrder: 61 },
   ];
   for (const cat of categories) {
     await prisma.category.upsert({
@@ -209,6 +256,11 @@ async function seedCategories() {
 async function seedSettings() {
   const settings: Array<{ key: string; value: unknown }> = [
     { key: "productTypes", value: ["Beverage", "Food", "Supplies", "Asset"] },
+    // Asset condition/status presets (asset-module-proposal.md, client-confirmed
+    // 2026-07-23). Same data-driven-list shape as productTypes above; the UI adds
+    // an "Other" branch on top rather than storing it as a literal option.
+    { key: "conditionOptions", value: ["Active", "Needs Repair", "Under Repair", "Retired", "Damaged"] },
+    { key: "statusOptions", value: ["In Use", "In Storage", "For Disposal", "Sold"] },
     { key: "company", value: { name: "Liquor Inventory Solution", shortName: "LIS" } },
   ];
   for (const s of settings) {
@@ -395,6 +447,140 @@ async function assertLocationCatalogWithinModules(clientName: string, locationNa
         `[${modules.join(", ")}] (allows [${allowed.join(", ")}]) but is stocked with items ` +
         `outside that: ${detail}. Fix the seed data for this location before continuing.`,
     );
+  }
+}
+
+/**
+ * Seeds the full AST-001->070 Asset register (Phase 7.3) onto Aurora Asset
+ * Holdings' "Main Warehouse" location, once 1.2-2.5 (schema, endpoints,
+ * assetCode generator) have actually landed. Source data is
+ * asset-seed-data.ts, already cleaned up by 7.1/7.2 before this runs.
+ *
+ * Each row becomes an Item + ItemVariant (one category per item, per the
+ * client's own sheet and the proposal's recommendation not to invent a
+ * consolidated scheme) and a LocationItem carrying the real assetCode
+ * sequence (2.5) — read-then-increment inside the same $transaction as the
+ * create, same as the live POST /location-items path. Condition and
+ * serialNo are per-row from asset-seed-data.ts (client-sourced for
+ * AST-001->027, demo-filled otherwise) rather than hardcoded; the client
+ * sheet's per-row Location (Cashier/Bar/Kitchen/etc.) is folded into
+ * `remarks` as "Area: <value>" since it names an area within one business
+ * site, not a separate Location record (see the Location model docstring).
+ *
+ * A Beginning (2026-07-20) and Ending (2026-07-23) committed count follow —
+ * both FULL only, since Asset rows are never weighable (3.2) — so the Asset
+ * Inventory report (6.2) has two real dates to compare. A handful of
+ * breakage/loss events (ASSET_BREAKAGE) land as NON_REVENUE SaleRecords in
+ * between, so the Asset Breakage report and the Asset Register's "last note"
+ * column both have real data to show.
+ */
+async function seedAssetRegister() {
+  const location = await prisma.location.findFirst({
+    where: { name: "Main Warehouse", client: { name: "Aurora Asset Holdings" } },
+  });
+  const admin = await prisma.user.findUnique({ where: { username: "admin" } });
+  const manager = await prisma.user.findUnique({ where: { username: "manager" } });
+  const staff = await prisma.user.findUnique({ where: { username: "staff" } });
+  if (!location || !admin || !manager || !staff) return;
+
+  const alreadySeeded = await prisma.locationItem.findFirst({
+    where: { locationId: location.id, assetCode: { not: null } },
+  });
+  if (alreadySeeded) return;
+
+  const encoder = { createdById: staff.id, createdByName: "Aurora Warehouse Staff" };
+  const createdItems: Array<{ id: string; locationItemId: string }> = [];
+
+  for (const row of ASSET_ITEMS) {
+    const category = await prisma.category.findUnique({ where: { name: row.category } });
+    if (!category) throw new Error(`Asset seed: missing category "${row.category}" — check seedCategories()`);
+    const unit = await prisma.unit.findUnique({ where: { name: row.uom } });
+    if (!unit) throw new Error(`Asset seed: missing unit "${row.uom}" — check seedUnits()`);
+
+    let item = await prisma.item.findFirst({ where: { name: row.name, categoryId: category.id } });
+    if (!item) {
+      item = await prisma.item.create({ data: { name: row.name, categoryId: category.id, createdById: admin.id } });
+    }
+    const variant = await prisma.itemVariant.upsert({
+      where: { itemId_size_unitId: { itemId: item.id, size: 1, unitId: unit.id } },
+      update: {},
+      create: { itemId: item.id, size: 1, unitId: unit.id, contentTracked: false },
+    });
+
+    const cost = ASSET_CATEGORY_COST[row.category] ?? 0;
+    const locationItem = await prisma.$transaction(async (tx) => {
+      // Same-transaction read-then-increment as the live POST /location-items
+      // path (2.5's own docstring) — not a separate transaction beforehand.
+      const assetCode = await generateAssetCode(tx);
+      return tx.locationItem.create({
+        data: {
+          locationId: location.id,
+          itemVariantId: variant.id,
+          cost,
+          retail: cost, // Asset doesn't sell — retail mirrors cost so valuation reports stay sane, never surfaced to the client.
+          initialCost: cost,
+          assetCode,
+          serialNo: row.serialNo,
+          condition: row.condition,
+          status: "In Use",
+          // Location in this system is a whole business site (see Location
+          // model docstring); the client sheet's per-row area (Cashier/Bar/
+          // Kitchen/etc.) has no matching schema slot, so it's folded in here
+          // rather than modeled as a separate Location row.
+          remarks: `Area: ${row.location}`,
+          updatedById: admin.id,
+        },
+      });
+    });
+    createdItems.push({ id: variant.id, locationItemId: locationItem.id });
+  }
+
+  await assertLocationCatalogWithinModules("Aurora Asset Holdings", "Main Warehouse");
+
+  // Beginning / Ending count — every row present both times at its opening
+  // qty, so the Asset Inventory report has a real (flat) baseline to show.
+  const committedCount = async (countDate: string) => {
+    const session = await prisma.countSession.create({
+      data: { locationId: location.id, countDate, status: "COMMITTED", committedAt: new Date(), committedById: manager.id, ...encoder },
+    });
+    for (const [i, row] of ASSET_ITEMS.entries()) {
+      const li = createdItems[i];
+      await prisma.countLine.create({
+        data: {
+          countSessionId: session.id,
+          locationItemId: li.locationItemId,
+          countType: "FULL",
+          qtyFull: row.qty,
+          unitCost: ASSET_CATEGORY_COST[row.category] ?? 0,
+          unitRetail: ASSET_CATEGORY_COST[row.category] ?? 0,
+          ...encoder,
+        },
+      });
+    }
+  };
+  await committedCount("2026-07-20");
+  await committedCount("2026-07-23");
+
+  // Breakage/loss fixture — matched by item name against the rows just
+  // created, so the Asset Breakage report and the register's "last note"
+  // column both have real, dated events.
+  for (const b of ASSET_BREAKAGE) {
+    const idx = ASSET_ITEMS.findIndex((r) => r.name === b.name);
+    if (idx === -1) continue;
+    const li = createdItems[idx];
+    await prisma.saleRecord.create({
+      data: {
+        locationId: location.id,
+        saleDate: b.date,
+        kind: "NON_REVENUE",
+        locationItemId: li.locationItemId,
+        qty: b.qty,
+        unitPrice: 0,
+        reason: b.reason,
+        note: b.note,
+        ...encoder,
+      },
+    });
   }
 }
 
@@ -983,6 +1169,7 @@ async function main() {
   await assertLocationCatalogWithinModules("Prime Hospitality Group", "Main Bar");
   await assertLocationCatalogWithinModules("Prime Hospitality Group", "Kitchen");
   await assertLocationCatalogWithinModules("Casa Verde Restaurant", "Main");
+  await seedAssetRegister();
   await seedSuppliers();
   await seedGoldenCycle();
   await seedAliases();
@@ -997,7 +1184,7 @@ async function main() {
   // app demos as a live operation without any fixture moving.
   await seedDemoHistory();
   console.log(`Seed complete. Logins: admin / manager / staff / accountant / readonly — password ${PASSWORD}`);
-  console.log("Demo subscriptions: Prime = Medium/{BAR,KITCHEN} (Main Bar=BAR, Kitchen=KITCHEN), Casa Verde = Basic/{KITCHEN}");
+  console.log("Demo subscriptions: Prime = Medium/{BAR,KITCHEN} (Main Bar=BAR, Kitchen=KITCHEN), Casa Verde = Basic/{KITCHEN}, Aurora Asset Holdings = Basic/{ASSET} (Main Warehouse)");
 }
 
 main()

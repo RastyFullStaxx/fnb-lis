@@ -4,6 +4,7 @@ import { allowedProductTypes, locationItemAttach, locationItemUpdate, supplierUp
 import { prisma } from "../db";
 import { AppError } from "../lib/errors";
 import { logActivity } from "../services/activity";
+import { generateAssetCode } from "../services/asset-supplier";
 import { requirePermission, type AppEnv } from "../middleware/auth";
 
 const priceGuard = requirePermission("prices.edit");
@@ -72,6 +73,11 @@ export const locationItemRoutes = new Hono<AppEnv>()
       return c.json(revived, 200);
     }
     const created = await prisma.$transaction(async (tx) => {
+      // Asset rows get their AST-### register code at attach time — the
+      // sequence is client-wide, not per-category (2.5), so it must be read
+      // and incremented inside this same transaction as the create.
+      const assetCode =
+        variant.item.category.productType === "Asset" ? await generateAssetCode(tx) : null;
       const li = await tx.locationItem.create({
         data: {
           locationId: location.id,
@@ -79,6 +85,7 @@ export const locationItemRoutes = new Hono<AppEnv>()
           cost: body.cost,
           retail: body.retail,
           parLevel: body.parLevel ?? null,
+          assetCode,
           updatedById: user.id,
         },
         include: { itemVariant: { include: { unit: true, item: { include: { category: true } } } } },

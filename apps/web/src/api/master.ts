@@ -27,6 +27,34 @@ export function useProductTypes() {
   });
 }
 
+// Asset Condition / Status preset lists (architecture.md deviation #21) —
+// same data-driven-list shape and staleTime as useProductTypes above.
+export function useConditionOptions() {
+  return useQuery({
+    queryKey: ["conditionOptions"],
+    queryFn: () => api<{ conditionOptions: string[] }>("/api/master/condition-options"),
+    staleTime: 10 * 60 * 1000,
+  });
+}
+
+export function useStatusOptions() {
+  return useQuery({
+    queryKey: ["statusOptions"],
+    queryFn: () => api<{ statusOptions: string[] }>("/api/master/status-options"),
+    staleTime: 10 * 60 * 1000,
+  });
+}
+
+// Asset Industry preset list (client req 2026-07-24) — same shape as
+// condition/status above.
+export function useIndustryOptions() {
+  return useQuery({
+    queryKey: ["industryOptions"],
+    queryFn: () => api<{ industryOptions: string[] }>("/api/master/industry-options"),
+    staleTime: 10 * 60 * 1000,
+  });
+}
+
 export function useItems(filters: { search?: string; categoryId?: string; productType?: string }) {
   const params = new URLSearchParams();
   if (filters.search) params.set("search", filters.search);

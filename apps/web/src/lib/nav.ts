@@ -40,6 +40,13 @@ export const MAIN_NAV: NavItem[] = [
   { title: "Counts", path: "counts", icon: ClipboardList, permission: "entries.create" },
   { title: "Purchases", path: "purchases", icon: ShoppingCart, permission: "entries.create" },
   { title: "Transfers", path: "transfers", icon: ArrowLeftRight, permission: "entries.create" },
+  // Deliberately module-agnostic (asset-module-phases.md 3.3 — not left as a
+  // default, decided): Sales already has a live, non-hypothetical use for
+  // Asset-only locations via its Non-revenue tab — ASSET_LOSS_REASONS
+  // (BREAKAGE/LOST/STOLEN/RETIRED) exist specifically for Asset SaleRecord
+  // rows, and assetBreakageReport already reads them. Gating this the same
+  // way as Recipes would remove a feature that's already shipped and working,
+  // not just withhold one that was never applicable.
   { title: "Sales", path: "sales", icon: Receipt, permission: "entries.create" },
   {
     title: "Recipes",
