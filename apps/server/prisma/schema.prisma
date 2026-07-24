@@ -276,6 +276,7 @@ model LocationItem {
   serialNo      String?     // per asset TYPE not per unit — see asset-module-proposal.md
   condition     String?     // data-driven list, Setting "conditionOptions"
   status        String?     // data-driven list, Setting "statusOptions" — distinct from isActive
+  industry      String?     // data-driven list, Setting "industryOptions" (client req 2026-07-24)
   remarks       String?
   isActive      Boolean     @default(true)
   updatedById   String?

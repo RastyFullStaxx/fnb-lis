@@ -39,6 +39,7 @@ export interface AssetRegisterRow {
   serialNo: string | null;
   condition: string | null;
   status: string | null;
+  industry: string | null;
   initialCost: number | null;
   currentCost: number;
   remarks: string | null;
@@ -102,6 +103,7 @@ export async function assetRegisterReport(
         serialNo: li.serialNo,
         condition: li.condition,
         status: li.status,
+        industry: li.industry,
         initialCost: li.initialCost,
         currentCost: li.cost,
         remarks: li.remarks,

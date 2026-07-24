@@ -45,6 +45,16 @@ export function useStatusOptions() {
   });
 }
 
+// Asset Industry preset list (client req 2026-07-24) — same shape as
+// condition/status above.
+export function useIndustryOptions() {
+  return useQuery({
+    queryKey: ["industryOptions"],
+    queryFn: () => api<{ industryOptions: string[] }>("/api/master/industry-options"),
+    staleTime: 10 * 60 * 1000,
+  });
+}
+
 export function useItems(filters: { search?: string; categoryId?: string; productType?: string }) {
   const params = new URLSearchParams();
   if (filters.search) params.set("search", filters.search);

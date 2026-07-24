@@ -102,6 +102,7 @@ export function AssetRegisterReportPage() {
                 <TableHead>Serial No.</TableHead>
                 <TableHead>Condition</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Industry</TableHead>
                 <TableHead className="text-right">Initial Cost</TableHead>
                 <TableHead className="text-right">Current Cost</TableHead>
                 <TableHead>Supplier</TableHead>
@@ -124,6 +125,7 @@ export function AssetRegisterReportPage() {
                   <TableCell className="text-muted-foreground">{row.serialNo ?? "—"}</TableCell>
                   <TableCell>{row.condition ? <Badge variant="outline">{row.condition}</Badge> : "—"}</TableCell>
                   <TableCell>{row.status ? <Badge variant="secondary">{row.status}</Badge> : "—"}</TableCell>
+                  <TableCell className="text-muted-foreground">{row.industry ?? "—"}</TableCell>
                   <TableCell className="tnum text-right">{row.initialCost != null ? formatMoney(row.initialCost) : "—"}</TableCell>
                   <TableCell className="tnum text-right">{formatMoney(row.currentCost)}</TableCell>
                   <TableCell className="text-muted-foreground">{row.supplier ?? "—"}</TableCell>

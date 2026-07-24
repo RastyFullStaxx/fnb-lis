@@ -4,6 +4,7 @@ import { zValidator } from "@hono/zod-validator";
 import {
   categoryUpsert,
   conditionOptionsUpdate,
+  industryOptionsUpdate,
   itemCreate,
   itemUpdate,
   productTypesUpdate,
@@ -104,8 +105,9 @@ export const masterRoutes = new Hono<AppEnv>()
     return c.json({ productTypes });
   })
 
-  // ── Asset Condition / Status options (data-driven lists in Setting,
-  //    architecture.md deviation #21) — mirrors /product-types exactly ──
+  // ── Asset Condition / Status / Industry options (data-driven lists in
+  //    Setting, architecture.md deviation #21) — mirrors /product-types
+  //    exactly. Industry added client req 2026-07-24. ──
   .get("/condition-options", async (c) => {
     const setting = await prisma.setting.findUnique({ where: { clientId_key: { clientId: "", key: "conditionOptions" } } });
     return c.json({ conditionOptions: setting ? (JSON.parse(setting.value) as string[]) : [] });
@@ -145,6 +147,26 @@ export const masterRoutes = new Hono<AppEnv>()
       );
     });
     return c.json({ statusOptions });
+  })
+  .get("/industry-options", async (c) => {
+    const setting = await prisma.setting.findUnique({ where: { clientId_key: { clientId: "", key: "industryOptions" } } });
+    return c.json({ industryOptions: setting ? (JSON.parse(setting.value) as string[]) : [] });
+  })
+  .put("/industry-options", requirePermission("admin.manage"), zValidator("json", industryOptionsUpdate), async (c) => {
+    const { industryOptions } = c.req.valid("json");
+    const user = c.get("user")!;
+    await prisma.$transaction(async (tx) => {
+      await tx.setting.upsert({
+        where: { clientId_key: { clientId: "", key: "industryOptions" } },
+        update: { value: JSON.stringify(industryOptions) },
+        create: { clientId: "", key: "industryOptions", value: JSON.stringify(industryOptions) },
+      });
+      await logActivity(
+        { user, action: "settings.industryOptions", entity: "Setting", summary: `Industry options set to ${industryOptions.join(", ")}`, details: { industryOptions } },
+        tx,
+      );
+    });
+    return c.json({ industryOptions });
   })
 
   // ── Categories ──

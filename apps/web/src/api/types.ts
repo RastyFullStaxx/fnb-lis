@@ -66,6 +66,7 @@ export interface LocationItem {
   serialNo: string | null;
   condition: string | null;
   status: string | null;
+  industry: string | null;
   remarks: string | null;
   assetCode: string | null;
   itemVariant: ItemVariant & { item: Item };

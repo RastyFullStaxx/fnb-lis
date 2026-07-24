@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ClipboardList } from "lucide-react";
 import { toast } from "sonner";
 import { useUpdateLocationItem } from "@/api/location";
-import { useConditionOptions, useStatusOptions } from "@/api/master";
+import { useConditionOptions, useIndustryOptions, useStatusOptions } from "@/api/master";
 import type { LocationItem } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { Button } from "@/components/ui/button";
@@ -31,27 +31,32 @@ import {
 const OTHER = "__other__";
 
 /**
- * Click-to-edit the six Asset-only fields (Phase 2.1/5.1: Serial No.,
- * Condition, Status, Initial Cost, Remarks, Asset Code) on a LocationItem.
+ * Click-to-edit the seven Asset-only fields (Phase 2.1/5.1, +Industry
+ * client req 2026-07-24: Serial No., Condition, Status, Industry, Initial
+ * Cost, Remarks, Asset Code) on a LocationItem.
  *
- * A sibling to `PriceEdit` rather than an extension of it (5.2): six fields
- * is past the point a `Popover` stays comfortable, and this repo already
- * reaches for `Dialog` at that size (`AttachItemDialog`, `BrandModelEditDialog`).
- * Condition/Status are Setting-backed dropdowns with a client-side "Other"
- * escape hatch (5.3) — `Other` itself is never a stored literal, only the
- * free-text value the user types after picking it.
+ * A sibling to `PriceEdit` rather than an extension of it (5.2): this many
+ * fields is past the point a `Popover` stays comfortable, and this repo
+ * already reaches for `Dialog` at that size (`AttachItemDialog`,
+ * `BrandModelEditDialog`). Condition/Status/Industry are Setting-backed
+ * dropdowns with a client-side "Other" escape hatch (5.3) — `Other` itself
+ * is never a stored literal, only the free-text value the user types after
+ * picking it.
  */
 export function AssetDetailsEdit({ row, canEdit }: { row: LocationItem; canEdit: boolean }) {
   const [open, setOpen] = useState(false);
   const update = useUpdateLocationItem();
   const conditionOptions = useConditionOptions();
   const statusOptions = useStatusOptions();
+  const industryOptions = useIndustryOptions();
 
   const [serialNo, setSerialNo] = useState("");
   const [condition, setCondition] = useState("");
   const [conditionOther, setConditionOther] = useState("");
   const [status, setStatus] = useState("");
   const [statusOther, setStatusOther] = useState("");
+  const [industry, setIndustry] = useState("");
+  const [industryOther, setIndustryOther] = useState("");
   const [initialCost, setInitialCost] = useState("");
   const [remarks, setRemarks] = useState("");
   const [assetCode, setAssetCode] = useState("");
@@ -83,6 +88,15 @@ export function AssetDetailsEdit({ row, canEdit }: { row: LocationItem; canEdit:
       setStatus(row.status ?? "");
       setStatusOther("");
     }
+
+    const knownIndustries = industryOptions.data?.industryOptions ?? [];
+    if (row.industry && !knownIndustries.includes(row.industry)) {
+      setIndustry(OTHER);
+      setIndustryOther(row.industry);
+    } else {
+      setIndustry(row.industry ?? "");
+      setIndustryOther("");
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, row.id]);
 
@@ -93,6 +107,7 @@ export function AssetDetailsEdit({ row, canEdit }: { row: LocationItem; canEdit:
         serialNo: serialNo.trim() === "" ? null : serialNo.trim(),
         condition: condition === OTHER ? (conditionOther.trim() || null) : condition || null,
         status: status === OTHER ? (statusOther.trim() || null) : status || null,
+        industry: industry === OTHER ? (industryOther.trim() || null) : industry || null,
         initialCost: initialCost === "" ? null : Number(initialCost) || 0,
         remarks: remarks.trim() === "" ? null : remarks.trim(),
         assetCode: assetCode.trim() === "" ? null : assetCode.trim(),
@@ -124,7 +139,7 @@ export function AssetDetailsEdit({ row, canEdit }: { row: LocationItem; canEdit:
         <DialogHeader>
           <DialogTitle>{row.itemVariant.item.name} · Asset Details</DialogTitle>
           <DialogDescription>
-            Serial number, condition, status, initial cost, and remarks for this location's register.
+            Serial number, condition, status, industry, initial cost, and remarks for this location's register.
           </DialogDescription>
         </DialogHeader>
 
@@ -201,6 +216,33 @@ export function AssetDetailsEdit({ row, canEdit }: { row: LocationItem; canEdit:
                 placeholder="Describe status"
                 value={statusOther}
                 onChange={(e) => setStatusOther(e.target.value)}
+              />
+            )}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor={`industry-${row.id}`} className="text-xs">
+              Industry
+            </Label>
+            <Select value={industry} onValueChange={setIndustry}>
+              <SelectTrigger id={`industry-${row.id}`}>
+                <SelectValue placeholder="Select industry" />
+              </SelectTrigger>
+              <SelectContent>
+                {(industryOptions.data?.industryOptions ?? []).map((opt) => (
+                  <SelectItem key={opt} value={opt}>
+                    {opt}
+                  </SelectItem>
+                ))}
+                <SelectItem value={OTHER}>Other…</SelectItem>
+              </SelectContent>
+            </Select>
+            {industry === OTHER && (
+              <Input
+                className="mt-1.5"
+                placeholder="Describe industry"
+                value={industryOther}
+                onChange={(e) => setIndustryOther(e.target.value)}
               />
             )}
           </div>

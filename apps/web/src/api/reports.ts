@@ -255,6 +255,7 @@ export interface AssetRegisterReport {
     serialNo: string | null;
     condition: string | null;
     status: string | null;
+    industry: string | null;
     initialCost: number | null;
     currentCost: number;
     remarks: string | null;
@@ -281,6 +282,7 @@ export interface AssetInventoryReport {
     assetCode: string | null;
     name: string;
     category: string;
+    industry: string | null;
     uom: string;
     beginningQty: number;
     endingQty: number;

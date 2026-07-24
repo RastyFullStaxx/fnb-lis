@@ -126,6 +126,7 @@ export function AssetInventoryReportPage() {
                 <TableHead>Asset Code</TableHead>
                 <TableHead>Item</TableHead>
                 <TableHead>Category</TableHead>
+                <TableHead>Industry</TableHead>
                 <TableHead>UOM</TableHead>
                 <TableHead className="text-right">Beginning</TableHead>
                 <TableHead className="text-right">Ending</TableHead>
@@ -138,6 +139,7 @@ export function AssetInventoryReportPage() {
                   <TableCell className="tnum font-medium">{row.assetCode ?? "—"}</TableCell>
                   <TableCell className="max-w-[18rem] break-words">{row.name}</TableCell>
                   <TableCell className="text-muted-foreground">{row.category}</TableCell>
+                  <TableCell className="text-muted-foreground">{row.industry ?? "—"}</TableCell>
                   <TableCell className="text-muted-foreground">{row.uom}</TableCell>
                   <TableCell className="tnum text-right">{n2(row.beginningQty)}</TableCell>
                   <TableCell className="tnum text-right">{n2(row.endingQty)}</TableCell>
@@ -150,7 +152,7 @@ export function AssetInventoryReportPage() {
             </TableBody>
             <TableFooter>
               <TableRow>
-                <TableCell colSpan={4} className="font-medium">
+                <TableCell colSpan={5} className="font-medium">
                   Total
                 </TableCell>
                 <TableCell className="tnum text-right font-medium">{n2(report.data.totals.beginningQty)}</TableCell>

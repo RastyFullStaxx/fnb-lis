@@ -80,6 +80,7 @@ export const locationItemUpdate = z.object({
   serialNo: z.string().trim().max(120).nullable().optional(),
   condition: z.string().trim().max(60).nullable().optional(),
   status: z.string().trim().max(60).nullable().optional(),
+  industry: z.string().trim().max(60).nullable().optional(),
   remarks: z.string().trim().max(500).nullable().optional(),
   assetCode: z.string().trim().max(20).nullable().optional(),
 });
@@ -114,3 +115,10 @@ export const statusOptionsUpdate = z.object({
   statusOptions: z.array(z.string().trim().min(1)).min(1),
 });
 export type StatusOptionsUpdate = z.infer<typeof statusOptionsUpdate>;
+
+// Asset Industry preset list (client req 2026-07-24) — same data-driven-list
+// shape as condition/status above.
+export const industryOptionsUpdate = z.object({
+  industryOptions: z.array(z.string().trim().min(1)).min(1),
+});
+export type IndustryOptionsUpdate = z.infer<typeof industryOptionsUpdate>;

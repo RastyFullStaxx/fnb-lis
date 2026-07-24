@@ -902,6 +902,7 @@ export const ASSET_REGISTER_HEADERS = [
   "Serial No.",
   "Condition",
   "Status",
+  "Industry",
   "Initial Cost",
   "Current Cost",
   "Supplier",
@@ -927,27 +928,28 @@ export async function assetRegisterWorkbook(report: AssetRegisterReport, meta: R
       row.serialNo ?? "",
       row.condition ?? "",
       row.status ?? "",
+      row.industry ?? "",
     ]);
-    moneyCell(r.getCell(11), row.initialCost ?? 0, false);
-    moneyCell(r.getCell(12), row.currentCost, false);
-    r.getCell(13).value = row.supplier ?? "";
-    r.getCell(14).value = row.remarks ?? "";
-    r.getCell(15).value = row.latestNoteDate ?? "";
-    r.getCell(16).value = row.latestNote ?? "";
+    moneyCell(r.getCell(12), row.initialCost ?? 0, false);
+    moneyCell(r.getCell(13), row.currentCost, false);
+    r.getCell(14).value = row.supplier ?? "";
+    r.getCell(15).value = row.remarks ?? "";
+    r.getCell(16).value = row.latestNoteDate ?? "";
+    r.getCell(17).value = row.latestNote ?? "";
   }
-  const t = ws.addRow(["Total", "", "", "", "", "", "", "", "", ""]);
+  const t = ws.addRow(["Total", "", "", "", "", "", "", "", "", "", ""]);
   t.font = { bold: true };
-  moneyCell(t.getCell(11), report.totals.initialCostValue, false);
-  moneyCell(t.getCell(12), report.totals.currentCostValue, false);
+  moneyCell(t.getCell(12), report.totals.initialCostValue, false);
+  moneyCell(t.getCell(13), report.totals.currentCostValue, false);
   ws.getColumn(1).width = 12;
   ws.getColumn(2).width = 16;
   ws.getColumn(3).width = 26;
-  for (const i of [4, 5, 6, 7, 8, 9, 10]) ws.getColumn(i).width = 14;
-  for (const i of [11, 12]) ws.getColumn(i).width = 13;
-  ws.getColumn(13).width = 18;
-  ws.getColumn(14).width = 24;
-  ws.getColumn(15).width = 14;
-  ws.getColumn(16).width = 24;
+  for (const i of [4, 5, 6, 7, 8, 9, 10, 11]) ws.getColumn(i).width = 14;
+  for (const i of [12, 13]) ws.getColumn(i).width = 13;
+  ws.getColumn(14).width = 18;
+  ws.getColumn(15).width = 24;
+  ws.getColumn(16).width = 14;
+  ws.getColumn(17).width = 24;
   return toBuffer(wb);
 }
 
@@ -965,6 +967,7 @@ export function assetRegisterCsv(report: AssetRegisterReport): string {
       row.serialNo ?? "",
       row.condition ?? "",
       row.status ?? "",
+      row.industry ?? "",
       round2(row.initialCost ?? 0),
       round2(row.currentCost),
       row.supplier ?? "",
@@ -974,7 +977,7 @@ export function assetRegisterCsv(report: AssetRegisterReport): string {
     ]);
   }
   rows.push([
-    "Total", "", "", "", "", "", "", "", "", "",
+    "Total", "", "", "", "", "", "", "", "", "", "",
     round2(report.totals.initialCostValue),
     round2(report.totals.currentCostValue),
     "", "", "", "",
@@ -984,7 +987,7 @@ export function assetRegisterCsv(report: AssetRegisterReport): string {
 
 // ───────────────────────── Asset Inventory (Phase 6) ─────────────────────────
 
-export const ASSET_INVENTORY_HEADERS = ["Asset Code", "Item", "Category", "UOM", "Beginning Qty", "Ending Qty", "Change"];
+export const ASSET_INVENTORY_HEADERS = ["Asset Code", "Item", "Category", "Industry", "UOM", "Beginning Qty", "Ending Qty", "Change"];
 
 export async function assetInventoryWorkbook(report: AssetInventoryReport, meta: ReportMeta): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
@@ -998,29 +1001,30 @@ export async function assetInventoryWorkbook(report: AssetInventoryReport, meta:
   );
   styleHeaderRow(ws.addRow(ASSET_INVENTORY_HEADERS));
   for (const row of report.rows) {
-    const r = ws.addRow([row.assetCode ?? "", row.name, row.category, row.uom]);
-    qtyCell(r.getCell(5), row.beginningQty);
-    qtyCell(r.getCell(6), row.endingQty);
-    qtyCell(r.getCell(7), row.change, true);
+    const r = ws.addRow([row.assetCode ?? "", row.name, row.category, row.industry ?? "", row.uom]);
+    qtyCell(r.getCell(6), row.beginningQty);
+    qtyCell(r.getCell(7), row.endingQty);
+    qtyCell(r.getCell(8), row.change, true);
   }
-  const t = ws.addRow(["Total", "", "", ""]);
+  const t = ws.addRow(["Total", "", "", "", ""]);
   t.font = { bold: true };
-  qtyCell(t.getCell(5), report.totals.beginningQty);
-  qtyCell(t.getCell(6), report.totals.endingQty);
-  qtyCell(t.getCell(7), report.totals.change, true);
+  qtyCell(t.getCell(6), report.totals.beginningQty);
+  qtyCell(t.getCell(7), report.totals.endingQty);
+  qtyCell(t.getCell(8), report.totals.change, true);
   ws.getColumn(1).width = 12;
   ws.getColumn(2).width = 28;
   ws.getColumn(3).width = 18;
-  ws.getColumn(4).width = 14;
-  for (const i of [5, 6, 7]) ws.getColumn(i).width = 13;
+  ws.getColumn(4).width = 18;
+  ws.getColumn(5).width = 14;
+  for (const i of [6, 7, 8]) ws.getColumn(i).width = 13;
   return toBuffer(wb);
 }
 
 export function assetInventoryCsv(report: AssetInventoryReport): string {
   const rows: CsvValue[][] = [ASSET_INVENTORY_HEADERS];
   for (const row of report.rows) {
-    rows.push([row.assetCode ?? "", row.name, row.category, row.uom, round2(row.beginningQty), round2(row.endingQty), round2(row.change)]);
+    rows.push([row.assetCode ?? "", row.name, row.category, row.industry ?? "", row.uom, round2(row.beginningQty), round2(row.endingQty), round2(row.change)]);
   }
-  rows.push(["Total", "", "", "", round2(report.totals.beginningQty), round2(report.totals.endingQty), round2(report.totals.change)]);
+  rows.push(["Total", "", "", "", "", round2(report.totals.beginningQty), round2(report.totals.endingQty), round2(report.totals.change)]);
   return toCsv(rows);
 }
