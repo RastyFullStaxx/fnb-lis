@@ -3,9 +3,11 @@ import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
 import {
   categoryUpsert,
+  conditionOptionsUpdate,
   itemCreate,
   itemUpdate,
   productTypesUpdate,
+  statusOptionsUpdate,
   unitCreate,
   variantCreate,
   variantUpdate,
@@ -100,6 +102,49 @@ export const masterRoutes = new Hono<AppEnv>()
       );
     });
     return c.json({ productTypes });
+  })
+
+  // ── Asset Condition / Status options (data-driven lists in Setting,
+  //    architecture.md deviation #21) — mirrors /product-types exactly ──
+  .get("/condition-options", async (c) => {
+    const setting = await prisma.setting.findUnique({ where: { clientId_key: { clientId: "", key: "conditionOptions" } } });
+    return c.json({ conditionOptions: setting ? (JSON.parse(setting.value) as string[]) : [] });
+  })
+  .put("/condition-options", requirePermission("admin.manage"), zValidator("json", conditionOptionsUpdate), async (c) => {
+    const { conditionOptions } = c.req.valid("json");
+    const user = c.get("user")!;
+    await prisma.$transaction(async (tx) => {
+      await tx.setting.upsert({
+        where: { clientId_key: { clientId: "", key: "conditionOptions" } },
+        update: { value: JSON.stringify(conditionOptions) },
+        create: { clientId: "", key: "conditionOptions", value: JSON.stringify(conditionOptions) },
+      });
+      await logActivity(
+        { user, action: "settings.conditionOptions", entity: "Setting", summary: `Condition options set to ${conditionOptions.join(", ")}`, details: { conditionOptions } },
+        tx,
+      );
+    });
+    return c.json({ conditionOptions });
+  })
+  .get("/status-options", async (c) => {
+    const setting = await prisma.setting.findUnique({ where: { clientId_key: { clientId: "", key: "statusOptions" } } });
+    return c.json({ statusOptions: setting ? (JSON.parse(setting.value) as string[]) : [] });
+  })
+  .put("/status-options", requirePermission("admin.manage"), zValidator("json", statusOptionsUpdate), async (c) => {
+    const { statusOptions } = c.req.valid("json");
+    const user = c.get("user")!;
+    await prisma.$transaction(async (tx) => {
+      await tx.setting.upsert({
+        where: { clientId_key: { clientId: "", key: "statusOptions" } },
+        update: { value: JSON.stringify(statusOptions) },
+        create: { clientId: "", key: "statusOptions", value: JSON.stringify(statusOptions) },
+      });
+      await logActivity(
+        { user, action: "settings.statusOptions", entity: "Setting", summary: `Status options set to ${statusOptions.join(", ")}`, details: { statusOptions } },
+        tx,
+      );
+    });
+    return c.json({ statusOptions });
   })
 
   // ── Categories ──

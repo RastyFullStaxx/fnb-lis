@@ -468,6 +468,79 @@ events / ₱16,280 written off; golden fixture still −₱330.69; Assets closed
 Not touched: the packaging-tier mismatch (Basic 1 / Medium 5 / **Full 10** vs. our Basic/Medium/
 One-Time) — parked pending the client's confirmation of the intended tier structure.
 
+## Phase 17 — Asset module: catalog fields, per-location register, two reports (2026-07-23)
+
+Phase 16 gave Asset a breakage report; this phase gives it the rest of the module the proposal
+scoped — a register (Brand/Model, Serial No., Condition, Status, Initial Cost, Remarks, Asset Code)
+and Beginning/Ending counting, built from `asset-module-proposal.md` and sequenced in
+`asset-module-phases.md`. Same discipline as Phase 4/#15: additive fields on the existing
+`ItemVariant`/`LocationItem` shape, no parallel model, no touch to `reconciliation.ts`.
+
+**Schema.** Migration `20260723080000_asset_module_fields` adds, all nullable: `ItemVariant.brand`,
+`ItemVariant.model`; `LocationItem.initialCost`, `serialNo`, `condition`, `status`, `remarks`, and a
+**unique** `assetCode`. `assetCode` lives on `LocationItem`, not `Item` — the proposal's own default,
+since both client sheets grain per-location and the register is `LocationItem`'s shape already.
+Logged as architecture.md deviation #26. Condition/Status are Setting-backed lists
+(`conditionOptions`, `statusOptions`), same pattern as `productTypes` — `GET`/`PUT
+/condition-options` and `/status-options` mirror `/product-types` exactly, gated `admin.manage`.
+
+**Brand/Model (catalog).** Plain optional inputs on the item form, same treatment as the existing
+`barcode` field. The creation-time inputs alone left a gap — no way to fix Brand/Model on an
+already-created variant — so a `BrandModelEditDialog` was added to `ItemEditSheet`'s variant row,
+mirroring `VariantQuickEditDialog`'s conventions but kept separate: Brand/Model have no validity math
+worth sharing with the tare/density gating.
+
+**Asset details (per location).** Six fields, edited via a `Dialog` (`asset-details-edit.tsx`), not a
+`Popover` — `PriceEdit`'s 3-field popover gets cramped past ~4 fields, and the repo already reaches
+for `Dialog` at that size (`AttachItemDialog`). Condition/Status are dropdowns sourced from the two
+new option endpoints, with a client-side "Other" branch that reveals free text. Scoped to
+`itemVariant.item.category.productType === "Asset"` rows only in the Local Database view, next to a
+new Condition/Status badge so the row is scannable without opening the dialog.
+
+**Supplier and asset code are derived, not stored.** `deriveCurrentSupplier` (new
+`services/asset-supplier.ts` — not `pricing.ts`, which has no Prisma access) reads the most recent
+`COMMITTED` Purchase / `ACTIVE` PurchaseLine linked to the `LocationItem`, following the same
+derive-don't-duplicate idiom `resolveCostBasis` already uses. The `assetCode` generator lives
+alongside it: sequential across the whole client (never resets per category, matching the client's
+own AST-001→070 numbering), read-then-increment inside the same `$transaction` as the
+`LocationItem` create — the unique constraint is the race backstop, not the primary guard. Wired
+into `POST /location-items`, scoped to Asset attaches only.
+
+**Counting needed no new code.** Verified rather than built: two `CountSession` rows against the
+same `LocationItem` (different `countDate`) already reproduce Beginning/Ending Inventory with zero
+schema or `counts`-route changes — no uniqueness constraint blocks it, and `buildLineData` branches
+only on `countType`, never on `Category.productType`. The count-entry screen already hides weighing
+fields for Asset rows, since `weighable` derives from `contentTracked || weighMode === "NET"`, which
+is always false for Asset variants — no fix needed, confirmed rather than assumed.
+
+**Sales stays visible on Asset-only locations** — decided, not defaulted. The proposal's own framing
+("nothing sells or is comped") turned out not to hold: Phase 16's breakage flow already runs Asset
+losses through Sales → Non-Revenue (`ASSET_LOSS_REASONS`, `assetBreakageReport`), so gating Sales the
+way Recipes is gated (`requiresProductTypes`) would have hidden a working feature, not an
+inapplicable one. Reasoning recorded inline in `nav.ts`.
+
+**Two new reports.** `Asset Register` (`services/asset-register.ts`) — a snapshot over `LocationItem`
+joined to `ItemVariant`/`Item`/`Category`/`Unit`/`Location`, filtered to `productType = "Asset"`,
+plus the derived supplier and latest breakage note; no variance math, deliberately not routed through
+`report-assembly.ts`. `Asset Inventory` (`services/asset-inventory.ts`) — Beginning vs Ending
+`CountLine.qtyFull` for two given dates, two lookups, no new query shape. Both get view + export
+routes (`reports.export` guard on export) and pages built on `TableSurface`/`ToolbarSearch`, closest
+analog `on-hand.tsx`; both added to the Reports hub. Exports follow the `ONHAND_HEADERS` declarative
+pattern, not `FULL_AUDIT_COLUMNS`'s variance-coloring — Asset has no variance to color. Purely
+additive to `exports.ts`: no existing `_HEADERS` array or exported function touched, so no golden
+fixture is at risk — confirmed, not assumed.
+
+**Seed data.** Fixed the "Safert First" typo (→ "Safety — First Aid") and trimmed trailing whitespace
+("Furniture ", "Recorder ", "Chair ", and others the same pass turned up) in the client's AST-001→070
+sheet before it became seed data, keeping the continuous non-per-category numbering and the
+one-category-per-item shape as-is.
+
+**Both implementation calls the proposal left open landed on its own recommended defaults** —
+`LocationItem.assetCode` over `Item.assetCode`, and a sibling `Dialog` component over extending
+`PriceEdit` — so neither needed a tie-breaker beyond following the doc's own stated preference.
+
+Both workspaces typecheck clean.
+
 ## Contributor history
 
 | Window | Who | What |
@@ -476,6 +549,7 @@ One-Time) — parked pending the client's confirmation of the intended tier stru
 | 2026-07-09 → 07-10 | JjByteX | UI fixes (segmented controls, sidebar), login redesign |
 | 2026-07-18 → 07-19 | JjByteX | Subscription/plans/clients arc: `Subscription`, `SubscriptionModule`, `LocationModule`, billing state, clients admin UI. A Plan catalog was added (`dd51046`) then fully reverted (`5af9668`) |
 | 2026-07-19 | Claude session | Phase 9 (above) + audit and remediation of the arc |
+| 2026-07-21 → 07-23 | Claude session | Phases 14–17: variance highlight, Par Level/Non-Moving reports, Asset breakage, and the full Asset module (catalog fields, per-location register, Asset Register/Inventory reports) |
 
 **Audit outcome for the JjByteX arc** — what held and what didn't, so it isn't re-litigated:
 

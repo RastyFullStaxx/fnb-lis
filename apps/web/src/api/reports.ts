@@ -241,6 +241,66 @@ export function useAssetBreakageReport(from: string, to: string, enabled = true)
   });
 }
 
+export interface AssetRegisterReport {
+  asOf: string;
+  rows: Array<{
+    locationItemId: string;
+    assetCode: string | null;
+    location: string;
+    name: string;
+    brand: string | null;
+    model: string | null;
+    category: string;
+    uom: string;
+    serialNo: string | null;
+    condition: string | null;
+    status: string | null;
+    initialCost: number | null;
+    currentCost: number;
+    remarks: string | null;
+    supplier: string | null;
+    latestNoteDate: string | null;
+    latestNote: string | null;
+  }>;
+  totals: { count: number; initialCostValue: number; currentCostValue: number };
+}
+
+export function useAssetRegisterReport() {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["report", "asset-register", locationId],
+    queryFn: () => api<AssetRegisterReport>(`${base(locationId)}/reports/asset-register`),
+  });
+}
+
+export interface AssetInventoryReport {
+  beginningDate: string | null;
+  endingDate: string | null;
+  rows: Array<{
+    locationItemId: string;
+    assetCode: string | null;
+    name: string;
+    category: string;
+    uom: string;
+    beginningQty: number;
+    endingQty: number;
+    change: number;
+  }>;
+  totals: { beginningQty: number; endingQty: number; change: number };
+}
+
+export function useAssetInventoryReport(beginningDate?: string, endingDate?: string) {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["report", "asset-inventory", locationId, beginningDate, endingDate],
+    queryFn: () =>
+      api<AssetInventoryReport>(
+        `${base(locationId)}/reports/asset-inventory?beginningDate=${beginningDate ?? ""}&endingDate=${endingDate ?? ""}`,
+      ),
+    enabled: Boolean(beginningDate && endingDate),
+  });
+}
+
 export function useNonRevenueReport(from: string, to: string, group?: string, enabled = true) {
   const locationId = useLocationId();
   return useQuery({
@@ -362,6 +422,8 @@ export function exportUrl(
     | "par-level"
     | "non-moving"
     | "asset-breakage"
+    | "asset-register"
+    | "asset-inventory"
     | "transfers"
     | "cost-analysis"
     | "top-sellers"

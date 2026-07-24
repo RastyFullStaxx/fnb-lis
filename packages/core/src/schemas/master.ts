@@ -30,6 +30,12 @@ export const variantCreate = z.object({
   tareWeightUnit: z.enum(["g", "oz"]).nullable().optional(),
   densityFactor: positive.nullable().optional(),
   barcode: z.string().trim().max(64).nullable().optional(),
+  // Asset-only (architecture.md deviation #21) — intrinsic to the product
+  // line, so these live on the variant rather than LocationItem. Ignored by
+  // Bar/Kitchen/Supplies rows, same treatment as weighMode above for
+  // non-weighable items.
+  brand: z.string().trim().max(80).nullable().optional(),
+  model: z.string().trim().max(80).nullable().optional(),
 });
 export type VariantCreate = z.infer<typeof variantCreate>;
 
@@ -67,6 +73,15 @@ export const locationItemUpdate = z.object({
   retail: nonNegative.optional(),
   parLevel: nonNegative.nullable().optional(),
   isActive: z.boolean().optional(),
+  // Asset-only (architecture.md deviation #21), filled in post-attach via the
+  // Local Database edit surface rather than at attach time — locationItemAttach
+  // stays untouched.
+  initialCost: nonNegative.nullable().optional(),
+  serialNo: z.string().trim().max(120).nullable().optional(),
+  condition: z.string().trim().max(60).nullable().optional(),
+  status: z.string().trim().max(60).nullable().optional(),
+  remarks: z.string().trim().max(500).nullable().optional(),
+  assetCode: z.string().trim().max(20).nullable().optional(),
 });
 export type LocationItemUpdate = z.infer<typeof locationItemUpdate>;
 
@@ -87,3 +102,15 @@ export type SupplierUpsert = z.infer<typeof supplierUpsert>;
 export const productTypesUpdate = z.object({
   productTypes: z.array(z.string().trim().min(1)).min(1),
 });
+
+// Asset Condition / Status preset lists (architecture.md deviation #21),
+// same data-driven-list shape as productTypes above.
+export const conditionOptionsUpdate = z.object({
+  conditionOptions: z.array(z.string().trim().min(1)).min(1),
+});
+export type ConditionOptionsUpdate = z.infer<typeof conditionOptionsUpdate>;
+
+export const statusOptionsUpdate = z.object({
+  statusOptions: z.array(z.string().trim().min(1)).min(1),
+});
+export type StatusOptionsUpdate = z.infer<typeof statusOptionsUpdate>;

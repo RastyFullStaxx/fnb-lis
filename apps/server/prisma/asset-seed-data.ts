@@ -1,10 +1,14 @@
 /**
  * Asset register imported from the client's two Asset Management reports
  * (2026-07-21): Item name, Category, UOM, and opening quantity — 70 items.
- * Names/categories are kept VERBATIM from the client's file (including their
- * typos, e.g. "Reciept Printer", "Safert First") — this is their data to
- * correct, not ours to silently rewrite. Costs are demo placeholders by
- * category (the client's report left cost blank).
+ * Names/categories are kept close to the client's file — this is their data
+ * to correct, not ours to silently rewrite — with two build-phase cleanups
+ * applied before this became live seed data (asset-module-phases.md Phase 7):
+ *   - 7.1: "Safert First" → "Safety — First Aid" (typo).
+ *   - 7.2: trailing whitespace trim ("Furniture ", "Recorder ", "Chair ", in
+ *     the client's original sheet) — already clean by the time this file was
+ *     transcribed; confirmed no residual whitespace remains, nothing to do.
+ * Costs are demo placeholders by category (the client's report left cost blank).
  */
 export interface AssetSeedItem {
   category: string;
@@ -79,7 +83,7 @@ export const ASSET_ITEMS: AssetSeedItem[] = [
   { category: "Dinning Ware", name: "Cutlery Set", uom: "Set", qty: 10 },
   { category: "Dinning Ware", name: "Serving Tray", uom: "Piece", qty: 10 },
   { category: "Safety Fire", name: "Extinguisher", uom: "Unit", qty: 4 },
-  { category: "Safert First", name: "First Aid", uom: "Kit", qty: 10 },
+  { category: "Safety — First Aid", name: "First Aid", uom: "Kit", qty: 10 },
   { category: "Cleaning Equipment", name: "Vacuum Cleaner", uom: "Unit", qty: 4 },
   { category: "Cleaning Equipment", name: "Floor Scrubber", uom: "Unit", qty: 4 },
   { category: "Office Equipment", name: "Filing Cabinet", uom: "Unit", qty: 2 },
@@ -106,7 +110,7 @@ export const ASSET_CATEGORY_COST: Record<string, number> = {
   "Glassware": 90,
   "Dinning Ware": 120,
   "Safety Fire": 2200,
-  "Safert First": 950,
+  "Safety — First Aid": 950,
   "Cleaning Equipment": 7000,
   "Office Equipment": 9000,
 };

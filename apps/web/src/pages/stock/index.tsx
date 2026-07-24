@@ -39,6 +39,7 @@ import {
 import { Toggle } from "@/components/toggle-chip";
 import { AttachItemDialog } from "./attach-dialog";
 import { PriceEdit } from "./price-edit";
+import { AssetDetailsEdit } from "./asset-details-edit";
 
 export function StockPage() {
   const me = useMe();
@@ -152,11 +153,13 @@ export function StockPage() {
                   </TooltipProvider>
                 </TableHead>
                 <TableHead className="text-right">Status</TableHead>
+                <TableHead className="text-right">Asset Details</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.data!.map((row) => {
                 const missing = row.cost === 0 || row.retail === 0;
+                const isAsset = row.itemVariant.item.category.productType === "Asset";
                 return (
                   <TableRow key={row.id} className={cn("group", missing && "bg-destructive/5")}>
                     {/* Wrap rather than truncate — an auditor has to read the whole item name. */}
@@ -178,6 +181,21 @@ export function StockPage() {
                         <Badge variant="destructive">No price</Badge>
                       ) : (
                         <Badge variant="success">Ready</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {isAsset ? (
+                        <div className="flex flex-col items-end gap-1">
+                          <AssetDetailsEdit row={row} canEdit={canEditPrices} />
+                          {(row.condition || row.status) && (
+                            <div className="flex items-center gap-1">
+                              {row.condition && <Badge variant="outline">{row.condition}</Badge>}
+                              {row.status && <Badge variant="secondary">{row.status}</Badge>}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
                       )}
                     </TableCell>
                   </TableRow>

@@ -28,6 +28,8 @@ import {
   type SalesReportView,
 } from "../services/report-lists";
 import { topSellersReport } from "../services/top-sellers";
+import { assetRegisterReport } from "../services/asset-register";
+import { assetInventoryReport } from "../services/asset-inventory";
 import {
   costAnalysisCsv,
   costAnalysisWorkbook,
@@ -35,6 +37,10 @@ import {
   fullAuditWorkbook,
   assetBreakageCsv,
   assetBreakageWorkbook,
+  assetRegisterCsv,
+  assetRegisterWorkbook,
+  assetInventoryCsv,
+  assetInventoryWorkbook,
   nonMovingCsv,
   nonMovingWorkbook,
   nonRevenueCsv,
@@ -320,6 +326,50 @@ export const reportRoutes = new Hono<AppEnv>()
     if (format === "csv") return csvResponse(assetBreakageCsv(report), name, fullName(user));
     if (format === "pdf") return pdfResponse(await assetBreakagePdfDoc(report, await meta(client, location.name, user)), name);
     return xlsxResponse(await assetBreakageWorkbook(report, await meta(client, location.name, user)), name);
+  })
+
+  // ── Asset Register (Phase 6.1 — the Audit Report equivalent for Asset) ──
+  .get("/reports/asset-register", async (c) => {
+    const location = c.get("location");
+    const allowed = allowedProductTypes(c.get("locationModules"));
+    return c.json(await assetRegisterReport(location.id, allowed));
+  })
+  .get("/reports/asset-register/export", exportGuard, async (c) => {
+    const location = c.get("location");
+    const client = c.get("client");
+    const allowed = allowedProductTypes(c.get("locationModules"));
+    const report = await assetRegisterReport(location.id, allowed);
+    const user = c.get("user")!;
+    const name = `asset-register_${location.name}_${report.asOf}`.replace(/[^\w.-]+/g, "-");
+    const format = c.req.query("format");
+    if (format === "csv") return csvResponse(assetRegisterCsv(report), name, fullName(user));
+    return xlsxResponse(await assetRegisterWorkbook(report, await meta(client, location.name, user)), name);
+  })
+
+  // ── Asset Inventory (Phase 6.2 — Beginning/Ending count) ──
+  .get("/reports/asset-inventory", async (c) => {
+    const location = c.get("location");
+    const allowed = allowedProductTypes(c.get("locationModules"));
+    const beginningDate = c.req.query("beginningDate") ?? null;
+    const endingDate = c.req.query("endingDate") ?? null;
+    if (beginningDate && !DATE_RE.test(beginningDate)) throw new AppError(400, "beginningDate must be YYYY-MM-DD");
+    if (endingDate && !DATE_RE.test(endingDate)) throw new AppError(400, "endingDate must be YYYY-MM-DD");
+    return c.json(await assetInventoryReport(location.id, beginningDate, endingDate, allowed));
+  })
+  .get("/reports/asset-inventory/export", exportGuard, async (c) => {
+    const location = c.get("location");
+    const client = c.get("client");
+    const allowed = allowedProductTypes(c.get("locationModules"));
+    const beginningDate = c.req.query("beginningDate") ?? null;
+    const endingDate = c.req.query("endingDate") ?? null;
+    if (beginningDate && !DATE_RE.test(beginningDate)) throw new AppError(400, "beginningDate must be YYYY-MM-DD");
+    if (endingDate && !DATE_RE.test(endingDate)) throw new AppError(400, "endingDate must be YYYY-MM-DD");
+    const report = await assetInventoryReport(location.id, beginningDate, endingDate, allowed);
+    const user = c.get("user")!;
+    const name = `asset-inventory_${location.name}_${beginningDate ?? "begin"}_${endingDate ?? "end"}`.replace(/[^\w.-]+/g, "-");
+    const format = c.req.query("format");
+    if (format === "csv") return csvResponse(assetInventoryCsv(report), name, fullName(user));
+    return xlsxResponse(await assetInventoryWorkbook(report, await meta(client, location.name, user)), name);
   })
 
   // ── Usage Cost (client report #6) ──
