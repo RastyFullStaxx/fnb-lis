@@ -460,7 +460,12 @@ async function assertLocationCatalogWithinModules(clientName: string, locationNa
  * client's own sheet and the proposal's recommendation not to invent a
  * consolidated scheme) and a LocationItem carrying the real assetCode
  * sequence (2.5) — read-then-increment inside the same $transaction as the
- * create, same as the live POST /location-items path.
+ * create, same as the live POST /location-items path. Condition and
+ * serialNo are per-row from asset-seed-data.ts (client-sourced for
+ * AST-001->027, demo-filled otherwise) rather than hardcoded; the client
+ * sheet's per-row Location (Cashier/Bar/Kitchen/etc.) is folded into
+ * `remarks` as "Area: <value>" since it names an area within one business
+ * site, not a separate Location record (see the Location model docstring).
  *
  * A Beginning (2026-07-20) and Ending (2026-07-23) committed count follow —
  * both FULL only, since Asset rows are never weighable (3.2) — so the Asset
@@ -515,8 +520,14 @@ async function seedAssetRegister() {
           retail: cost, // Asset doesn't sell — retail mirrors cost so valuation reports stay sane, never surfaced to the client.
           initialCost: cost,
           assetCode,
-          condition: "Active",
+          serialNo: row.serialNo,
+          condition: row.condition,
           status: "In Use",
+          // Location in this system is a whole business site (see Location
+          // model docstring); the client sheet's per-row area (Cashier/Bar/
+          // Kitchen/etc.) has no matching schema slot, so it's folded in here
+          // rather than modeled as a separate Location row.
+          remarks: `Area: ${row.location}`,
           updatedById: admin.id,
         },
       });
