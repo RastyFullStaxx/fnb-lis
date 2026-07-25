@@ -163,7 +163,7 @@ export function nonRevenueGroupOf(reason: string | null | undefined): NonRevenue
 // ── Subscription / Package constants ──
 
 /** Subscription package types */
-export const PACKAGE_TYPES = ["BASIC", "MEDIUM", "ONE_TIME"] as const;
+export const PACKAGE_TYPES = ["BASIC", "MEDIUM", "FULL", "ONE_TIME"] as const;
 export type PackageType = (typeof PACKAGE_TYPES)[number];
 
 /** Billing / delivery mode */
@@ -188,7 +188,20 @@ export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUSES)[number];
 export const PACKAGE_LABELS: Record<PackageType, string> = {
   BASIC: "Basic",
   MEDIUM: "Medium",
+  FULL: "Full",
   ONE_TIME: "One-Time Installation",
+};
+
+/**
+ * Max USER accounts per monthly tier (client req 2026-07-21): Basic 1,
+ * Medium 5, Full 10. Standalone is owner-set, so it has no fixed number —
+ * `0` here means "whatever the owner saved", never unlimited-by-default.
+ */
+export const PACKAGE_MAX_USERS: Record<PackageType, number> = {
+  BASIC: 1,
+  MEDIUM: 5,
+  FULL: 10,
+  ONE_TIME: 0, // owner sets it explicitly on the subscription
 };
 
 /**
@@ -200,6 +213,7 @@ export const PACKAGE_LABELS: Record<PackageType, string> = {
 export const PACKAGE_DEFAULT_MAX_ENTITIES: Record<PackageType, number> = {
   BASIC: 1,
   MEDIUM: 5,
+  FULL: 10,
   ONE_TIME: 0, // unlimited
 };
 
@@ -207,32 +221,37 @@ export const PACKAGE_DEFAULT_MAX_ENTITIES: Record<PackageType, number> = {
 export const PACKAGE_DEFAULT_BILLING_CYCLE: Record<PackageType, BillingCycle> = {
   BASIC: "MONTHLY",
   MEDIUM: "MONTHLY",
+  FULL: "MONTHLY",
   ONE_TIME: "STANDALONE",
 };
 
 /**
- * Derives the "Basic / Medium / One-Time Installation" package tier from the
- * two fields that actually define it, per the client's spec:
- *   - Basic:   1 account/entity only
- *   - Medium:  1 to 5 accounts/entities
- *   - One-Time Installation: unlimited accounts/entities
+ * Derives the package tier from the fields that actually define it. The tier
+ * is named by MAX USERS (client req 2026-07-21: "monthly, add Full — max users
+ * up to 10"), falling back to max locations for pre-maxUsers rows.
  *
  * packageType is NOT a separately-settable field anywhere in the app — it
  * used to be, and could silently drift from the truth (e.g. a client badged
- * "Basic" while actually licensed for unlimited locations). It's now always
- * computed from billingCycle + maxEntities, both at write time (server) and
- * for display (client), so the badge can never lie again.
+ * "Basic" while actually licensed for unlimited locations). It's always
+ * computed, both at write time (server) and for display (client), so the badge
+ * can never lie again.
  *
- *  - STANDALONE billing => "One-Time Installation", regardless of
- *    maxEntities — the tier is defined by "pay once, no recurring bill",
- *    not by the count.
- *  - MONTHLY + exactly 1 location => "Basic".
- *  - MONTHLY + 2 or more locations (including 0 = unlimited, an
- *    intentionally-negotiated case outside the standard tiers) => "Medium".
+ *  - STANDALONE billing => "One-Time Installation", regardless of the counts —
+ *    the tier is "pay once, no recurring bill", and the owner sets his own
+ *    user cap so accounts can't be generated behind his back.
+ *  - MONTHLY: 1 user => Basic, 2-5 => Medium, 6+ (or unlimited) => Full.
  */
-export function derivePackageType(billingCycle: BillingCycle, maxEntities: number): PackageType {
+export function derivePackageType(
+  billingCycle: BillingCycle,
+  maxEntities: number,
+  maxUsers = 0,
+): PackageType {
   if (billingCycle === "STANDALONE") return "ONE_TIME";
-  return maxEntities === 1 ? "BASIC" : "MEDIUM";
+  // Pre-maxUsers subscriptions carry 0 — fall back to the old location rule so
+  // existing rows keep their badge instead of all jumping to Full.
+  const n = maxUsers > 0 ? maxUsers : maxEntities;
+  if (n === 1) return "BASIC";
+  return n <= PACKAGE_MAX_USERS.MEDIUM && n > 0 ? "MEDIUM" : "FULL";
 }
 
 export const MODULE_TYPE_LABELS: Record<ModuleType, string> = {

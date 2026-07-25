@@ -28,6 +28,8 @@ export interface AdminSubscription {
   /** The client's licensed ceiling (Fix Plan §2.2) — atomic modules, any non-empty subset. */
   modules: string[];
   maxEntities: number;
+  /** Max user accounts (client req 2026-07-21); 0 = no cap saved. */
+  maxUsers: number;
   /** Optional per-client/per-deal price, if tracked at all (Fix Plan §4 open question #2). */
   negotiatedPrice: number | null;
   status: string;
@@ -147,6 +149,8 @@ export interface CreateFullClientBody {
     billingCycle: string;
     modules: string[];
     maxEntities: number;
+    /** Max user accounts (client req 2026-07-21). */
+    maxUsers: number;
     /** Optional per-client deal price, if tracked at all. */
     negotiatedPrice?: number | null;
     startDate: string;
@@ -329,6 +333,7 @@ export interface CreateSubscriptionBody {
   billingCycle: string;
   modules: string[];
   maxEntities: number;
+  maxUsers: number;
   /** Optional per-client deal price, if tracked at all. */
   negotiatedPrice?: number | null;
   startDate: string;
@@ -353,6 +358,7 @@ export interface UpdateSubscriptionBody {
   billingCycle?: string;
   modules?: string[];
   maxEntities?: number;
+  maxUsers?: number;
   /** Optional per-client deal price, if tracked at all. */
   negotiatedPrice?: number | null;
   startDate?: string;

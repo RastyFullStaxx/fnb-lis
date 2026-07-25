@@ -14,6 +14,9 @@ export const subscriptionCreateBody = z.object({
   billingCycle: billingCycle,
   modules: z.array(moduleType).min(1, "Select at least one module"),
   maxEntities: z.number().int().min(0), // 0 = unlimited
+  // Max user accounts (client req 2026-07-21). Monthly tiers cap it
+  // (Basic 1 / Medium 5 / Full 10); Standalone owners set their own.
+  maxUsers: z.number().int().min(0).default(0),
   negotiatedPrice: z.number().min(0).optional().nullable(), // per-client/per-deal price, if tracked at all
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD"),
   endDate: z
@@ -32,6 +35,7 @@ export const subscriptionUpdateBody = z.object({
   billingCycle: billingCycle.optional(),
   modules: z.array(moduleType).min(1, "Select at least one module").optional(),
   maxEntities: z.number().int().min(0).optional(),
+  maxUsers: z.number().int().min(0).optional(),
   negotiatedPrice: z.number().min(0).optional().nullable(),
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   endDate: z
@@ -50,6 +54,7 @@ export interface SubscriptionRecord {
   billingCycle: string;
   modules: string[];
   maxEntities: number;
+  maxUsers: number;
   negotiatedPrice: number | null;
   status: string;
   startDate: string;

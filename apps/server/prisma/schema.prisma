@@ -160,6 +160,10 @@ model Subscription {
   packageType     String // BASIC | MEDIUM | ONE_TIME — derived, see note above
   billingCycle    String // STANDALONE | MONTHLY
   maxEntities     Int       @default(1) // 1=BASIC, 2+/0=MEDIUM (monthly), 0=unlimited (standalone/ONE_TIME)
+  // Max USER accounts this client may have (client req 2026-07-21). Monthly
+  // tiers cap it (Basic 1 / Medium 5 / Full 10); Standalone owners set their
+  // own number so nobody can quietly generate logins. 0 = unlimited (legacy).
+  maxUsers        Int       @default(0)
   negotiatedPrice Float? // optional per-client deal price — see note above
   status          String    @default("ACTIVE") // ACTIVE | SUSPENDED | CANCELLED | TRIAL
   paid            Boolean   @default(false) // explicit paid flag for the CURRENT billing period

@@ -75,6 +75,36 @@ const accessBody = z.object({ clientIds: z.array(z.string()) });
 // The location-modules subset rule (Fix Plan §2.3) is enforced in the
 // handler below since Prisma/SQLite can't express a cross-table constraint.
 
+/**
+ * Max-user seat check (client req 2026-07-21). Every client the new user would
+ * be granted access to must still have a free seat. `maxUsers = 0` means no cap
+ * saved (legacy rows / owner hasn't set one), so it never blocks.
+ *
+ * Counts UserClientAccess rows — the same thing the client's user list shows.
+ * ADMINs bypass client scoping entirely and hold no access rows, so they don't
+ * consume a client's seats.
+ */
+async function assertUserSeatsAvailable(clientIds: string[], exceptUserId?: string): Promise<void> {
+  for (const clientId of clientIds) {
+    const sub = await prisma.subscription.findUnique({
+      where: { clientId },
+      select: { maxUsers: true, client: { select: { name: true } } },
+    });
+    if (!sub || sub.maxUsers <= 0) continue;
+    // Exclude the user being edited — re-saving their existing access must not
+    // count them against their own seat.
+    const used = await prisma.userClientAccess.count({
+      where: { clientId, ...(exceptUserId ? { userId: { not: exceptUserId } } : {}) },
+    });
+    if (used >= sub.maxUsers) {
+      throw new AppError(
+        403,
+        `User limit reached for "${sub.client.name}". This subscription allows up to ${sub.maxUsers} user account(s). Raise "Max users" on the subscription to add more.`,
+      );
+    }
+  }
+}
+
 export const adminRoutes = new Hono<AppEnv>()
   .use(requireAuth, requirePermission("admin.manage"))
 
@@ -266,9 +296,10 @@ export const adminRoutes = new Hono<AppEnv>()
       const sub = await tx.subscription.create({
         data: {
           clientId: created.id,
-          packageType: derivePackageType(subscription.billingCycle, maxEntities),
+          packageType: derivePackageType(subscription.billingCycle, maxEntities, subscription.maxUsers),
           billingCycle: subscription.billingCycle,
           maxEntities,
+          maxUsers: subscription.maxUsers,
           negotiatedPrice: subscription.negotiatedPrice ?? null,
           startDate: subscription.startDate,
           endDate: subscription.endDate ?? null,
@@ -360,6 +391,7 @@ export const adminRoutes = new Hono<AppEnv>()
     const actor = c.get("user")!;
     const existing = await prisma.user.findUnique({ where: { username: body.username } });
     if (existing) throw new AppError(409, "Username already taken");
+    await assertUserSeatsAvailable(body.clientIds);
     const passwordHash = await hashPassword(body.password);
     const created = await prisma.$transaction(async (tx) => {
       const u = await tx.user.create({
@@ -417,6 +449,7 @@ export const adminRoutes = new Hono<AppEnv>()
     const userId = c.req.param("id");
     const { clientIds } = c.req.valid("json");
     const actor = c.get("user")!;
+    await assertUserSeatsAvailable(clientIds, userId);
     await prisma.$transaction(async (tx) => {
       await tx.userClientAccess.deleteMany({ where: { userId } });
       await tx.userClientAccess.createMany({ data: clientIds.map((clientId) => ({ userId, clientId })) });
@@ -452,9 +485,10 @@ export const adminRoutes = new Hono<AppEnv>()
       const created = await tx.subscription.create({
         data: {
           clientId: body.clientId,
-          packageType: derivePackageType(body.billingCycle, body.maxEntities),
+          packageType: derivePackageType(body.billingCycle, body.maxEntities, body.maxUsers),
           billingCycle: body.billingCycle,
           maxEntities: body.maxEntities,
+          maxUsers: body.maxUsers,
           negotiatedPrice: body.negotiatedPrice ?? null,
           startDate: body.startDate,
           endDate: body.endDate ?? null,
@@ -501,7 +535,8 @@ export const adminRoutes = new Hono<AppEnv>()
       const existing = await tx.subscription.findUniqueOrThrow({ where: { id } });
       const effectiveBillingCycle = body.billingCycle ?? existing.billingCycle;
       const effectiveMaxEntities = body.maxEntities ?? existing.maxEntities;
-      data.packageType = derivePackageType(effectiveBillingCycle as BillingCycle, effectiveMaxEntities);
+      const effectiveMaxUsers = body.maxUsers ?? existing.maxUsers;
+      data.packageType = derivePackageType(effectiveBillingCycle as BillingCycle, effectiveMaxEntities, effectiveMaxUsers);
 
       // Moving the startDate re-anchors every billing period, and the
       // first-period rule would otherwise re-credit an arbitrarily old
@@ -705,6 +740,8 @@ export const adminRoutes = new Hono<AppEnv>()
     if (!sub) return c.json({ hasSubscription: false, canAddEntity: true });
     const locationCount = await prisma.location.count({ where: { clientId, status: "ACTIVE" } });
     const canAddEntity = sub.maxEntities === 0 || locationCount < sub.maxEntities;
+    const userCount = await prisma.userClientAccess.count({ where: { clientId } });
+    const canAddUser = sub.maxUsers === 0 || userCount < sub.maxUsers;
     const accessState = deriveAccessState(sub, new Date());
-    return c.json({ hasSubscription: true, subscription: sub, locationCount, canAddEntity, accessState });
+    return c.json({ hasSubscription: true, subscription: sub, locationCount, canAddEntity, userCount, canAddUser, accessState });
   });

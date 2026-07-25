@@ -468,6 +468,33 @@ events / ₱16,280 written off; golden fixture still −₱330.69; Assets closed
 Not touched: the packaging-tier mismatch (Basic 1 / Medium 5 / **Full 10** vs. our Basic/Medium/
 One-Time) — parked pending the client's confirmation of the intended tier structure.
 
+## Phase 17 — Max users, Full tier (2026-07-21)
+
+Client: "monthly, add **Full** — max users up to 10"; "**standalone**, he sets the number himself so
+users can't be generated without his knowledge."
+
+**Finding first:** `maxEntities` capped **locations**, not users — there was no user cap anywhere, so
+this was net-new, not a tweak.
+
+- **`Subscription.maxUsers`** (migration `20260725115405`), `0` = no cap saved (legacy rows).
+- **Enforced** in `assertUserSeatsAvailable` — called from BOTH `POST /users` and
+  `PUT /users/:id/access` (the access route replaces all rows, so capping only creation would be
+  trivially bypassed). Counts `UserClientAccess`; excludes the edited user from their own seat.
+- **`FULL` tier** added; `derivePackageType(billingCycle, maxEntities, maxUsers)` now names the tier
+  by USERS (1 → Basic, ≤5 → Medium, 6+ → Full), falling back to the old location rule when
+  `maxUsers = 0` so existing rows keep their badge.
+- **UI:** tier dropdown reads "Basic — 1 user / Medium — up to 5 / Full — up to 10" and sets the cap;
+  Standalone shows an editable **Max Users** number input (owner-set, never unlimited).
+- Seeded Prime = Full (10), Casa = Medium (5).
+
+**Bug found while verifying:** both seeded clients had **no subscription row at all** —
+`upsertClientWithSubscription` returned early for an existing client, so a client whose subscription
+went missing stayed broken through every re-seed. Now backfills. Golden fixture still −₱330.69.
+
+Parked: note 3 ("gayahin ang full audit") — the legacy 24-column layout already ships as
+Full Audit → **Client Formats → Detailed Full Audit Report** (xlsx/csv/pdf). Confirm with the client
+whether he means that download or wants it rendered on screen before building anything.
+
 ## Contributor history
 
 | Window | Who | What |
