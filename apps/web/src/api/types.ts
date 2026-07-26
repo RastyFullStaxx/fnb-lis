@@ -16,6 +16,8 @@ export interface Category {
   productType: string;
   defaultDensityFactor: number | null;
   sortOrder: number;
+  // Asset-only, nullable (client req 2026-07-24). One industry per category.
+  industry: string | null;
   _count?: { items: number };
 }
 
@@ -66,7 +68,6 @@ export interface LocationItem {
   serialNo: string | null;
   condition: string | null;
   status: string | null;
-  industry: string | null;
   remarks: string | null;
   assetCode: string | null;
   itemVariant: ItemVariant & { item: Item };

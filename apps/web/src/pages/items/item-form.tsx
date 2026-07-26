@@ -154,6 +154,7 @@ export function ItemFormSheet({
               const unitId = form.watch(`variants.${i}.unitId`);
               const unitIsMass = units.data?.find((u) => u.id === unitId)?.kind === "MASS";
               const netMode = !contentTracked && weighMode === "NET";
+              const isAsset = category?.productType === "Asset";
               const vErr = form.formState.errors.variants?.[i];
               return (
                 <div key={field.id} className="space-y-3 rounded-lg border p-3">
@@ -204,139 +205,145 @@ export function ItemFormSheet({
                     </p>
                   )}
 
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">Brand</Label>
-                      <Input
-                        placeholder="e.g. Samsung"
-                        {...form.register(`variants.${i}.brand`, {
-                          setValueAs: (v) => (v === "" ? null : v),
-                        })}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">Model</Label>
-                      <Input
-                        placeholder="e.g. RT38"
-                        {...form.register(`variants.${i}.model`, {
-                          setValueAs: (v) => (v === "" ? null : v),
-                        })}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between gap-4 border-t pt-3">
-                    <div>
-                      <p className="text-sm font-medium">Track Open Content</p>
-                      <p className="text-xs text-muted-foreground">
-                        On: partial amounts count as a fraction of this size (open bottles). Off: counted whole.
-                      </p>
-                    </div>
-                    <Switch
-                      checked={contentTracked}
-                      onCheckedChange={(v) => {
-                        form.setValue(`variants.${i}.contentTracked`, v);
-                        if (v) form.setValue(`variants.${i}.weighMode`, null);
-                      }}
-                    />
-                  </div>
-
-                  {!contentTracked && unitIsMass && (
-                    <div className="flex items-center justify-between gap-4 border-t pt-3">
-                      <div>
-                        <p className="text-sm font-medium">Weigh by Net Weight</p>
-                        <p className="text-xs text-muted-foreground">
-                          Kitchen counting: scale weight − empty weight = quantity in {units.data?.find((u) => u.id === unitId)?.name ?? "the unit"}. No density conversion.
-                        </p>
-                      </div>
-                      <Switch
-                        checked={netMode}
-                        onCheckedChange={(v) => form.setValue(`variants.${i}.weighMode`, v ? "NET" : null)}
-                      />
-                    </div>
-                  )}
-
-                  {netMode && (
-                    <div className="grid grid-cols-2 items-end gap-2">
+                  {isAsset && (
+                    <div className="grid grid-cols-2 gap-2">
                       <div className="space-y-1.5">
-                        <Label className="text-xs">Empty Weight</Label>
-                        <QuantityInput
-                          className="tnum"
-                          placeholder="empty container (0 = none)"
-                          {...form.register(`variants.${i}.tareWeight`, {
-                            setValueAs: (v) => (v === "" || v === null ? null : Number(v)),
+                        <Label className="text-xs">Brand</Label>
+                        <Input
+                          placeholder="e.g. Samsung"
+                          {...form.register(`variants.${i}.brand`, {
+                            setValueAs: (v) => (v === "" ? null : v),
                           })}
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <Label className="text-xs">Weight Unit</Label>
-                        <Select
-                          value={form.watch(`variants.${i}.tareWeightUnit`) ?? ""}
-                          onValueChange={(v) =>
-                            form.setValue(`variants.${i}.tareWeightUnit`, (v || null) as "g" | "oz" | null)
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="g / oz" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="g">g</SelectItem>
-                            <SelectItem value="oz">oz</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        <Label className="text-xs">Model</Label>
+                        <Input
+                          placeholder="e.g. RT38"
+                          {...form.register(`variants.${i}.model`, {
+                            setValueAs: (v) => (v === "" ? null : v),
+                          })}
+                        />
                       </div>
                     </div>
                   )}
 
-                  {contentTracked && (
-                    <div className="grid grid-cols-2 items-end gap-2 sm:grid-cols-3">
-                      <div className="space-y-1.5">
-                        <Label className="text-xs">Empty Weight</Label>
-                        <QuantityInput
-                          className="tnum"
-                          placeholder="empty container"
-                          {...form.register(`variants.${i}.tareWeight`, {
-                            setValueAs: (v) => (v === "" || v === null ? null : Number(v)),
-                          })}
+                  {!isAsset && (
+                    <>
+                      <div className="flex items-center justify-between gap-4 border-t pt-3">
+                        <div>
+                          <p className="text-sm font-medium">Track Open Content</p>
+                          <p className="text-xs text-muted-foreground">
+                            On: partial amounts count as a fraction of this size (open bottles). Off: counted whole.
+                          </p>
+                        </div>
+                        <Switch
+                          checked={contentTracked}
+                          onCheckedChange={(v) => {
+                            form.setValue(`variants.${i}.contentTracked`, v);
+                            if (v) form.setValue(`variants.${i}.weighMode`, null);
+                          }}
                         />
                       </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-xs">Weight Unit</Label>
-                        <Select
-                          value={form.watch(`variants.${i}.tareWeightUnit`) ?? ""}
-                          onValueChange={(v) =>
-                            form.setValue(`variants.${i}.tareWeightUnit`, (v || null) as "g" | "oz" | null)
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="g / oz" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="g">g</SelectItem>
-                            <SelectItem value="oz">oz</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="col-span-2 space-y-1.5 sm:col-span-1">
-                        <Label className="flex items-center gap-1 text-xs">
-                          <Scale className="size-3" /> Liquid Weight
-                        </Label>
-                        <QuantityInput
-                          className="tnum"
-                          placeholder={
-                            category?.defaultDensityFactor
-                              ? `${category.defaultDensityFactor} (from ${category.name})`
-                              : "ml per weight unit"
-                          }
-                          {...form.register(`variants.${i}.densityFactor`, {
-                            setValueAs: (v) => (v === "" || v === null ? null : Number(v)),
-                          })}
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          Liquid Weight: ml of liquid per gram/oz of weight — converts a scale weight into remaining volume.
-                        </p>
-                      </div>
-                    </div>
+
+                      {!contentTracked && unitIsMass && (
+                        <div className="flex items-center justify-between gap-4 border-t pt-3">
+                          <div>
+                            <p className="text-sm font-medium">Weigh by Net Weight</p>
+                            <p className="text-xs text-muted-foreground">
+                              Kitchen counting: scale weight − empty weight = quantity in {units.data?.find((u) => u.id === unitId)?.name ?? "the unit"}. No density conversion.
+                            </p>
+                          </div>
+                          <Switch
+                            checked={netMode}
+                            onCheckedChange={(v) => form.setValue(`variants.${i}.weighMode`, v ? "NET" : null)}
+                          />
+                        </div>
+                      )}
+
+                      {netMode && (
+                        <div className="grid grid-cols-2 items-end gap-2">
+                          <div className="space-y-1.5">
+                            <Label className="text-xs">Empty Weight</Label>
+                            <QuantityInput
+                              className="tnum"
+                              placeholder="empty container (0 = none)"
+                              {...form.register(`variants.${i}.tareWeight`, {
+                                setValueAs: (v) => (v === "" || v === null ? null : Number(v)),
+                              })}
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-xs">Weight Unit</Label>
+                            <Select
+                              value={form.watch(`variants.${i}.tareWeightUnit`) ?? ""}
+                              onValueChange={(v) =>
+                                form.setValue(`variants.${i}.tareWeightUnit`, (v || null) as "g" | "oz" | null)
+                              }
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="g / oz" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="g">g</SelectItem>
+                                <SelectItem value="oz">oz</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      )}
+
+                      {contentTracked && (
+                        <div className="grid grid-cols-2 items-end gap-2 sm:grid-cols-3">
+                          <div className="space-y-1.5">
+                            <Label className="text-xs">Empty Weight</Label>
+                            <QuantityInput
+                              className="tnum"
+                              placeholder="empty container"
+                              {...form.register(`variants.${i}.tareWeight`, {
+                                setValueAs: (v) => (v === "" || v === null ? null : Number(v)),
+                              })}
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-xs">Weight Unit</Label>
+                            <Select
+                              value={form.watch(`variants.${i}.tareWeightUnit`) ?? ""}
+                              onValueChange={(v) =>
+                                form.setValue(`variants.${i}.tareWeightUnit`, (v || null) as "g" | "oz" | null)
+                              }
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="g / oz" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="g">g</SelectItem>
+                                <SelectItem value="oz">oz</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="col-span-2 space-y-1.5 sm:col-span-1">
+                            <Label className="flex items-center gap-1 text-xs">
+                              <Scale className="size-3" /> Liquid Weight
+                            </Label>
+                            <QuantityInput
+                              className="tnum"
+                              placeholder={
+                                category?.defaultDensityFactor
+                                  ? `${category.defaultDensityFactor} (from ${category.name})`
+                                  : "ml per weight unit"
+                              }
+                              {...form.register(`variants.${i}.densityFactor`, {
+                                setValueAs: (v) => (v === "" || v === null ? null : Number(v)),
+                              })}
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              Liquid Weight: ml of liquid per gram/oz of weight — converts a scale weight into remaining volume.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               );

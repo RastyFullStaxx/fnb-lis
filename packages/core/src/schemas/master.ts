@@ -14,6 +14,9 @@ export const categoryUpsert = z.object({
   productType: z.string().trim().min(1),
   defaultDensityFactor: positive.nullable().optional(),
   sortOrder: z.number().int().optional(),
+  // Asset-only, nullable (client req 2026-07-24). One industry/vertical
+  // per category, e.g. "Dental Equipment" -> "Dental".
+  industry: z.string().trim().max(60).nullable().optional(),
 });
 export type CategoryUpsert = z.infer<typeof categoryUpsert>;
 
@@ -80,7 +83,6 @@ export const locationItemUpdate = z.object({
   serialNo: z.string().trim().max(120).nullable().optional(),
   condition: z.string().trim().max(60).nullable().optional(),
   status: z.string().trim().max(60).nullable().optional(),
-  industry: z.string().trim().max(60).nullable().optional(),
   remarks: z.string().trim().max(500).nullable().optional(),
   assetCode: z.string().trim().max(20).nullable().optional(),
 });

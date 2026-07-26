@@ -205,6 +205,11 @@ model Category {
   productType          String // data-driven list in Setting "productTypes"
   defaultDensityFactor Float? // ml per weight-unit for weigh counts (e.g. Vodka 30.12/oz)
   sortOrder            Int    @default(0)
+  // Asset-only, nullable (client req 2026-07-24). Set once per category
+  // (e.g. "Dental Equipment" -> Dental) rather than per LocationItem —
+  // every asset in a category shares one industry/vertical by design.
+  // data-driven list, Setting "industryOptions".
+  industry             String?
 
   items Item[]
 }
@@ -276,7 +281,6 @@ model LocationItem {
   serialNo      String?     // per asset TYPE not per unit — see asset-module-proposal.md
   condition     String?     // data-driven list, Setting "conditionOptions"
   status        String?     // data-driven list, Setting "statusOptions" — distinct from isActive
-  industry      String?     // data-driven list, Setting "industryOptions" (client req 2026-07-24)
   remarks       String?
   isActive      Boolean     @default(true)
   updatedById   String?

@@ -86,7 +86,7 @@ export async function assetInventoryReport(
         assetCode: li.assetCode,
         name: li.itemVariant.item.name,
         category: li.itemVariant.item.category.name,
-        industry: li.industry,
+        industry: li.itemVariant.item.category.industry,
         uom: `${li.itemVariant.size} ${li.itemVariant.unit.name}`,
         beginningQty: round2(beginningQty),
         endingQty: round2(endingQty),

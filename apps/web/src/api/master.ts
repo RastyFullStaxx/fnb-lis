@@ -55,6 +55,24 @@ export function useIndustryOptions() {
   });
 }
 
+// Appends one new value to the shared industryOptions list (client req
+// 2026-07-24 follow-up: "Add Category options" — the dropdown must be
+// user-extensible, not fixed). The PUT endpoint replaces the whole list,
+// so this mutation always sends [...current, value] rather than a delta.
+export function useAddIndustryOption() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (value: string) => {
+      const current = qc.getQueryData<{ industryOptions: string[] }>(["industryOptions"])?.industryOptions ?? [];
+      if (current.includes(value)) return { industryOptions: current };
+      return put<{ industryOptions: string[] }>("/api/master/industry-options", {
+        industryOptions: [...current, value],
+      });
+    },
+    onSuccess: (data) => qc.setQueryData(["industryOptions"], data),
+  });
+}
+
 export function useItems(filters: { search?: string; categoryId?: string; productType?: string }) {
   const params = new URLSearchParams();
   if (filters.search) params.set("search", filters.search);

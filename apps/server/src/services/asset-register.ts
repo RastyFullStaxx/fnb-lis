@@ -103,7 +103,7 @@ export async function assetRegisterReport(
         serialNo: li.serialNo,
         condition: li.condition,
         status: li.status,
-        industry: li.industry,
+        industry: li.itemVariant.item.category.industry,
         initialCost: li.initialCost,
         currentCost: li.cost,
         remarks: li.remarks,
