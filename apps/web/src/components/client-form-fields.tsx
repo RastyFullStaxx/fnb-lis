@@ -7,8 +7,10 @@ import {
   LOCATION_KINDS,
   MODULE_TYPE_LABELS,
   MODULE_TYPES,
+  MONTHLY_TIER_RANGES,
   PACKAGE_LABELS,
   derivePackageType,
+  isValidMaxEntities,
   type BillingCycle,
   type ModuleType,
   type PackageType,
@@ -69,16 +71,28 @@ export function PackageAndModulesFields({
     }
   };
 
-  const tier = derivePackageType(billingCycle, maxEntities);
+  // derivePackageType throws on an out-of-range MONTHLY count — which can
+  // transiently happen here (e.g. right after switching STANDALONE ->
+  // MONTHLY while maxEntities still holds an old Standalone value). The
+  // form must never crash mid-edit, so compute the tier defensively and
+  // treat "currently invalid" as its own displayable state rather than an
+  // exception; onBillingCycleChange below immediately repairs maxEntities
+  // when that switch happens, but this stays defensive regardless.
+  const tierValid = isValidMaxEntities(billingCycle, maxEntities);
+  const tier = tierValid ? derivePackageType(billingCycle, maxEntities) : null;
   const isStandalone = billingCycle === "STANDALONE";
 
   const handleTierChange = (next: PackageType) => {
     if (next === "BASIC") {
       onMaxEntitiesChange(1);
-    } else if (next === "MEDIUM" && maxEntities < 2) {
+    } else if (next === "MEDIUM" && (maxEntities < 2 || maxEntities > 5)) {
       onMaxEntitiesChange(2);
+    } else if (next === "FULL" && (maxEntities < 6 || maxEntities > 10)) {
+      onMaxEntitiesChange(6);
     }
   };
+
+  const monthlyRange = tier === "MEDIUM" || tier === "FULL" ? MONTHLY_TIER_RANGES[tier] : null;
 
   return (
     <>
@@ -115,24 +129,25 @@ export function PackageAndModulesFields({
         <div className="space-y-2">
           <Label htmlFor="package-tier">Package</Label>
           {locked ? (
-            <ReadOnlyField>{PACKAGE_LABELS[tier]}</ReadOnlyField>
+            <ReadOnlyField>{tier ? PACKAGE_LABELS[tier] : "—"}</ReadOnlyField>
           ) : isStandalone ? (
             <ReadOnlyField>{PACKAGE_LABELS.ONE_TIME}</ReadOnlyField>
           ) : (
-            <Select value={tier} onValueChange={(v) => handleTierChange(v as PackageType)}>
+            <Select value={tier ?? ""} onValueChange={(v) => handleTierChange(v as PackageType)}>
               <SelectTrigger id="package-tier">
-                <SelectValue />
+                <SelectValue placeholder="Choose a tier" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="BASIC">Basic — 1 location</SelectItem>
                 <SelectItem value="MEDIUM">Medium — 2–5 locations</SelectItem>
+                <SelectItem value="FULL">Full — 6–10 locations</SelectItem>
               </SelectContent>
             </Select>
           )}
         </div>
       </div>
 
-      {!locked && !isStandalone && tier === "MEDIUM" && (
+      {!locked && !isStandalone && monthlyRange && (
         <div className="space-y-2">
           <Label htmlFor="max-entities">Max Locations</Label>
           <Select value={String(maxEntities)} onValueChange={(v) => onMaxEntitiesChange(Number(v))}>
@@ -140,13 +155,35 @@ export function PackageAndModulesFields({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {[2, 3, 4, 5].map((n) => (
+              {Array.from(
+                { length: monthlyRange[1] - monthlyRange[0] + 1 },
+                (_, i) => monthlyRange[0] + i,
+              ).map((n) => (
                 <SelectItem key={n} value={String(n)}>
                   {n} locations
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
+        </div>
+      )}
+
+      {!locked && isStandalone && (
+        <div className="space-y-2">
+          <Label htmlFor="max-entities-standalone">Max Locations</Label>
+          <QuantityInput
+            id="max-entities-standalone"
+            className="tnum"
+            value={String(maxEntities)}
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              onMaxEntitiesChange(e.target.value === "" || !Number.isFinite(n) ? 0 : Math.max(0, Math.trunc(n)));
+            }}
+            placeholder="0 = unlimited"
+          />
+          <p className="text-xs text-muted-foreground">
+            Any number the admin sets — 0 means unlimited locations for this Standalone client.
+          </p>
         </div>
       )}
 

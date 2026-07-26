@@ -4,8 +4,10 @@ import { zValidator } from "@hono/zod-validator";
 import {
   role as roleSchema,
   derivePackageType,
+  isValidMaxEntities,
   deriveAccessState,
   subscriptionCreateBody,
+  subscriptionCreateBodyValidated,
   subscriptionUpdateBody,
   locationModulesBody,
   moduleType,
@@ -250,6 +252,14 @@ export const adminRoutes = new Hono<AppEnv>()
     const user = c.get("user")!;
     const maxEntities = subscription.maxEntities;
 
+    // fullClientBody uses subscriptionCreateBody.omit({ clientId: true }) —
+    // the base (un-refined, omit-able) object — so this check, done by
+    // subscriptionCreateBodyValidated for the direct POST /subscriptions
+    // route, has to happen explicitly here instead.
+    if (!isValidMaxEntities(subscription.billingCycle, maxEntities)) {
+      throw new AppError(400, "Monthly subscriptions must be 1 (Basic), 2-5 (Medium), or 6-10 (Full) locations.");
+    }
+
     // Guard against exceeding the chosen maxEntities within the same request
     // (Main + extras), same rule /locations enforces.
     const totalLocations = 1 + extraLocationNames.length;
@@ -441,7 +451,7 @@ export const adminRoutes = new Hono<AppEnv>()
     return c.json(subs);
   })
 
-  .post("/subscriptions", zValidator("json", subscriptionCreateBody), async (c) => {
+  .post("/subscriptions", zValidator("json", subscriptionCreateBodyValidated), async (c) => {
     const body = c.req.valid("json");
     const user = c.get("user")!;
 
@@ -501,6 +511,17 @@ export const adminRoutes = new Hono<AppEnv>()
       const existing = await tx.subscription.findUniqueOrThrow({ where: { id } });
       const effectiveBillingCycle = body.billingCycle ?? existing.billingCycle;
       const effectiveMaxEntities = body.maxEntities ?? existing.maxEntities;
+      // The create-body refine only catches this when BOTH fields are in the
+      // same patch; a partial update (e.g. maxEntities alone, against an
+      // existing MONTHLY row) can only be checked here, against the merged
+      // result — same reasoning as the comment on subscriptionUpdateBody's
+      // refine in @fnb/core.
+      if (!isValidMaxEntities(effectiveBillingCycle as BillingCycle, effectiveMaxEntities)) {
+        throw new AppError(
+          400,
+          "Monthly subscriptions must be 1 (Basic), 2-5 (Medium), or 6-10 (Full) locations.",
+        );
+      }
       data.packageType = derivePackageType(effectiveBillingCycle as BillingCycle, effectiveMaxEntities);
 
       // Moving the startDate re-anchors every billing period, and the

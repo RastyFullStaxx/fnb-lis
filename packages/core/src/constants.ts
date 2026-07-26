@@ -163,7 +163,7 @@ export function nonRevenueGroupOf(reason: string | null | undefined): NonRevenue
 // ── Subscription / Package constants ──
 
 /** Subscription package types */
-export const PACKAGE_TYPES = ["BASIC", "MEDIUM", "ONE_TIME"] as const;
+export const PACKAGE_TYPES = ["BASIC", "MEDIUM", "FULL", "ONE_TIME"] as const;
 export type PackageType = (typeof PACKAGE_TYPES)[number];
 
 /** Billing / delivery mode */
@@ -188,7 +188,15 @@ export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUSES)[number];
 export const PACKAGE_LABELS: Record<PackageType, string> = {
   BASIC: "Basic",
   MEDIUM: "Medium",
+  FULL: "Full",
   ONE_TIME: "One-Time Installation",
+};
+
+/** Inclusive [min, max] location count each MONTHLY tier accepts (client req 2026-07-26). */
+export const MONTHLY_TIER_RANGES: Record<"BASIC" | "MEDIUM" | "FULL", readonly [number, number]> = {
+  BASIC: [1, 1],
+  MEDIUM: [2, 5],
+  FULL: [6, 10],
 };
 
 /**
@@ -200,22 +208,43 @@ export const PACKAGE_LABELS: Record<PackageType, string> = {
 export const PACKAGE_DEFAULT_MAX_ENTITIES: Record<PackageType, number> = {
   BASIC: 1,
   MEDIUM: 5,
-  ONE_TIME: 0, // unlimited
+  FULL: 10,
+  ONE_TIME: 0, // admin-set at creation; 0 is just the form's starting point, not an implied "unlimited"
 };
 
 /** @see PACKAGE_DEFAULT_MAX_ENTITIES */
 export const PACKAGE_DEFAULT_BILLING_CYCLE: Record<PackageType, BillingCycle> = {
   BASIC: "MONTHLY",
   MEDIUM: "MONTHLY",
+  FULL: "MONTHLY",
   ONE_TIME: "STANDALONE",
 };
 
 /**
- * Derives the "Basic / Medium / One-Time Installation" package tier from the
- * two fields that actually define it, per the client's spec:
- *   - Basic:   1 account/entity only
- *   - Medium:  1 to 5 accounts/entities
- *   - One-Time Installation: unlimited accounts/entities
+ * Whether (billingCycle, maxEntities) is a legal combination — call this
+ * (or let the zod refine below do it) BEFORE derivePackageType, which
+ * assumes a valid pair and is a total function over valid input only.
+ *
+ * MONTHLY must land in exactly one of the three bounded tiers below — there
+ * is no more "0 = unlimited" case for Monthly (client req 2026-07-26: Full
+ * replaces the old unlimited-inside-Medium carve-out, capped at 10).
+ * STANDALONE accepts any maxEntities >= 0, 0 meaning unlimited — but only
+ * because the admin explicitly chose 0, never as a default/implication.
+ */
+export function isValidMaxEntities(billingCycle: BillingCycle, maxEntities: number): boolean {
+  if (billingCycle === "STANDALONE") return Number.isInteger(maxEntities) && maxEntities >= 0;
+  return Object.values(MONTHLY_TIER_RANGES).some(([min, max]) => maxEntities >= min && maxEntities <= max);
+}
+
+/**
+ * Derives the "Basic / Medium / Full / One-Time Installation" package tier
+ * from the two fields that actually define it, per the client's spec
+ * (2026-07-24, refined 2026-07-26):
+ *   - Basic:   exactly 1 location
+ *   - Medium:  2 to 5 locations
+ *   - Full:    6 to 10 locations
+ *   - One-Time Installation: STANDALONE billing, any admin-set location
+ *     count (including 0 = unlimited, but only when explicitly chosen)
  *
  * packageType is NOT a separately-settable field anywhere in the app — it
  * used to be, and could silently drift from the truth (e.g. a client badged
@@ -223,16 +252,22 @@ export const PACKAGE_DEFAULT_BILLING_CYCLE: Record<PackageType, BillingCycle> = 
  * computed from billingCycle + maxEntities, both at write time (server) and
  * for display (client), so the badge can never lie again.
  *
- *  - STANDALONE billing => "One-Time Installation", regardless of
- *    maxEntities — the tier is defined by "pay once, no recurring bill",
- *    not by the count.
- *  - MONTHLY + exactly 1 location => "Basic".
- *  - MONTHLY + 2 or more locations (including 0 = unlimited, an
- *    intentionally-negotiated case outside the standard tiers) => "Medium".
+ * Assumes `isValidMaxEntities(billingCycle, maxEntities)` already passed —
+ * callers must validate first (the zod schemas do this via `.refine()`);
+ * this throws rather than silently picking a tier for an out-of-range
+ * MONTHLY count, since guessing would reintroduce exactly the kind of
+ * drift this function exists to prevent.
  */
 export function derivePackageType(billingCycle: BillingCycle, maxEntities: number): PackageType {
   if (billingCycle === "STANDALONE") return "ONE_TIME";
-  return maxEntities === 1 ? "BASIC" : "MEDIUM";
+  for (const [tier, [min, max]] of Object.entries(MONTHLY_TIER_RANGES) as Array<
+    ["BASIC" | "MEDIUM" | "FULL", readonly [number, number]]
+  >) {
+    if (maxEntities >= min && maxEntities <= max) return tier;
+  }
+  throw new Error(
+    `Invalid Monthly location count: ${maxEntities}. Monthly subscriptions must be 1 (Basic), 2-5 (Medium), or 6-10 (Full) locations.`,
+  );
 }
 
 export const MODULE_TYPE_LABELS: Record<ModuleType, string> = {

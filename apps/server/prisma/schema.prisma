@@ -132,7 +132,7 @@ model UserClientAccess {
 }
 
 // ───────────────────────── Subscription & Packages ─────────────────────────
-// packageType: BASIC | MEDIUM | ONE_TIME — DERIVED, not independently settable.
+// packageType: BASIC | MEDIUM | FULL | ONE_TIME — DERIVED, not independently settable.
 //   Computed server-side from (billingCycle, maxEntities) via
 //   derivePackageType() in @fnb/core on every create/update (see admin.ts).
 //   It used to be a separately-settable field and could drift from the truth
@@ -143,7 +143,12 @@ model UserClientAccess {
 // modules: SubscriptionModule rows, one per atomic module (BAR | KITCHEN | ASSET)
 //   the client is licensed for in total — the *ceiling* every location's own
 //   LocationModule set must stay within (Fix Plan Phase C §2.3/§2.2).
-// maxEntities: any admin-set number; 0 = unlimited — drives packageType above.
+// maxEntities: admin-set number of locations. For MONTHLY, must land in one
+//   of the three bounded tiers (1=Basic, 2-5=Medium, 6-10=Full) — validated
+//   via isValidMaxEntities before every write (client req 2026-07-26; there
+//   is no more "0=unlimited" case for Monthly). For STANDALONE, any admin-set
+//   number is valid, including 0 for unlimited — but only because the admin
+//   explicitly chose 0, never a default/implication.
 // negotiatedPrice: optional per-client/per-deal price, if tracked in-system at
 //   all — set directly on the subscription, not sourced from any catalog.
 //
@@ -157,9 +162,9 @@ model Subscription {
   id              String    @id @default(cuid())
   clientId        String    @unique
   client          Client    @relation(fields: [clientId], references: [id])
-  packageType     String // BASIC | MEDIUM | ONE_TIME — derived, see note above
+  packageType     String // BASIC | MEDIUM | FULL | ONE_TIME — derived, see note above
   billingCycle    String // STANDALONE | MONTHLY
-  maxEntities     Int       @default(1) // 1=BASIC, 2+/0=MEDIUM (monthly), 0=unlimited (standalone/ONE_TIME)
+  maxEntities     Int       @default(1) // MONTHLY: 1=BASIC, 2-5=MEDIUM, 6-10=FULL (no 0). STANDALONE: any admin-set number, 0=unlimited.
   negotiatedPrice Float? // optional per-client deal price — see note above
   status          String    @default("ACTIVE") // ACTIVE | SUSPENDED | CANCELLED | TRIAL
   paid            Boolean   @default(false) // explicit paid flag for the CURRENT billing period
