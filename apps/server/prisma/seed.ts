@@ -83,6 +83,14 @@ async function seedClients() {
   // User-account caps (client req 2026-07-21). Prime demos the new Full tier
   // (10 users), Casa Verde the Medium tier (5). Set here rather than in the
   // create helper so existing seeded rows pick them up on a re-seed.
+  // Mark the demo subscriptions paid for the current period. Billing lockout is
+  // enforced on writes now (middleware/auth.ts), and these were seeded unpaid
+  // from 2026-01-01 — which derives to VIEW_ONLY and would make the whole demo
+  // read-only the moment it loads.
+  await prisma.subscription.updateMany({
+    where: { clientId: { in: [prime.id, casa.id, aurora.id] } },
+    data: { paid: true, lastPaidAt: new Date() },
+  });
   await prisma.subscription.updateMany({ where: { clientId: prime.id }, data: { maxUsers: 10, packageType: "FULL" } });
   await prisma.subscription.updateMany({ where: { clientId: casa.id }, data: { maxUsers: 5, packageType: "MEDIUM" } });
 

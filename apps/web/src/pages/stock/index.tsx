@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useParams, useSearchParams } from "react-router";
 import { Boxes, Copy, Info, Plus, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
-import { can, MODULE_TYPE_LABELS, resolveBottleWeights, type ModuleType, type Role } from "@fnb/core";
+import { can, isMissingPrice, MODULE_TYPE_LABELS, resolveBottleWeights, type ModuleType, type Role } from "@fnb/core";
 import { useMe } from "@/api/auth";
 import { useCopyFromLocation, useCurrentLocation, useLocationItems } from "@/api/location";
 import type { LocationItem } from "@/api/types";
@@ -86,7 +86,8 @@ export function StockPage() {
 
   const role = (me.data?.user.role ?? "READONLY") as Role;
   const canEditPrices = can(role, "prices.edit");
-  const missingCount = catalog.data?.filter((r) => r.cost === 0 || r.retail === 0).length ?? 0;
+  const missingCount =
+    catalog.data?.filter((r) => isMissingPrice(r, r.itemVariant.item.category.productType)).length ?? 0;
   const locationModules = location?.modules ?? [];
   const moduleScope = locationModules.map((m) => MODULE_TYPE_LABELS[m as ModuleType] ?? m).join(" + ");
   // Asset Details is a whole column of "—" on a Bar or Kitchen catalog, and on a
@@ -196,7 +197,7 @@ export function StockPage() {
             </TableHeader>
             <TableBody>
               {rows.data!.map((row) => {
-                const missing = row.cost === 0 || row.retail === 0;
+                const missing = isMissingPrice(row, row.itemVariant.item.category.productType);
                 const weigh = weighInfo(row);
                 const isAsset = row.itemVariant.item.category.productType === "Asset";
                 return (

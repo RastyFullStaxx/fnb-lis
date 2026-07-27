@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { formatDate } from "@/lib/utils";
 import { Activity as ActivityIcon } from "lucide-react";
 import { useActivity, type ActivityFilters } from "@/api/activity";
 import { useCurrentClient } from "@/api/location";
@@ -19,11 +20,17 @@ import {
 // The server caps a page at this many rows (apps/server/src/routes/activity.ts).
 const PAGE_LIMIT = 200;
 
-/** Audit-log timestamps match the project's YYYY-MM-DD business-date convention. */
+/**
+ * Audit-log timestamps. The date half now matches the rest of the app ("Jul 20,
+ * 2026") — it previously rendered raw ISO, which read as a different system to
+ * the Dashboard formatting the very same records two clicks away. The clock time
+ * stays, because "who did what, when" is what this screen is for.
+ */
 function formatTimestamp(iso: string): string {
   const d = new Date(iso);
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const day = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return `${formatDate(day)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 export function AdminActivityPage() {

@@ -1,7 +1,7 @@
 import { createMiddleware } from "hono/factory";
 import { getCookie } from "hono/cookie";
 import type { Client, Location } from "../generated/prisma/client";
-import { can, type Permission, type Role, type SessionUser } from "@fnb/core";
+import { can, deriveAccessState, type Permission, type Role, type SessionUser } from "@fnb/core";
 import { prisma } from "../db";
 import { AppError } from "../lib/errors";
 import { getSessionUser, SESSION_COOKIE } from "../auth/session";
@@ -84,7 +84,7 @@ export const requireLocationAccess = createMiddleware<AppEnv>(async (c, next) =>
   const location = await prisma.location.findUnique({
     where: { id: locationId },
     include: {
-      client: { include: { subscription: { select: { status: true } } } },
+      client: { include: { subscription: true } },
       modules: { select: { module: true } },
     },
   });
@@ -99,6 +99,24 @@ export const requireLocationAccess = createMiddleware<AppEnv>(async (c, next) =>
     // 404, not 403: another client's location must be indistinguishable from a
     // nonexistent one (same convention as the transfers tenant guard).
     if (!access) throw new AppError(404, "Location not found");
+  }
+
+  // Billing lockout. The admin UI already told the client "Overdue by more than
+  // 7 days — mark as paid to restore access", and showed a View-only badge, but
+  // nothing enforced it: writes returned 200. Either the badge lies or the state
+  // means something; this makes it mean something.
+  //
+  // Reads always pass — an establishment that owes money can still look at its
+  // own audit history. ADMIN bypasses entirely, or an unpaid client's LIS
+  // administrator could not get in to mark the invoice paid.
+  const sub = location.client.subscription;
+  const isWrite = !["GET", "HEAD", "OPTIONS"].includes(c.req.method);
+  if (isWrite && user.role !== "ADMIN" && sub && deriveAccessState(sub, new Date()) === "VIEW_ONLY") {
+    throw new AppError(
+      403,
+      "This establishment's subscription is past due, so the system is read-only. Contact your LIS administrator to restore access.",
+      "SUBSCRIPTION_VIEW_ONLY",
+    );
   }
 
   c.set("client", location.client);

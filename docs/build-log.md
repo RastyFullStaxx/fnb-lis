@@ -1147,3 +1147,58 @@ Golden fixture after all of it: **−₱330.69 / −₱869.57**, Full Audit and 
 
 Golden fixture unchanged throughout: **−₱330.69 / −₱869.57**.
 
+## Phase 29 — Working the backlog (2026-07-28)
+
+1. **Assets no longer sit at "70 items need attention" forever.** `missingPrices`
+   required a retail price on every row, but an Asset is never sold — the only
+   way to clear the badge was to invent selling prices for 70 fire extinguishers.
+   One shared `isMissingPrice()` in core now exempts Assets from retail while
+   still requiring cost (the register and every asset valuation price from it),
+   used by the dashboard count, the catalog badge, the row status **and** the
+   `?missingPrices=1` server filter, so none of them can disagree. Assets 70 → 0;
+   the Bar's one genuine missing price is untouched.
+
+2. **Subscription "View-only" is now enforced.** The admin UI said *"Overdue by
+   more than 7 days — mark as paid to restore access"* and showed a View-only
+   badge while every write returned 200. Writes on a VIEW_ONLY subscription now
+   return **403 `SUBSCRIPTION_VIEW_ONLY`**. Reads always pass — an establishment
+   that owes money can still read its own audit history — and **ADMIN bypasses
+   entirely**, or an unpaid client's LIS administrator could not get in to mark
+   the invoice paid. Verified: unpaid → manager read 200, manager write 403,
+   admin write 200; after mark-paid, writes restored.
+
+   The demo clients were seeded unpaid from 2026-01-01, so all three derived to
+   VIEW_ONLY and enabling this would have frozen the whole seed on first load.
+   The seeder now marks them paid, and the existing rows were updated to match.
+
+3. **A mistyped admin URL no longer drops you on another client's dashboard.**
+   `<Navigate to="../clients">` popped BOTH segments of `admin/subscriptions`,
+   resolving to `/l/:id/clients` — no route — then the catch-all sent you to `/`,
+   which silently switched establishment. Now `to="clients" relative="path"`.
+
+4. **The command palette stopped handing low-privilege users links the sidebar
+   hides.** Menus and Suppliers results are gated on the same permissions the nav
+   uses. (The route guard from Phase 28 already blocked the destination; the
+   palette shouldn't have been offering it.)
+
+5. **Stocky stopped telling bar staff to set a server env var.** *"Add an
+   ANTHROPIC_API_KEY"* → *"Ask your administrator to enable free-form
+   conversation"*, with the env-var detail shown only to ADMIN — the same split
+   the Imports page already got right.
+
+6. **Counting lost a keystroke per item.** Focus always returned to the item
+   picker, so every item cost an extra Tab to reach the number field, and on the
+   paths that already know the item (Edit, tapping a row in "Not counted")
+   focusing the picker was actively wrong. A shared `focusEntry()` now moves to
+   the right field for the active mode. Focus still returns to the picker *after
+   save* — that part was already correct.
+
+7. **Last of the raw ISO dates**: Purchases list and editor header, the Sales
+   entry list, Imports, and the Admin → Activity **When** column (now
+   "Jul 28, 2026 06:35"). Swept 10 pages: no raw `YYYY-MM-DD` left except inside
+   historical activity *summaries* — those are stored strings in an immutable
+   audit log, and rewriting them to change their formatting is exactly the kind
+   of history edit this system exists to prevent. Left deliberately.
+
+Golden fixture after all of it: **−₱330.69 / −₱869.57**.
+

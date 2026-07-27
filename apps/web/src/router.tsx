@@ -90,7 +90,10 @@ export const router = createBrowserRouter([
       { path: "admin/users", element: <AdminUsersPage /> },
       // Subscriptions are now managed inline on the Clients page.
       // Redirect old bookmarks so nothing hard-404s.
-      { path: "admin/subscriptions", element: <Navigate to="../clients" replace /> },
+      // "../clients" popped BOTH segments of "admin/subscriptions", so this
+      // resolved to /l/:id/clients — no route — then the catch-all sent you to
+      // "/", which silently dropped you on a DIFFERENT client's dashboard.
+      { path: "admin/subscriptions", element: <Navigate to="clients" relative="path" replace /> },
       { path: "admin/activity", element: <AdminActivityPage /> },
       { path: "admin/*", element: <ComingSoonPage title="Administration" phase={7} /> },
     ],

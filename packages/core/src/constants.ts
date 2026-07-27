@@ -419,3 +419,20 @@ export function resolveBottleWeights(
     fromLocal: local.tareWeight != null || local.densityFactor != null,
   };
 }
+
+/**
+ * Whether a catalog row is still missing a price.
+ *
+ * An Asset is never sold, so it has no retail price to be missing — requiring
+ * one pinned every asset location at "70 items need attention" with no way to
+ * clear it short of inventing selling prices for fire extinguishers. Cost is
+ * still required: the asset register and every valuation are priced from it.
+ */
+export function isMissingPrice(
+  row: { cost: number; retail: number },
+  productType: string | null | undefined,
+): boolean {
+  if (productType === "Asset") return row.cost <= 0;
+  return row.cost <= 0 || row.retail <= 0;
+}
+

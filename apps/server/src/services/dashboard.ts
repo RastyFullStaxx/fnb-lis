@@ -115,7 +115,7 @@ export async function buildDashboard(
             tareWeight: true,
             densityFactor: true,
             weightReviewNote: true,
-            item: { select: { category: { select: { defaultDensityFactor: true } } } },
+            item: { select: { category: { select: { defaultDensityFactor: true, productType: true } } } },
           },
         },
       },
@@ -167,7 +167,13 @@ export async function buildDashboard(
     ? { begin: dates[dates.length - 2]!, end: dates[dates.length - 1]! }
     : null;
 
-  const missingPrices = priceItems.filter((p) => p.cost <= 0 || p.retail <= 0).length;
+  // An Asset is never sold, so it has no retail price to be missing — a fire
+  // extinguisher sat in "needs attention" forever, and the only way to clear the
+  // badge was to invent a selling price for 70 pieces of equipment. Cost still
+  // matters: the register and every asset valuation are priced from it.
+  const missingPrices = priceItems.filter((p) =>
+    p.itemVariant.item.category.productType === "Asset" ? p.cost <= 0 : p.cost <= 0 || p.retail <= 0,
+  ).length;
 
   // Bottles that can't be weighed yet: a weighable variant with no tare weight,
   // or a density-weighed one with no liquid weight on the variant OR its

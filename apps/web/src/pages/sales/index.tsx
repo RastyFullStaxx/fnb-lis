@@ -17,7 +17,7 @@ import { useMenus, type MenuSummary } from "@/api/menus";
 import { useSaleMutations, useSales } from "@/api/ops";
 import { variantLabel, type LocationItem, type SaleRecord } from "@/api/types";
 import { ApiError } from "@/api/http";
-import { formatMoney } from "@/lib/utils";
+import { formatMoney, formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { TableSurface, ToolbarField } from "@/components/table-surface";
 import { VoidDialog } from "@/components/void-dialog";
@@ -181,7 +181,7 @@ export function SalesPage() {
                           "each"/"whole sale" qualifiers, so this list reads as
                           data rather than instruction. */}
                       <EntryFacts>
-                        <EntryFact label="Date" value={sale.saleDate} />
+                        <EntryFact label="Date" value={formatDate(sale.saleDate)} />
                         <EntryFact label="Quantity" value={sale.qty} />
                         {sale.kind === "SALE" && (
                           <EntryFact label="Price" value={formatMoney(sale.unitPrice)} />

@@ -9,7 +9,7 @@ import { useLocationId } from "@/api/location";
 import { usePurchase, usePurchaseMutations } from "@/api/ops";
 import { variantLabel, type LocationItem, type PurchaseLine } from "@/api/types";
 import { ApiError } from "@/api/http";
-import { formatMoney } from "@/lib/utils";
+import { formatMoney, formatDate } from "@/lib/utils";
 import { ItemCombobox } from "@/components/item-combobox";
 import { TableSurface } from "@/components/table-surface";
 import { VoidDialog } from "@/components/void-dialog";
@@ -111,7 +111,7 @@ export function PurchaseEditorPage() {
           </Link>
         </Button>
         <div>
-          <h2 className="text-xl font-semibold tracking-tight tnum">Delivery · {p.purchaseDate}</h2>
+          <h2 className="text-xl font-semibold tracking-tight">Delivery · {formatDate(p.purchaseDate)}</h2>
           <p className="text-sm text-muted-foreground">
             {p.supplier?.name ?? "No supplier"}
             {p.refNo && ` · ${p.refNo}`}

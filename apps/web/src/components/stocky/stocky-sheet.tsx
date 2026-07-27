@@ -162,9 +162,19 @@ export function StockySheet({ open, onOpenChange }: { open: boolean; onOpenChang
                   </div>
                   {!aiEnabled && (
                     <p className="pt-2 text-xs text-muted-foreground/80">
-                      Running in basic mode — answers come from a built-in engine. Add an{" "}
-                      <code className="rounded bg-muted px-1 font-mono">ANTHROPIC_API_KEY</code> for free-form
-                      conversation.
+                      {/* Was telling a bar counter to set a server env var. Same
+                          split the Imports page already uses: what it means for
+                          you, and the technical fix only for whoever can do it. */}
+                      Running in basic mode — answers come from a built-in engine, so stick to the
+                      suggested questions. Ask your administrator to enable free-form conversation.
+                      {me.data?.user.role === "ADMIN" && (
+                        <>
+                          {" "}
+                          Server setup: add{" "}
+                          <code className="rounded bg-muted px-1 font-mono">ANTHROPIC_API_KEY</code> to the
+                          server environment.
+                        </>
+                      )}
                     </p>
                   )}
                 </div>

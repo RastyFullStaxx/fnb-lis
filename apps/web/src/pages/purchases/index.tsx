@@ -9,7 +9,7 @@ import { useLocationId, useSuppliers } from "@/api/location";
 import { useForfeitMutations, useForfeits, usePurchaseMutations, usePurchases } from "@/api/ops";
 import { variantLabel, type Forfeit, type LocationItem } from "@/api/types";
 import { ApiError } from "@/api/http";
-import { formatMoney } from "@/lib/utils";
+import { formatMoney, formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { TableSurface, TableLoading, TableEmpty, ToolbarField, ToolbarSearch } from "@/components/table-surface";
 import { EntryFact, EntryFacts } from "@/components/entry-fact";
@@ -206,7 +206,7 @@ function PurchasesTab({
           <TableBody>
             {filtered.map((p) => (
               <TableRow key={p.id} className={p.status === "VOID" ? "opacity-50" : undefined}>
-                <TableCell className="tnum font-medium">{p.purchaseDate}</TableCell>
+                <TableCell className="tnum font-medium">{formatDate(p.purchaseDate)}</TableCell>
                 <TableCell className="max-w-[22rem] break-words text-muted-foreground">
                   {p.supplier?.name ?? "—"}
                   {p.refNo && <span className="ml-2 text-xs">({p.refNo})</span>}

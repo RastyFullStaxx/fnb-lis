@@ -137,6 +137,19 @@ function OpenSession({ session }: { session: SessionWithLines }) {
   const activeMode = weighable ? mode : "FULL";
   const preview = useWeighPreview(item, scale);
 
+  /**
+   * Focus the entry field for the current mode. Picking an item left focus on
+   * the picker, so every single item cost an extra Tab — and on the paths that
+   * already know the item (Edit, and tapping a row in "Not counted") focusing
+   * the picker was actively wrong.
+   */
+  const focusEntry = () => {
+    requestAnimationFrame(() => {
+      const id = activeMode === "FULL" ? "count-qty" : activeMode === "OPEN" ? "count-open" : "count-scale";
+      document.getElementById(id)?.focus();
+    });
+  };
+
   const resetForm = () => {
     setQty("");
     setScale("");
@@ -165,7 +178,7 @@ function OpenSession({ session }: { session: SessionWithLines }) {
       setQty("");
       setOpenAmount("");
     }
-    comboRef.current?.focus();
+    focusEntry();
   };
 
   const save = async () => {
@@ -254,7 +267,16 @@ function OpenSession({ session }: { session: SessionWithLines }) {
           )}
           <div className="space-y-2">
             <Label htmlFor="count-item">Item</Label>
-            <ItemCombobox id="count-item" ref={comboRef} value={item} onSelect={setItem} autoFocus />
+            <ItemCombobox
+              id="count-item"
+              ref={comboRef}
+              value={item}
+              onSelect={(li) => {
+                setItem(li);
+                focusEntry();
+              }}
+              autoFocus
+            />
           </div>
 
           {weighable && (
@@ -419,7 +441,7 @@ function OpenSession({ session }: { session: SessionWithLines }) {
                     onClick={() => {
                       setItem(li);
                       setPane("entered");
-                      comboRef.current?.focus();
+                      focusEntry();
                     }}
                   >
                     <span className="min-w-0 flex-1 truncate text-sm">{li.itemVariant.item.name}</span>

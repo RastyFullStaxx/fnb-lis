@@ -69,7 +69,19 @@ export const locationItemRoutes = new Hono<AppEnv>()
       where: {
         locationId: location.id,
         isActive: c.req.query("includeInactive") === "1" ? undefined : true,
-        ...(missingPrices ? { OR: [{ cost: 0 }, { retail: 0 }] } : {}),
+        // Mirrors isMissingPrice(): Assets need a cost but never a retail
+        // price, so the chip and this filter can't disagree.
+        ...(missingPrices
+          ? {
+              OR: [
+                { cost: { lte: 0 } },
+                {
+                  retail: { lte: 0 },
+                  itemVariant: { item: { category: { productType: { not: "Asset" } } } },
+                },
+              ],
+            }
+          : {}),
         ...(search
           ? { itemVariant: { item: { name: { contains: search } } } }
           : {}),

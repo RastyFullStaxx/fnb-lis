@@ -33,7 +33,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { cn } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 
 export const KIND_LABELS: Record<string, string> = {
   SALES: "Sales",
@@ -155,7 +155,7 @@ export function ImportsPage() {
               {filtered.map((b) => (
                 <TableRow key={b.id} className={cn(b.status === "REVERSED" && "opacity-60")}>
                   <TableCell className="max-w-56 truncate font-medium" title={b.fileName}>{b.fileName}</TableCell>
-                  <TableCell className="tnum text-muted-foreground">{b.createdAt.slice(0, 10)}</TableCell>
+                  <TableCell className="tnum text-muted-foreground">{formatDate(b.createdAt.slice(0, 10))}</TableCell>
                   <TableCell className="text-muted-foreground">{KIND_LABELS[b.kind] ?? b.kind}</TableCell>
                   <TableCell className="text-muted-foreground">
                     {SOURCE_LABELS[b.sourceType] ?? b.sourceType}

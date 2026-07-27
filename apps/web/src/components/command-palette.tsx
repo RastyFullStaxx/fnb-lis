@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
+import { can, type Role } from "@fnb/core";
 import { useNavigate } from "react-router";
 import { BarChart3, Martini, Package, Search, Truck } from "lucide-react";
 import { useLocationItems, useSuppliers } from "@/api/location";
 import { useMenus } from "@/api/menus";
+import { useMe } from "@/api/auth";
 import { variantLabel } from "@/api/types";
 import type { NavItem } from "@/lib/nav";
 import { Button } from "@/components/ui/button";
@@ -100,6 +102,14 @@ function EntityResults({ onGo }: { onGo: (path: string) => void }) {
   const items = useLocationItems();
   const suppliers = useSuppliers();
   const menus = useMenus();
+  // The palette was the one place that handed a STAFF user a link to a screen
+  // the sidebar deliberately hides — Menus and Suppliers both live behind
+  // permissions they lack. Same gate as the nav, so search can't route someone
+  // to a wall.
+  const me = useMe();
+  const role = (me.data?.user.role ?? "READONLY") as Role;
+  const canSeeMenus = can(role, "menus.write");
+  const canSeeSuppliers = can(role, "master.write");
 
   return (
     <>
@@ -120,7 +130,7 @@ function EntityResults({ onGo }: { onGo: (path: string) => void }) {
           })}
         </CommandGroup>
       )}
-      {(menus.data ?? []).length > 0 && (
+      {canSeeMenus && (menus.data ?? []).length > 0 && (
         <CommandGroup heading="Menus">
           {menus.data!.map((m) => (
             <CommandItem
@@ -134,7 +144,7 @@ function EntityResults({ onGo }: { onGo: (path: string) => void }) {
           ))}
         </CommandGroup>
       )}
-      {(suppliers.data ?? []).length > 0 && (
+      {canSeeSuppliers && (suppliers.data ?? []).length > 0 && (
         <CommandGroup heading="Suppliers">
           {suppliers.data!.map((s) => (
             <CommandItem
