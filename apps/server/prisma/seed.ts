@@ -38,7 +38,7 @@ async function seedClients() {
   // KITCHEN only.
   const prime = await upsertClientWithSubscription(
     "Prime Hospitality Group",
-    { billingCycle: "MONTHLY", modules: ["BAR", "KITCHEN"], maxEntities: 5 },
+    { billingCycle: "MONTHLY", modules: ["BAR", "KITCHEN"], maxEntities: 5, maxUsers: 10 },
     admin?.id,
   );
   // Prime legitimately splits one operation into two locations — "Main Bar"
@@ -51,7 +51,7 @@ async function seedClients() {
 
   const casa = await upsertClientWithSubscription(
     "Casa Verde Restaurant",
-    { billingCycle: "MONTHLY", modules: ["KITCHEN"], maxEntities: 1 },
+    { billingCycle: "MONTHLY", modules: ["KITCHEN"], maxEntities: 1, maxUsers: 5 },
     admin?.id,
   );
   // Casa Verde is Basic tier (1 location) — its single "Main" location
@@ -77,6 +77,12 @@ async function seedClients() {
   await prisma.client.update({ where: { id: casa.id }, data: { varianceThresholdPct: 8 } });
   await prisma.client.update({ where: { id: aurora.id }, data: { varianceThresholdPct: 11 } });
 
+  // User-account caps (client req 2026-07-21). Prime demos the new Full tier
+  // (10 users), Casa Verde the Medium tier (5). Set here rather than in the
+  // create helper so existing seeded rows pick them up on a re-seed.
+  await prisma.subscription.updateMany({ where: { clientId: prime.id }, data: { maxUsers: 10, packageType: "FULL" } });
+  await prisma.subscription.updateMany({ where: { clientId: casa.id }, data: { maxUsers: 5, packageType: "MEDIUM" } });
+
   // Non-admin users are scoped via UserClientAccess (ADMIN bypasses).
   const assign: Record<string, string[]> = {
     manager: [prime.id, casa.id, aurora.id],
@@ -99,19 +105,23 @@ async function seedClients() {
 
 async function upsertClientWithSubscription(
   name: string,
-  sub: { billingCycle: "MONTHLY" | "STANDALONE"; modules: readonly string[]; maxEntities: number },
+  sub: { billingCycle: "MONTHLY" | "STANDALONE"; modules: readonly string[]; maxEntities: number; maxUsers: number },
   createdById?: string,
 ) {
   const existing = await prisma.client.findFirst({ where: { name } });
-  if (existing) return existing;
-
-  const client = await prisma.client.create({ data: { name } });
+  // A client must never exist without a subscription (the invariant POST
+  // /clients/full enforces), so backfill instead of returning early — an
+  // existing client whose subscription went missing would otherwise stay
+  // broken through every re-seed.
+  const client = existing ?? (await prisma.client.create({ data: { name } }));
+  if (await prisma.subscription.findUnique({ where: { clientId: client.id } })) return client;
   await prisma.subscription.create({
     data: {
       clientId: client.id,
-      packageType: derivePackageType(sub.billingCycle, sub.maxEntities),
+      packageType: derivePackageType(sub.billingCycle, sub.maxEntities, sub.maxUsers),
       billingCycle: sub.billingCycle,
       maxEntities: sub.maxEntities,
+      maxUsers: sub.maxUsers,
       status: "ACTIVE",
       startDate: "2026-01-01",
       createdById: createdById ?? null,
