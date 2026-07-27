@@ -68,6 +68,7 @@ function weighInfo(row: LocationItem) {
     density: !needsDensity ? "n/a" : noDensity ? "—" : String(r.densityFactor),
   };
 }
+import { AssetDetailsEdit } from "./asset-details-edit";
 
 export function StockPage() {
   const me = useMe();
@@ -88,6 +89,9 @@ export function StockPage() {
   const missingCount = catalog.data?.filter((r) => r.cost === 0 || r.retail === 0).length ?? 0;
   const locationModules = location?.modules ?? [];
   const moduleScope = locationModules.map((m) => MODULE_TYPE_LABELS[m as ModuleType] ?? m).join(" + ");
+  // Asset Details is a whole column of "—" on a Bar or Kitchen catalog, and on a
+  // 13" laptop that is width taken from the numbers people came to read.
+  const showAssetDetails = locationModules.includes("ASSET");
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -187,12 +191,14 @@ export function StockPage() {
                     laptop, which is where counting actually happens. */}
                 <TableHead className="text-right">Tare / Liquid Wt</TableHead>
                 <TableHead className="text-right">Status</TableHead>
+                {showAssetDetails && <TableHead className="text-right">Asset Details</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.data!.map((row) => {
                 const missing = row.cost === 0 || row.retail === 0;
                 const weigh = weighInfo(row);
+                const isAsset = row.itemVariant.item.category.productType === "Asset";
                 return (
                   <TableRow key={row.id} className={cn("group", missing && "bg-destructive/5")}>
                     {/* Wrap rather than truncate — an auditor has to read the whole item name. */}
@@ -270,6 +276,23 @@ export function StockPage() {
                         <Badge variant="success">Ready</Badge>
                       )}
                     </TableCell>
+                    {showAssetDetails && (
+                    <TableCell className="text-right">
+                      {isAsset ? (
+                        <div className="flex flex-col items-end gap-1">
+                          <AssetDetailsEdit row={row} canEdit={canEditPrices} />
+                          {(row.condition || row.status) && (
+                            <div className="flex items-center gap-1">
+                              {row.condition && <Badge variant="outline">{row.condition}</Badge>}
+                              {row.status && <Badge variant="secondary">{row.status}</Badge>}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    )}
                   </TableRow>
                 );
               })}

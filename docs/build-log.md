@@ -466,7 +466,119 @@ reconciles to zero variance). Verified live: 70 items / 21 categories, ₱2.13M 
 events / ₱16,280 written off; golden fixture still −₱330.69; Assets closed period variance 0/0.
 
 Not touched: the packaging-tier mismatch (Basic 1 / Medium 5 / **Full 10** vs. our Basic/Medium/
-One-Time) — parked pending the client's confirmation of the intended tier structure.
+One-Time) — parked pending the client's confirmation of the intended tier structure. Resolved in
+Phase 18.
+
+## Phase 17 — Asset module: catalog fields, per-location register, two reports (2026-07-23)
+
+Phase 16 gave Asset a breakage report; this phase gives it the rest of the module the proposal
+scoped — a register (Brand/Model, Serial No., Condition, Status, Initial Cost, Remarks, Asset Code)
+and Beginning/Ending counting, built from `asset-module-proposal.md` and sequenced in
+`asset-module-phases.md`. Same discipline as Phase 4/#15: additive fields on the existing
+`ItemVariant`/`LocationItem` shape, no parallel model, no touch to `reconciliation.ts`.
+
+**Schema.** Migration `20260723080000_asset_module_fields` adds, all nullable: `ItemVariant.brand`,
+`ItemVariant.model`; `LocationItem.initialCost`, `serialNo`, `condition`, `status`, `remarks`, and a
+**unique** `assetCode`. `assetCode` lives on `LocationItem`, not `Item` — the proposal's own default,
+since both client sheets grain per-location and the register is `LocationItem`'s shape already.
+Logged as architecture.md deviation #26. Condition/Status are Setting-backed lists
+(`conditionOptions`, `statusOptions`), same pattern as `productTypes` — `GET`/`PUT
+/condition-options` and `/status-options` mirror `/product-types` exactly, gated `admin.manage`.
+
+**Brand/Model (catalog).** Plain optional inputs on the item form, same treatment as the existing
+`barcode` field. The creation-time inputs alone left a gap — no way to fix Brand/Model on an
+already-created variant — so a `BrandModelEditDialog` was added to `ItemEditSheet`'s variant row,
+mirroring `VariantQuickEditDialog`'s conventions but kept separate: Brand/Model have no validity math
+worth sharing with the tare/density gating.
+
+**Asset details (per location).** Six fields, edited via a `Dialog` (`asset-details-edit.tsx`), not a
+`Popover` — `PriceEdit`'s 3-field popover gets cramped past ~4 fields, and the repo already reaches
+for `Dialog` at that size (`AttachItemDialog`). Condition/Status are dropdowns sourced from the two
+new option endpoints, with a client-side "Other" branch that reveals free text. Scoped to
+`itemVariant.item.category.productType === "Asset"` rows only in the Local Database view, next to a
+new Condition/Status badge so the row is scannable without opening the dialog.
+
+**Supplier and asset code are derived, not stored.** `deriveCurrentSupplier` (new
+`services/asset-supplier.ts` — not `pricing.ts`, which has no Prisma access) reads the most recent
+`COMMITTED` Purchase / `ACTIVE` PurchaseLine linked to the `LocationItem`, following the same
+derive-don't-duplicate idiom `resolveCostBasis` already uses. The `assetCode` generator lives
+alongside it: sequential across the whole client (never resets per category, matching the client's
+own AST-001→070 numbering), read-then-increment inside the same `$transaction` as the
+`LocationItem` create — the unique constraint is the race backstop, not the primary guard. Wired
+into `POST /location-items`, scoped to Asset attaches only.
+
+**Counting needed no new code.** Verified rather than built: two `CountSession` rows against the
+same `LocationItem` (different `countDate`) already reproduce Beginning/Ending Inventory with zero
+schema or `counts`-route changes — no uniqueness constraint blocks it, and `buildLineData` branches
+only on `countType`, never on `Category.productType`. The count-entry screen already hides weighing
+fields for Asset rows, since `weighable` derives from `contentTracked || weighMode === "NET"`, which
+is always false for Asset variants — no fix needed, confirmed rather than assumed.
+
+**Sales stays visible on Asset-only locations** — decided, not defaulted. The proposal's own framing
+("nothing sells or is comped") turned out not to hold: Phase 16's breakage flow already runs Asset
+losses through Sales → Non-Revenue (`ASSET_LOSS_REASONS`, `assetBreakageReport`), so gating Sales the
+way Recipes is gated (`requiresProductTypes`) would have hidden a working feature, not an
+inapplicable one. Reasoning recorded inline in `nav.ts`.
+
+**Two new reports.** `Asset Register` (`services/asset-register.ts`) — a snapshot over `LocationItem`
+joined to `ItemVariant`/`Item`/`Category`/`Unit`/`Location`, filtered to `productType = "Asset"`,
+plus the derived supplier and latest breakage note; no variance math, deliberately not routed through
+`report-assembly.ts`. `Asset Inventory` (`services/asset-inventory.ts`) — Beginning vs Ending
+`CountLine.qtyFull` for two given dates, two lookups, no new query shape. Both get view + export
+routes (`reports.export` guard on export) and pages built on `TableSurface`/`ToolbarSearch`, closest
+analog `on-hand.tsx`; both added to the Reports hub. Exports follow the `ONHAND_HEADERS` declarative
+pattern, not `FULL_AUDIT_COLUMNS`'s variance-coloring — Asset has no variance to color. Purely
+additive to `exports.ts`: no existing `_HEADERS` array or exported function touched, so no golden
+fixture is at risk — confirmed, not assumed.
+
+**Seed data.** Fixed the "Safert First" typo (→ "Safety — First Aid") and trimmed trailing whitespace
+("Furniture ", "Recorder ", "Chair ", and others the same pass turned up) in the client's AST-001→070
+sheet before it became seed data, keeping the continuous non-per-category numbering and the
+one-category-per-item shape as-is.
+
+**Both implementation calls the proposal left open landed on its own recommended defaults** —
+`LocationItem.assetCode` over `Item.assetCode`, and a sibling `Dialog` component over extending
+`PriceEdit` — so neither needed a tie-breaker beyond following the doc's own stated preference.
+
+Both workspaces typecheck clean.
+
+## Phase 18 — Max users, Full tier (2026-07-25)
+
+Client: "monthly, add **Full** — max users up to 10"; "**standalone**, he sets the number himself so
+users can't be generated without his knowledge."
+
+**Finding first:** `maxEntities` capped **locations**, not users — there was no user cap anywhere, so
+this was net-new, not a tweak.
+
+- **`Subscription.maxUsers`** (migration `20260725115405`), `0` = no cap saved (legacy rows).
+- **Enforced** in `assertUserSeatsAvailable` — called from BOTH `POST /users` and
+  `PUT /users/:id/access` (the access route replaces all rows, so capping only creation would be
+  trivially bypassed). Counts `UserClientAccess`; excludes the edited user from their own seat.
+- **`FULL` tier** added; `derivePackageType(billingCycle, maxEntities, maxUsers)` now names the tier
+  by USERS (1 → Basic, ≤5 → Medium, 6+ → Full), falling back to the old location rule when
+  `maxUsers = 0` so existing rows keep their badge instead of jumping to a different tier the first
+  time this runs against them.
+- **UI:** tier dropdown reads "Basic — 1 user / Medium — up to 5 / Full — up to 10" and sets the cap;
+  Standalone shows an editable **Max Users** number input (owner-set, never unlimited) alongside a
+  free-form **Max Locations** input (0 = unlimited, but only when explicitly chosen — never implied).
+- Seeded Prime = Full (10), Casa = Medium (5).
+
+**Bug found while verifying:** both seeded clients had **no subscription row at all** —
+`upsertClientWithSubscription` returned early for an existing client, so a client whose subscription
+went missing stayed broken through every re-seed. Now backfills. Golden fixture still −₱330.69.
+
+**Reconciled with Phase 17's Asset module** (same week, parallel branches): Phase 17 left the
+tier-mismatch question open ("packaging-tier mismatch... parked pending the client's confirmation
+of the intended tier structure") — this phase is that confirmation landing. `maxEntities` still
+gates location creation on its own (`POST /clients/:id/locations`), but no longer determines the
+package tier; `maxUsers` does. Both `LocationItem`-level Asset fields (Phase 17) and
+`Subscription.maxUsers` (this phase) are independent additive migrations — no overlap, no
+reconciliation needed at the schema level, just at the shared `constants.ts`/`admin.ts` files both
+touched.
+
+Parked: note 3 ("gayahin ang full audit") — the legacy 24-column layout already ships as
+Full Audit → **Client Formats → Detailed Full Audit Report** (xlsx/csv/pdf). Confirm with the client
+whether he means that download or wants it rendered on screen before building anything.
 
 ## Phase 17 — Max users, Full tier (2026-07-21)
 
@@ -639,6 +751,8 @@ the weight → 200, closes → count returns to 0. Golden fixture −₱330.69.
 | 2026-07-09 → 07-10 | JjByteX | UI fixes (segmented controls, sidebar), login redesign |
 | 2026-07-18 → 07-19 | JjByteX | Subscription/plans/clients arc: `Subscription`, `SubscriptionModule`, `LocationModule`, billing state, clients admin UI. A Plan catalog was added (`dd51046`) then fully reverted (`5af9668`) |
 | 2026-07-19 | Claude session | Phase 9 (above) + audit and remediation of the arc |
+| 2026-07-21 → 07-23 | Claude session | Phases 14–17: variance highlight, Par Level/Non-Moving reports, Asset breakage, and the full Asset module (catalog fields, per-location register, Asset Register/Inventory reports) |
+| 2026-07-25 | Claude session (parallel branch) | Phase 18: `Subscription.maxUsers`, Full tier, seat enforcement — merged alongside Phase 17's Asset module work |
 
 **Audit outcome for the JjByteX arc** — what held and what didn't, so it isn't re-litigated:
 
@@ -774,4 +888,51 @@ content width **926 → 1160px**; at 1024 the catalog went from 958px-in-670 (ha
 scroll) to **904-in-904, no scroll**. Swept all 13 pages at 1280 — no horizontal
 scroll anywhere except `reports/legacy-audit`, which is the client's 24-column
 layout and is meant to scroll.
+
+## Merge — origin/main (asset module) into local work (2026-07-28)
+
+Nine conflicted files. Most were both-sides-additive (new fields on the same
+model, new routes in the same array) and were unioned. Three needed judgement:
+
+- **`admin.ts`** — we extracted the user routes into `userAdminRoutes` with the
+  softer `users.manage` guard so an OWNER can hire/disable his own staff; their
+  branch left them inside `adminRoutes` and changed only comments there. Took
+  ours; verified no duplicate `/users` handlers survived.
+- **`item-form.tsx`** — they restructured the variant block around
+  `isAsset`; we changed the weight-field permission gates. Rebuilt from their
+  file and re-applied our four edits, so both survive.
+- **`architecture.md`** — we both claimed deviation **#26**. Theirs landed on
+  main first and their code comments already cite #26, so ours renumbered to
+  **#27**.
+
+Fallout the merge surfaced, fixed:
+
+- `seed.ts` — their new Aurora client predates `maxUsers` becoming required.
+  Set to 1, matching its own comment ("same Basic-tier shape as Casa Verde");
+  BASIC is one seat.
+- `seed.ts` — two unchecked index accesses into `createdItems`. Guarded rather
+  than asserted: if those arrays ever desync, seeding a count line against the
+  *wrong* asset is worse than skipping one.
+- `admin/clients.tsx` — both branches added the same `PACKAGE_MAX_USERS` import
+  and the merge kept both lines.
+
+**A real bug on main, not a merge artifact** — migration
+`20260724070711_add_asset_industry_field` declares `industry` on **Category** in
+`schema.prisma` but the SQL adds the column to **LocationItem**. So
+`Category.industry` never existed in any database built from migrations, and
+every query joining Category — most of the reporting layer via
+`report-assembly.ts` — died with `P2022 ColumnNotFound`. The dashboard 500'd on
+first load after the merge. Fixed with a corrective migration
+(`20260728060000_fix_category_industry_column`) rather than editing the applied
+one, which would break its recorded checksum. The stray `LocationItem.industry`
+is left in place: nullable, absent from the schema, never read.
+
+Also gated the new **Asset Details** column on `locationModules.includes("ASSET")`
+— it was a column of "—" on every Bar and Kitchen catalog, which undid part of
+the small-laptop width work.
+
+Verified after merging: both workspaces typecheck, Prisma schema validates,
+migrations report in sync, all 18 pages render with no client or server errors,
+and the **golden fixture is unchanged — −₱330.69 / −₱869.57 on both the Full
+Audit and the Legacy Audit.**
 

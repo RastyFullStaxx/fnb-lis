@@ -138,18 +138,28 @@ model UserClientAccess {
 }
 
 // ───────────────────────── Subscription & Packages ─────────────────────────
-// packageType: BASIC | MEDIUM | ONE_TIME — DERIVED, not independently settable.
-//   Computed server-side from (billingCycle, maxEntities) via
+// packageType: BASIC | MEDIUM | FULL | ONE_TIME — DERIVED, not independently settable.
+//   Computed server-side from (billingCycle, maxEntities, maxUsers) via
 //   derivePackageType() in @fnb/core on every create/update (see admin.ts).
 //   It used to be a separately-settable field and could drift from the truth
 //   (e.g. badged "Basic" while actually unlimited) — that's fixed now; it's
 //   stored (not computed on read) purely so it can be queried/filtered
-//   without joining, but the column always mirrors billingCycle+maxEntities.
+//   without joining, but the column always mirrors billingCycle+maxEntities+maxUsers.
 // billingCycle: STANDALONE | MONTHLY — directly settable; drives packageType above.
 // modules: SubscriptionModule rows, one per atomic module (BAR | KITCHEN | ASSET)
 //   the client is licensed for in total — the *ceiling* every location's own
 //   LocationModule set must stay within (Fix Plan Phase C §2.3/§2.2).
-// maxEntities: any admin-set number; 0 = unlimited — drives packageType above.
+// maxEntities: admin-set number of locations; 0 = unlimited. No longer what
+//   names the tier (see maxUsers below, client req 2026-07-21) — it still
+//   gates location creation (POST /clients/:id/locations) on its own.
+// maxUsers: admin-set number of USER accounts (client req 2026-07-21) — THIS
+//   is what names the Monthly tier now (Basic 1 / Medium 2-5 / Full 6-10).
+//   0 = no cap saved (legacy rows, pre-dates this field — derivePackageType
+//   falls back to maxEntities for these so they keep their existing badge).
+//   Standalone owners set their own number so accounts can't be generated
+//   without their knowledge — never unlimited by default there either.
+//   Enforced in assertUserSeatsAvailable (admin.ts), called from both
+//   POST /users and PUT /users/:id/access.
 // negotiatedPrice: optional per-client/per-deal price, if tracked in-system at
 //   all — set directly on the subscription, not sourced from any catalog.
 //
@@ -163,9 +173,9 @@ model Subscription {
   id              String    @id @default(cuid())
   clientId        String    @unique
   client          Client    @relation(fields: [clientId], references: [id])
-  packageType     String // BASIC | MEDIUM | ONE_TIME — derived, see note above
+  packageType     String // BASIC | MEDIUM | FULL | ONE_TIME — derived, see note above
   billingCycle    String // STANDALONE | MONTHLY
-  maxEntities     Int       @default(1) // 1=BASIC, 2+/0=MEDIUM (monthly), 0=unlimited (standalone/ONE_TIME)
+  maxEntities     Int       @default(1) // admin-set location count; 0 = unlimited. Gates location creation, no longer names the tier.
   // Max USER accounts this client may have (client req 2026-07-21). Monthly
   // tiers cap it (Basic 1 / Medium 5 / Full 10); Standalone owners set their
   // own number so nobody can quietly generate logins. 0 = unlimited (legacy).
@@ -215,6 +225,11 @@ model Category {
   productType          String // data-driven list in Setting "productTypes"
   defaultDensityFactor Float? // ml per weight-unit for weigh counts (e.g. Vodka 30.12/oz)
   sortOrder            Int    @default(0)
+  // Asset-only, nullable (client req 2026-07-24). Set once per category
+  // (e.g. "Dental Equipment" -> Dental) rather than per LocationItem —
+  // every asset in a category shares one industry/vertical by design.
+  // data-driven list, Setting "industryOptions".
+  industry             String?
 
   items Item[]
 }
@@ -262,6 +277,12 @@ model ItemVariant {
   weightReviewNote String?
   weightReviewBy   String?
   weightReviewAt   DateTime?
+
+  // Asset-only, nullable (architecture.md deviation #26) — intrinsic to the
+  // product line, so these live here rather than on LocationItem. Ignored by
+  // Bar/Kitchen/Supplies rows, same treatment as weighMode above for non-Bar items.
+  brand          String?
+  model          String?
   isActive       Boolean @default(true)
 
   locationItems LocationItem[]
@@ -292,6 +313,17 @@ model LocationItem {
   tareWeight     Float?
   tareWeightUnit String? // g | oz
   densityFactor  Float?
+
+  // Asset-only, nullable (architecture.md deviation #26). assetCode is the
+  // human-readable AST-### register number: unique when set, sequential across
+  // the whole client, not per-category (see asset-module-proposal.md). `cost`
+  // above doubles as "current cost"; initialCost is the fixed purchase price.
+  assetCode     String?     @unique
+  initialCost   Float?
+  serialNo      String?     // per asset TYPE not per unit — see asset-module-proposal.md
+  condition     String?     // data-driven list, Setting "conditionOptions"
+  status        String?     // data-driven list, Setting "statusOptions" — distinct from isActive
+  remarks       String?
   isActive      Boolean     @default(true)
   updatedById   String?
   createdAt     DateTime    @default(now())

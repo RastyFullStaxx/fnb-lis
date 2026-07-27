@@ -26,6 +26,8 @@ import { ParLevelReportPage } from "./pages/reports/par-level";
 import { NonMovingReportPage } from "./pages/reports/non-moving";
 import { AssetBreakageReportPage } from "./pages/reports/asset-breakage";
 import { LegacyAuditPage } from "./pages/reports/legacy-audit";
+import { AssetRegisterReportPage } from "./pages/reports/asset-register";
+import { AssetInventoryReportPage } from "./pages/reports/asset-inventory";
 import { TopSellersPage } from "./pages/reports/top-sellers";
 import { CostSnapshotPage } from "./pages/reports/cost-snapshot";
 import { ForfeitsReportPage } from "./pages/reports/forfeits";
@@ -73,6 +75,8 @@ export const router = createBrowserRouter([
       { path: "reports/non-moving", element: <NonMovingReportPage /> },
       { path: "reports/asset-breakage", element: <AssetBreakageReportPage /> },
       { path: "reports/legacy-audit", element: <LegacyAuditPage /> },
+      { path: "reports/asset-register", element: <AssetRegisterReportPage /> },
+      { path: "reports/asset-inventory", element: <AssetInventoryReportPage /> },
       { path: "reports/top-sellers", element: <TopSellersPage /> },
       { path: "reports/cost-snapshot", element: <CostSnapshotPage /> },
       { path: "reports/forfeits", element: <ForfeitsReportPage /> },

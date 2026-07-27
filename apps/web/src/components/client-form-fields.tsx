@@ -147,13 +147,15 @@ export function PackageAndModulesFields({
             // be generated without his knowledge (client req 2026-07-21).
             <div className="space-y-2">
               <Label htmlFor="max-users">Max Users</Label>
-              <Input
+              <QuantityInput
                 id="max-users"
-                type="number"
-                min={1}
-                value={maxUsers || ""}
+                className="tnum"
+                value={String(maxUsers || "")}
                 placeholder="e.g. 5"
-                onChange={(e) => onMaxUsersChange(Number(e.target.value) || 0)}
+                onChange={(e) => {
+                  const n = Number(e.target.value);
+                  onMaxUsersChange(e.target.value === "" || !Number.isFinite(n) ? 0 : Math.max(0, Math.trunc(n)));
+                }}
               />
               <p className="text-xs text-muted-foreground">How many accounts this installation may create.</p>
             </div>
@@ -167,14 +169,19 @@ export function PackageAndModulesFields({
           {(isStandalone || tier !== "BASIC") && (
             <div className="space-y-2">
               <Label htmlFor="max-entities">Max Locations</Label>
-              <Input
+              <QuantityInput
                 id="max-entities"
-                type="number"
-                min={1}
-                value={maxEntities || ""}
+                className="tnum"
+                value={String(maxEntities || "")}
                 placeholder="e.g. 2"
-                onChange={(e) => onMaxEntitiesChange(Number(e.target.value) || 0)}
+                onChange={(e) => {
+                  const n = Number(e.target.value);
+                  onMaxEntitiesChange(e.target.value === "" || !Number.isFinite(n) ? 0 : Math.max(0, Math.trunc(n)));
+                }}
               />
+              {isStandalone && (
+                <p className="text-xs text-muted-foreground">Any number the admin sets — 0 means unlimited locations.</p>
+              )}
             </div>
           )}
         </div>

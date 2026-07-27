@@ -221,7 +221,7 @@ export const PACKAGE_DEFAULT_MAX_ENTITIES: Record<PackageType, number> = {
   BASIC: 1,
   MEDIUM: 5,
   FULL: 10,
-  ONE_TIME: 0, // unlimited
+  ONE_TIME: 0, // admin-set at creation; 0 is just the form's starting point, not an implied "unlimited"
 };
 
 /** @see PACKAGE_DEFAULT_MAX_ENTITIES */
@@ -235,7 +235,9 @@ export const PACKAGE_DEFAULT_BILLING_CYCLE: Record<PackageType, BillingCycle> = 
 /**
  * Derives the package tier from the fields that actually define it. The tier
  * is named by MAX USERS (client req 2026-07-21: "monthly, add Full — max users
- * up to 10"), falling back to max locations for pre-maxUsers rows.
+ * up to 10"), falling back to max locations for pre-maxUsers rows (maxUsers=0
+ * from the migration default) so nothing already in the database silently
+ * jumps to a different tier the first time this runs against it.
  *
  * packageType is NOT a separately-settable field anywhere in the app — it
  * used to be, and could silently drift from the truth (e.g. a client badged
