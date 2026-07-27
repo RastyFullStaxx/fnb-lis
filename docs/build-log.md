@@ -964,3 +964,33 @@ rows carrying condition, 7 breakage notes each, no code collisions; 18 pages
 render clean; both workspaces typecheck; golden fixture still
 **−₱330.69 / −₱869.57**.
 
+### Second pass — write paths, pages, exports
+
+The first audit was convention greps plus one numeric cross-check; it did not
+cover their write paths, their two new pages, or their exports. Going back over
+those found two more real defects:
+
+- **The audit-log before-image was incomplete.** `PUT /location-items/:id` is
+  the shared write path for prices, weights AND the asset register fields, but
+  its `old` snapshot only captured cost/retail/par/isActive plus the weights I
+  had added. Changing an asset's condition recorded the new value with nothing
+  to compare it against — in a system whose rule is that every mutation is
+  auditable, a half-captured before-image is the defect. `old` now covers every
+  field the route can write, and the action splits three ways
+  (`priceChange` / `weightChange` / `assetChange`) so an auditor can filter.
+  Verified live: changing Amplifier's condition logs `locationItem.assetChange`
+  with `old.condition: "Active"`.
+- **Asset Register was 13 columns / 1,860px** — a sideways scroll at 1280,
+  exactly what Phase 25 removed everywhere else. Given the same treatment the
+  Full Audit already uses: compact by default (code, item, category, condition,
+  status, initial and current cost), **All Columns** for the rest. 1,860 → 1,160,
+  no scroll. Exports still carry all 16 columns, verified, so narrowing the
+  screen loses nothing. Its "As of" date also rendered raw ISO; now `formatDate`.
+
+Two things checked and cleared rather than assumed: `asset-inventory` returning
+an empty report is only true of a bare API call — the page defaults to
+`dates.at(-2)`/`.at(-1)` like every other count-anchored report. And the Asset
+Register's notes agree with the Breakage report; an earlier claim that they
+disagreed was my own field-name error (`lastNote` vs `latestNote`), not their
+bug.
+

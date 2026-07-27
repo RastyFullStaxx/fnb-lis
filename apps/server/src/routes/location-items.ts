@@ -9,6 +9,13 @@ import { requirePermission, type AppEnv } from "../middleware/auth";
 
 const priceGuard = requirePermission("prices.edit");
 
+/** Asset register fields writable through the shared catalog PUT. */
+const ASSET_DETAIL_FIELDS = ["assetCode", "initialCost", "serialNo", "condition", "status", "remarks"] as const;
+
+/** Did this partial update actually carry any of these fields? */
+const touched = (body: Record<string, unknown>, keys: readonly string[]) =>
+  keys.some((k) => body[k] !== undefined);
+
 /** Mounted under /api/locations/:locationId (requireAuth + requireLocationAccess applied there). */
 export const locationItemRoutes = new Hono<AppEnv>()
   /**
@@ -165,18 +172,27 @@ export const locationItemRoutes = new Hono<AppEnv>()
           user, clientId: location.clientId, locationId: location.id,
           // One route, two very different edits — an auditor filtering for
           // weight changes must not have to read every price change.
-          action:
-            body.tareWeight !== undefined || body.tareWeightUnit !== undefined || body.densityFactor !== undefined
-              ? "locationItem.weightChange"
+          // One route, three very different edits — an auditor filtering for
+          // weight or asset changes must not have to read every price change.
+          action: touched(body, ["tareWeight", "tareWeightUnit", "densityFactor"])
+            ? "locationItem.weightChange"
+            : touched(body, ASSET_DETAIL_FIELDS)
+              ? "locationItem.assetChange"
               : "locationItem.priceChange",
           entity: "LocationItem", entityId: itemId,
           summary: `Updated ${existing.itemVariant.item.name} ${existing.itemVariant.size} ${existing.itemVariant.unit.name}`,
           details: {
+            // The BEFORE image has to cover every field this route can write,
+            // or a change records its new value with nothing to compare it to.
             old: {
               cost: existing.cost, retail: existing.retail, parLevel: existing.parLevel, isActive: existing.isActive,
               // Weights change what a scale reading computes to, so an edit
               // must be as auditable as a price change.
               tareWeight: existing.tareWeight, tareWeightUnit: existing.tareWeightUnit, densityFactor: existing.densityFactor,
+              // Asset register fields: condition and status drive the register
+              // and the breakage report, so they need the same treatment.
+              assetCode: existing.assetCode, initialCost: existing.initialCost, serialNo: existing.serialNo,
+              condition: existing.condition, status: existing.status, remarks: existing.remarks,
             },
             new: body,
           },
