@@ -33,7 +33,6 @@ const EMPTY: CompanyInfo = { legalName: "", address: "", phone: "", email: "", r
 
 const costBasisBody = z.object({ costBasis: z.enum(COST_BASES) });
 
-const bottleWeightsBody = z.object({ showBottleWeights: z.boolean() });
 
 const varianceThresholdBody = z.object({
   varianceThresholdPct: z.number().min(VARIANCE_THRESHOLD_MIN).max(VARIANCE_THRESHOLD_MAX),
@@ -218,38 +217,3 @@ export const settingsRoutes = new Hono<AppEnv>()
     return c.json({ varianceThresholdPct });
   });
 
-/**
- * Whether an establishment may see raw tare / liquid weights (client decision
- * 2026-07-25). ADMIN-only on purpose: it releases LIS's own calibration data,
- * so it is not something a client can grant themselves.
- */
-export const bottleWeightsRoutes = new Hono<AppEnv>()
-  .use(requireAuth, requirePermission("weights.manage"))
-
-  .put("/bottle-weights", zValidator("json", bottleWeightsBody), async (c) => {
-    const user = c.get("user")!;
-    const clientId = c.req.query("clientId") ?? "";
-    if (!clientId) throw new AppError(400, "clientId is required");
-    const { showBottleWeights } = c.req.valid("json");
-    const before = await prisma.client.findUnique({
-      where: { id: clientId },
-      select: { showBottleWeights: true, name: true },
-    });
-    if (!before) throw new AppError(404, "Client not found");
-    await prisma.$transaction(async (tx) => {
-      await tx.client.update({ where: { id: clientId }, data: { showBottleWeights } });
-      await logActivity(
-        {
-          user,
-          clientId,
-          action: "settings.bottleWeights",
-          entity: "Client",
-          entityId: clientId,
-          summary: `Bottle weights ${showBottleWeights ? "shown to" : "hidden from"} ${before.name}`,
-          details: { from: before.showBottleWeights, to: showBottleWeights },
-        },
-        tx,
-      );
-    });
-    return c.json({ showBottleWeights });
-  });

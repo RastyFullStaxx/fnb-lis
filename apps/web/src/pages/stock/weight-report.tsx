@@ -34,7 +34,15 @@ import {
  * re-weighed. One open report per bottle, so this can't become a queue of
  * duplicate asks.
  */
-export function WeightReport({ row }: { row: LocationItem }) {
+export function WeightReport({
+  row,
+  as = "action",
+}: {
+  row: LocationItem;
+  /** "badge" renders only the pending state (it belongs in Status); "action"
+      renders only the way to raise one (it lives inside the Weigh dialog). */
+  as?: "badge" | "action";
+}) {
   const me = useMe();
   const role = (me.data?.user.role ?? "READONLY") as Role;
   const canReport = can(role, "master.write");
@@ -72,6 +80,7 @@ export function WeightReport({ row }: { row: LocationItem }) {
   };
 
   if (pending) {
+    if (as === "action") return null; // already raised — one open report per bottle
     return (
       <div className="flex items-center justify-end gap-2">
         <TooltipProvider>
@@ -96,16 +105,15 @@ export function WeightReport({ row }: { row: LocationItem }) {
     );
   }
 
+  if (as === "badge") return null; // nothing pending — Status stays quiet
+
   return (
     <>
-      {/* Quiet until hovered — this is a rare action, not a primary one. */}
-      <Button
-        variant="ghost"
-        size="xs"
-        className="text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-        onClick={() => setOpen(true)}
-      >
-        <Scale className="size-3" /> Report weight
+      {/* Secondary by placement, not by hiding: it sits inside the Weigh
+          dialog, because "the standard is wrong" only comes up once you have
+          weighed the bottle yourself and disagree with it. */}
+      <Button variant="ghost" size="sm" className="mr-auto text-muted-foreground" onClick={() => setOpen(true)}>
+        Report a problem
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>

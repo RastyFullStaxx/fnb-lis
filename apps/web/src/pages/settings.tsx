@@ -11,7 +11,6 @@ import {
   useUpdateCompanyInfo,
   useUpdateCostBasis,
   useUpdateProductTypes,
-  useUpdateBottleWeights,
   useUpdateVarianceThreshold,
   useVarianceThreshold,
   type CompanyInfo,
@@ -23,7 +22,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -47,7 +45,7 @@ export function SettingsPage() {
         <CompanySection />
         <CostBasisSection />
         <VarianceThresholdSection />
-        {can(role, "weights.manage") && <BottleWeightsSection />}
+        {can(role, "master.write") && <CatalogExportSection />}
         {can(role, "admin.manage") && <ProductTypesSection />}
       </div>
     </div>
@@ -199,59 +197,23 @@ function VarianceThresholdSection() {
 }
 
 /**
- * Release LIS's bottle-weight library to one establishment (client decision
- * 2026-07-25). ADMIN-only — it is our calibration data, not a client
- * preference. Off by default; the CSV below is the other way to hand it over.
+ * The client's own catalog, weights included, as a file. They weigh their own
+ * bottles now (client decision 2026-07-25), so this is a copy of THEIR data —
+ * handy for a spreadsheet or a backup, not a release of anything.
  */
-function BottleWeightsSection() {
-  const client = useCurrentClient();
-  const clientId = client?.id ?? "";
-  const me = useMe();
+function CatalogExportSection() {
   const locationId = useLocationId();
-  const update = useUpdateBottleWeights(clientId);
-  const shown = me.data?.clients.find((c) => c.id === clientId)?.showBottleWeights ?? false;
-
-  const change = async (next: boolean) => {
-    try {
-      await update.mutateAsync(next);
-      toast.success(next ? "This client can now see bottle weights" : "Bottle weights hidden from this client");
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Could not save");
-    }
-  };
 
   return (
     <SettingsSection
-      title="Bottle Weights (LIS only)"
-      description="Empty (tare) and liquid weights are your calibration data. Clients never see the numbers unless you release them here — they only see a “Needs weight” flag so they can ask you to fill one in."
+      title="Local Database"
+      description="Download this location's catalog — costs, prices, par levels, and the empty (tare) and liquid weights you have recorded."
     >
-      <div className="max-w-md space-y-4">
-        <div className="flex items-center justify-between gap-4">
-          <div className="space-y-1">
-            <Label htmlFor="show-weights">Show weights to this client</Label>
-            <p className="text-xs text-muted-foreground">
-              Turns on the Tare / Liquid Wt column in their Local Database and the
-              working shown while weighing.
-            </p>
-          </div>
-          <Switch
-            id="show-weights"
-            checked={shown}
-            disabled={update.isPending || !clientId}
-            onCheckedChange={(v) => void change(v)}
-          />
-        </div>
-        <div className="border-t pt-4">
-          <p className="mb-2 text-xs text-muted-foreground">
-            Or hand it over as a one-off file, without switching the display on.
-          </p>
-          <Button variant="outline" size="sm" asChild>
-            <a href={`/api/locations/${locationId}/location-items/export`}>
-              <Download className="size-4" /> Download catalog with weights (CSV)
-            </a>
-          </Button>
-        </div>
-      </div>
+      <Button variant="outline" size="sm" asChild>
+        <a href={`/api/locations/${locationId}/location-items/export`}>
+          <Download className="size-4" /> Download catalog (CSV)
+        </a>
+      </Button>
     </SettingsSection>
   );
 }

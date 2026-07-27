@@ -20,7 +20,7 @@ import { importRoutes } from "./routes/imports";
 import { reportRoutes } from "./routes/reports";
 import { dashboardRoutes } from "./routes/dashboard";
 import { activityRoutes } from "./routes/activity";
-import { settingsRoutes, preferencesRoutes, bottleWeightsRoutes } from "./routes/settings";
+import { settingsRoutes, preferencesRoutes } from "./routes/settings";
 import { stockyRoutes } from "./routes/stocky";
 
 export function createApp() {
@@ -40,7 +40,6 @@ export function createApp() {
   app.route("/api/activity", activityRoutes);
   app.route("/api/settings", settingsRoutes);
   app.route("/api/settings", preferencesRoutes);
-  app.route("/api/settings", bottleWeightsRoutes);
 
   // Location-scoped routes: auth + client access enforced once here.
   const locationScoped = new Hono<AppEnv>()

@@ -390,11 +390,30 @@ export function can(role: Role, permission: Permission): boolean {
 }
 
 /**
- * Whether raw tare / liquid weights may be shown to this viewer. The LIS admin
- * always sees them; an establishment sees them only when the admin has enabled
- * it for that client (`Client.showBottleWeights`). Everyone else still sees the
- * "needs weight" STATUS — they just cannot read the numbers.
+ * The bottle weights actually in force for one catalog row.
+ *
+ * A client weighs their own bottles into their LOCAL catalog row; the master
+ * ItemVariant is LIS's library and is shared by every tenant (client decision
+ * 2026-07-25). So the local override wins, then the master, then — for density
+ * only — the item's category default.
+ *
+ * Deliberately NOT in weighing.ts: that file is part of the sacred
+ * reconciliation path, and this is a lookup rule, not math.
  */
-export function canSeeBottleWeights(role: Role, clientShowsWeights: boolean | undefined): boolean {
-  return can(role, "weights.manage") || clientShowsWeights === true;
+export function resolveBottleWeights(
+  local: { tareWeight?: number | null; tareWeightUnit?: string | null; densityFactor?: number | null },
+  variant: { tareWeight?: number | null; tareWeightUnit?: string | null; densityFactor?: number | null },
+  categoryDensity?: number | null,
+): { tareWeight: number | null; tareWeightUnit: string | null; densityFactor: number | null; fromLocal: boolean } {
+  const tare = local.tareWeight ?? variant.tareWeight ?? null;
+  const density = local.densityFactor ?? variant.densityFactor ?? categoryDensity ?? null;
+  return {
+    tareWeight: tare,
+    // The unit belongs with the number it describes — an override weighed in
+    // grams must not inherit the master's "oz" and silently mis-convert.
+    tareWeightUnit:
+      local.tareWeight != null ? (local.tareWeightUnit ?? null) : (variant.tareWeightUnit ?? null),
+    densityFactor: density,
+    fromLocal: local.tareWeight != null || local.densityFactor != null,
+  };
 }

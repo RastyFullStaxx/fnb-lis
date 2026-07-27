@@ -3,6 +3,7 @@ import { Scale } from "lucide-react";
 import {
   can,
   netQuantity,
+  resolveBottleWeights,
   remainingContent,
   resolveDensityFactor,
   validateNetWeigh,
@@ -12,7 +13,6 @@ import {
 } from "@fnb/core";
 import { useMe } from "@/api/auth";
 import { useUnits } from "@/api/master";
-import { useCanSeeBottleWeights } from "@/lib/weights";
 import type { LocationItem } from "@/api/types";
 import { cn } from "@/lib/utils";
 import { defaultWeighUnit, useUnitSystem } from "@/lib/preferences";
@@ -44,11 +44,15 @@ export function useWeighPreview(item: LocationItem | null, scaleText: string) {
         ? variant.weighMode
         : null;
     if (!mode) return null;
-    const tare = variant.tareWeight;
+    // The client's own weighing of THEIR bottle wins over the shared master
+    // library — same rule the server applies in routes/counts.ts, so the live
+    // preview can never disagree with what gets saved.
+    const resolved = resolveBottleWeights(item, variant, variant.item.category.defaultDensityFactor);
+    const tare = resolved.tareWeight;
 
     if (mode === "NET") {
       if (tare === null) return { ready: false as const, missing: "empty weight" };
-      const unitName = variant.tareWeightUnit ?? fallbackUnit;
+      const unitName = resolved.tareWeightUnit ?? fallbackUnit;
       const scale = Number(scaleText);
       if (scaleText === "" || !Number.isFinite(scale)) {
         return { ready: true as const, entered: false as const, mode, tare, density: null, unit: unitName };
@@ -83,7 +87,7 @@ export function useWeighPreview(item: LocationItem | null, scaleText: string) {
     }
 
     const density = resolveDensityFactor(
-      variant.densityFactor,
+      resolved.densityFactor,
       variant.item.category.defaultDensityFactor,
     );
     if (!density || tare === null) {
@@ -97,7 +101,7 @@ export function useWeighPreview(item: LocationItem | null, scaleText: string) {
         mode,
         tare,
         density,
-        unit: variant.tareWeightUnit ?? fallbackUnit,
+        unit: resolved.tareWeightUnit ?? fallbackUnit,
       };
     }
     const input = { scaleWeight: scale, tareWeight: tare, densityFactor: density };
@@ -110,7 +114,7 @@ export function useWeighPreview(item: LocationItem | null, scaleText: string) {
       mode,
       tare,
       density,
-      unit: variant.tareWeightUnit ?? fallbackUnit,
+      unit: resolved.tareWeightUnit ?? fallbackUnit,
       scale,
       remaining,
       equivalent: blocking ? 0 : openEquivalent(remaining, variant.size, true),
@@ -129,19 +133,18 @@ export function WeighPreviewStrip({
   size: number;
   contentUnit: string;
 }) {
-  const showWeights = useCanSeeBottleWeights();
   const me = useMe();
-  const canEditWeights = can((me.data?.user.role ?? "READONLY") as Role, "weights.manage");
+  const canEditWeights = can((me.data?.user.role ?? "READONLY") as Role, "prices.edit");
   if (!preview) return null;
   if (!preview.ready) {
     return (
       <p className="rounded-md bg-warning/10 px-3 py-2 text-sm text-foreground">
         {/* Never a dead end: whoever hits this must be told what THEY can do
-            next. Only an LIS admin can supply a weight now, so everyone else
-            gets the way around it instead of an instruction they can't follow. */}
+            next — and only a manager/owner can record a weighing, so staff get
+            the way around it instead of an instruction they can't follow. */}
         {canEditWeights
-          ? `This item has no ${preview.missing} configured — set it in Items before weighing.`
-          : `This bottle has no ${preview.missing} yet, so it can't be weighed. It's already flagged for your LIS administrator — meanwhile you can count it under Full Units, or enter what's left under Open Amount.`}
+          ? `This bottle has no ${preview.missing} yet — weigh the empty container and record it on the item in Local Database, then come back.`
+          : `This bottle has no ${preview.missing} yet, so it can't be weighed. Ask your manager to weigh the empty container in Local Database — meanwhile you can count it under Full Units, or enter what's left under Open Amount.`}
       </p>
     );
   }
@@ -150,11 +153,9 @@ export function WeighPreviewStrip({
       <p className="text-sm text-muted-foreground tnum">
         {/* The constants are LIS's own calibration data — a counter needs the
             RESULT, not the inputs (client decision 2026-07-25). */}
-        {!showWeights
-          ? "Ready to weigh — type the scale weight."
-          : preview.mode === "NET"
-            ? `Empty weight ${preview.tare} ${preview.unit} · weighed by net weight — type the scale weight.`
-            : `Empty weight ${preview.tare} ${preview.unit} · Liquid Weight ×${preview.density} — type the scale weight.`}
+        {preview.mode === "NET"
+          ? `Empty weight ${preview.tare} ${preview.unit} · weighed by net weight — type the scale weight.`
+          : `Empty weight ${preview.tare} ${preview.unit} · Liquid Weight ×${preview.density} — type the scale weight.`}
       </p>
     );
   }
@@ -179,11 +180,9 @@ export function WeighPreviewStrip({
           <div className="min-w-0 flex-1 space-y-0.5 tnum text-sm">
             <div>
               <span className="text-muted-foreground">
-                {!showWeights
-                  ? `scale ${fmt(preview.scale)} ${preview.unit}`
-                  : preview.mode === "NET"
-                    ? `scale ${fmt(preview.scale)} − empty ${fmt(preview.tare)} ${preview.unit}`
-                    : `(scale ${fmt(preview.scale)} − empty ${fmt(preview.tare)} ${preview.unit}) × Liquid Weight ${fmt(preview.density)}`}
+                {preview.mode === "NET"
+                  ? `scale ${fmt(preview.scale)} − empty ${fmt(preview.tare)} ${preview.unit}`
+                  : `(scale ${fmt(preview.scale)} − empty ${fmt(preview.tare)} ${preview.unit}) × Liquid Weight ${fmt(preview.density)}`}
               </span>{" "}
               ={" "}
               {/* Keyed on the result so every recomputation visibly ticks (DESIGN.md motion). */}

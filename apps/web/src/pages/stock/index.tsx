@@ -2,14 +2,13 @@ import { useState } from "react";
 import { useParams, useSearchParams } from "react-router";
 import { Boxes, Copy, Info, Plus, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
-import { can, MODULE_TYPE_LABELS, type ModuleType, type Role } from "@fnb/core";
+import { can, MODULE_TYPE_LABELS, resolveBottleWeights, type ModuleType, type Role } from "@fnb/core";
 import { useMe } from "@/api/auth";
 import { useCopyFromLocation, useCurrentLocation, useLocationItems } from "@/api/location";
 import type { LocationItem } from "@/api/types";
 import { variantLabel } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { cn } from "@/lib/utils";
-import { useCanSeeBottleWeights } from "@/lib/weights";
 import { PageHeader } from "@/components/page-header";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { TableSurface, TableLoading, TableEmpty, ToolbarSearch } from "@/components/table-surface";
@@ -42,6 +41,7 @@ import { Toggle } from "@/components/toggle-chip";
 import { AttachItemDialog } from "./attach-dialog";
 import { PriceEdit } from "./price-edit";
 import { WeightReport } from "./weight-report";
+import { WeightEdit } from "./weight-edit";
 
 /**
  * Tare + liquid weight (density) for the list, and whether either is missing
@@ -52,17 +52,20 @@ import { WeightReport } from "./weight-report";
 function weighInfo(row: LocationItem) {
   const v = row.itemVariant;
   const weighable = v.contentTracked || v.weighMode === "NET" || v.weighMode === "DENSITY";
-  const noTare = v.tareWeight == null || v.tareWeight <= 0;
-  const density = v.densityFactor ?? row.itemVariant.item.category.defaultDensityFactor;
+  // Local override → master variant → category default (client decision
+  // 2026-07-25); same rule the counts route and the weigh preview apply.
+  const r = resolveBottleWeights(row, v, v.item.category.defaultDensityFactor);
+  const noTare = r.tareWeight == null || r.tareWeight <= 0;
   const needsDensity = v.weighMode !== "NET";
-  const noDensity = needsDensity && (density == null || density <= 0);
+  const noDensity = needsDensity && (r.densityFactor == null || r.densityFactor <= 0);
   return {
     weighable,
     noTare,
     noDensity,
+    fromLocal: r.fromLocal,
     incomplete: weighable && (noTare || noDensity),
-    tare: noTare ? "—" : `${v.tareWeight} ${v.tareWeightUnit ?? "g"}`,
-    density: !needsDensity ? "n/a" : noDensity ? "—" : String(density),
+    tare: noTare ? "—" : `${r.tareWeight} ${r.tareWeightUnit ?? "g"}`,
+    density: !needsDensity ? "n/a" : noDensity ? "—" : String(r.densityFactor),
   };
 }
 
@@ -82,12 +85,6 @@ export function StockPage() {
 
   const role = (me.data?.user.role ?? "READONLY") as Role;
   const canEditPrices = can(role, "prices.edit");
-  // The tare / liquid-weight library is LIS's own data: the numbers show only
-  // to the LIS admin, or to an establishment the admin has enabled it for
-  // (client decision 2026-07-25). Everyone else still gets the STATUS, so they
-  // can report a bottle that cannot be weighed without reading the values.
-  const showWeights = useCanSeeBottleWeights();
-
   const missingCount = catalog.data?.filter((r) => r.cost === 0 || r.retail === 0).length ?? 0;
   const locationModules = location?.modules ?? [];
   const moduleScope = locationModules.map((m) => MODULE_TYPE_LABELS[m as ModuleType] ?? m).join(" + ");
@@ -182,16 +179,17 @@ export function StockPage() {
                     </Tooltip>
                   </TooltipProvider>
                 </TableHead>
-                {showWeights && <TableHead className="text-right">Tare / Liquid Wt</TableHead>}
+                {/* The weigh control lives in this cell rather than a column of
+                    its own — a reserved column costs horizontal scroll on a
+                    laptop, which is where counting actually happens. */}
+                <TableHead className="text-right">Tare / Liquid Wt</TableHead>
                 <TableHead className="text-right">Status</TableHead>
-                {/* Clients can't edit weights, so this is how they flag a bad
-                    one and how the admin sees the ask (client req 2026-07-25). */}
-                <TableHead className="w-[10rem] text-right">Weight Check</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.data!.map((row) => {
                 const missing = row.cost === 0 || row.retail === 0;
+                const weigh = weighInfo(row);
                 return (
                   <TableRow key={row.id} className={cn("group", missing && "bg-destructive/5")}>
                     {/* Wrap rather than truncate — an auditor has to read the whole item name. */}
@@ -208,27 +206,40 @@ export function StockPage() {
                     <TableCell className="tnum text-right">
                       {row.parLevel ?? <span className="text-muted-foreground">—</span>}
                     </TableCell>
-                    {showWeights && (
-                    <TableCell className="tnum text-right whitespace-nowrap">
-                      {weighInfo(row).weighable ? (
-                        <>
-                          <span className={cn(weighInfo(row).noTare && "text-warning-text")}>
-                            {weighInfo(row).tare}
+                    <TableCell className="tnum whitespace-nowrap">
+                      {weigh.weighable ? (
+                        <div className="flex items-center justify-end gap-1.5">
+                          <span>
+                            <span className={cn(weigh.noTare && "text-warning-text")}>{weigh.tare}</span>
+                            <span className="text-muted-foreground"> / </span>
+                            <span className={cn(weigh.noDensity && "text-warning-text")}>{weigh.density}</span>
+                            {/* Whose number this is. Without it a manager can't tell
+                                their own weighing from the shared default, and
+                                re-weighing feels pointless. */}
+                            {weigh.fromLocal && (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="ml-1.5 cursor-help text-xs text-muted-foreground">own</span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    Your own weighing, recorded here. It applies to this
+                                    location only and replaces the standard value.
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            )}
                           </span>
-                          <span className="text-muted-foreground"> / </span>
-                          <span className={cn(weighInfo(row).noDensity && "text-warning-text")}>
-                            {weighInfo(row).density}
-                          </span>
-                        </>
+                          <WeightEdit row={row} />
+                        </div>
                       ) : (
-                        <span className="text-muted-foreground">—</span>
+                        <span className="block text-right text-muted-foreground">—</span>
                       )}
                     </TableCell>
-                    )}
                     <TableCell className="text-right">
                       {missing ? (
                         <Badge variant="destructive">No price</Badge>
-                      ) : weighInfo(row).incomplete ? (
+                      ) : weigh.incomplete ? (
                         // "Needs weight" alone is jargon and a dead end — say
                         // who fixes it, so nobody is left wondering.
                         <TooltipProvider>
@@ -239,18 +250,19 @@ export function StockPage() {
                               </span>
                             </TooltipTrigger>
                             <TooltipContent>
-                              This bottle can't be weighed until its empty and liquid
-                              weights are set. Your LIS administrator has been flagged
-                              — count it whole, or enter the open amount, meanwhile.
+                              This bottle can't be weighed until someone weighs the
+                              empty container — use Weigh on this row. Meanwhile it can
+                              be counted whole, or entered as an open amount.
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
+                      ) : row.itemVariant.weightReviewNote ? (
+                        // An open report IS this row's status — it was its own
+                        // column before, which cost width on every other row.
+                        <WeightReport row={row} as="badge" />
                       ) : (
                         <Badge variant="success">Ready</Badge>
                       )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <WeightReport row={row} />
                     </TableCell>
                   </TableRow>
                 );

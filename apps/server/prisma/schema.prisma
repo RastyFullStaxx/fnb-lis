@@ -77,6 +77,8 @@ model Client {
   // Whether this establishment may SEE bottle tare / liquid weights (client
   // decision 2026-07-25). Off by default: that calibration library is LIS's
   // own IP, shown to a client only when the LIS admin turns it on for them.
+  // Superseded 2026-07-25: clients weigh their own bottles into LocationItem
+  // overrides and always see them. Column kept — migrations stay additive.
   showBottleWeights Boolean @default(false)
   createdAt DateTime @default(now())
 
@@ -278,6 +280,18 @@ model LocationItem {
   cost          Float       @default(0)
   retail        Float       @default(0)
   parLevel      Float?
+  // Per-location bottle weights (client decision 2026-07-25: "sila na mag
+  // timbang… dapat din makita nila. Since Local Database lang naman ang
+  // nakikita ni User at hindi whole Main Database").
+  //
+  // ItemVariant is GLOBAL — every client draws from the same master catalog —
+  // so a client editing the variant would silently rewrite other tenants'
+  // numbers. They weigh their own bottles into their own catalog row instead;
+  // the master stays LIS's. Null = fall back to the variant, then the category
+  // default. Same product can legitimately differ by venue (supplier batch).
+  tareWeight     Float?
+  tareWeightUnit String? // g | oz
+  densityFactor  Float?
   isActive      Boolean     @default(true)
   updatedById   String?
   createdAt     DateTime    @default(now())

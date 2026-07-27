@@ -331,7 +331,7 @@ export const masterRoutes = new Hono<AppEnv>()
       const touchesWeights =
         body.tareWeight !== undefined || body.tareWeightUnit !== undefined || body.densityFactor !== undefined;
       if (touchesWeights) {
-        throw new AppError(403, "Bottle tare and liquid weights are set by your LIS administrator.");
+        throw new AppError(403, "The standard weights belong to the shared item library. Record your own weighing on the item in Local Database instead.");
       }
     }
     await assertWeighModeValid(

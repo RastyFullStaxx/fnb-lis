@@ -5,6 +5,7 @@ import {
   countSessionCreate,
   netQuantity,
   remainingContent,
+  resolveBottleWeights,
   resolveDensityFactor,
   voidRequest,
   type CountLineCreate,
@@ -98,10 +99,13 @@ async function buildLineData(locationId: string, body: CountLineCreate) {
       };
     }
 
-    const tare = body.tareWeight ?? variant.tareWeight;
+    // The client's own weighing of THEIR bottle wins over the shared master
+    // library (client decision 2026-07-25) — see resolveBottleWeights.
+    const resolved = resolveBottleWeights(locationItem, variant, variant.item.category.defaultDensityFactor);
+    const tare = body.tareWeight ?? resolved.tareWeight;
     if (tare === null || tare === undefined) throw new AppError(400, "No tare weight configured for this item");
     if (body.scaleWeight! < tare) throw new AppError(400, "Scale reading is below the empty weight");
-    const scaleUnit = body.scaleUnit ?? variant.tareWeightUnit ?? "oz";
+    const scaleUnit = body.scaleUnit ?? resolved.tareWeightUnit ?? "oz";
 
     if (mode === "NET") {
       return {
@@ -120,7 +124,7 @@ async function buildLineData(locationId: string, body: CountLineCreate) {
 
     const density =
       body.densityFactor ??
-      resolveDensityFactor(variant.densityFactor, variant.item.category.defaultDensityFactor);
+      resolveDensityFactor(resolved.densityFactor, variant.item.category.defaultDensityFactor);
     if (!density) throw new AppError(400, "No density factor configured for this item or its category");
     return {
       locationItem,

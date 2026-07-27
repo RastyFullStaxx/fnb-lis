@@ -79,7 +79,11 @@ export function useUpdateLocationItem() {
   return useMutation({
     mutationFn: ({ id, ...body }: LocationItemUpdate & { id: string }) =>
       put<LocationItem>(`${base(locationId)}/location-items/${id}`, body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["locationItems", locationId] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["locationItems", locationId] });
+      // Saving a weight can clear a "Needs weight" item off the bell.
+      void qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
   });
 }
 

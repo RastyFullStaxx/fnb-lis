@@ -1,24 +1,22 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
-import { allowedProductTypes, locationItemAttach, locationItemUpdate, supplierUpsert, toCsv, type CsvValue } from "@fnb/core";
+import { allowedProductTypes, locationItemAttach, locationItemUpdate, resolveBottleWeights, supplierUpsert, toCsv, type CsvValue } from "@fnb/core";
 import { prisma } from "../db";
 import { AppError } from "../lib/errors";
 import { logActivity } from "../services/activity";
 import { requirePermission, type AppEnv } from "../middleware/auth";
 
 const priceGuard = requirePermission("prices.edit");
-/** LIS's own calibration data — only the admin may take it out of the system. */
-const weightsGuard = requirePermission("weights.manage");
 
 /** Mounted under /api/locations/:locationId (requireAuth + requireLocationAccess applied there). */
 export const locationItemRoutes = new Hono<AppEnv>()
   /**
-   * The establishment's catalog WITH bottle tare + liquid weights, as CSV.
-   * ADMIN only (client decision 2026-07-25: "only I can produce the download
-   * of the local database with liquid and bottle weight") — this is how he
-   * hands the library to a client who asks for it, without exposing it in-app.
+   * The establishment's own catalog WITH its bottle tare + liquid weights, as
+   * CSV. The client weighs their own bottles (client decision 2026-07-25:
+   * "sila na mag timbang… dapat din makita nila"), so this is their data to
+   * take — it exports the LOCAL database, never the shared master library.
    */
-  .get("/location-items/export", weightsGuard, async (c) => {
+  .get("/location-items/export", async (c) => {
     const location = c.get("location");
     const user = c.get("user")!;
     const rows = await prisma.locationItem.findMany({
@@ -27,7 +25,7 @@ export const locationItemRoutes = new Hono<AppEnv>()
       orderBy: { itemVariant: { item: { name: "asc" } } },
     });
     const csv = toCsv([
-      ["Item", "Category", "Size", "Unit", "Cost", "Retail", "Par", "Empty (Tare) Weight", "Tare Unit", "Liquid Weight"],
+      ["Item", "Category", "Size", "Unit", "Cost", "Retail", "Par", "Empty (Tare) Weight", "Tare Unit", "Liquid Weight", "Source"],
       ...rows.map((r): CsvValue[] => [
         r.itemVariant.item.name,
         r.itemVariant.item.category.name,
@@ -36,12 +34,15 @@ export const locationItemRoutes = new Hono<AppEnv>()
         r.cost,
         r.retail,
         r.parLevel ?? "",
-        r.itemVariant.tareWeight ?? "",
-        r.itemVariant.tareWeightUnit ?? "",
-        r.itemVariant.densityFactor ?? r.itemVariant.item.category.defaultDensityFactor ?? "",
+        ...(() => {
+          // Same resolution the count screen uses, so the file and the app can
+          // never quote different weights.
+          const w = resolveBottleWeights(r, r.itemVariant, r.itemVariant.item.category.defaultDensityFactor);
+          return [w.tareWeight ?? "", w.tareWeightUnit ?? "", w.densityFactor ?? "", w.fromLocal ? "Own weighing" : "Standard"];
+        })(),
       ]),
     ]);
-    const name = `local-database-with-weights_${location.name}`.replace(/[^\w.-]+/g, "-");
+    const name = `local-database_${location.name}`.replace(/[^\w.-]+/g, "-");
     return new Response(csv, {
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
@@ -155,10 +156,21 @@ export const locationItemRoutes = new Hono<AppEnv>()
       await logActivity(
         {
           user, clientId: location.clientId, locationId: location.id,
-          action: "locationItem.priceChange", entity: "LocationItem", entityId: itemId,
+          // One route, two very different edits — an auditor filtering for
+          // weight changes must not have to read every price change.
+          action:
+            body.tareWeight !== undefined || body.tareWeightUnit !== undefined || body.densityFactor !== undefined
+              ? "locationItem.weightChange"
+              : "locationItem.priceChange",
+          entity: "LocationItem", entityId: itemId,
           summary: `Updated ${existing.itemVariant.item.name} ${existing.itemVariant.size} ${existing.itemVariant.unit.name}`,
           details: {
-            old: { cost: existing.cost, retail: existing.retail, parLevel: existing.parLevel, isActive: existing.isActive },
+            old: {
+              cost: existing.cost, retail: existing.retail, parLevel: existing.parLevel, isActive: existing.isActive,
+              // Weights change what a scale reading computes to, so an edit
+              // must be as auditable as a price change.
+              tareWeight: existing.tareWeight, tareWeightUnit: existing.tareWeightUnit, densityFactor: existing.densityFactor,
+            },
             new: body,
           },
         },

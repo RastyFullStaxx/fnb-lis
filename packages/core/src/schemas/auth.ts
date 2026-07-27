@@ -44,9 +44,6 @@ export interface MeClientSubscription {
 export interface MeClient {
   id: string;
   name: string;
-  /** Whether this establishment may see raw tare / liquid weights — see
-      canSeeBottleWeights() in constants.ts (client decision 2026-07-25). */
-  showBottleWeights: boolean;
   locations: MeLocation[];
   subscription: MeClientSubscription | null;
 }

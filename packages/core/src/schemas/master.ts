@@ -67,6 +67,11 @@ export const locationItemUpdate = z.object({
   retail: nonNegative.optional(),
   parLevel: nonNegative.nullable().optional(),
   isActive: z.boolean().optional(),
+  // Per-location bottle weights the client weighs themselves (client decision
+  // 2026-07-25). Null clears the override and falls back to the master variant.
+  tareWeight: nonNegative.nullable().optional(),
+  tareWeightUnit: z.enum(["g", "oz"]).nullable().optional(),
+  densityFactor: positive.nullable().optional(),
 });
 export type LocationItemUpdate = z.infer<typeof locationItemUpdate>;
 

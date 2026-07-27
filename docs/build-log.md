@@ -653,3 +653,55 @@ the weight → 200, closes → count returns to 0. Golden fixture −₱330.69.
 - **Collateral found:** repo typecheck was failing (stale generated Prisma client + a missing
   `cancelledAt` on the web `AdminSubscription` type), and `npm run db:seed` failed against the live
   DB on leftover catalog rows violating the module guardrail (history-free, removed).
+
+## Phase 23 — Clients weigh their own bottles (2026-07-28)
+
+The client reversed the 2026-07-25 decision. Lourd: *"Sila na mag timbang… dapat
+din makita nila. Since Local Database lang naman ang nakikita ni user at hindi
+whole main database."* So the establishment does the weighing and sees the
+numbers — but only inside **their** catalog.
+
+`ItemVariant` is global (no `clientId`), so letting a client edit it would
+silently rewrite every other tenant's weights. Instead, migration
+`20260727190101_location_item_weight_overrides` puts `tareWeight`,
+`tareWeightUnit`, and `densityFactor` on **`LocationItem`** — which is exactly
+Lourd's "Local Database vs Main Database" distinction. One resolver,
+`resolveBottleWeights()` in `packages/core/src/constants.ts` (local → master →
+category default), is used by the counts route, the live weigh preview, the
+catalog column, and the CSV export, so no two surfaces can quote different
+weights. It lives in `constants.ts`, **not** in sacred `weighing.ts`.
+
+- **Weigh dialog** — `apps/web/src/pages/stock/weight-edit.tsx`, on every
+  weighable row in Local Database. Placeholders show the standard value; a blank
+  box means "inherit", so saving an untouched dialog can't pin today's master
+  value onto the location forever. Gated on `prices.edit` — the same permission
+  the PUT enforces, so the button can never appear to someone the server refuses.
+  The trigger lives **inside the Tare / Liquid Wt cell**, always visible: a
+  scale icon when weights exist, a spelled-out **Weigh** button when one is
+  missing. It first shipped as its own hover-reveal `Weight Check` column, which
+  was wrong twice over — a reserved column costs its width on every row whether
+  or not anything is in it, and hiding the control behind hover meant the
+  "Needs weight" badge two columns over had no visible fix. Dropping the column
+  took the table from 7 columns to 6 and killed the horizontal scroll at 1280
+  (926px table in a 926px container, verified). An open weight report is now a
+  **Status** badge (it *is* a status), and raising one moved into the Weigh
+  dialog footer — you only dispute the standard after weighing it yourself.
+- **"own" marker** next to a weight that came from the client's own weighing,
+  so a manager can tell their number from the shared default.
+- **Audit trail** splits: a weight edit now logs `locationItem.weightChange`,
+  not `locationItem.priceChange`, with old and new values.
+- **Retired** the `showBottleWeights` release gate — the Settings toggle, the
+  `/api/settings/bottle-weights` route, `canSeeBottleWeights()`, the
+  `lib/weights.ts` hook, and the `MeClient` field are gone. The `Client` column
+  stays (migrations are additive) with a comment marking it dead. The weights
+  CSV became a plain **Local Database** export, open to the catalog's own
+  managers and carrying a "Source" column (Own weighing / Standard).
+- **`WeightReport`** stays as the secondary path — it now means "the *standard*
+  looks wrong", which only LIS can fix on the master library.
+
+Verified live: recorded 17.4 oz over Absolut Vodka 700 ml's standard 16.9, and
+the count screen read `(scale 30 − empty 17.4 oz) × Liquid Weight 30.12 = 380 ml`
+— the client's own number, visible to the counter. Golden fixture unmoved with
+the override in place (Main Bar Jun 1–8 still **−₱330.69 / −₱869.57**), because
+committed lines snapshot their own weights and a later re-weighing cannot
+rewrite a closed period. Both workspaces typecheck clean.

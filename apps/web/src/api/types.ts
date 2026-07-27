@@ -60,6 +60,11 @@ export interface LocationItem {
   cost: number;
   retail: number;
   parLevel: number | null;
+  /** The client's own weighing of THEIR bottle — wins over the shared master
+      variant (client decision 2026-07-25). Null = use the master. */
+  tareWeight: number | null;
+  tareWeightUnit: "g" | "oz" | null;
+  densityFactor: number | null;
   isActive: boolean;
   itemVariant: ItemVariant & { item: Item };
 }
