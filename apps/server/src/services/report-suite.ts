@@ -314,7 +314,15 @@ export async function forfeitsReport(
     }),
     { qty: 0, contentEquiv: 0, costValue: 0, retailValue: 0 },
   );
-  return { from, to, rows, totals };
+  return {
+    from, to, rows,
+    totals: {
+      qty: round2(totals.qty),
+      contentEquiv: round2(totals.contentEquiv),
+      costValue: round2(totals.costValue),
+      retailValue: round2(totals.retailValue),
+    },
+  };
 }
 
 // ── Usage Cost Report (client report #6) ──
@@ -349,7 +357,7 @@ export async function usageCostReport(
       cost: round2(r.usageCost),
     }));
   const totals = rows.reduce((acc, r) => ({ qty: acc.qty + r.qty, cost: acc.cost + r.cost }), { qty: 0, cost: 0 });
-  return { begin, end, rows, totals };
+  return { begin, end, rows, totals: { qty: round2(totals.qty), cost: round2(totals.cost) } };
 }
 
 // ── Sales by Item — shot & bottle (client report #7) ──
@@ -399,5 +407,8 @@ export async function salesByItemReport(
     }),
     { shot: 0, bottle: 0, qty: 0, cost: 0, retail: 0 },
   );
-  return { begin, end, rows, totals };
+  return { begin, end, rows, totals: {
+      shot: round2(totals.shot), bottle: round2(totals.bottle), qty: round2(totals.qty),
+      cost: round2(totals.cost), retail: round2(totals.retail),
+    } };
 }

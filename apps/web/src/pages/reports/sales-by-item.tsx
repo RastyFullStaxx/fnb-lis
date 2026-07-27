@@ -4,7 +4,7 @@ import { round2 } from "@fnb/core";
 import { useCountDates } from "@/api/ops";
 import { useLocationId } from "@/api/location";
 import { exportUrl, useSalesByItemReport } from "@/api/reports";
-import { formatMoney, formatNumber } from "@/lib/utils";
+import { formatMoney, formatNumber, formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import {
@@ -119,7 +119,7 @@ export function SalesByItemReportPage() {
                 </SelectTrigger>
                 <SelectContent>
                   {dates.map((d) => (
-                    <SelectItem key={d} value={d} className="tnum">{d}</SelectItem>
+                    <SelectItem key={d} value={d} className="tnum">{formatDate(d)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -131,7 +131,7 @@ export function SalesByItemReportPage() {
                 </SelectTrigger>
                 <SelectContent>
                   {endOptions.map((d) => (
-                    <SelectItem key={d} value={d} className="tnum">{d}</SelectItem>
+                    <SelectItem key={d} value={d} className="tnum">{formatDate(d)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

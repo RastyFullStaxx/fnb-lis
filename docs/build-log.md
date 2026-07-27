@@ -994,3 +994,156 @@ Register's notes agree with the Breakage report; an earlier claim that they
 disagreed was my own field-name error (`lastNote` vs `latestNote`), not their
 bug.
 
+### Third pass — interactive asset UI, config, docs
+
+`vite.config.ts` (ngrok `allowedHosts`, dev-server only) and the `PRODUCT.md`
+asset workflow both read correctly — no action. The asset details dialog is
+well-formed and prefills from the row. One real defect behind it:
+
+**A duplicate asset code returned a raw 500.** `assetCode` is `@unique` across
+every location and the field is user-editable, so typing one that is already
+taken produced `{"error":"Internal server error"}` — which reads as "the app is
+broken" rather than "pick another code". Fixed centrally in `lib/errors.ts`
+rather than per-route: any Prisma P2002 now becomes a **409** with a readable
+message, so every current and future unique constraint is covered by one guard.
+Prisma reports the offending column in two different shapes — `meta.target` on
+the classic engine, `meta.driverAdapterError.cause.constraint.fields` on the
+driver adapter we run on SQLite — so both are read, and the message stays
+specific if the adapter ever changes. Verified: the duplicate now returns 409
+"That asset code is already in use…", the row is left unchanged, and routes that
+already threw their own 409 (e.g. duplicate username) still win.
+
+## Phase 26 — Reporting-layer audit (2026-07-28)
+
+A subagent swept all 19 reports on screen and as exports. Golden fixture passed
+in all three surfaces (API, screen, CSV). I reproduced every finding before
+acting on it; one I chased turned out to be my own misreading and was dropped.
+
+**Fixed**
+
+1. **Legacy Audit cost ratio was 100× too small — the worst bug found.**
+   `costRatio` is a FRACTION (cost ÷ revenue) and the screen appended a literal
+   `%`, so a 33.79% beverage cost rendered as **"0.34%"**. On the one metric that
+   report exists for, in the client's own layout. The exports were already
+   honest — they label it "(cost of sold / revenue)" and write the fraction — so
+   only the screen changed; it now reads **33.79%**.
+2. **Full Audit claimed "exports always include every row" — false.** With
+   Variance Only armed the server honours the filter, so the file drops the same
+   rows (13 → 3, revenue total ₱50,820 → ₱8,998.09). Variance totals still
+   agreed, so the sacred number was never at risk, but the sentence was a lie.
+   The footer now distinguishes the two filters: search is screen-only, Variance
+   Only applies to the export too.
+3. **Top Sellers export ignored the Top 10/25/50 selector** — the read route
+   threaded `limit`, the export route dropped it, so a Top 50 view downloaded as
+   a Top 10 file. Both now share one `topSellersLimit(c)` helper.
+4. **Three report services returned unrounded grand totals.** Rows were
+   `round2`'d, the totals weren't, so CSVs printed `18117.969999999998` and
+   `17169.899999999998` while the screen showed the rounded figure — screen and
+   file disagreeing on the total. Forfeits, Usage Cost and Sales by Item now
+   round like every sibling service already did.
+5. **Raw ISO dates, second sweep.** The earlier pass missed the date columns in
+   Sales / Purchases / Non-Revenue, the Full Audit verdict strip and drill
+   subtitle, On Hand and Par Level "as of" lines, and the count-date dropdown
+   labels on **seven** pages. All now `formatDate`. The helper was widened to
+   accept null/undefined and render an em dash — forcing every caller to write
+   `?? ""` is exactly how raw ISO leaked back in.
+
+**Dropped after checking:** a per-category `0.34` next to the corrected ratio
+looked like a second instance of the same bug. It is the "F" (forfeited) column.
+No change made.
+
+Golden fixture re-verified after every edit: **−₱330.69 / −₱869.57**, Full Audit
+and Legacy Audit.
+
+## Phase 27 — Two security holes, and the six judgement calls (2026-07-28)
+
+### Security (from the ADMIN-role sweep) — both reproduced before fixing
+
+- **`GET /api/admin/clients` shipped every user's `passwordHash` to the browser.**
+  `access: { include: { user: true } }` returned the whole User row — nine scrypt
+  digests, plus emails and lockout counters — on every Admin → Clients load.
+  Replaced with a shared `CLIENT_ACCESS_USER_FIELDS` projection at both sites, so
+  adding a column to User cannot silently re-open it. Verified: 9 hashes → 0,
+  all 3 clients still returned.
+- **Cross-tenant leak: an OWNER could read other establishments' names and
+  subscription tiers.** `GET /api/admin/users` scoped WHICH users an owner sees
+  but not the nested `clientAccess` on each, so the owner of Prime Hospitality
+  learned Casa Verde's and Aurora's package type, billing cycle, status and
+  modules through any shared user. The nested rows are now scoped to the actor.
+  Verified as `owner`: foreign clients visible 2 → 0, own 5 users still returned;
+  ADMIN still sees all 3.
+
+### The six judgement calls
+
+1. **Asset Register contradicted Asset Breakage.** Solved without mutating any
+   status: the register now takes on-hand from `stockSnapshot` — last committed
+   count *plus everything committed since* — so a written-off unit leaves the
+   register because its breakage is a committed movement. Microphone AST-084 now
+   reads **qty 2**, ₱16,000, beside its "Missing after a private event" note.
+   Auto-flipping condition to Retired would have been wrong: three microphones
+   minus one broken is two working microphones, still In Use.
+2. **Register total ignored quantity.** It summed one unit cost per asset *type*.
+   Now quantity-extended, with **Qty** and **Value** columns on screen and in both
+   exports: ₱1,021,080 → **₱2,134,210** across **410 units**. This also reconciles
+   with Asset Inventory: 423 at the Jul 20 count, 410 today, 13 written off after
+   it — the two reports now tell one story rather than contradicting.
+3. **Cost Analysis COGS vs Full Audit usage.** Left the math alone — both are
+   correct, they answer different questions. Added a tooltip naming the method:
+   balance-derived (begin + purchases + transfers − ending), which absorbs
+   anything unaccounted for, versus the audit's usage figure.
+4. **Date semantics.** Audit reports are count-to-count; Sales/Purchases take an
+   inclusive range, hence ₱50,820 vs ₱59,040 for the same two dates. Deliberate,
+   so nothing changed but the silence: the verdict strip now says activity on the
+   beginning date belongs to the previous period, and that range reports differ.
+5. **Breakage reading as a gain** turned out not to be a defect. The seed's
+   write-offs are dated after the last count, so "more on hand than expected" is
+   the system correctly reporting gear written off but still on the shelf. Left
+   as is; the register change above makes the quantity story legible.
+6. **Cost Analysis "Net %" could never differ from "Gross %"** — `costNet/netSales`
+   and `cost/grossSales` divide both sides by the same 1.12. Collapsed to a single
+   **Cost %** with a tooltip saying the ratio is VAT-neutral. The peso Gross and
+   Net Profit figures do differ and both remain.
+
+Golden fixture after all of it: **−₱330.69 / −₱869.57**, Full Audit and Legacy Audit.
+
+## Phase 28 — Operator-role sweep (2026-07-28)
+
+### Fixed
+
+- **The activity trail leaked to roles that are explicitly denied it.**
+  `/api/activity` is gated on `activity.view` (ADMIN/OWNER/MANAGER) and correctly
+  403s — but `GET /dashboard` returned the same records, with usernames and
+  summaries, to anyone who could load the page. Verified as READONLY: 403 on the
+  endpoint, five entries on the dashboard, including *"Asked Stocky: Why is
+  Absolut short this period?"*. The service now takes the permission and returns
+  an empty list without it. Verified after: ADMIN 5, MANAGER 5, STAFF 0,
+  ACCOUNTANT 0, READONLY 0.
+
+- **No route-level permission guards — the sidebar filtered itself, the router
+  did not.** A READONLY user who typed `/counts/<id>` got the full count editor
+  with **Save line and Commit enabled**; STAFF reached Admin → Users and could
+  open the New User dialog. The server was never at risk (403s confirmed
+  throughout) — the defect is walking an operator all the way to a submit button
+  before anything tells them no. Added one `RouteGuard` around the shell's
+  `<Outlet />` that reads the **same nav declarations** the sidebar already uses
+  (`permissionForPath`, longest-prefix match so `counts/<id>` inherits `counts`),
+  so the two can never drift. Undeclared paths — dashboard, stock, reports —
+  stay open to every signed-in role, as before.
+
+  Verified with real page loads per role (a fetch-based login leaves React
+  Query's `/me` cached, which produced a misleading first result):
+
+  | Role | Open | Blocked |
+  |---|---|---|
+  | MANAGER | counts, suppliers, items, recipes, imports, stock, reports | admin/clients, admin/users |
+  | STAFF | counts, purchases, sales, transfers, stock, reports | admin/*, imports, recipes, suppliers, items |
+  | READONLY | dashboard, stock, reports | counts, counts/:id, suppliers, imports, items, recipes |
+
+- **Cleaned up the agent's residue**: import batch `t.csv` (SALES, NEEDS_REVIEW,
+  1 row) that it created while probing permission gating and could not delete —
+  there is no DELETE route. Removed directly, after asserting the batch was not
+  COMMITTED so it had never touched inventory. Imports list is back to the two
+  seeded batches; `unmatchedRows` back to 0.
+
+Golden fixture unchanged throughout: **−₱330.69 / −₱869.57**.
+

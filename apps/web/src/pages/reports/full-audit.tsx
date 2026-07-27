@@ -272,9 +272,7 @@ export function FullAuditPage() {
               </SelectTrigger>
               <SelectContent>
                 {dates.map((d) => (
-                  <SelectItem key={d} value={d} className="tnum">
-                    {d}
-                  </SelectItem>
+                  <SelectItem key={d} value={d} className="tnum">{formatDate(d)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -286,9 +284,7 @@ export function FullAuditPage() {
               </SelectTrigger>
               <SelectContent>
                 {endOptions.map((d) => (
-                  <SelectItem key={d} value={d} className="tnum">
-                    {d}
-                  </SelectItem>
+                  <SelectItem key={d} value={d} className="tnum">{formatDate(d)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -457,7 +453,15 @@ export function FullAuditPage() {
 
         {filteredOut > 0 && report.data ? (
           <p className="shrink-0 border-t px-3 py-1.5 text-xs text-muted-foreground print:hidden">
-            {filteredOut} of {report.data.rows.length} rows hidden by filters — exports always include every row.
+            {/* "exports always include every row" was false with Variance
+                Only armed: the server honours variance=only, so the file drops
+                the same rows the screen does (the variance totals still match,
+                but the revenue total silently changes). Search is screen-only,
+                so the two filters genuinely behave differently — say which. */}
+            {filteredOut} of {report.data.rows.length} rows hidden.{" "}
+            {varianceOnly
+              ? "Variance Only applies to the export too — the file carries the same rows."
+              : "The search box narrows this screen only; exports carry every row."}
           </p>
         ) : null}
       </div>
@@ -558,7 +562,17 @@ function VerdictStrip({ report, begin, end }: { report: Report; begin: string; e
           <p className="text-xs leading-5 text-muted-foreground">
             {itemsShort === 0 && itemsOver === 0
               ? "Every item reconciled cleanly this period."
-              : `${itemsShort} ${itemsShort === 1 ? "item" : "items"} short · ${itemsOver} over expectation · ${begin} to ${end}`}
+              : `${itemsShort} ${itemsShort === 1 ? "item" : "items"} short · ${itemsOver} over expectation · ${formatDate(begin)} to ${formatDate(end)}`}
+          </p>
+          {/* Audit reports run COUNT TO COUNT — the beginning count is the
+              opening snapshot, so the activity measured is what happened after
+              it. Sales and Purchases take a plain inclusive date range, so the
+              same two dates give a different revenue figure there. Both are
+              deliberate; nothing on screen said so. */}
+          <p className="text-xs leading-5 text-muted-foreground">
+            Measured between the two counts — activity on {formatDate(begin)} itself belongs to the
+            previous period. Date-range reports like Sales include both end dates, so their totals
+            will differ.
           </p>
         </div>
         {categories.length > 0 ? (
@@ -736,7 +750,7 @@ function DrillDialog({
         <DialogHeader>
           <DialogTitle>{item?.name}</DialogTitle>
           <DialogDescription>
-            The source records behind this row, {begin} → {end}.
+            The source records behind this row, {formatDate(begin)} → {formatDate(end)}.
           </DialogDescription>
         </DialogHeader>
         {drill.isPending ? (

@@ -133,6 +133,12 @@ function counterpartyOf(c: Context<AppEnv>): string | undefined {
 
 /** The establishment's saved over/short highlight threshold (%), for exports
     that take it directly rather than through ReportMeta. Falls back to default. */
+/** Top-N selector, shared by the read route and its export. */
+function topSellersLimit(c: Context<AppEnv>): number {
+  const n = parseInt(c.req.query("limit") ?? "10", 10);
+  return [10, 25, 50].includes(n) ? n : 10;
+}
+
 function thresholdOf(c: Context<AppEnv>): number {
   const raw = (c.get("client") as { varianceThresholdPct?: number } | undefined)?.varianceThresholdPct;
   return typeof raw === "number" ? raw : MATERIAL_VARIANCE_PCT;
@@ -626,17 +632,17 @@ export const reportRoutes = new Hono<AppEnv>()
   .get("/reports/top-sellers", async (c) => {
     const location = c.get("location");
     const { from, to } = requireRange(c);
-    const limitParam = parseInt(c.req.query("limit") ?? "10", 10);
-    const limit = [10, 25, 50].includes(limitParam) ? limitParam : 10;
     const allowed = allowedProductTypes(c.get("locationModules"));
-    return c.json(await topSellersReport(location.id, from, to, allowed, limit));
+    return c.json(await topSellersReport(location.id, from, to, allowed, topSellersLimit(c)));
   })
   .get("/reports/top-sellers/export", exportGuard, async (c) => {
     const location = c.get("location");
     const client = c.get("client");
     const { from, to } = requireRange(c);
     const allowed = allowedProductTypes(c.get("locationModules"));
-    const report = await topSellersReport(location.id, from, to, allowed);
+    // Same limit the screen used — the export ignored it, so a Top 50 view
+    // downloaded as a Top 10 file.
+    const report = await topSellersReport(location.id, from, to, allowed, topSellersLimit(c));
     const user = c.get("user")!;
     const name = `top-sellers_${location.name}_${from}_${to}`.replace(/[^\w.-]+/g, "-");
     if (c.req.query("format") === "csv") return csvResponse(topSellersCsv(report), name, fullName(user));

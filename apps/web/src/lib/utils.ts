@@ -41,8 +41,13 @@ const DATE = new Intl.DateTimeFormat("en-PH", {
  *
  * Parsed at local midnight, never `new Date("2026-07-20")` — that is UTC and
  * lands on the 19th anywhere west of Greenwich.
+ *
+ * Accepts null/undefined and renders an em dash: several of these dates are
+ * genuinely absent (a location with no count yet), and forcing every caller to
+ * write `?? ""` is how raw ISO strings leaked back onto the screen last time.
  */
-export function formatDate(date: string): string {
+export function formatDate(date: string | null | undefined): string {
+  if (!date) return "—";
   return DATE.format(new Date(`${date}T00:00:00`));
 }
 

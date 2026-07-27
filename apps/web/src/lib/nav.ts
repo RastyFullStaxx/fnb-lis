@@ -88,3 +88,24 @@ export function visibleNav(items: NavItem[], role: Role, locationModules?: reado
     return true;
   });
 }
+
+/**
+ * The permission a URL path needs, taken from the SAME declarations that build
+ * the sidebar — so a screen hidden from the nav can never still be reachable by
+ * typing its URL.
+ *
+ * Matches the longest declared path that the current one starts with, so
+ * sub-routes inherit their section's gate: `counts/<id>` follows `counts`,
+ * `admin/users/new` follows `admin/users`. Anything undeclared (dashboard,
+ * stock, reports/*) is open to every signed-in role, exactly as before.
+ */
+export function permissionForPath(path: string): Permission | undefined {
+  const clean = path.replace(/^\/+|\/+$/g, "");
+  let best: NavItem | undefined;
+  for (const item of [...MAIN_NAV, ...CATALOG_NAV, ...ADMIN_NAV]) {
+    if (clean === item.path || clean.startsWith(`${item.path}/`)) {
+      if (!best || item.path.length > best.path.length) best = item;
+    }
+  }
+  return best?.permission;
+}

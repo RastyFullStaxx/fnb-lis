@@ -4,7 +4,7 @@ import { PAYMENT_TERMS_LABELS, round2 } from "@fnb/core";
 import { useLocationId } from "@/api/location";
 import { useCountDates } from "@/api/ops";
 import { exportUrl, usePurchaseReport } from "@/api/reports";
-import { formatMoney, formatNumber } from "@/lib/utils";
+import { formatMoney, formatNumber, formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { TableSurface, TableLoading, TableEmpty, TableError, ToolbarSearch } from "@/components/table-surface";
 import { DateRangeControl, ExportButtons } from "@/components/report-toolbar";
@@ -113,7 +113,7 @@ export function PurchaseReportPage() {
                 <TableBody>
                   {rows.map((row, i) => (
                     <TableRow key={i}>
-                      <TableCell className="tnum">{row.purchaseDate}</TableCell>
+                      <TableCell className="tnum">{formatDate(row.purchaseDate)}</TableCell>
                       <TableCell className="max-w-[18rem] break-words text-muted-foreground">
                         {row.supplier}
                         {row.refNo && <span className="ml-1.5 text-xs">({row.refNo})</span>}

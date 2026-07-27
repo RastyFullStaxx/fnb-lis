@@ -191,7 +191,7 @@ export function NonRevenueReportPage() {
               <TableBody>
                 {report.data.rows.map((row, i) => (
                   <TableRow key={i}>
-                    <TableCell className="tnum">{row.saleDate}</TableCell>
+                    <TableCell className="tnum">{formatDate(row.saleDate)}</TableCell>
                     {/* Menu names run long; wrapping keeps them fully readable
                         without pushing the money columns off-screen. */}
                     <TableCell className="max-w-[22rem] font-medium break-words">{row.name}</TableCell>

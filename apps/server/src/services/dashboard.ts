@@ -75,6 +75,13 @@ export async function buildDashboard(
   locationId: string,
   _clientId: string,
   allowedProductTypes?: readonly string[] | null,
+  /**
+   * Whether this caller may see the activity trail. `/api/activity` is gated on
+   * `activity.view` (ADMIN/OWNER/MANAGER) and correctly 403s — but the dashboard
+   * was handing the same records, with usernames and summaries, to every role
+   * that could load it. One gate, honoured in both places.
+   */
+  canSeeActivity = true,
 ): Promise<DashboardData> {
   const [
     dates,
@@ -225,7 +232,7 @@ export async function buildDashboard(
         : null,
     },
     varianceLeaders,
-    recentActivity: recent.map((a) => ({
+    recentActivity: canSeeActivity ? recent.map((a) => ({
       id: a.id,
       ts: a.ts.toISOString(),
       userName: a.userName,
@@ -233,6 +240,6 @@ export async function buildDashboard(
       entity: a.entity,
       entityId: a.entityId,
       summary: a.summary,
-    })),
+    })) : [],
   };
 }

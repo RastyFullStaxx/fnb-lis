@@ -450,7 +450,7 @@ interface StockSnapshotItem {
   usage: number; // consumption over the latest closed period; 0 if no closed period
 }
 
-async function stockSnapshot(
+export async function stockSnapshot(
   locationId: string,
   allowedProductTypes?: readonly string[] | null,
   costBasis: CostBasis = "PRICE",

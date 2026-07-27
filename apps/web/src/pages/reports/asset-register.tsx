@@ -1,9 +1,8 @@
 import { useMemo, useState } from "react";
 import { Wrench } from "lucide-react";
-import { round2 } from "@fnb/core";
 import { useLocationId } from "@/api/location";
 import { exportUrl, useAssetRegisterReport } from "@/api/reports";
-import { formatMoney, formatDate } from "@/lib/utils";
+import { formatMoney, formatDate, formatNumber } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { TableSurface, TableLoading, TableEmpty, TableError, ToolbarSearch } from "@/components/table-surface";
 import { ExportButtons } from "@/components/report-toolbar";
@@ -20,7 +19,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-const n2 = (v: number) => round2(v).toLocaleString("en-US", { maximumFractionDigits: 2 });
 
 /**
  * Asset Register (Phase 6.1/6.4) — the Audit Report equivalent for Asset. A
@@ -112,8 +110,10 @@ export function AssetRegisterReportPage() {
                 <TableHead>Condition</TableHead>
                 <TableHead>Status</TableHead>
                 {!compact && <TableHead>Industry</TableHead>}
+                <TableHead className="text-right">Qty</TableHead>
                 <TableHead className="text-right">Initial Cost</TableHead>
                 <TableHead className="text-right">Current Cost</TableHead>
+                <TableHead className="text-right">Value</TableHead>
                 {!compact && <TableHead>Supplier</TableHead>}
                 {!compact && <TableHead>Remarks</TableHead>}
                 {!compact && <TableHead>Last Note</TableHead>}
@@ -137,8 +137,10 @@ export function AssetRegisterReportPage() {
                   <TableCell>{row.condition ? <Badge variant="outline">{row.condition}</Badge> : "—"}</TableCell>
                   <TableCell>{row.status ? <Badge variant="secondary">{row.status}</Badge> : "—"}</TableCell>
                   {!compact && <TableCell className="text-muted-foreground">{row.industry ?? "—"}</TableCell>}
+                  <TableCell className="tnum text-right">{formatNumber(row.qty)}</TableCell>
                   <TableCell className="tnum text-right">{row.initialCost != null ? formatMoney(row.initialCost) : "—"}</TableCell>
                   <TableCell className="tnum text-right">{formatMoney(row.currentCost)}</TableCell>
+                  <TableCell className="tnum text-right font-medium">{formatMoney(row.currentValue)}</TableCell>
                   {!compact && <TableCell className="text-muted-foreground">{row.supplier ?? "—"}</TableCell>}
                   {!compact && (
                     <TableCell className="max-w-[14rem] break-words text-muted-foreground">{row.remarks ?? "—"}</TableCell>
@@ -161,12 +163,22 @@ export function AssetRegisterReportPage() {
             {query.trim() === "" && (
               <TableFooter>
                 <TableRow>
-                  <TableCell colSpan={7} className="font-medium">
-                    Total ({report.data.totals.count})
+                  <TableCell colSpan={compact ? 3 : 7} className="font-medium">
+                    Total ({report.data.totals.count} {report.data.totals.count === 1 ? "asset" : "assets"})
                   </TableCell>
-                  <TableCell className="tnum text-right font-semibold">{n2(report.data.totals.initialCostValue)}</TableCell>
-                  <TableCell className="tnum text-right font-semibold">{n2(report.data.totals.currentCostValue)}</TableCell>
-                  <TableCell colSpan={3} />
+                  <TableCell className="tnum text-right font-semibold">
+                    {formatNumber(report.data.totals.qty)}
+                  </TableCell>
+                  {/* Money, formatted as money — the footer printed bare
+                      numbers while every row above carried a ₱. */}
+                  <TableCell className="tnum text-right font-semibold">
+                    {formatMoney(report.data.totals.initialCostValue)}
+                  </TableCell>
+                  <TableCell />
+                  <TableCell className="tnum text-right font-semibold">
+                    {formatMoney(report.data.totals.currentCostValue)}
+                  </TableCell>
+                  {!compact && <TableCell colSpan={3} />}
                 </TableRow>
               </TableFooter>
             )}

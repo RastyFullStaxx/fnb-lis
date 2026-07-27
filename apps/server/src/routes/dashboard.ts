@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { allowedProductTypes } from "@fnb/core";
+import { allowedProductTypes, can, type Role } from "@fnb/core";
 import { type AppEnv } from "../middleware/auth";
 import { buildDashboard } from "../services/dashboard";
 import { buildTrends } from "../services/trends";
@@ -9,7 +9,10 @@ export const dashboardRoutes = new Hono<AppEnv>()
     const location = c.get("location");
     const client = c.get("client");
     const allowed = allowedProductTypes(c.get("locationModules"));
-    return c.json(await buildDashboard(location.id, client.id, allowed));
+    const user = c.get("user")!;
+    return c.json(
+      await buildDashboard(location.id, client.id, allowed, can(user.role as Role, "activity.view")),
+    );
   })
   .get("/dashboard/trends", async (c) => {
     const location = c.get("location");

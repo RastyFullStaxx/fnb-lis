@@ -1,4 +1,5 @@
 import { round2 } from "@fnb/core";
+import { stockSnapshot } from "./report-lists";
 import { prisma } from "../db";
 import { deriveCurrentSupplier } from "./asset-supplier";
 
@@ -28,6 +29,10 @@ const LI_INCLUDE = {
 } as const;
 
 export interface AssetRegisterRow {
+  /** Units actually on hand now — last committed count plus everything since. */
+  qty: number;
+  /** qty × currentCost. The register lists one row per asset TYPE, not per unit. */
+  currentValue: number;
   locationItemId: string;
   assetCode: string | null;
   location: string;
@@ -51,7 +56,7 @@ export interface AssetRegisterRow {
 export interface AssetRegisterReport {
   asOf: string;
   rows: AssetRegisterRow[];
-  totals: { count: number; initialCostValue: number; currentCostValue: number };
+  totals: { count: number; qty: number; initialCostValue: number; currentCostValue: number };
 }
 
 function todayBusinessDate(): string {
@@ -68,8 +73,17 @@ export async function assetRegisterReport(
   // so a location without the Asset module simply sees nothing rather than
   // relying on the caller to have checked first.
   if (allowedProductTypes && !allowedProductTypes.includes("Asset")) {
-    return { asOf: todayBusinessDate(), rows: [], totals: { count: 0, initialCostValue: 0, currentCostValue: 0 } };
+    return { asOf: todayBusinessDate(), rows: [], totals: { count: 0, qty: 0, initialCostValue: 0, currentCostValue: 0 } };
   }
+
+  // On-hand per row, from the same source the On Hand and Par Level reports
+  // use: last committed count PLUS everything committed since. That is what
+  // makes a written-off unit leave the register's value — the breakage posts as
+  // a committed non-revenue movement, so it is already subtracted here. No
+  // status is auto-mutated: three microphones minus one broken is two working
+  // microphones, still "In Use".
+  const snapshot = await stockSnapshot(locationId, allowedProductTypes);
+  const onHand = new Map(snapshot.items.map((i) => [i.locationItemId, i.onHand]));
 
   const items = await prisma.locationItem.findMany({
     where: {
@@ -91,6 +105,7 @@ export async function assetRegisterReport(
           select: { saleDate: true, note: true, reason: true },
         }),
       ]);
+      const qty = onHand.get(li.id) ?? 0;
       return {
         locationItemId: li.id,
         assetCode: li.assetCode,
@@ -110,22 +125,34 @@ export async function assetRegisterReport(
         supplier: supplier?.name ?? null,
         latestNoteDate: latestNote?.saleDate ?? null,
         latestNote: latestNote?.note ?? (latestNote?.reason ?? null),
+        qty,
+        currentValue: round2(qty * li.cost),
       };
     }),
   );
 
+  // Value is quantity-extended. Summing one unit cost per asset TYPE understated
+  // the base badly — 70 codes cover 400+ physical units — and disagreed with the
+  // Asset Inventory report, which counts units. Initial cost is extended the same
+  // way so the two money columns stay comparable.
   const totals = rows.reduce(
     (acc, r) => ({
       count: acc.count + 1,
-      initialCostValue: acc.initialCostValue + (r.initialCost ?? 0),
-      currentCostValue: acc.currentCostValue + r.currentCost,
+      qty: acc.qty + r.qty,
+      initialCostValue: acc.initialCostValue + (r.initialCost ?? 0) * r.qty,
+      currentCostValue: acc.currentCostValue + r.currentValue,
     }),
-    { count: 0, initialCostValue: 0, currentCostValue: 0 },
+    { count: 0, qty: 0, initialCostValue: 0, currentCostValue: 0 },
   );
 
   return {
     asOf: todayBusinessDate(),
     rows,
-    totals: { count: totals.count, initialCostValue: round2(totals.initialCostValue), currentCostValue: round2(totals.currentCostValue) },
+    totals: {
+      count: totals.count,
+      qty: round2(totals.qty),
+      initialCostValue: round2(totals.initialCostValue),
+      currentCostValue: round2(totals.currentCostValue),
+    },
   };
 }

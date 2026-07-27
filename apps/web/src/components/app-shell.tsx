@@ -7,12 +7,13 @@ import {
   useNavigate,
   useParams,
 } from "react-router";
-import { Check, ChevronsUpDown, LogOut, Sparkles } from "lucide-react";
-import { LOCATION_KIND_LABELS, type LocationKind, type MeResponse } from "@fnb/core";
+import { Check, ChevronsUpDown, Lock, LogOut, Sparkles } from "lucide-react";
+import { can, LOCATION_KIND_LABELS, type LocationKind, type MeResponse, type Role } from "@fnb/core";
 import { useLogout, useMe } from "@/api/auth";
 import { ApiError } from "@/api/http";
 import { BootError, BootSkeleton } from "@/components/full-page-spinner";
-import { ADMIN_NAV, CATALOG_NAV, MAIN_NAV, visibleNav, type NavItem } from "@/lib/nav";
+import { ADMIN_NAV, CATALOG_NAV, MAIN_NAV, permissionForPath, visibleNav, type NavItem } from "@/lib/nav";
+import { EmptyState } from "@/components/empty-state";
 import {
   Sidebar,
   SidebarContent,
@@ -126,7 +127,7 @@ function ShellLayout({ me, current }: { me: MeResponse; current: CurrentLocation
       <SidebarInset className="min-w-0">
         <Topbar current={current} navItems={[...mainNav, ...catalogNav, ...adminNav]} />
         <div data-slot="page-content" className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4 sm:p-6">
-          <Outlet />
+          <RouteGuard role={role} />
         </div>
         <ReadonlyWatermark role={role} name={`${me.user.firstName} ${me.user.lastName}`} />
       </SidebarInset>
@@ -149,6 +150,37 @@ function defaultSidebarOpen(): boolean {
   const saved = document.cookie.match(/(?:^|;\s*)sidebar_state=(true|false)/);
   if (saved) return saved[1] === "true";
   return window.innerWidth >= 1400;
+}
+
+/**
+ * One gate for every screen. The sidebar filtered itself, but the routes did
+ * not — so a READONLY user who typed /counts/<id> got the full count editor
+ * with an enabled Save button, and only found out at the 403. The server was
+ * never at risk; being walked to a submit button that cannot work is the
+ * problem. Reuses the nav's own permission declarations, so the two cannot
+ * drift apart.
+ */
+function RouteGuard({ role }: { role: Role }) {
+  const { pathname } = useLocation();
+  const { locationId } = useParams();
+  const relative = locationId ? pathname.split(`/l/${locationId}/`)[1] ?? "" : "";
+  const needed = permissionForPath(relative);
+
+  if (needed && !can(role, needed)) {
+    return (
+      <EmptyState
+        icon={Lock}
+        title="You don't have access to this screen"
+        description="Your account doesn't include this area. If you need it, ask the owner or your LIS administrator to change your role."
+        action={
+          <Button asChild variant="outline">
+            <Link to={`/l/${locationId}/dashboard`}>Back to Dashboard</Link>
+          </Button>
+        }
+      />
+    );
+  }
+  return <Outlet />;
 }
 
 function NavGroup({

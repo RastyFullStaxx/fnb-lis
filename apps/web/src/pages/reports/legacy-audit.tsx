@@ -6,7 +6,7 @@ import { useCountDates } from "@/api/ops";
 import { useVarianceThreshold } from "@/api/settings";
 import { useMe } from "@/api/auth";
 import { exportUrl, useLegacyAuditReport, type LegacyAuditRow } from "@/api/reports";
-import { formatMoney, cn, formatNumber } from "@/lib/utils";
+import { formatMoney, cn, formatNumber, formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { TableLoading, TableError, ToolbarField } from "@/components/table-surface";
@@ -168,9 +168,7 @@ export function LegacyAuditPage() {
               </SelectTrigger>
               <SelectContent>
                 {dates.map((d) => (
-                  <SelectItem key={d} value={d} className="tnum">
-                    {d}
-                  </SelectItem>
+                  <SelectItem key={d} value={d} className="tnum">{formatDate(d)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -182,9 +180,7 @@ export function LegacyAuditPage() {
               </SelectTrigger>
               <SelectContent>
                 {endOptions.map((d) => (
-                  <SelectItem key={d} value={d} className="tnum">
-                    {d}
-                  </SelectItem>
+                  <SelectItem key={d} value={d} className="tnum">{formatDate(d)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -194,7 +190,14 @@ export function LegacyAuditPage() {
           {report.data?.costRatio !== null && report.data !== undefined && (
             <div className="ml-auto shrink-0 pb-0.5">
               <Badge variant="warning" className="text-sm">
-                {variant === "detailed" ? "Cost of Sold" : "Cost"} Ratio {formatNumber(report.data.costRatio ?? 0)}%
+                {variant === "detailed" ? "Cost of Sold" : "Cost"} Ratio{" "}
+                {/* costRatio is a FRACTION (cost ÷ revenue). It was rendered
+                    straight with a "%" appended, so a 33.79% beverage cost read
+                    as "0.34%" — off by 100 on the one number this report exists
+                    for. The exports label it "(cost of sold / revenue)" and
+                    write the raw fraction, which is honest; the screen quotes
+                    the percentage, which is how F&B actually talks about it. */}
+                {formatNumber((report.data.costRatio ?? 0) * 100)}%
               </Badge>
             </div>
           )}

@@ -112,6 +112,21 @@ async function assertUserSeatsAvailable(clientIds: string[], exceptUserId?: stri
   }
 }
 
+/**
+ * The only User columns an admin screen needs beside a client. `include: { user: true }`
+ * shipped the whole row — every `passwordHash` (scrypt digests for all 9 accounts),
+ * plus emails and lockout counters — to the browser on every Admin → Clients load.
+ * A projection, so adding a column to User can never silently re-open this.
+ */
+const CLIENT_ACCESS_USER_FIELDS = {
+  id: true,
+  username: true,
+  firstName: true,
+  lastName: true,
+  role: true,
+  status: true,
+} as const;
+
 export const adminRoutes = new Hono<AppEnv>()
   // Path-scoped rather than a blanket `.use()`: userAdminRoutes mounts on this
   // same /api/admin prefix with the softer `users.manage` guard, and a wildcard
@@ -128,7 +143,7 @@ export const adminRoutes = new Hono<AppEnv>()
     const clients = await prisma.client.findMany({
       include: {
         locations: { include: { modules: true } },
-        access: { include: { user: true } },
+        access: { include: { user: { select: CLIENT_ACCESS_USER_FIELDS } } },
         subscription: { include: { modules: true } },
       },
       orderBy: { name: "asc" },
@@ -359,7 +374,7 @@ export const adminRoutes = new Hono<AppEnv>()
         where: { id: created.id },
         include: {
           locations: { include: { modules: true } },
-          access: { include: { user: true } },
+          access: { include: { user: { select: CLIENT_ACCESS_USER_FIELDS } } },
           subscription: { include: { modules: true } },
         },
       });
@@ -725,6 +740,12 @@ export const userAdminRoutes = new Hono<AppEnv>()
         role: true, status: true, createdAt: true,
         modules: { select: { module: true } },
         clientAccess: {
+          // Scope the NESTED rows too. The `where` above correctly limits WHICH
+          // users an owner sees, but each returned user still carried its full
+          // access list — so the owner of one establishment could read the
+          // names, package tiers, billing cycles and modules of every other
+          // tenant a shared user happens to belong to.
+          where: scope.all ? undefined : { clientId: { in: scope.clientIds } },
           include: {
             client: {
               select: {

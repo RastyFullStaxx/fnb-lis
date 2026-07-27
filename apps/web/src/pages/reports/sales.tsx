@@ -4,7 +4,7 @@ import { round2 } from "@fnb/core";
 import { useLocationId } from "@/api/location";
 import { useCountDates } from "@/api/ops";
 import { exportUrl, useSalesReport, type SalesReportView } from "@/api/reports";
-import { formatMoney, formatNumber } from "@/lib/utils";
+import { formatMoney, formatNumber, formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { TableSurface, TableLoading, TableEmpty, TableError, ToolbarField, ToolbarSearch } from "@/components/table-surface";
 import { DateRangeControl, ExportButtons } from "@/components/report-toolbar";
@@ -151,7 +151,7 @@ export function SalesReportPage() {
                 <TableBody>
                   {rows.map((row, i) => (
                     <TableRow key={i}>
-                      <TableCell className="tnum">{row.saleDate}</TableCell>
+                      <TableCell className="tnum">{formatDate(row.saleDate)}</TableCell>
                       <TableCell className="max-w-[22rem] break-words font-medium">
                         {row.name}
                         {row.kind === "menu" && (

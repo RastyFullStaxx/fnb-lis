@@ -24,7 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { cn } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 
 const n2 = (v: number) => round2(v).toLocaleString("en-US", { maximumFractionDigits: 2 });
 
@@ -85,9 +85,7 @@ export function AssetInventoryReportPage() {
                 </SelectTrigger>
                 <SelectContent>
                   {dates.map((d) => (
-                    <SelectItem key={d} value={d} className="tnum">
-                      {d}
-                    </SelectItem>
+                    <SelectItem key={d} value={d} className="tnum">{formatDate(d)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -99,9 +97,7 @@ export function AssetInventoryReportPage() {
                 </SelectTrigger>
                 <SelectContent>
                   {dates.map((d) => (
-                    <SelectItem key={d} value={d} className="tnum">
-                      {d}
-                    </SelectItem>
+                    <SelectItem key={d} value={d} className="tnum">{formatDate(d)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

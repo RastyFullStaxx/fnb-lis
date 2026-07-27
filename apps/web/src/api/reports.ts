@@ -326,8 +326,10 @@ export interface AssetRegisterReport {
     supplier: string | null;
     latestNoteDate: string | null;
     latestNote: string | null;
+    qty: number;
+    currentValue: number;
   }>;
-  totals: { count: number; initialCostValue: number; currentCostValue: number };
+  totals: { count: number; qty: number; initialCostValue: number; currentCostValue: number };
 }
 
 export function useAssetRegisterReport() {

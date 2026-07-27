@@ -1,15 +1,16 @@
 import { useMemo, useState } from "react";
-import { PieChart } from "lucide-react";
+import { Info, PieChart } from "lucide-react";
 import { round2 } from "@fnb/core";
 import { useCountDates } from "@/api/ops";
 import { useLocationId } from "@/api/location";
 import { exportUrl, useCostAnalysisReport } from "@/api/reports";
-import { cn, formatMoney } from "@/lib/utils";
+import { cn, formatMoney, formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { TableSurface, ToolbarField, TableLoading, TableError } from "@/components/table-surface";
 import { ExportButtons } from "@/components/report-toolbar";
 import { ChartBlock } from "@/components/charts/chart-block";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { MagnitudeBars } from "@/components/charts/magnitude-bars";
 import {
   Select,
@@ -109,7 +110,7 @@ export function CostAnalysisPage() {
           </SelectTrigger>
           <SelectContent>
             {dates.map((d) => (
-              <SelectItem key={d} value={d} className="tnum">{d}</SelectItem>
+              <SelectItem key={d} value={d} className="tnum">{formatDate(d)}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -121,7 +122,7 @@ export function CostAnalysisPage() {
           </SelectTrigger>
           <SelectContent>
             {endOptions.map((d) => (
-              <SelectItem key={d} value={d} className="tnum">{d}</SelectItem>
+              <SelectItem key={d} value={d} className="tnum">{formatDate(d)}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -221,7 +222,29 @@ export function CostAnalysisPage() {
                     <p className="tnum text-sm font-medium">{formatMoney(round2(section.grossSales))}</p>
                   </div>
                   <div>
-                    <p className="text-xs font-medium text-muted-foreground">Cost of Goods</p>
+                    {/* This figure is BALANCE-derived (begin + purchases +
+                        transfers − ending). The Full Audit and Usage Cost report
+                        a usage-derived cost (qty × unit cost) for the same
+                        period, and the two differ by whatever hasn't reconciled.
+                        Both are correct; saying which is which stops it reading
+                        as a discrepancy. */}
+                    <p className="text-xs font-medium text-muted-foreground">
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex cursor-help items-center gap-1">
+                              Cost of Goods <Info className="size-3 text-muted-foreground" />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-xs">
+                            Beginning stock + purchases + transfers − ending stock. This is the
+                            balance method, so it includes anything unaccounted for. The Full
+                            Audit's usage figure counts what was actually sold and used, so the
+                            two differ by the period's variance.
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </p>
                     <p className="tnum text-sm font-medium">−{formatMoney(round2(section.totals.cost))}</p>
                   </div>
                   <div>
@@ -259,8 +282,29 @@ export function CostAnalysisPage() {
                       <TableHead className="text-right">Ending</TableHead>
                       <TableHead className="text-right font-semibold">Cost</TableHead>
                       <TableHead className="text-right">Cost Net</TableHead>
-                      <TableHead className="text-right">Gross %</TableHead>
-                      <TableHead className="text-right">Net %</TableHead>
+                      {/* One column, not two. netPct is costNet/netSales and
+                          grossPct is cost/grossSales — both sides divided by the
+                          same 1.12, so the two were identical in every row by
+                          construction. A cost RATIO is VAT-neutral; showing it
+                          twice invited the reader to hunt for a difference that
+                          cannot exist. The peso Gross/Net Profit figures below
+                          do differ, and both are still shown. */}
+                      <TableHead className="text-right">
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="inline-flex cursor-help items-center gap-1">
+                                Cost % <Info className="size-3.5 text-muted-foreground" />
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-xs">
+                              Cost of goods as a share of sales. Identical whether measured
+                              VAT-inclusive or net of VAT — the ratio is unaffected, so there
+                              is one figure, not two.
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -276,7 +320,6 @@ export function CostAnalysisPage() {
                         <TableCell className="tnum text-right font-medium">{formatMoney(round2(row.cost))}</TableCell>
                         <TableCell className="tnum text-right">{formatMoney(round2(row.costNet))}</TableCell>
                         <TableCell className="tnum text-right">{pct(row.grossPct)}</TableCell>
-                        <TableCell className="tnum text-right">{pct(row.netPct)}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -292,7 +335,6 @@ export function CostAnalysisPage() {
                       <TableCell className="tnum text-right font-semibold">{formatMoney(round2(section.totals.cost))}</TableCell>
                       <TableCell className="tnum text-right font-medium">{formatMoney(round2(section.totals.costNet))}</TableCell>
                       <TableCell className="tnum text-right font-semibold">{pct(section.totals.grossPct)}</TableCell>
-                      <TableCell className="tnum text-right font-semibold">{pct(section.totals.netPct)}</TableCell>
                     </TableRow>
                   </TableFooter>
                 </Table>

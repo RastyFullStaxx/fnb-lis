@@ -3,7 +3,7 @@ import { ClipboardList } from "lucide-react";
 import { round2 } from "@fnb/core";
 import { useLocationId } from "@/api/location";
 import { exportUrl, useParLevelReport } from "@/api/reports";
-import { formatMoney, formatNumber } from "@/lib/utils";
+import { formatMoney, formatNumber, formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { TableSurface, TableLoading, TableEmpty, TableError, ToolbarSearch } from "@/components/table-surface";
 import { ExportButtons } from "@/components/report-toolbar";
@@ -75,7 +75,7 @@ export function ParLevelReportPage() {
               </div>
             ) : report.data && report.data.rows.length > 0 ? (
               <p className="shrink-0 pb-2 text-sm text-muted-foreground">
-                Stock as of <span className="tnum font-medium text-foreground">{report.data.lastCountDate}</span>
+                Stock as of <span className="tnum font-medium text-foreground">{formatDate(report.data.lastCountDate)}</span>
                 {report.data.periodBegin ? (
                   <>
                     {" · movement "}
