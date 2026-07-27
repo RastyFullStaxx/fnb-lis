@@ -466,7 +466,8 @@ reconciles to zero variance). Verified live: 70 items / 21 categories, ₱2.13M 
 events / ₱16,280 written off; golden fixture still −₱330.69; Assets closed period variance 0/0.
 
 Not touched: the packaging-tier mismatch (Basic 1 / Medium 5 / **Full 10** vs. our Basic/Medium/
-One-Time) — parked pending the client's confirmation of the intended tier structure.
+One-Time) — parked pending the client's confirmation of the intended tier structure. Resolved in
+Phase 18.
 
 ## Phase 17 — Asset module: catalog fields, per-location register, two reports (2026-07-23)
 
@@ -541,6 +542,44 @@ one-category-per-item shape as-is.
 
 Both workspaces typecheck clean.
 
+## Phase 18 — Max users, Full tier (2026-07-25)
+
+Client: "monthly, add **Full** — max users up to 10"; "**standalone**, he sets the number himself so
+users can't be generated without his knowledge."
+
+**Finding first:** `maxEntities` capped **locations**, not users — there was no user cap anywhere, so
+this was net-new, not a tweak.
+
+- **`Subscription.maxUsers`** (migration `20260725115405`), `0` = no cap saved (legacy rows).
+- **Enforced** in `assertUserSeatsAvailable` — called from BOTH `POST /users` and
+  `PUT /users/:id/access` (the access route replaces all rows, so capping only creation would be
+  trivially bypassed). Counts `UserClientAccess`; excludes the edited user from their own seat.
+- **`FULL` tier** added; `derivePackageType(billingCycle, maxEntities, maxUsers)` now names the tier
+  by USERS (1 → Basic, ≤5 → Medium, 6+ → Full), falling back to the old location rule when
+  `maxUsers = 0` so existing rows keep their badge instead of jumping to a different tier the first
+  time this runs against them.
+- **UI:** tier dropdown reads "Basic — 1 user / Medium — up to 5 / Full — up to 10" and sets the cap;
+  Standalone shows an editable **Max Users** number input (owner-set, never unlimited) alongside a
+  free-form **Max Locations** input (0 = unlimited, but only when explicitly chosen — never implied).
+- Seeded Prime = Full (10), Casa = Medium (5).
+
+**Bug found while verifying:** both seeded clients had **no subscription row at all** —
+`upsertClientWithSubscription` returned early for an existing client, so a client whose subscription
+went missing stayed broken through every re-seed. Now backfills. Golden fixture still −₱330.69.
+
+**Reconciled with Phase 17's Asset module** (same week, parallel branches): Phase 17 left the
+tier-mismatch question open ("packaging-tier mismatch... parked pending the client's confirmation
+of the intended tier structure") — this phase is that confirmation landing. `maxEntities` still
+gates location creation on its own (`POST /clients/:id/locations`), but no longer determines the
+package tier; `maxUsers` does. Both `LocationItem`-level Asset fields (Phase 17) and
+`Subscription.maxUsers` (this phase) are independent additive migrations — no overlap, no
+reconciliation needed at the schema level, just at the shared `constants.ts`/`admin.ts` files both
+touched.
+
+Parked: note 3 ("gayahin ang full audit") — the legacy 24-column layout already ships as
+Full Audit → **Client Formats → Detailed Full Audit Report** (xlsx/csv/pdf). Confirm with the client
+whether he means that download or wants it rendered on screen before building anything.
+
 ## Contributor history
 
 | Window | Who | What |
@@ -550,6 +589,7 @@ Both workspaces typecheck clean.
 | 2026-07-18 → 07-19 | JjByteX | Subscription/plans/clients arc: `Subscription`, `SubscriptionModule`, `LocationModule`, billing state, clients admin UI. A Plan catalog was added (`dd51046`) then fully reverted (`5af9668`) |
 | 2026-07-19 | Claude session | Phase 9 (above) + audit and remediation of the arc |
 | 2026-07-21 → 07-23 | Claude session | Phases 14–17: variance highlight, Par Level/Non-Moving reports, Asset breakage, and the full Asset module (catalog fields, per-location register, Asset Register/Inventory reports) |
+| 2026-07-25 | Claude session (parallel branch) | Phase 18: `Subscription.maxUsers`, Full tier, seat enforcement — merged alongside Phase 17's Asset module work |
 
 **Audit outcome for the JjByteX arc** — what held and what didn't, so it isn't re-litigated:
 
