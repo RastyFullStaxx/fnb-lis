@@ -269,7 +269,10 @@ export const masterRoutes = new Hono<AppEnv>()
    */
   .post(
     "/variants/:id/weight-review",
-    writeGuard,
+    // entries.create, not master.write: STAFF are the ones weighing bottles, so
+    // they are the ones who notice a bad tare. Filing a note changes no data —
+    // an admin still has to act on it.
+    requirePermission("entries.create"),
     zValidator("json", z.object({ note: z.string().trim().min(3, "Say what looks wrong").max(500) })),
     async (c) => {
       const variantId = c.req.param("id");

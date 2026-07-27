@@ -8,7 +8,7 @@ import { useLocationId } from "@/api/location";
 import { useTransfer, useTransferMutations, useTransfers } from "@/api/ops";
 import { variantLabel, type Transfer } from "@/api/types";
 import { ApiError } from "@/api/http";
-import { formatMoney } from "@/lib/utils";
+import { formatMoney, formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { TableSurface, TableLoading, TableEmpty, ToolbarField } from "@/components/table-surface";
 import { QuantityInput } from "@/components/quantity-input";
@@ -170,7 +170,7 @@ function OutgoingTab({ createOpen, setCreateOpen }: { createOpen: boolean; setCr
                 )}
                 {...rowLinkProps(() => navigate(`/l/${locationId}/transfers/${t.id}`))}
               >
-                <TableCell className="tnum">{t.businessDate}</TableCell>
+                <TableCell className="tnum">{formatDate(t.businessDate)}</TableCell>
                 <TableCell>
                   <span className="font-medium">{t.toLocation?.name}</span>
                   {kindLabel(t.toLocation?.kind) && (
@@ -299,7 +299,7 @@ function IncomingTab() {
                   )}
                   {...rowLinkProps(() => navigate(`/l/${locationId}/transfers/${t.id}`))}
                 >
-                  <TableCell className="tnum">{t.businessDate}</TableCell>
+                  <TableCell className="tnum">{formatDate(t.businessDate)}</TableCell>
                   <TableCell>
                     <span className="font-medium">{t.fromLocation?.name}</span>
                     {kindLabel(t.fromLocation?.kind) && (

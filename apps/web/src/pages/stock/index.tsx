@@ -161,7 +161,10 @@ export function StockPage() {
             <TableHeader>
               <TableRow className="bg-muted hover:bg-muted">
                 <TableHead>Item</TableHead>
-                <TableHead>Category</TableHead>
+                {/* Category costs ~120px it can't justify on a 13" laptop, so
+                    below 2xl it moves under the item name instead of being
+                    dropped — same information, no horizontal scroll. */}
+                <TableHead className="hidden 2xl:table-cell">Category</TableHead>
                 <TableHead className="text-right">Cost / Retail</TableHead>
                 <TableHead className="text-right">
                   {/* "Par" is bar-trade jargon — keep it for the pros, but a
@@ -196,8 +199,11 @@ export function StockPage() {
                     <TableCell className="max-w-[22rem] break-words">
                       <span className="font-medium">{row.itemVariant.item.name}</span>
                       <span className="ml-2 text-sm text-muted-foreground">{variantLabel(row.itemVariant)}</span>
+                      <span className="block text-xs text-muted-foreground 2xl:hidden">
+                        {row.itemVariant.item.category.name}
+                      </span>
                     </TableCell>
-                    <TableCell className="text-muted-foreground">
+                    <TableCell className="hidden text-muted-foreground 2xl:table-cell">
                       {row.itemVariant.item.category.name}
                     </TableCell>
                     <TableCell className="text-right">

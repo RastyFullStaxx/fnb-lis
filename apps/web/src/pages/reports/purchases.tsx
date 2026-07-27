@@ -4,7 +4,7 @@ import { PAYMENT_TERMS_LABELS, round2 } from "@fnb/core";
 import { useLocationId } from "@/api/location";
 import { useCountDates } from "@/api/ops";
 import { exportUrl, usePurchaseReport } from "@/api/reports";
-import { formatMoney } from "@/lib/utils";
+import { formatMoney, formatNumber } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { TableSurface, TableLoading, TableEmpty, TableError, ToolbarSearch } from "@/components/table-surface";
 import { DateRangeControl, ExportButtons } from "@/components/report-toolbar";
@@ -22,7 +22,6 @@ import {
 } from "@/components/ui/table";
 import { useReportRange } from "./use-report-range";
 
-const n2 = (v: number) => round2(v).toLocaleString("en-US", { maximumFractionDigits: 2 });
 
 /** Bars stay readable up to ~8 rows — fold the long tail into "Other". */
 const SUPPLIER_BAR_CAP = 7;
@@ -120,7 +119,7 @@ export function PurchaseReportPage() {
                         {row.refNo && <span className="ml-1.5 text-xs">({row.refNo})</span>}
                       </TableCell>
                       <TableCell className="max-w-[22rem] break-words font-medium">{row.name}</TableCell>
-                      <TableCell className="tnum text-right">{n2(row.qty)}</TableCell>
+                      <TableCell className="tnum text-right">{formatNumber(row.qty)}</TableCell>
                       <TableCell className="tnum text-right">{formatMoney(row.unitCost)}</TableCell>
                       <TableCell className="tnum text-right">{formatMoney(row.lineTotal)}</TableCell>
                     </TableRow>
@@ -132,7 +131,7 @@ export function PurchaseReportPage() {
                       <TableCell colSpan={3} className="font-medium">
                         Total
                       </TableCell>
-                      <TableCell className="tnum text-right font-medium">{n2(report.data.totals.qty)}</TableCell>
+                      <TableCell className="tnum text-right font-medium">{formatNumber(report.data.totals.qty)}</TableCell>
                       <TableCell />
                       <TableCell className="tnum text-right font-semibold">{formatMoney(report.data.totals.cost)}</TableCell>
                     </TableRow>
@@ -176,7 +175,7 @@ export function PurchaseReportPage() {
                       <span className="text-muted-foreground">—</span>
                     )}
                   </TableCell>
-                  <TableCell className="tnum text-right">{n2(s.qty)}</TableCell>
+                  <TableCell className="tnum text-right">{formatNumber(s.qty)}</TableCell>
                   <TableCell className="tnum text-right">{formatMoney(s.cost)}</TableCell>
                 </TableRow>
               ))}

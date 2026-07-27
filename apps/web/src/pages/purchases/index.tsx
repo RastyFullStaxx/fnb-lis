@@ -159,7 +159,10 @@ function PurchasesTab({
       (p.supplier?.name ?? "").toLowerCase().includes(q) ||
       (p.refNo ?? "").toLowerCase().includes(q);
     return matchesStatus && matchesSearch;
-  });
+  })
+    // Drafts first — same reason as the Counts list: the only rows you can
+    // still finish shouldn't be buried under months of committed ones.
+    .sort((a, b) => Number(b.status === "DRAFT") - Number(a.status === "DRAFT"));
 
   return (
     <>

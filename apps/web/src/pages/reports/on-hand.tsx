@@ -3,7 +3,7 @@ import { Boxes } from "lucide-react";
 import { round2 } from "@fnb/core";
 import { useLocationId } from "@/api/location";
 import { exportUrl, useOnHandReport } from "@/api/reports";
-import { formatMoney } from "@/lib/utils";
+import { formatMoney, formatNumber } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { TableSurface, TableLoading, TableEmpty, TableError, ToolbarSearch } from "@/components/table-surface";
 import { ExportButtons } from "@/components/report-toolbar";
@@ -22,7 +22,6 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 
-const n2 = (v: number) => round2(v).toLocaleString("en-US", { maximumFractionDigits: 2 });
 
 const CATEGORY_BAR_CAP = 6;
 
@@ -136,7 +135,7 @@ export function OnHandReportPage() {
                       </TableCell>
                       <TableCell className="text-muted-foreground">{row.category}</TableCell>
                       <TableCell className={cn("tnum text-right", row.onHand < 0 && "text-destructive")}>
-                        {n2(row.onHand)}
+                        {formatNumber(row.onHand)}
                       </TableCell>
                       <TableCell className="tnum text-right">{formatMoney(row.cost)}</TableCell>
                       <TableCell className="tnum text-right">{formatMoney(row.retail)}</TableCell>

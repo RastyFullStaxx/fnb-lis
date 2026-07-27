@@ -30,9 +30,10 @@ import {
  * weight looks wrong — a supplier changed the bottle, the numbers stopped
  * reconciling (client req 2026-07-25, the "or need update" half).
  *
- * Owner/manager raise it; the LIS admin sees the note and closes it once he has
- * re-weighed. One open report per bottle, so this can't become a queue of
- * duplicate asks.
+ * Anyone who records entries can raise one — including STAFF, who are the ones
+ * actually weighing bottles and so the ones who notice a bad tare. The LIS admin
+ * sees the note and closes it once he has re-weighed. One open report per
+ * bottle, so this can't become a queue of duplicate asks.
  */
 export function WeightReport({
   row,
@@ -45,7 +46,7 @@ export function WeightReport({
 }) {
   const me = useMe();
   const role = (me.data?.user.role ?? "READONLY") as Role;
-  const canReport = can(role, "master.write");
+  const canReport = can(role, "entries.create");
   const canResolve = can(role, "weights.manage");
   const report = useReportWeightProblem();
   const resolve = useResolveWeightProblem();

@@ -4,7 +4,7 @@ import { round2 } from "@fnb/core";
 import { useLocationId } from "@/api/location";
 import { useCountDates } from "@/api/ops";
 import { exportUrl, useSalesReport, type SalesReportView } from "@/api/reports";
-import { formatMoney } from "@/lib/utils";
+import { formatMoney, formatNumber } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { TableSurface, TableLoading, TableEmpty, TableError, ToolbarField, ToolbarSearch } from "@/components/table-surface";
 import { DateRangeControl, ExportButtons } from "@/components/report-toolbar";
@@ -24,7 +24,6 @@ import {
 } from "@/components/ui/table";
 import { useReportRange } from "./use-report-range";
 
-const n2 = (v: number) => round2(v).toLocaleString("en-US", { maximumFractionDigits: 2 });
 
 /** Kind-specific copy so each view names itself honestly. */
 const VIEW_COPY: Record<SalesReportView, { empty: string; hint: string }> = {
@@ -119,7 +118,7 @@ export function SalesReportPage() {
                     </p>
                     <p className="tnum text-lg font-semibold">{formatMoney(pt.net)}</p>
                     <p className="tnum text-xs text-muted-foreground">
-                      {pt.count} {pt.count === 1 ? "sale" : "sales"} · qty {n2(pt.qty)}
+                      {pt.count} {pt.count === 1 ? "sale" : "sales"} · qty {formatNumber(pt.qty)}
                     </p>
                   </div>
                 ))}
@@ -162,7 +161,7 @@ export function SalesReportPage() {
                         )}
                       </TableCell>
                       <TableCell className="text-muted-foreground">{row.category ?? "—"}</TableCell>
-                      <TableCell className="tnum text-right">{n2(row.qty)}</TableCell>
+                      <TableCell className="tnum text-right">{formatNumber(row.qty)}</TableCell>
                       <TableCell className="tnum text-right">{formatMoney(row.unitPrice)}</TableCell>
                       <TableCell className="tnum text-right">{row.discountPct ? `${row.discountPct}%` : "—"}</TableCell>
                       <TableCell className="tnum text-right">{formatMoney(row.gross)}</TableCell>
@@ -177,7 +176,7 @@ export function SalesReportPage() {
                       <TableCell colSpan={3} className="font-medium">
                         Total
                       </TableCell>
-                      <TableCell className="tnum text-right font-medium">{n2(report.data.totals.qty)}</TableCell>
+                      <TableCell className="tnum text-right font-medium">{formatNumber(report.data.totals.qty)}</TableCell>
                       <TableCell />
                       <TableCell className="tnum text-right font-medium">
                         {report.data.totals.discount > 0 ? `−${formatMoney(report.data.totals.discount)}` : "—"}

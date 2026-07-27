@@ -21,7 +21,7 @@ import { useMe } from "@/api/auth";
 import { useDashboard, useTrends, type DashboardData, type TrendPeriod } from "@/api/dashboard";
 // One source for the Dashboard panel and the topbar bell — see lib/attention.ts.
 import { attentionItems, type AttentionItem } from "@/lib/attention";
-import { formatMoney } from "@/lib/utils";
+import { formatMoney, formatDate } from "@/lib/utils";
 import { pesoCompact, pesoFull, shortDate } from "@/components/charts/chart-kit";
 import { PeriodColumns } from "@/components/charts/period-columns";
 import { StatTile, type StatTileDelta } from "@/components/charts/stat-tile";
@@ -54,12 +54,6 @@ const SECONDARY_ACTIONS: SecondaryAction[] = [
   { kind: "sale", title: "Record Sale", path: "sales", icon: Receipt, permission: "entries.create" },
   { kind: "import", title: "Import File", path: "imports", icon: FileInput, permission: "imports.upload" },
 ];
-
-const DATE = new Intl.DateTimeFormat("en-PH", {
-  month: "short",
-  day: "numeric",
-  year: "numeric",
-});
 
 export function DashboardPage() {
   const me = useMe();
@@ -759,15 +753,19 @@ function DashboardSkeleton() {
   );
 }
 
+/**
+ * Every piece of outstanding work, ignoring who may act on it — the role-filtered
+ * subset is what `attentionItems()` returns. Must stay a superset of that list,
+ * or the "requires a manager" note below fires at the wrong times and this stat
+ * silently disagrees with the bell.
+ */
 function unresolvedCount(data: DashboardData): number {
   return data.attention.missingPrices
+    + data.attention.missingWeights
+    + data.attention.weightReviews
     + data.attention.unmatchedRows
     + data.attention.draftPurchases
     + data.attention.openCounts;
-}
-
-function formatDate(date: string): string {
-  return DATE.format(new Date(`${date}T00:00:00`));
 }
 
 function greeting(): string {

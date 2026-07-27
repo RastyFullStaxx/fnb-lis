@@ -4,7 +4,7 @@ import { round2 } from "@fnb/core";
 import { useCountDates } from "@/api/ops";
 import { useLocationId } from "@/api/location";
 import { exportUrl, useUsageCostReport } from "@/api/reports";
-import { formatMoney } from "@/lib/utils";
+import { formatMoney, formatNumber } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import {
@@ -36,7 +36,6 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 
-const n2 = (v: number) => v.toLocaleString("en-US", { maximumFractionDigits: 2 });
 
 /** Usage Cost Report (client report #6): what each item's usage cost for an
     audit period — the same usage the Full Audit shows, item by item. */
@@ -166,7 +165,7 @@ export function UsageCostReportPage() {
                     <TableRow key={i}>
                       <TableCell className="max-w-[22rem] font-medium break-words">{row.name}</TableCell>
                       <TableCell className="text-muted-foreground">{row.uom}</TableCell>
-                      <TableCell className={cn("tnum text-right", row.qty < 0 && "text-destructive")}>{n2(row.qty)}</TableCell>
+                      <TableCell className={cn("tnum text-right", row.qty < 0 && "text-destructive")}>{formatNumber(row.qty)}</TableCell>
                       <TableCell className={cn("tnum text-right", row.cost < 0 && "text-destructive")}>{formatMoney(row.cost)}</TableCell>
                     </TableRow>
                   ))}
@@ -178,7 +177,7 @@ export function UsageCostReportPage() {
                       <TableCell colSpan={2} className="font-medium">
                         Grand Total
                       </TableCell>
-                      <TableCell className="tnum text-right font-medium">{n2(report.data.totals.qty)}</TableCell>
+                      <TableCell className="tnum text-right font-medium">{formatNumber(report.data.totals.qty)}</TableCell>
                       <TableCell className="tnum text-right font-semibold">{formatMoney(report.data.totals.cost)}</TableCell>
                     </TableRow>
                   </TableFooter>

@@ -4,7 +4,7 @@ import { NON_REVENUE_GROUP_LABELS, NON_REVENUE_GROUPS, round2, type NonRevenueGr
 import { useLocationId } from "@/api/location";
 import { useCountDates } from "@/api/ops";
 import { exportUrl, useNonRevenueReport, useTransferReport } from "@/api/reports";
-import { formatMoney } from "@/lib/utils";
+import { formatMoney, formatNumber, formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { TableSurface, TableLoading, TableEmpty, TableError, ToolbarField } from "@/components/table-surface";
 import { DateRangeControl, ExportButtons } from "@/components/report-toolbar";
@@ -29,7 +29,6 @@ import {
 } from "@/components/ui/table";
 import { useReportRange } from "./use-report-range";
 
-const n2 = (v: number) => round2(v).toLocaleString("en-US", { maximumFractionDigits: 2 });
 
 const ALL_GROUPS = "__all__";
 const STOCK_TRANSFER = "__transfers__";
@@ -139,10 +138,10 @@ export function NonRevenueReportPage() {
               <TableBody>
                 {transfers.data.rows.map((row, i) => (
                   <TableRow key={i}>
-                    <TableCell className="tnum">{row.date}</TableCell>
+                    <TableCell className="tnum">{formatDate(row.date)}</TableCell>
                     <TableCell className="max-w-[14rem] break-words text-muted-foreground">{row.counterparty}</TableCell>
                     <TableCell className="max-w-[22rem] font-medium break-words">{row.name}</TableCell>
-                    <TableCell className="tnum text-right">{n2(row.qtySent)}</TableCell>
+                    <TableCell className="tnum text-right">{formatNumber(row.qtySent)}</TableCell>
                     <TableCell className="tnum text-right">{formatMoney(row.costValue)}</TableCell>
                     <TableCell className="tnum text-right">{formatMoney(row.retailValue)}</TableCell>
                   </TableRow>
@@ -153,7 +152,7 @@ export function NonRevenueReportPage() {
                   <TableCell colSpan={3} className="font-medium">
                     Total
                   </TableCell>
-                  <TableCell className="tnum text-right font-medium">{n2(transfers.data.totals.qty)}</TableCell>
+                  <TableCell className="tnum text-right font-medium">{formatNumber(transfers.data.totals.qty)}</TableCell>
                   <TableCell className="tnum text-right font-semibold">{formatMoney(transfers.data.totals.cost)}</TableCell>
                   <TableCell className="tnum text-right font-semibold">{formatMoney(transfers.data.totals.retail)}</TableCell>
                 </TableRow>
@@ -200,7 +199,7 @@ export function NonRevenueReportPage() {
                     <TableCell>
                       <Badge variant="outline">{row.reason}</Badge>
                     </TableCell>
-                    <TableCell className="tnum text-right">{n2(row.qty)}</TableCell>
+                    <TableCell className="tnum text-right">{formatNumber(row.qty)}</TableCell>
                     <TableCell className="tnum text-right">{row.contentOverride ?? "—"}</TableCell>
                     <TableCell className="tnum text-right">
                       {row.estimatedCost === null ? "—" : formatMoney(row.estimatedCost)}
@@ -216,7 +215,7 @@ export function NonRevenueReportPage() {
                   <TableCell colSpan={4} className="font-medium">
                     Total
                   </TableCell>
-                  <TableCell className="tnum text-right font-medium">{n2(report.data.totals.qty)}</TableCell>
+                  <TableCell className="tnum text-right font-medium">{formatNumber(report.data.totals.qty)}</TableCell>
                   <TableCell />
                   <TableCell className="tnum text-right font-semibold">{formatMoney(report.data.totals.cost)}</TableCell>
                   <TableCell className="tnum text-right font-semibold">{formatMoney(report.data.totals.retail)}</TableCell>
@@ -235,7 +234,7 @@ export function NonRevenueReportPage() {
               <div key={g.group}>
                 <p className="text-sm font-medium">{g.reason}</p>
                 <p className="tnum text-xs text-muted-foreground">
-                  {g.count} entr{g.count === 1 ? "y" : "ies"} · qty {n2(g.qty)}
+                  {g.count} entr{g.count === 1 ? "y" : "ies"} · qty {formatNumber(g.qty)}
                   {g.cost > 0 && ` · ${formatMoney(g.cost)}`}
                 </p>
               </div>

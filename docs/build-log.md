@@ -705,3 +705,73 @@ the count screen read `(scale 30 − empty 17.4 oz) × Liquid Weight 30.12 = 380
 the override in place (Main Bar Jun 1–8 still **−₱330.69 / −₱869.57**), because
 committed lines snapshot their own weights and a later re-weighing cannot
 rewrite a closed period. Both workspaces typecheck clean.
+
+## Phase 24 — Full-app UX walk: five correctness fixes (2026-07-28)
+
+Walked every flow as a real user (admin and staff). Five defects found, all
+presentation-layer, none touching reconciliation math. Golden fixture re-verified
+after each: Main Bar Jun 1–8 still **−₱330.69 / −₱869.57**.
+
+1. **Dashboard "Unresolved work" disagreed with the bell** (3 vs 4).
+   `unresolvedCount()` predated the weight categories and never added
+   `missingWeights`/`weightReviews`, while the bell reads `attentionItems()`.
+   Two counters for one truth in an audit product is the worst kind of bug.
+2. **`-₱0.00` in the Full Audit.** Reconciliation sums land on `-5.5e-13`;
+   `hasVariance()` already treats that as zero but `formatMoney` formatted the
+   raw value and Intl kept the sign. Now snaps below half a centavo.
+3. **`-0` quantities**, same cause via a `n2` helper that had been copy-pasted
+   into **fourteen** report pages. Replaced with one `formatNumber()` in
+   `lib/utils` so the fix lands everywhere at once.
+4. **Verdict strip counted float dust as real.** `r.variance < 0` reported
+   *"5 items short · 1 over"* for a period with three real shortages. Now uses
+   `hasVariance()` — reads **"3 items short · 0 over"**.
+5. **Dashboard Variance Leaders** filtered on `varianceCost !== 0` — the exact-zero
+   comparison deviation #24 exists to forbid — so three no-variance items sat on
+   the board labelled *"Shortage ₱0.00"*. Now `hasVariance()`; only the three
+   real shortages remain.
+
+Also confirmed (not a defect): an item missing from a count is **excluded** from
+the reconciliation rather than counted as zero — a 6-line count over a 13-item
+catalog produces a 4-row report. Safer than a false shortage, but silent; see the
+count-completeness suggestion.
+
+## Phase 25 — The six suggestions, built (2026-07-28)
+
+Golden fixture re-verified throughout: **−₱330.69 / −₱869.57**.
+
+**Count completeness.** The session showed "Entered lines: 1" and nothing else,
+and Commit locked the period silently. Now: a **Progress** bar reading
+`1 of 13 items`; the entries pane is two tabs, **Counted** and **Not counted**,
+where every outstanding item is listed and *tapping one loads it into the form*;
+and the commit dialog names what is missing —
+*"12 items have not been counted… uncounted items are left out of the
+reconciliation entirely — they won't appear as a shortage."* All derived from the
+catalog, so nothing can drift out of sync.
+
+**In-progress work first.** Counts and Purchases now sort OPEN/DRAFT rows to the
+top. The open count was landing 8th under seven committed ones, right after the
+dashboard told you to go finish it.
+
+**One date format.** `formatDate()` in `lib/utils` — the app was rendering
+`Jul 20, 2026` on the dashboard and raw `2026-07-30` in Counts, Transfers and
+five report tables. Parsed at local midnight, never `new Date("2026-07-20")`,
+which is UTC and lands a day early west of Greenwich.
+
+**"16 + 0.11" explained.** Compact mode dropped the "(Full + Open)" suffix,
+leaving the notation undecodable; Begin/End now carry an Info hint.
+
+**Staff can report a bad weight.** Raising a weight problem moved from
+`master.write` to `entries.create`, and the control now also sits in the weigh
+strip on the **count screen** — where staff are standing with the bottle and the
+scale. Filing a note changes no data; an admin still acts on it. Verified live:
+Paolo Reyes (STAFF) filed one, it appeared on the admin's bell, admin closed it.
+
+**Small-laptop layout.** The sidebar is 16rem — 288px at this app's 18px root,
+28% of a 1024px screen — and always started expanded. It now defaults to the
+icon rail below 1400px, with a saved preference always winning. Local Database
+additionally folds Category under the item name below 2xl. Result at 1280:
+content width **926 → 1160px**; at 1024 the catalog went from 958px-in-670 (hard
+scroll) to **904-in-904, no scroll**. Swept all 13 pages at 1280 — no horizontal
+scroll anywhere except `reports/legacy-audit`, which is the client's 24-column
+layout and is meant to scroll.
+

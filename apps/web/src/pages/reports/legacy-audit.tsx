@@ -6,7 +6,7 @@ import { useCountDates } from "@/api/ops";
 import { useVarianceThreshold } from "@/api/settings";
 import { useMe } from "@/api/auth";
 import { exportUrl, useLegacyAuditReport, type LegacyAuditRow } from "@/api/reports";
-import { formatMoney, cn } from "@/lib/utils";
+import { formatMoney, cn, formatNumber } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { TableLoading, TableError, ToolbarField } from "@/components/table-surface";
@@ -29,7 +29,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-const n2 = (v: number) => round2(v).toLocaleString("en-US", { maximumFractionDigits: 2 });
 
 type Variant = "detailed" | "inventory";
 
@@ -195,7 +194,7 @@ export function LegacyAuditPage() {
           {report.data?.costRatio !== null && report.data !== undefined && (
             <div className="ml-auto shrink-0 pb-0.5">
               <Badge variant="warning" className="text-sm">
-                {variant === "detailed" ? "Cost of Sold" : "Cost"} Ratio {n2(report.data.costRatio ?? 0)}%
+                {variant === "detailed" ? "Cost of Sold" : "Cost"} Ratio {formatNumber(report.data.costRatio ?? 0)}%
               </Badge>
             </div>
           )}
@@ -273,7 +272,7 @@ export function LegacyAuditPage() {
                             const v = c.value(row);
                             return (
                               <TableCell key={c.header} className="tnum text-right whitespace-nowrap">
-                                {v === null ? "—" : c.money ? formatMoney(round2(v)) : n2(v)}
+                                {v === null ? "—" : c.money ? formatMoney(round2(v)) : formatNumber(v)}
                               </TableCell>
                             );
                           })}
@@ -289,7 +288,7 @@ export function LegacyAuditPage() {
                         const v = c.header === "%Over/Short" ? null : c.value(group.totals as unknown as LegacyAuditRow);
                         return (
                           <TableCell key={c.header} className="tnum text-right whitespace-nowrap">
-                            {v === null ? "" : c.money ? formatMoney(round2(v)) : n2(v)}
+                            {v === null ? "" : c.money ? formatMoney(round2(v)) : formatNumber(v)}
                           </TableCell>
                         );
                       })}
@@ -303,7 +302,7 @@ export function LegacyAuditPage() {
                     const v = c.header === "%Over/Short" ? null : c.value(report.data.totals as unknown as LegacyAuditRow);
                     return (
                       <TableCell key={c.header} className="tnum text-right whitespace-nowrap">
-                        {v === null ? "" : c.money ? formatMoney(round2(v)) : n2(v)}
+                        {v === null ? "" : c.money ? formatMoney(round2(v)) : formatNumber(v)}
                       </TableCell>
                     );
                   })}

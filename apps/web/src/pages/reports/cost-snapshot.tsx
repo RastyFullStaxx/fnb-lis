@@ -5,7 +5,7 @@ import { round2 } from "@fnb/core";
 import { useCountDates } from "@/api/ops";
 import { useLocationId } from "@/api/location";
 import { exportUrl, useCostSnapshotReport } from "@/api/reports";
-import { formatMoney } from "@/lib/utils";
+import { formatMoney, formatNumber } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import {
@@ -38,7 +38,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-const n2 = (v: number) => v.toLocaleString("en-US", { maximumFractionDigits: 2 });
 
 /**
  * Beginning / Ending Cost Reports (client reports #3 / #4): the counted stock
@@ -196,7 +195,7 @@ export function CostSnapshotPage() {
                     <TableRow key={i}>
                       <TableCell className="max-w-[22rem] font-medium break-words">{row.name}</TableCell>
                       <TableCell className="text-muted-foreground">{row.uom}</TableCell>
-                      <TableCell className="tnum text-right">{n2(row.qty)}</TableCell>
+                      <TableCell className="tnum text-right">{formatNumber(row.qty)}</TableCell>
                       <TableCell className="tnum text-right">{formatMoney(row.cost)}</TableCell>
                       <TableCell className="tnum text-right">{formatMoney(row.value)}</TableCell>
                       <TableCell>
@@ -214,7 +213,7 @@ export function CostSnapshotPage() {
                       <TableCell colSpan={2} className="font-medium">
                         Grand Total
                       </TableCell>
-                      <TableCell className="tnum text-right font-medium">{n2(report.data.totals.qty)}</TableCell>
+                      <TableCell className="tnum text-right font-medium">{formatNumber(report.data.totals.qty)}</TableCell>
                       <TableCell />
                       <TableCell className="tnum text-right font-semibold">{formatMoney(report.data.totals.value)}</TableCell>
                       <TableCell />

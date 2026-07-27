@@ -4,7 +4,7 @@ import { round2 } from "@fnb/core";
 import { useCountDates } from "@/api/ops";
 import { useLocationId } from "@/api/location";
 import { exportUrl, useForfeitsReport } from "@/api/reports";
-import { formatMoney } from "@/lib/utils";
+import { formatMoney, formatNumber, formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { TableSurface, TableLoading, TableEmpty, TableError, ToolbarSearch } from "@/components/table-surface";
 import { DateRangeControl, ExportButtons } from "@/components/report-toolbar";
@@ -21,7 +21,6 @@ import {
 } from "@/components/ui/table";
 import { useReportRange } from "./use-report-range";
 
-const n2 = (v: number) => v.toLocaleString("en-US", { maximumFractionDigits: 2 });
 
 /** Bars stay legible to about this many rows; the rest is a long tail of ones. */
 const ITEM_BAR_CAP = 8;
@@ -121,13 +120,13 @@ export function ForfeitsReportPage() {
               <TableBody>
                 {rows.map((row, i) => (
                   <TableRow key={i}>
-                    <TableCell className="tnum">{row.date}</TableCell>
+                    <TableCell className="tnum">{formatDate(row.date)}</TableCell>
                     {/* Wrapped, not truncated — an auditor has to read the whole
                         bottle name, but it must not push the table sideways. */}
                     <TableCell className="max-w-[22rem] font-medium break-words">{row.name}</TableCell>
                     <TableCell className="text-muted-foreground">{row.uom}</TableCell>
-                    <TableCell className="tnum text-right">{n2(row.qty)}</TableCell>
-                    <TableCell className="tnum text-right">{n2(row.contentEquiv)}</TableCell>
+                    <TableCell className="tnum text-right">{formatNumber(row.qty)}</TableCell>
+                    <TableCell className="tnum text-right">{formatNumber(row.contentEquiv)}</TableCell>
                     <TableCell className="tnum text-right">{formatMoney(row.costValue)}</TableCell>
                     <TableCell className="tnum text-right">{formatMoney(row.retailValue)}</TableCell>
                   </TableRow>
@@ -141,8 +140,8 @@ export function ForfeitsReportPage() {
                     <TableCell colSpan={3} className="font-medium">
                       Grand Total
                     </TableCell>
-                    <TableCell className="tnum text-right font-medium">{n2(report.data.totals.qty)}</TableCell>
-                    <TableCell className="tnum text-right font-medium">{n2(report.data.totals.contentEquiv)}</TableCell>
+                    <TableCell className="tnum text-right font-medium">{formatNumber(report.data.totals.qty)}</TableCell>
+                    <TableCell className="tnum text-right font-medium">{formatNumber(report.data.totals.contentEquiv)}</TableCell>
                     <TableCell className="tnum text-right font-semibold">{formatMoney(report.data.totals.costValue)}</TableCell>
                     <TableCell className="tnum text-right font-semibold">{formatMoney(report.data.totals.retailValue)}</TableCell>
                   </TableRow>

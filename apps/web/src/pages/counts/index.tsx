@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { formatDate } from "@/lib/utils";
 import { Link, useNavigate } from "react-router";
 import { ClipboardList, Plus } from "lucide-react";
 import { toast } from "sonner";
@@ -56,7 +57,11 @@ export function CountsPage() {
     const matchesSearch =
       !q || s.countDate.includes(q) || (s.createdByName ?? "").toLowerCase().includes(q);
     return matchesStatus && matchesSearch;
-  });
+  })
+    // Unfinished work first. A count you can still act on was landing below
+    // seven committed ones purely because it was older — the dashboard sends
+    // you here and then makes you hunt for the row it just named.
+    .sort((a, b) => Number(b.status === "OPEN") - Number(a.status === "OPEN"));
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -139,7 +144,7 @@ export function CountsPage() {
             <TableBody>
               {filtered.map((s) => (
                 <TableRow key={s.id} className={s.status === "VOID" ? "opacity-50" : undefined}>
-                  <TableCell className="tnum font-medium">{s.countDate}</TableCell>
+                  <TableCell className="tnum font-medium">{formatDate(s.countDate)}</TableCell>
                   <TableCell>
                     <Badge variant={statusVariant(s.status)}>
                       {s.status === "OPEN" ? "Counting" : s.status === "COMMITTED" ? "Committed" : "Cancelled"}

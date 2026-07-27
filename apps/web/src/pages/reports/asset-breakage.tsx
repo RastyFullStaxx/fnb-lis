@@ -4,7 +4,7 @@ import { round2 } from "@fnb/core";
 import { useLocationId } from "@/api/location";
 import { useCountDates } from "@/api/ops";
 import { exportUrl, useAssetBreakageReport } from "@/api/reports";
-import { formatMoney } from "@/lib/utils";
+import { formatMoney, formatNumber, formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { TableSurface, TableLoading, TableEmpty, TableError } from "@/components/table-surface";
 import { DateRangeControl, ExportButtons } from "@/components/report-toolbar";
@@ -22,7 +22,6 @@ import {
 } from "@/components/ui/table";
 import { useReportRange } from "./use-report-range";
 
-const n2 = (v: number) => round2(v).toLocaleString("en-US", { maximumFractionDigits: 2 });
 
 /**
  * Asset Breakage report (client req 2026-07-21) — the "usage" of equipment.
@@ -94,7 +93,7 @@ export function AssetBreakageReportPage() {
               <TableBody>
                 {report.data.rows.map((row, i) => (
                   <TableRow key={i}>
-                    <TableCell className="tnum">{row.date}</TableCell>
+                    <TableCell className="tnum">{formatDate(row.date)}</TableCell>
                     <TableCell className="max-w-[16rem] font-medium break-words">
                       {row.name}
                       <span className="text-muted-foreground"> · {row.uom}</span>
@@ -103,7 +102,7 @@ export function AssetBreakageReportPage() {
                       <Badge variant="outline">{row.reason}</Badge>
                     </TableCell>
                     <TableCell className="max-w-[22rem] break-words text-muted-foreground">{row.note || "—"}</TableCell>
-                    <TableCell className="tnum text-right">{n2(row.qty)}</TableCell>
+                    <TableCell className="tnum text-right">{formatNumber(row.qty)}</TableCell>
                     <TableCell className="tnum text-right">{formatMoney(row.costValue)}</TableCell>
                   </TableRow>
                 ))}
@@ -113,7 +112,7 @@ export function AssetBreakageReportPage() {
                   <TableCell colSpan={4} className="font-medium">
                     Total written off
                   </TableCell>
-                  <TableCell className="tnum text-right font-medium">{n2(report.data.totals.qty)}</TableCell>
+                  <TableCell className="tnum text-right font-medium">{formatNumber(report.data.totals.qty)}</TableCell>
                   <TableCell className="tnum text-right font-semibold">{formatMoney(report.data.totals.costValue)}</TableCell>
                 </TableRow>
               </TableFooter>

@@ -100,7 +100,7 @@ function ShellLayout({ me, current }: { me: MeResponse; current: CurrentLocation
   const adminNav = visibleNav(ADMIN_NAV, role, locationModules);
 
   return (
-    <SidebarProvider>
+    <SidebarProvider defaultOpen={defaultSidebarOpen()}>
       <TopProgress />
       <Sidebar collapsible="icon">
         <SidebarHeader>
@@ -133,6 +133,22 @@ function ShellLayout({ me, current }: { me: MeResponse; current: CurrentLocation
       <Toaster position="top-center" />
     </SidebarProvider>
   );
+}
+
+/**
+ * Start collapsed to the icon rail on a compact laptop.
+ *
+ * The expanded sidebar is 16rem — 288px at this app's 18px root — which is 28%
+ * of a 1024px screen and a big bite out of a 13" MacBook Air. The data tables
+ * are what people came for, so below 1400px the rail wins by default. A saved
+ * preference always beats the heuristic: this only decides the FIRST paint on a
+ * machine that has never toggled it.
+ */
+function defaultSidebarOpen(): boolean {
+  if (typeof document === "undefined") return true;
+  const saved = document.cookie.match(/(?:^|;\s*)sidebar_state=(true|false)/);
+  if (saved) return saved[1] === "true";
+  return window.innerWidth >= 1400;
 }
 
 function NavGroup({

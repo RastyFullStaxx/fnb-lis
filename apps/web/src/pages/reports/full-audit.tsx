@@ -10,7 +10,7 @@ import { useProductTypes } from "@/api/master";
 import { useCompanyInfo, useVarianceThreshold } from "@/api/settings";
 import { exportUrl, useFullAuditDrill } from "@/api/reports";
 import { ApiError, downloadFile } from "@/api/http";
-import { formatMoney } from "@/lib/utils";
+import { formatMoney, formatNumber, formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { TableLoading, TableEmpty, TableError, ToolbarField, ToolbarSearch } from "@/components/table-surface";
@@ -18,6 +18,12 @@ import { ExportButtons } from "@/components/report-toolbar";
 import { Toggle } from "@/components/toggle-chip";
 import { MagnitudeBars } from "@/components/charts/magnitude-bars";
 import { Badge } from "@/components/ui/badge";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   Dialog,
   DialogContent,
@@ -54,9 +60,31 @@ import { cn } from "@/lib/utils";
 
 const ALL = "__all__";
 
-const n2 = (v: number) => round2(v).toLocaleString("en-US", { maximumFractionDigits: 2 });
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Counted stock reads "16 + 0.11" — sixteen sealed bottles plus a partly-full
+ * one. Compact mode drops the "(Full + Open)" suffix to save width, which left
+ * the notation with no explanation anywhere on the page.
+ */
+function HeadHint({ label }: { label: string }) {
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex cursor-help items-center gap-1">
+            {label} <Info className="size-3.5 text-muted-foreground" />
+          </span>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-xs">
+          Full units + open amount. "16 + 0.11" is sixteen sealed containers plus one
+          open container about 11% full.
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
 
 /** Solid tint for sticky cells on highlighted rows — translucent tints would
     let scrolled columns bleed through a pinned cell.
@@ -369,13 +397,13 @@ export function FullAuditPage() {
                 <TableRow className="hover:bg-transparent">
                   <TableHead className="sticky left-0 top-10 z-30 w-[15rem] min-w-[9rem] bg-muted">Item</TableHead>
                   <TableHead className="sticky top-10 z-20 border-l bg-muted text-right">
-                    {compact ? "Begin" : "Begin (Full + Open)"}
+                    {compact ? <HeadHint label="Begin" /> : "Begin (Full + Open)"}
                   </TableHead>
                   {!compact && <TableHead className="sticky top-10 z-20 bg-muted text-right">Purchased</TableHead>}
                   {!compact && <TableHead className="sticky top-10 z-20 bg-muted text-right">Returns</TableHead>}
                   {!compact && <TableHead className="sticky top-10 z-20 bg-muted text-right">Transfers (In − Out)</TableHead>}
                   <TableHead className="sticky top-10 z-20 bg-muted text-right">
-                    {compact ? "End" : "End (Full + Open)"}
+                    {compact ? <HeadHint label="End" /> : "End (Full + Open)"}
                   </TableHead>
                   <TableHead className="sticky top-10 z-20 border-l bg-muted text-right font-semibold">Usage</TableHead>
                   <TableHead className="sticky top-10 z-20 border-l bg-muted text-right">
@@ -497,8 +525,11 @@ function LegacyFormatMenu({
  * answer before scrolling 15 columns. Screen-only; print keeps the pure table.
  */
 function VerdictStrip({ report, begin, end }: { report: Report; begin: string; end: string }) {
-  const itemsShort = report.rows.filter((r) => r.variance < 0).length;
-  const itemsOver = report.rows.filter((r) => r.variance > 0).length;
+  // hasVariance, not `< 0` — a reconciliation sum lands on -8.9e-16 rather than
+  // a clean 0, and the raw sign counted those as real shortages. Same predicate
+  // the rest of the report already uses (architecture.md deviation #24).
+  const itemsShort = report.rows.filter((r) => hasVariance(r.variance) && r.variance < 0).length;
+  const itemsOver = report.rows.filter((r) => hasVariance(r.variance) && r.variance > 0).length;
   const categories = report.categories
     .filter((g) => g.totals.varianceCost !== 0)
     .map((g) => ({ label: g.categoryName, value: round2(g.totals.varianceCost) }))
@@ -616,50 +647,50 @@ function CategoryRows({
             )}
           </TableCell>
           <TableCell className="tnum border-l text-right">
-            {n2(row.beginFull)}
-            {row.beginOpenEquiv > 0 && <span className="text-muted-foreground"> + {n2(row.beginOpenEquiv)}</span>}
+            {formatNumber(row.beginFull)}
+            {row.beginOpenEquiv > 0 && <span className="text-muted-foreground"> + {formatNumber(row.beginOpenEquiv)}</span>}
           </TableCell>
-          {!compact && <TableCell className="tnum text-right">{row.purchased > 0 ? n2(row.purchased) : "—"}</TableCell>}
-          {!compact && <TableCell className="tnum text-right">{row.forfeited > 0 ? n2(row.forfeited) : "—"}</TableCell>}
+          {!compact && <TableCell className="tnum text-right">{row.purchased > 0 ? formatNumber(row.purchased) : "—"}</TableCell>}
+          {!compact && <TableCell className="tnum text-right">{row.forfeited > 0 ? formatNumber(row.forfeited) : "—"}</TableCell>}
           {!compact && (
             <TableCell className="tnum text-right">
               {row.transferIn === 0 && row.transferOut === 0 ? (
                 "—"
               ) : (
                 <>
-                  {row.transferIn > 0 && `+${n2(row.transferIn)}`}
+                  {row.transferIn > 0 && `+${formatNumber(row.transferIn)}`}
                   {row.transferIn > 0 && row.transferOut > 0 && " "}
-                  {row.transferOut > 0 && <span className="text-muted-foreground">−{n2(row.transferOut)}</span>}
+                  {row.transferOut > 0 && <span className="text-muted-foreground">−{formatNumber(row.transferOut)}</span>}
                 </>
               )}
             </TableCell>
           )}
           <TableCell className="tnum text-right">
-            {n2(row.endFull)}
-            {row.endOpenEquiv > 0 && <span className="text-muted-foreground"> + {n2(row.endOpenEquiv)}</span>}
+            {formatNumber(row.endFull)}
+            {row.endOpenEquiv > 0 && <span className="text-muted-foreground"> + {formatNumber(row.endOpenEquiv)}</span>}
           </TableCell>
-          <TableCell className="tnum border-l text-right font-medium">{n2(row.usage)}</TableCell>
+          <TableCell className="tnum border-l text-right font-medium">{formatNumber(row.usage)}</TableCell>
           <TableCell className="tnum border-l text-right">
             {row.soldDirect + row.soldPortion > 0 ? (
               <>
-                {n2(row.soldDirect)}
-                {row.soldPortion > 0 && <span className="text-muted-foreground"> + {n2(row.soldPortion)}</span>}
+                {formatNumber(row.soldDirect)}
+                {row.soldPortion > 0 && <span className="text-muted-foreground"> + {formatNumber(row.soldPortion)}</span>}
               </>
             ) : (
               "—"
             )}
           </TableCell>
-          {!compact && <TableCell className="tnum text-right">{row.nonRevenue > 0 ? n2(row.nonRevenue) : "—"}</TableCell>}
-          {!compact && <TableCell className="tnum text-right">{row.production > 0 ? n2(row.production) : "—"}</TableCell>}
+          {!compact && <TableCell className="tnum text-right">{row.nonRevenue > 0 ? formatNumber(row.nonRevenue) : "—"}</TableCell>}
+          {!compact && <TableCell className="tnum text-right">{row.production > 0 ? formatNumber(row.production) : "—"}</TableCell>}
           {!compact && (
             <TableCell className="tnum text-right">{row.revenue > 0 ? formatMoney(round2(row.revenue)) : "—"}</TableCell>
           )}
           <TableCell className={cn("tnum border-l text-right font-medium", varInk)}>
-            {n2(row.variance)}
+            {formatNumber(row.variance)}
           </TableCell>
           {!compact && (
             <TableCell className={cn("tnum text-right", varInk)}>
-              {row.variancePct === null ? "—" : `${n2(row.variancePct)}%`}
+              {row.variancePct === null ? "—" : `${formatNumber(row.variancePct)}%`}
             </TableCell>
           )}
           <TableCell className={cn("tnum text-right", varInk)}>
@@ -729,7 +760,7 @@ function DrillDialog({
                 </Badge>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm">{r.detail}</p>
-                  <p className="tnum text-xs text-muted-foreground">{r.date}</p>
+                  <p className="tnum text-xs text-muted-foreground">{formatDate(r.date)}</p>
                 </div>
                 {r.amount !== null && <span className="tnum text-sm">{formatMoney(r.amount)}</span>}
               </div>

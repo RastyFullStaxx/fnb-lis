@@ -5,11 +5,12 @@ import { toast } from "sonner";
 import { can, type Role } from "@fnb/core";
 import { statusVariant } from "@/lib/status";
 import { useMe } from "@/api/auth";
-import { useLocationId } from "@/api/location";
+import { useLocationId, useLocationItems } from "@/api/location";
 import { useCountMutations, useCountSession } from "@/api/ops";
 import { variantLabel, type CountLine, type LocationItem } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { ItemCombobox } from "@/components/item-combobox";
+import { WeightReport } from "@/pages/stock/weight-report";
 import { VoidDialog } from "@/components/void-dialog";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { EntryFact, EntryFacts } from "@/components/entry-fact";
@@ -32,7 +33,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Separator } from "@/components/ui/separator";
-import { cn } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 
 export function CountSessionPage() {
   const { sessionId } = useParams();
@@ -102,7 +103,7 @@ function SessionHeader({ session }: { session: SessionWithLines }) {
         </Link>
       </Button>
       <div>
-        <h2 className="text-xl font-semibold tracking-tight tnum">Count · {session.countDate}</h2>
+        <h2 className="text-xl font-semibold tracking-tight">Count · {formatDate(session.countDate)}</h2>
         <p className="text-sm text-muted-foreground">
           {session.status === "OPEN"
             ? "Counting in progress — every saved line lands below."
@@ -129,6 +130,7 @@ function OpenSession({ session }: { session: SessionWithLines }) {
   // Direct open-amount entry — remaining content typed in, no weighing.
   const [openAmount, setOpenAmount] = useState("");
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
+  const [pane, setPane] = useState<"entered" | "remaining">("entered");
   const comboRef = useRef<HTMLButtonElement>(null);
 
   const weighable = (item?.itemVariant.contentTracked || item?.itemVariant.weighMode === "NET") ?? false;
@@ -214,13 +216,23 @@ function OpenSession({ session }: { session: SessionWithLines }) {
   const commit = async () => {
     try {
       await mutations.commit.mutateAsync();
-      toast.success(`Count for ${session.countDate} committed`);
+      toast.success(`Count for ${formatDate(session.countDate)} committed`);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not commit");
     }
   };
 
   const activeLines = session.lines.filter((l) => l.status === "ACTIVE");
+
+  // Completeness. An item left out of a count is silently DROPPED from the
+  // reconciliation — it doesn't show as a shortage, the row just disappears —
+  // so the counter has to be able to see what is still outstanding before the
+  // period locks.
+  const catalog = useLocationItems();
+  const countedIds = new Set(activeLines.map((l) => l.locationItemId));
+  const remaining = (catalog.data ?? []).filter((li: LocationItem) => !countedIds.has(li.id));
+  const total = catalog.data?.length ?? 0;
+  const done = total > 0 ? Math.min(activeLines.length, total) : 0;
 
   return (
     // Fit the viewport: only the panes scroll, never the page (like Sales).
@@ -306,6 +318,10 @@ function OpenSession({ session }: { session: SessionWithLines }) {
                 size={item?.itemVariant.size ?? 0}
                 contentUnit={item?.itemVariant.unit.name ?? "ml"}
               />
+              {/* Reported here, holding the bottle — the moment the number looks
+                  wrong. Staff can't edit weights, so without this the only path
+                  was telling a manager out loud. */}
+              {item && <WeightReport row={item} />}
             </div>
           )}
 
@@ -334,9 +350,31 @@ function OpenSession({ session }: { session: SessionWithLines }) {
             <AlertDialogContent>
               <AlertDialogHeader>
                 <AlertDialogTitle>Commit this count?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  {activeLines.length} line{activeLines.length === 1 ? "" : "s"} for {session.countDate}.
-                  Once committed, lines lock — to fix a mistake you cancel the entry and re-enter it, and the date becomes available as a report boundary.
+                <AlertDialogDescription asChild>
+                  <div className="space-y-3">
+                    <p>
+                      {activeLines.length} line{activeLines.length === 1 ? "" : "s"} for {formatDate(session.countDate)}.
+                      Once committed, lines lock — to fix a mistake you cancel the entry and re-enter it, and the date becomes available as a report boundary.
+                    </p>
+                    {remaining.length > 0 && (
+                      // The one thing worth interrupting for: uncounted items
+                      // vanish from the audit rather than showing up as a
+                      // variance, so nobody would ever notice the omission.
+                      <div className="rounded-md bg-warning/10 p-3 text-foreground">
+                        <p className="font-medium">
+                          {remaining.length} item{remaining.length === 1 ? " has" : "s have"} not been counted
+                        </p>
+                        <p className="mt-1">
+                          {remaining.slice(0, 4).map((li: LocationItem) => li.itemVariant.item.name).join(", ")}
+                          {remaining.length > 4 ? `, and ${remaining.length - 4} more` : ""}.
+                        </p>
+                        <p className="mt-1.5">
+                          Uncounted items are left out of the reconciliation entirely — they
+                          won't appear as a shortage. Commit only if that is intended.
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -349,12 +387,47 @@ function OpenSession({ session }: { session: SessionWithLines }) {
 
         {/* Recent entries pane (modernized legacy live preview) */}
         <div className="flex min-h-0 flex-col lg:border-l lg:pl-6">
-          <div className="mb-2 shrink-0 text-sm font-medium">
-            Entered lines
-            <span className="ml-2 tnum text-muted-foreground">{activeLines.length}</span>
-          </div>
+          <CountProgress done={done} total={total} />
+
+          {/* Two views of the same pane: what's in, and what's still out. The
+              second is the one that keeps a period from locking half-counted. */}
+          <Tabs value={pane} onValueChange={(v) => setPane(v as "entered" | "remaining")} className="mb-2 shrink-0">
+            <TabsList className="w-full">
+              <TabsTrigger value="entered" className="flex-1">
+                Counted <span className="ml-1.5 tnum opacity-70">{activeLines.length}</span>
+              </TabsTrigger>
+              <TabsTrigger value="remaining" className="flex-1">
+                Not counted <span className="ml-1.5 tnum opacity-70">{remaining.length}</span>
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+
           <div aria-live="polite" className="min-h-0 flex-1 divide-y overflow-y-auto max-lg:max-h-[28rem]">
-            {activeLines.length === 0 ? (
+            {pane === "remaining" ? (
+              remaining.length === 0 ? (
+                <p className="flex items-center gap-2 p-4 text-sm text-success-text">
+                  <Check className="size-4" /> Every item in this catalog has been counted.
+                </p>
+              ) : (
+                remaining.map((li: LocationItem) => (
+                  // Tapping it loads the item into the form — the shortest path
+                  // from "what's left" to "counted".
+                  <button
+                    key={li.id}
+                    type="button"
+                    className="flex w-full items-baseline gap-2 px-1 py-2.5 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={() => {
+                      setItem(li);
+                      setPane("entered");
+                      comboRef.current?.focus();
+                    }}
+                  >
+                    <span className="min-w-0 flex-1 truncate text-sm">{li.itemVariant.item.name}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground">{variantLabel(li.itemVariant)}</span>
+                  </button>
+                ))
+              )
+            ) : activeLines.length === 0 ? (
               <p className="p-4 text-sm text-muted-foreground">Nothing counted yet.</p>
             ) : (
               activeLines.map((line) => (
@@ -380,6 +453,44 @@ function OpenSession({ session }: { session: SessionWithLines }) {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * How far through the catalog this count is. A bare "Entered lines: 3" gives no
+ * sense of whether that is nearly done or barely started, and an item never
+ * counted is dropped from the reconciliation silently.
+ */
+function CountProgress({ done, total }: { done: number; total: number }) {
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  const complete = total > 0 && done >= total;
+  return (
+    <div className="mb-3 shrink-0">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-sm font-medium">Progress</span>
+        <span className="tnum text-sm text-muted-foreground">
+          {total > 0 ? `${done} of ${total} items` : `${done} counted`}
+        </span>
+      </div>
+      {total > 0 && (
+        <div
+          className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted"
+          role="progressbar"
+          aria-valuenow={done}
+          aria-valuemin={0}
+          aria-valuemax={total}
+          aria-label="Items counted"
+        >
+          <div
+            className={cn(
+              "h-full rounded-full transition-[width] duration-300 motion-reduce:transition-none",
+              complete ? "bg-success" : "bg-primary",
+            )}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      )}
     </div>
   );
 }

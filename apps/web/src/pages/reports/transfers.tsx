@@ -5,7 +5,7 @@ import { useLocationId } from "@/api/location";
 import { useMe } from "@/api/auth";
 import { useCountDates } from "@/api/ops";
 import { exportUrl, useTransferReport } from "@/api/reports";
-import { formatMoney } from "@/lib/utils";
+import { formatMoney, formatNumber, formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { TableSurface, TableLoading, TableEmpty, TableError, ToolbarField } from "@/components/table-surface";
 import { DateRangeControl, ExportButtons } from "@/components/report-toolbar";
@@ -31,7 +31,6 @@ import {
 import { cn } from "@/lib/utils";
 import { useReportRange } from "./use-report-range";
 
-const n2 = (v: number) => round2(v).toLocaleString("en-US", { maximumFractionDigits: 2 });
 
 const ALL_BRANCHES = "__all__";
 
@@ -164,15 +163,15 @@ export function TransferReportPage() {
                   const short = row.qtyReceived !== null && row.qtyReceived < row.qtySent;
                   return (
                     <TableRow key={i}>
-                      <TableCell className="tnum">{row.date}</TableCell>
+                      <TableCell className="tnum">{formatDate(row.date)}</TableCell>
                       <TableCell className="text-muted-foreground">{row.counterparty}</TableCell>
                       <TableCell className="max-w-[22rem] font-medium break-words">{row.name}</TableCell>
-                      <TableCell className="tnum text-right">{n2(row.qtySent)}</TableCell>
+                      <TableCell className="tnum text-right">{formatNumber(row.qtySent)}</TableCell>
                       <TableCell className={cn("tnum text-right", short && "font-medium text-destructive")}>
                         {row.qtyReceived === null ? (
                           <span className="text-muted-foreground">pending</span>
                         ) : (
-                          n2(row.qtyReceived)
+                          formatNumber(row.qtyReceived)
                         )}
                       </TableCell>
                       <TableCell className="tnum text-right">{formatMoney(row.unitCost)}</TableCell>
@@ -188,10 +187,10 @@ export function TransferReportPage() {
                     Total
                   </TableCell>
                   <TableCell className="tnum text-right font-medium">
-                    {direction === "out" ? n2(report.data.totals.qty) : ""}
+                    {direction === "out" ? formatNumber(report.data.totals.qty) : ""}
                   </TableCell>
                   <TableCell className="tnum text-right font-medium">
-                    {direction === "in" ? n2(report.data.totals.qty) : ""}
+                    {direction === "in" ? formatNumber(report.data.totals.qty) : ""}
                   </TableCell>
                   <TableCell />
                   <TableCell className="tnum text-right font-semibold">{formatMoney(report.data.totals.cost)}</TableCell>
@@ -218,7 +217,7 @@ export function TransferReportPage() {
               {report.data.byCounterparty.map((g) => (
                 <TableRow key={g.counterparty}>
                   <TableCell className="font-medium">{g.counterparty}</TableCell>
-                  <TableCell className="tnum text-right">{n2(g.qty)}</TableCell>
+                  <TableCell className="tnum text-right">{formatNumber(g.qty)}</TableCell>
                   <TableCell className="tnum text-right">{formatMoney(g.cost)}</TableCell>
                 </TableRow>
               ))}

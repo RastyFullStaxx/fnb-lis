@@ -1,3 +1,4 @@
+import { hasVariance } from "@fnb/core";
 import { prisma } from "../db";
 import { buildFullAudit, committedCountDates } from "./report-assembly";
 
@@ -183,7 +184,10 @@ export async function buildDashboard(
   if (latest) {
     const report = await buildFullAudit(locationId, latest.begin, latest.end, undefined, allowedProductTypes);
     varianceLeaders = report.rows
-      .filter((r) => r.varianceCost !== 0)
+      // hasVariance, not `!== 0` — reconciliation sums land on values like
+      // -5.5e-13, so exact-zero let three no-variance items onto the board
+      // labelled "Shortage ₱0.00" (architecture.md deviation #24).
+      .filter((r) => hasVariance(r.variance))
       .sort((a, b) => Math.abs(b.varianceCost) - Math.abs(a.varianceCost))
       .slice(0, 6)
       .map((r) => ({
