@@ -3,6 +3,7 @@ import { BadgeCheck, Copy, KeyRound, Package, Plus, RefreshCw, UserCog } from "l
 import { toast } from "sonner";
 import {
   ROLES,
+  OWNER_ASSIGNABLE_ROLES,
   PACKAGE_TYPES,
   MODULE_TYPES,
   PACKAGE_LABELS,
@@ -19,6 +20,7 @@ import {
   useUpdateUserAccess,
   type AdminUser,
 } from "@/api/admin";
+import { useMe } from "@/api/auth";
 import { ApiError } from "@/api/http";
 import { PageHeader } from "@/components/page-header";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -61,6 +63,7 @@ import {
 
 const ROLE_HINT: Record<Role, string> = {
   ADMIN: "Full access, all clients",
+  OWNER: "Owns this establishment; hires and disables its staff",
   MANAGER: "Manage catalog, prices, imports, reports",
   STAFF: "Record counts, purchases, sales",
   ACCOUNTANT: "View & export reports",
@@ -70,6 +73,7 @@ const ROLE_HINT: Record<Role, string> = {
 // Raw enum values (READONLY, ACCOUNTANT) are jargon — show plain labels.
 const ROLE_LABELS: Record<Role, string> = {
   ADMIN: "Admin",
+  OWNER: "Owner",
   MANAGER: "Manager",
   STAFF: "Staff",
   ACCOUNTANT: "Accountant",
@@ -438,13 +442,18 @@ function ModuleCheckboxes({
 }
 
 function RoleSelect({ value, onChange }: { value: Role; onChange: (r: Role) => void }) {
+  const me = useMe();
+  // An owner can only create roles below him — the server enforces the same
+  // ceiling (OWNER_ASSIGNABLE_ROLES); this just avoids offering a doomed pick.
+  const assignable: readonly Role[] =
+    me.data?.user.role === "ADMIN" ? ROLES : (OWNER_ASSIGNABLE_ROLES as readonly Role[]);
   return (
     <Select value={value} onValueChange={(v) => onChange(v as Role)}>
       <SelectTrigger>
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        {ROLES.map((r) => (
+        {assignable.map((r) => (
           <SelectItem key={r} value={r}>
             <span className="font-medium">{ROLE_LABELS[r]}</span>
             <span className="ml-2 text-xs text-muted-foreground">{ROLE_HINT[r]}</span>

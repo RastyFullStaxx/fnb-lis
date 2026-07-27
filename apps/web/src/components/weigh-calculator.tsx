@@ -136,9 +136,13 @@ export function WeighPreviewStrip({
   if (!preview.entered) {
     return (
       <p className="text-sm text-muted-foreground tnum">
-        {preview.mode === "NET"
-          ? `Empty weight ${preview.tare} ${preview.unit} · weighed by net weight — type the scale weight.`
-          : `Empty weight ${preview.tare} ${preview.unit} · Liquid Weight ×${preview.density} — type the scale weight.`}
+        {/* The constants are LIS's own calibration data — a counter needs the
+            RESULT, not the inputs (client decision 2026-07-25). */}
+        {!showWeights
+          ? "Ready to weigh — type the scale weight."
+          : preview.mode === "NET"
+            ? `Empty weight ${preview.tare} ${preview.unit} · weighed by net weight — type the scale weight.`
+            : `Empty weight ${preview.tare} ${preview.unit} · Liquid Weight ×${preview.density} — type the scale weight.`}
       </p>
     );
   }
@@ -163,9 +167,11 @@ export function WeighPreviewStrip({
           <div className="min-w-0 flex-1 space-y-0.5 tnum text-sm">
             <div>
               <span className="text-muted-foreground">
-                {preview.mode === "NET"
-                  ? `scale ${fmt(preview.scale)} − empty ${fmt(preview.tare)} ${preview.unit}`
-                  : `(scale ${fmt(preview.scale)} − empty ${fmt(preview.tare)} ${preview.unit}) × Liquid Weight ${fmt(preview.density)}`}
+                {!showWeights
+                  ? `scale ${fmt(preview.scale)} ${preview.unit}`
+                  : preview.mode === "NET"
+                    ? `scale ${fmt(preview.scale)} − empty ${fmt(preview.tare)} ${preview.unit}`
+                    : `(scale ${fmt(preview.scale)} − empty ${fmt(preview.tare)} ${preview.unit}) × Liquid Weight ${fmt(preview.density)}`}
               </span>{" "}
               ={" "}
               {/* Keyed on the result so every recomputation visibly ticks (DESIGN.md motion). */}

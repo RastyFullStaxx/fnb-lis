@@ -534,6 +534,51 @@ management is LIS-admin-only, and opening it up needs per-client scoping + a rol
 the tare-weight notification/approval gate, and the decoupled audit/activity date range — where
 JJ's "yes" was half-wrong.
 
+## Phase 19 — OWNER role, bottle-weight visibility (2026-07-25, later)
+
+**OWNER role (client: "the owner client is the only one who can disable his employee's account,
+including the Manager role").** Every mechanism already existed but was locked to the LIS ADMIN, so
+this was a permission problem, not a feature one. Added `OWNER` to `ROLES` and a new `users.manage`
+permission (`ADMIN` + `OWNER` — deliberately NOT MANAGER, per the client's wording). The four user
+routes moved out of `adminRoutes` into `userAdminRoutes`, mounted on the same `/api/admin` prefix
+under the softer guard, with three checks: `actorScope` (an owner acts only on his own clients),
+`assertActorMayTouchUser` (target must share his establishment, and can never be an ADMIN), and
+`assertActorMayAssign` (`OWNER_ASSIGNABLE_ROLES` — he can never mint an ADMIN or a peer OWNER).
+
+Gotcha worth remembering: `adminRoutes` had a bare `.use()`, which Hono expands to `/api/admin/*` —
+it 403'd the new user routes before they ran. Both routers now scope their middleware by path.
+
+Verified live as `owner`: sees only his 5 Prime staff (admins filtered out), **disables a MANAGER →
+200**, `/api/admin/clients` → 403, minting an ADMIN → 403 "You cannot assign the ADMIN role",
+assigning into another tenant → 403.
+
+**Bottle weights on the Local Database (client: "is the list showing Liquid Weight and Tare Weight,
+or only while inputting the weight?").** It was the latter — the columns didn't exist. Added a
+**Tare / Liquid Wt** column plus a **"Needs weight"** status badge, and a matching `missingWeights`
+count in the dashboard's existing *Needs Attention* list. That is the answer to the notification note
+too: a real work-queue where the admin already looks, instead of a notification system this app has
+no infrastructure for — and no hard approval gate, because `weigh-calculator` refuses to compute
+without a tare, so blocking first-time entry would strand a live count. Verified: House Red Wine
+shows `15.8 oz / —` + Needs weight; non-weighable rows show `—`.
+
+Golden fixture still −₱330.69.
+
+## Phase 20 — Notification bell (2026-07-25, later)
+
+The dashboard already knew what was outstanding; you just had to be *on* the dashboard to see it.
+Added a **bell in the topbar** beside Stocky: same items, chunked (Missing data / Needs review /
+Open work), each row linking to the page that fixes it, with a count badge.
+
+Two decisions worth keeping:
+
+- **Derived, never stored.** No Notification model, no read/unread, no dismiss. Each row is a live
+  query result, so it disappears when the work is genuinely done — a stored notification would keep
+  claiming "pending" after the fact and would need per-user read state, a whole subsystem for what a
+  badge count answers.
+- **One source.** `attentionItems()` moved out of dashboard.tsx into `lib/attention.ts`; the panel
+  and the bell now call the same function, so they cannot disagree about what is outstanding
+  (verified live — both list the same four items).
+
 ## Contributor history
 
 | Window | Who | What |

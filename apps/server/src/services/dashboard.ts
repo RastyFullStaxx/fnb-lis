@@ -18,6 +18,9 @@ export interface DashboardData {
   };
   attention: {
     missingPrices: number; // active location items with no cost or no retail
+    /** Weighable bottles missing a tare and/or liquid weight — they cannot be
+        counted on a scale until an admin fills them in (client req 2026-07-25). */
+    missingWeights: number;
     unmatchedRows: number; // PENDING rows in batches awaiting review
     draftPurchases: number; // uncommitted purchases
     openCounts: number; // count sessions still open
@@ -88,7 +91,22 @@ export async function buildDashboard(
           ? { itemVariant: { item: { category: { productType: { in: [...allowedProductTypes] } } } } }
           : {}),
       },
-      select: { cost: true, retail: true },
+      select: {
+        cost: true,
+        retail: true,
+        // Weighable bottles need a tare (empty-container) weight and a liquid
+        // weight (density) before they can be counted on a scale — the weigh
+        // calculator refuses to compute without them (client req 2026-07-25).
+        itemVariant: {
+          select: {
+            contentTracked: true,
+            weighMode: true,
+            tareWeight: true,
+            densityFactor: true,
+            item: { select: { category: { select: { defaultDensityFactor: true } } } },
+          },
+        },
+      },
     }),
     prisma.importRow.count({
       where: { status: "PENDING", batch: { locationId, status: "NEEDS_REVIEW" } },
@@ -139,6 +157,22 @@ export async function buildDashboard(
 
   const missingPrices = priceItems.filter((p) => p.cost <= 0 || p.retail <= 0).length;
 
+  // Bottles that can't be weighed yet: a weighable variant with no tare weight,
+  // or a density-weighed one with no liquid weight on the variant OR its
+  // category. This is the "new bottle / tare weight needs update" signal the
+  // client asked to be notified about — surfaced as work, not as a popup.
+  const missingWeights = priceItems.filter((p) => {
+    const v = p.itemVariant;
+    const weighable = v.contentTracked || v.weighMode === "NET" || v.weighMode === "DENSITY";
+    if (!weighable) return false;
+    if (v.tareWeight == null || v.tareWeight <= 0) return true;
+    // NET mode needs no density; DENSITY (incl. the legacy contentTracked
+    // inference) falls back to the category default before it counts as missing.
+    if (v.weighMode === "NET") return false;
+    const density = v.densityFactor ?? v.item.category.defaultDensityFactor;
+    return density == null || density <= 0;
+  }).length;
+
   let varianceLeaders: DashboardData["varianceLeaders"] = [];
   if (latest) {
     const report = await buildFullAudit(locationId, latest.begin, latest.end, undefined, allowedProductTypes);
@@ -165,7 +199,7 @@ export async function buildDashboard(
       canAudit,
       latest,
     },
-    attention: { missingPrices, unmatchedRows, draftPurchases, openCounts },
+    attention: { missingPrices, missingWeights, unmatchedRows, draftPurchases, openCounts },
     readiness: { activeItems: priceItems.length },
     openWork: {
       latestCount: latestCount

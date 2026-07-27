@@ -150,6 +150,7 @@ async function buildMe(user: MeResponse["user"]): Promise<MeResponse> {
     .map((cl) => ({
       id: cl.id,
       name: cl.name,
+      showBottleWeights: cl.showBottleWeights,
       locations: cl.locations.flatMap((l) => {
         // Same rule as requireLocationAccess: a non-ACTIVE subscription
         // (TRIAL/SUSPENDED/CANCELLED) falls back to an unrestricted location

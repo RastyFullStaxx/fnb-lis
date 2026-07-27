@@ -8,7 +8,7 @@ import {
   type AppEnv,
 } from "./middleware/auth";
 import { authRoutes } from "./routes/auth";
-import { adminRoutes } from "./routes/admin";
+import { adminRoutes, userAdminRoutes } from "./routes/admin";
 import { masterRoutes } from "./routes/master";
 import { locationItemRoutes } from "./routes/location-items";
 import { countRoutes } from "./routes/counts";
@@ -33,6 +33,9 @@ export function createApp() {
   app.get("/api/health", (c) => c.json({ ok: true }));
   app.route("/api/auth", authRoutes);
   app.route("/api/admin", adminRoutes);
+  // Same prefix, softer guard: user accounts are managed by the LIS ADMIN and
+  // by each establishment's OWNER (client req 2026-07-25).
+  app.route("/api/admin", userAdminRoutes);
   app.route("/api/master", masterRoutes);
   app.route("/api/activity", activityRoutes);
   app.route("/api/settings", settingsRoutes);

@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
 import {
@@ -10,6 +10,7 @@ import {
   locationModulesBody,
   moduleType,
   LOCATION_KINDS,
+  OWNER_ASSIGNABLE_ROLES,
   type BillingCycle,
 } from "@fnb/core";
 import { prisma } from "../db";
@@ -112,7 +113,14 @@ async function assertUserSeatsAvailable(clientIds: string[], exceptUserId?: stri
 }
 
 export const adminRoutes = new Hono<AppEnv>()
-  .use(requireAuth, requirePermission("admin.manage"))
+  // Path-scoped rather than a blanket `.use()`: userAdminRoutes mounts on this
+  // same /api/admin prefix with the softer `users.manage` guard, and a wildcard
+  // here would 403 those requests before they ever reach it.
+  .use("/clients", requireAuth, requirePermission("admin.manage"))
+  .use("/clients/*", requireAuth, requirePermission("admin.manage"))
+  .use("/locations/*", requireAuth, requirePermission("admin.manage"))
+  .use("/subscriptions", requireAuth, requirePermission("admin.manage"))
+  .use("/subscriptions/*", requireAuth, requirePermission("admin.manage"))
 
   // ── Clients & locations ────────────────────────────────────────────────────
 
@@ -358,119 +366,6 @@ export const adminRoutes = new Hono<AppEnv>()
     });
 
     return c.json(client, 201);
-  })
-
-  // ── Users ──────────────────────────────────────────────────────────────────
-
-  .get("/users", async (c) => {
-    const users = await prisma.user.findMany({
-      select: {
-        id: true, username: true, firstName: true, lastName: true, email: true,
-        role: true, status: true, createdAt: true,
-        modules: { select: { module: true } },
-        clientAccess: {
-          include: {
-            client: {
-              select: {
-                id: true,
-                name: true,
-                subscription: {
-                  select: {
-                    packageType: true,
-                    billingCycle: true,
-                    status: true,
-                    modules: { select: { module: true } },
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-      orderBy: { username: "asc" },
-    });
-    return c.json(users);
-  })
-
-  .post("/users", zValidator("json", userCreateBody), async (c) => {
-    const body = c.req.valid("json");
-    const actor = c.get("user")!;
-    const existing = await prisma.user.findUnique({ where: { username: body.username } });
-    if (existing) throw new AppError(409, "Username already taken");
-    await assertUserSeatsAvailable(body.clientIds);
-    const passwordHash = await hashPassword(body.password);
-    const created = await prisma.$transaction(async (tx) => {
-      const u = await tx.user.create({
-        data: {
-          username: body.username,
-          passwordHash,
-          firstName: body.firstName,
-          lastName: body.lastName,
-          email: body.email || null,
-          role: body.role,
-          clientAccess: { create: body.clientIds.map((clientId) => ({ clientId })) },
-          modules: { create: body.modules.map((module) => ({ module })) },
-        },
-      });
-      await logActivity(
-        { user: actor, action: "user.create", entity: "User", entityId: u.id, summary: `Created user ${u.username} (${u.role})` },
-        tx,
-      );
-      return u;
-    });
-    const { passwordHash: _omit, ...safe } = created;
-    return c.json(safe, 201);
-  })
-
-  .put("/users/:id", zValidator("json", userUpdateBody), async (c) => {
-    const id = c.req.param("id");
-    const body = c.req.valid("json");
-    const actor = c.get("user")!;
-    const data: Record<string, unknown> = { ...body };
-    delete data.password;
-    delete data.modules;
-    if (body.password) data.passwordHash = await hashPassword(body.password);
-    if (body.email === "") data.email = null;
-    // Re-enabling claims a seat back, so it has to pass the same check as
-    // creating — otherwise disable-then-enable walks straight past the cap.
-    if (body.status === "ACTIVE") {
-      const access = await prisma.userClientAccess.findMany({ where: { userId: id }, select: { clientId: true } });
-      await assertUserSeatsAvailable(access.map((a) => a.clientId), id);
-    }
-    const updated = await prisma.$transaction(async (tx) => {
-      const u = await tx.user.update({ where: { id }, data });
-      if (body.modules !== undefined) {
-        await tx.userModule.deleteMany({ where: { userId: id } });
-        await tx.userModule.createMany({ data: body.modules.map((module) => ({ userId: id, module })) });
-      }
-      await logActivity(
-        {
-          user: actor, action: "user.update", entity: "User", entityId: id,
-          summary: `Updated user ${u.username}`,
-          details: { ...body, password: body.password ? "(reset)" : undefined },
-        },
-        tx,
-      );
-      return u;
-    });
-    const { passwordHash: _omit, ...safe } = updated;
-    return c.json(safe);
-  })
-
-  .put("/users/:id/access", zValidator("json", accessBody), async (c) => {
-    const userId = c.req.param("id");
-    const { clientIds } = c.req.valid("json");
-    const actor = c.get("user")!;
-    await assertUserSeatsAvailable(clientIds, userId);
-    await prisma.$transaction(async (tx) => {
-      await tx.userClientAccess.deleteMany({ where: { userId } });
-      await tx.userClientAccess.createMany({ data: clientIds.map((clientId) => ({ userId, clientId })) });
-      await logActivity(
-        { user: actor, action: "user.access", entity: "User", entityId: userId, summary: "Updated client assignments", details: { clientIds } },
-        tx,
-      );
-    });
-    return c.json({ ok: true });
   })
 
   // ── Subscriptions ──────────────────────────────────────────────────────────
@@ -760,4 +655,181 @@ export const adminRoutes = new Hono<AppEnv>()
     const canAddUser = sub.maxUsers === 0 || userCount < sub.maxUsers;
     const accessState = deriveAccessState(sub, new Date());
     return c.json({ hasSubscription: true, subscription: sub, locationCount, canAddEntity, userCount, canAddUser, accessState });
+  });
+
+
+// ── User accounts (ADMIN everywhere, OWNER within his own establishment) ─────
+// Mounted separately from adminRoutes so it can carry the softer
+// `users.manage` guard: the client req (2026-07-25) is that the OWNER — and
+// only the owner, not his managers — hires and disables his own staff.
+
+/** Which clients the actor may act on. ADMIN is unscoped. */
+async function actorScope(c: Context<AppEnv>): Promise<{ all: boolean; clientIds: string[] }> {
+  const actor = c.get("user")!;
+  if (actor.role === "ADMIN") return { all: true, clientIds: [] };
+  const access = await prisma.userClientAccess.findMany({
+    where: { userId: actor.id },
+    select: { clientId: true },
+  });
+  return { all: false, clientIds: access.map((a) => a.clientId) };
+}
+
+/** The target user must live inside the actor's own establishment. */
+async function assertActorMayTouchUser(c: Context<AppEnv>, targetUserId: string): Promise<void> {
+  const scope = await actorScope(c);
+  if (scope.all) return;
+  if (c.get("user")!.id === targetUserId) return; // editing yourself is always allowed
+  const target = await prisma.user.findUnique({
+    where: { id: targetUserId },
+    select: { role: true, clientAccess: { select: { clientId: true } } },
+  });
+  if (!target) throw new AppError(404, "User not found");
+  // An owner can disable a MANAGER (client req) but never an LIS ADMIN.
+  if (target.role === "ADMIN") throw new AppError(403, "You cannot manage a system administrator");
+  const shares = target.clientAccess.some((a) => scope.clientIds.includes(a.clientId));
+  if (!shares) throw new AppError(404, "User not found");
+}
+
+/**
+ * An owner may only grant roles below him and only into his own establishment,
+ * so he can never mint a cross-tenant ADMIN or a peer OWNER.
+ */
+async function assertActorMayAssign(
+  c: Context<AppEnv>,
+  role: string | null,
+  clientIds: string[],
+): Promise<void> {
+  const scope = await actorScope(c);
+  if (scope.all) return;
+  if (role && !(OWNER_ASSIGNABLE_ROLES as readonly string[]).includes(role)) {
+    throw new AppError(403, `You cannot assign the ${role} role`);
+  }
+  const foreign = clientIds.filter((id) => !scope.clientIds.includes(id));
+  if (foreign.length > 0) throw new AppError(403, "You can only assign users to your own establishment");
+}
+
+export const userAdminRoutes = new Hono<AppEnv>()
+  .use("/users", requireAuth, requirePermission("users.manage"))
+  .use("/users/*", requireAuth, requirePermission("users.manage"))
+
+  .get("/users", async (c) => {
+    const scope = await actorScope(c);
+    const users = await prisma.user.findMany({
+      // An OWNER sees only staff attached to his own establishment — never
+      // another tenant's people, and never the LIS admins.
+      where: scope.all
+        ? {}
+        : { role: { not: "ADMIN" }, clientAccess: { some: { clientId: { in: scope.clientIds } } } },
+      select: {
+        id: true, username: true, firstName: true, lastName: true, email: true,
+        role: true, status: true, createdAt: true,
+        modules: { select: { module: true } },
+        clientAccess: {
+          include: {
+            client: {
+              select: {
+                id: true,
+                name: true,
+                subscription: {
+                  select: {
+                    packageType: true,
+                    billingCycle: true,
+                    status: true,
+                    modules: { select: { module: true } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { username: "asc" },
+    });
+    return c.json(users);
+  })
+
+  .post("/users", zValidator("json", userCreateBody), async (c) => {
+    const body = c.req.valid("json");
+    const actor = c.get("user")!;
+    const existing = await prisma.user.findUnique({ where: { username: body.username } });
+    if (existing) throw new AppError(409, "Username already taken");
+    await assertActorMayAssign(c, body.role, body.clientIds);
+    await assertUserSeatsAvailable(body.clientIds);
+    const passwordHash = await hashPassword(body.password);
+    const created = await prisma.$transaction(async (tx) => {
+      const u = await tx.user.create({
+        data: {
+          username: body.username,
+          passwordHash,
+          firstName: body.firstName,
+          lastName: body.lastName,
+          email: body.email || null,
+          role: body.role,
+          clientAccess: { create: body.clientIds.map((clientId) => ({ clientId })) },
+          modules: { create: body.modules.map((module) => ({ module })) },
+        },
+      });
+      await logActivity(
+        { user: actor, action: "user.create", entity: "User", entityId: u.id, summary: `Created user ${u.username} (${u.role})` },
+        tx,
+      );
+      return u;
+    });
+    const { passwordHash: _omit, ...safe } = created;
+    return c.json(safe, 201);
+  })
+
+  .put("/users/:id", zValidator("json", userUpdateBody), async (c) => {
+    const id = c.req.param("id");
+    const body = c.req.valid("json");
+    const actor = c.get("user")!;
+    await assertActorMayTouchUser(c, id);
+    if (body.role) await assertActorMayAssign(c, body.role, []);
+    const data: Record<string, unknown> = { ...body };
+    delete data.password;
+    delete data.modules;
+    if (body.password) data.passwordHash = await hashPassword(body.password);
+    if (body.email === "") data.email = null;
+    // Re-enabling claims a seat back, so it has to pass the same check as
+    // creating — otherwise disable-then-enable walks straight past the cap.
+    if (body.status === "ACTIVE") {
+      const access = await prisma.userClientAccess.findMany({ where: { userId: id }, select: { clientId: true } });
+      await assertUserSeatsAvailable(access.map((a) => a.clientId), id);
+    }
+    const updated = await prisma.$transaction(async (tx) => {
+      const u = await tx.user.update({ where: { id }, data });
+      if (body.modules !== undefined) {
+        await tx.userModule.deleteMany({ where: { userId: id } });
+        await tx.userModule.createMany({ data: body.modules.map((module) => ({ userId: id, module })) });
+      }
+      await logActivity(
+        {
+          user: actor, action: "user.update", entity: "User", entityId: id,
+          summary: `Updated user ${u.username}`,
+          details: { ...body, password: body.password ? "(reset)" : undefined },
+        },
+        tx,
+      );
+      return u;
+    });
+    const { passwordHash: _omit, ...safe } = updated;
+    return c.json(safe);
+  })
+
+  .put("/users/:id/access", zValidator("json", accessBody), async (c) => {
+    const userId = c.req.param("id");
+    const { clientIds } = c.req.valid("json");
+    const actor = c.get("user")!;
+    await assertActorMayTouchUser(c, userId);
+    await assertActorMayAssign(c, null, clientIds);
+    await assertUserSeatsAvailable(clientIds, userId);
+    await prisma.$transaction(async (tx) => {
+      await tx.userClientAccess.deleteMany({ where: { userId } });
+      await tx.userClientAccess.createMany({ data: clientIds.map((clientId) => ({ userId, clientId })) });
+      await logActivity(
+        { user: actor, action: "user.access", entity: "User", entityId: userId, summary: "Updated client assignments", details: { clientIds } },
+        tx,
+      );
+    });
+    return c.json({ ok: true });
   });

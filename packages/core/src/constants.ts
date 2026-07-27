@@ -1,4 +1,11 @@
-export const ROLES = ["ADMIN", "MANAGER", "STAFF", "ACCOUNTANT", "READONLY"] as const;
+/**
+ * ADMIN is the LIS system operator (us). OWNER is the CLIENT who bought the
+ * subscription — client req 2026-07-25: "the owner client is the only one who
+ * can disable his employee's account, including the Manager role". So OWNER
+ * sits above MANAGER but is scoped to his own establishment: he manages his own
+ * staff and never sees another tenant.
+ */
+export const ROLES = ["ADMIN", "OWNER", "MANAGER", "STAFF", "ACCOUNTANT", "READONLY"] as const;
 export type Role = (typeof ROLES)[number];
 
 export const USER_STATUSES = ["ACTIVE", "DISABLED"] as const;
@@ -338,23 +345,56 @@ export const LOGIN_LOCKOUT_THRESHOLD = 5;
 export const LOGIN_LOCKOUT_MS = 60 * 60 * 1000;
 
 export const PERMISSIONS = {
+  // Cross-tenant system administration (every client, every location). ADMIN only —
+  // an OWNER must never reach another establishment's data.
   "admin.manage": ["ADMIN"],
-  "master.write": ["ADMIN", "MANAGER"],
-  "prices.edit": ["ADMIN", "MANAGER"],
-  "entries.create": ["ADMIN", "MANAGER", "STAFF"],
-  "entries.void": ["ADMIN", "MANAGER"],
-  "menus.write": ["ADMIN", "MANAGER"],
-  "imports.upload": ["ADMIN", "MANAGER"],
-  "imports.commit": ["ADMIN", "MANAGER"],
-  "reports.view": ["ADMIN", "MANAGER", "STAFF", "ACCOUNTANT", "READONLY"],
+  /**
+   * Manage the user accounts of ONE establishment: create, reset password,
+   * disable/enable (client req 2026-07-25). The OWNER holds this for his own
+   * client; ADMIN holds it everywhere. MANAGER deliberately does NOT — the
+   * client was explicit that the owner alone disables staff, managers included.
+   */
+  "users.manage": ["ADMIN", "OWNER"],
+  /**
+   * Tare + liquid (density) weights are LIS's own calibration data — a client
+   * reports that a bottle needs one, the LIS admin supplies it (client decision
+   * 2026-07-25). Separate from master.write so a client MANAGER can still run
+   * his catalog without being able to read or rewrite the weight library.
+   */
+  "weights.manage": ["ADMIN"],
+  "master.write": ["ADMIN", "OWNER", "MANAGER"],
+  "prices.edit": ["ADMIN", "OWNER", "MANAGER"],
+  "entries.create": ["ADMIN", "OWNER", "MANAGER", "STAFF"],
+  "entries.void": ["ADMIN", "OWNER", "MANAGER"],
+  "menus.write": ["ADMIN", "OWNER", "MANAGER"],
+  "imports.upload": ["ADMIN", "OWNER", "MANAGER"],
+  "imports.commit": ["ADMIN", "OWNER", "MANAGER"],
+  "reports.view": ["ADMIN", "OWNER", "MANAGER", "STAFF", "ACCOUNTANT", "READONLY"],
   // READONLY included per client request: 3rd-party audit-service viewers may
   // view AND download reports — their exports carry the exporter footer.
-  "reports.export": ["ADMIN", "MANAGER", "ACCOUNTANT", "READONLY"],
-  "activity.view": ["ADMIN", "MANAGER"],
+  "reports.export": ["ADMIN", "OWNER", "MANAGER", "ACCOUNTANT", "READONLY"],
+  "activity.view": ["ADMIN", "OWNER", "MANAGER"],
 } as const satisfies Record<string, readonly Role[]>;
+
+/**
+ * Roles an OWNER may assign or manage. He runs his own establishment, so he can
+ * never mint an ADMIN (cross-tenant) or another OWNER (his own peer) — that
+ * stays with the LIS operator.
+ */
+export const OWNER_ASSIGNABLE_ROLES = ["MANAGER", "STAFF", "ACCOUNTANT", "READONLY"] as const;
 
 export type Permission = keyof typeof PERMISSIONS;
 
 export function can(role: Role, permission: Permission): boolean {
   return (PERMISSIONS[permission] as readonly Role[]).includes(role);
+}
+
+/**
+ * Whether raw tare / liquid weights may be shown to this viewer. The LIS admin
+ * always sees them; an establishment sees them only when the admin has enabled
+ * it for that client (`Client.showBottleWeights`). Everyone else still sees the
+ * "needs weight" STATUS — they just cannot read the numbers.
+ */
+export function canSeeBottleWeights(role: Role, clientShowsWeights: boolean | undefined): boolean {
+  return can(role, "weights.manage") || clientShowsWeights === true;
 }

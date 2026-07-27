@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
 import {
+  can,
   categoryUpsert,
   itemCreate,
   itemUpdate,
@@ -9,6 +10,7 @@ import {
   unitCreate,
   variantCreate,
   variantUpdate,
+  type Role,
 } from "@fnb/core";
 import { prisma } from "../db";
 import { AppError } from "../lib/errors";
@@ -269,6 +271,17 @@ export const masterRoutes = new Hono<AppEnv>()
     // invalid combination.
     const current = await prisma.itemVariant.findUnique({ where: { id: variantId } });
     if (!current) throw new AppError(404, "Variant not found");
+    // The weight library is LIS's own data: a client MANAGER may edit the rest
+    // of a variant but never the tare / liquid weight (client decision
+    // 2026-07-25). Rejected loudly rather than silently dropped, so nobody
+    // thinks they saved a value that never landed.
+    if (!can(user.role as Role, "weights.manage")) {
+      const touchesWeights =
+        body.tareWeight !== undefined || body.tareWeightUnit !== undefined || body.densityFactor !== undefined;
+      if (touchesWeights) {
+        throw new AppError(403, "Bottle tare and liquid weights are set by your LIS administrator.");
+      }
+    }
     await assertWeighModeValid(
       body.weighMode !== undefined ? body.weighMode : current.weighMode,
       body.contentTracked ?? current.contentTracked,

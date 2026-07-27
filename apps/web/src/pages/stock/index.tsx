@@ -5,9 +5,11 @@ import { toast } from "sonner";
 import { can, MODULE_TYPE_LABELS, type ModuleType, type Role } from "@fnb/core";
 import { useMe } from "@/api/auth";
 import { useCopyFromLocation, useCurrentLocation, useLocationItems } from "@/api/location";
+import type { LocationItem } from "@/api/types";
 import { variantLabel } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { cn } from "@/lib/utils";
+import { useCanSeeBottleWeights } from "@/lib/weights";
 import { PageHeader } from "@/components/page-header";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { TableSurface, TableLoading, TableEmpty, ToolbarSearch } from "@/components/table-surface";
@@ -40,6 +42,29 @@ import { Toggle } from "@/components/toggle-chip";
 import { AttachItemDialog } from "./attach-dialog";
 import { PriceEdit } from "./price-edit";
 
+/**
+ * Tare + liquid weight (density) for the list, and whether either is missing
+ * (client req 2026-07-25). Mirrors the server's `missingWeights` rule in
+ * services/dashboard.ts: only weighable variants need these, NET mode needs no
+ * density, and a density falls back to the item's category default.
+ */
+function weighInfo(row: LocationItem) {
+  const v = row.itemVariant;
+  const weighable = v.contentTracked || v.weighMode === "NET" || v.weighMode === "DENSITY";
+  const noTare = v.tareWeight == null || v.tareWeight <= 0;
+  const density = v.densityFactor ?? row.itemVariant.item.category.defaultDensityFactor;
+  const needsDensity = v.weighMode !== "NET";
+  const noDensity = needsDensity && (density == null || density <= 0);
+  return {
+    weighable,
+    noTare,
+    noDensity,
+    incomplete: weighable && (noTare || noDensity),
+    tare: noTare ? "—" : `${v.tareWeight} ${v.tareWeightUnit ?? "g"}`,
+    density: !needsDensity ? "n/a" : noDensity ? "—" : String(density),
+  };
+}
+
 export function StockPage() {
   const me = useMe();
   const location = useCurrentLocation();
@@ -56,6 +81,11 @@ export function StockPage() {
 
   const role = (me.data?.user.role ?? "READONLY") as Role;
   const canEditPrices = can(role, "prices.edit");
+  // The tare / liquid-weight library is LIS's own data: the numbers show only
+  // to the LIS admin, or to an establishment the admin has enabled it for
+  // (client decision 2026-07-25). Everyone else still gets the STATUS, so they
+  // can report a bottle that cannot be weighed without reading the values.
+  const showWeights = useCanSeeBottleWeights();
 
   const missingCount = catalog.data?.filter((r) => r.cost === 0 || r.retail === 0).length ?? 0;
   const locationModules = location?.modules ?? [];
@@ -151,6 +181,7 @@ export function StockPage() {
                     </Tooltip>
                   </TooltipProvider>
                 </TableHead>
+                {showWeights && <TableHead className="text-right">Tare / Liquid Wt</TableHead>}
                 <TableHead className="text-right">Status</TableHead>
               </TableRow>
             </TableHeader>
@@ -173,9 +204,28 @@ export function StockPage() {
                     <TableCell className="tnum text-right">
                       {row.parLevel ?? <span className="text-muted-foreground">—</span>}
                     </TableCell>
+                    {showWeights && (
+                    <TableCell className="tnum text-right whitespace-nowrap">
+                      {weighInfo(row).weighable ? (
+                        <>
+                          <span className={cn(weighInfo(row).noTare && "text-warning-text")}>
+                            {weighInfo(row).tare}
+                          </span>
+                          <span className="text-muted-foreground"> / </span>
+                          <span className={cn(weighInfo(row).noDensity && "text-warning-text")}>
+                            {weighInfo(row).density}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    )}
                     <TableCell className="text-right">
                       {missing ? (
                         <Badge variant="destructive">No price</Badge>
+                      ) : weighInfo(row).incomplete ? (
+                        <Badge variant="warning">Needs weight</Badge>
                       ) : (
                         <Badge variant="success">Ready</Badge>
                       )}

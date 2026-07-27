@@ -40,6 +40,7 @@ import {
 import { CommandPalette } from "@/components/command-palette";
 import { ReadonlyWatermark } from "@/components/readonly-watermark";
 import { StockySheet } from "@/components/stocky/stocky-sheet";
+import { NotificationMenu } from "@/components/notification-menu";
 import { TopProgress } from "@/components/top-progress";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -310,6 +311,9 @@ function Topbar({ current, navItems }: { current: CurrentLocation; navItems: Nav
       <Separator orientation="vertical" className="mr-1 !h-5" />
       <h1 className="text-sm font-medium">{title}</h1>
       <div className="ml-auto flex items-center gap-2">
+        {/* Outstanding work, reachable from every page — the Dashboard panel
+            only helps you when you are already on the Dashboard. */}
+        <NotificationMenu locationId={current.id} />
         <Button
           variant="outline"
           size="sm"

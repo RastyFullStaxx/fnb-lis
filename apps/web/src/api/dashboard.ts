@@ -29,6 +29,8 @@ export interface DashboardData {
   };
   attention: {
     missingPrices: number;
+    /** Weighable bottles with no tare and/or liquid weight (client req 2026-07-25). */
+    missingWeights: number;
     unmatchedRows: number;
     draftPurchases: number;
     openCounts: number;

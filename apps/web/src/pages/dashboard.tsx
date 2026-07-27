@@ -10,6 +10,7 @@ import {
   Package,
   Receipt,
   RefreshCw,
+  Scale,
   ShoppingCart,
   Tags,
   TrendingDown,
@@ -18,6 +19,8 @@ import {
 import { can, type Permission, type Role } from "@fnb/core";
 import { useMe } from "@/api/auth";
 import { useDashboard, useTrends, type DashboardData, type TrendPeriod } from "@/api/dashboard";
+// One source for the Dashboard panel and the topbar bell — see lib/attention.ts.
+import { attentionItems, type AttentionItem } from "@/lib/attention";
 import { formatMoney } from "@/lib/utils";
 import { pesoCompact, pesoFull, shortDate } from "@/components/charts/chart-kit";
 import { PeriodColumns } from "@/components/charts/period-columns";
@@ -27,7 +30,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
-type ActionKind = "count" | "import" | "purchase" | "items" | "prices" | "audit" | "sale" | "stock";
+type ActionKind = "count" | "import" | "purchase" | "items" | "prices" | "weights" | "audit" | "sale" | "stock";
 
 interface DashboardAction {
   kind: ActionKind;
@@ -548,33 +551,6 @@ function AttentionQueue({
       ) : null}
     </section>
   );
-}
-
-interface AttentionItem {
-  kind: ActionKind;
-  count: number;
-  label: string;
-  path: string;
-  icon: LucideIcon;
-}
-
-function attentionItems(data: DashboardData, role: Role): AttentionItem[] {
-  const { missingPrices, unmatchedRows, draftPurchases, openCounts } = data.attention;
-  const items: Array<AttentionItem | null> = [
-    missingPrices > 0 && can(role, "prices.edit")
-      ? { kind: "prices", count: missingPrices, label: `Complete pricing for ${missingPrices} ${missingPrices === 1 ? "item" : "items"}`, path: "stock", icon: Tags }
-      : null,
-    unmatchedRows > 0 && can(role, "imports.upload")
-      ? { kind: "import", count: unmatchedRows, label: `Review ${unmatchedRows} unmatched import ${unmatchedRows === 1 ? "row" : "rows"}`, path: "imports", icon: FileInput }
-      : null,
-    draftPurchases > 0 && can(role, "entries.create")
-      ? { kind: "purchase", count: draftPurchases, label: `Continue ${draftPurchases} delivery ${draftPurchases === 1 ? "draft" : "drafts"}`, path: "purchases", icon: ShoppingCart }
-      : null,
-    openCounts > 0 && can(role, "entries.create")
-      ? { kind: "count", count: openCounts, label: `Continue ${openCounts} open ${openCounts === 1 ? "count" : "counts"}`, path: "counts", icon: ClipboardList }
-      : null,
-  ];
-  return items.filter((item): item is AttentionItem => item !== null);
 }
 
 function SetupChecklist({

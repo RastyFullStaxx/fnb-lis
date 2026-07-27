@@ -9,6 +9,9 @@ async function seedUsers() {
   const passwordHash = await hashPassword(PASSWORD);
   const users = [
     { username: "admin", firstName: "Lourd", lastName: "Borromeo", role: "ADMIN" },
+    // The establishment's owner — hires and disables his own staff, managers
+    // included, but never sees another tenant (client req 2026-07-25).
+    { username: "owner", firstName: "Ramon", lastName: "Delgado", role: "OWNER" },
     { username: "manager", firstName: "Maria", lastName: "Santos", role: "MANAGER" },
     { username: "staff", firstName: "Paolo", lastName: "Reyes", role: "STAFF" },
     { username: "accountant", firstName: "Grace", lastName: "Lim", role: "ACCOUNTANT" },
@@ -71,6 +74,7 @@ async function seedClients() {
 
   // Non-admin users are scoped via UserClientAccess (ADMIN bypasses).
   const assign: Record<string, string[]> = {
+    owner: [prime.id],
     manager: [prime.id, casa.id],
     staff: [prime.id],
     accountant: [prime.id],

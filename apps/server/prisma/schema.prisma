@@ -74,6 +74,10 @@ model Client {
   // 11 = @fnb/core MATERIAL_VARIANCE_PCT. Presentation only; never touches the
   // reconciliation math.
   varianceThresholdPct Float @default(11)
+  // Whether this establishment may SEE bottle tare / liquid weights (client
+  // decision 2026-07-25). Off by default: that calibration library is LIS's
+  // own IP, shown to a client only when the LIS admin turns it on for them.
+  showBottleWeights Boolean @default(false)
   createdAt DateTime @default(now())
 
   locations    Location[]
