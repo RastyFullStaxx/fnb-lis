@@ -34,7 +34,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { TableLoading, TableEmpty } from "@/components/table-surface";
+import { TableLoading, TableEmpty, ToolbarSearch } from "@/components/table-surface";
 
 /** Sentinel for the "Other" branch in the Industry select — same convention as AssetDetailsEdit. */
 const OTHER = "__other__";
@@ -48,9 +48,22 @@ export function CategoriesTab({
 }) {
   const categories = useCategories();
   const [editing, setEditing] = useState<Category | null>(null);
+  const [query, setQuery] = useState("");
+
+  const q = query.trim().toLowerCase();
+  // The page toolbar's search only filters the Items tab, so 48 categories had
+  // to be found by eye.
+  const rows = (categories.data ?? []).filter(
+    (c) => !q || c.name.toLowerCase().includes(q) || c.productType.toLowerCase().includes(q),
+  );
 
   return (
     <>
+      {(categories.data ?? []).length > 0 && (
+        <div className="mb-3">
+          <ToolbarSearch value={query} onChange={setQuery} placeholder="Find a category…" label="Search" />
+        </div>
+      )}
       {categories.isPending ? (
         <TableLoading />
       ) : (categories.data ?? []).length === 0 ? (
@@ -77,7 +90,7 @@ export function CategoriesTab({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {categories.data!.map((cat) => (
+            {rows.map((cat) => (
               <TableRow key={cat.id}>
                 <TableCell className="font-medium">{cat.name}</TableCell>
                 <TableCell className="text-muted-foreground">{cat.productType}</TableCell>
@@ -183,8 +196,9 @@ function CategoryDialog({
         <DialogHeader>
           <DialogTitle>{category ? "Edit Category" : "New Category"}</DialogTitle>
           <DialogDescription>
-            The Liquid Weight formula (density factor) converts scale weight into remaining content —
-            e.g. Vodka is 30.12 ml per oz.
+            {isAsset
+              ? "Asset categories group equipment for the register — no weighing is involved."
+              : "The Liquid Weight formula (density factor) converts scale weight into remaining content — e.g. Vodka is 30.12 ml per oz."}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={onSubmit} className="space-y-4">
@@ -267,6 +281,10 @@ function CategoryDialog({
               </p>
             </div>
           )}
+          {/* Density converts a scale reading into remaining liquid. An Asset
+              category has nothing to weigh, so the field and its explainer were
+              pure noise on the Audio System / Furniture dialogs. */}
+          {!isAsset && (
           <div className="space-y-2">
             <Label htmlFor="cat-density">Liquid Weight — default density factor (optional)</Label>
             <QuantityInput
@@ -281,6 +299,7 @@ function CategoryDialog({
               Applied to items in this category that don't set their own Liquid Weight value.
             </p>
           </div>
+          )}
           <DialogFooter>
             <Button type="submit" disabled={createCategory.isPending || updateCategory.isPending}>
               {category ? "Save changes" : "Add category"}

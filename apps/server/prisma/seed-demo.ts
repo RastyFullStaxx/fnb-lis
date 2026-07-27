@@ -1268,7 +1268,10 @@ async function seedAssets() {
     const catId = categoryId.get(a.category)!;
     const unId = unitId.get(a.uom)!;
     const cost = ASSET_CATEGORY_COST[a.category] ?? 500;
-    let item = await prisma.item.findFirst({ where: { name: a.name } });
+    // Match on name + category, the same key seed.ts uses. Looking up by name
+    // alone meant the two asset seeders disagreed about what "already exists",
+    // which is how a second "First Aid" appeared in the same category.
+    let item = await prisma.item.findFirst({ where: { name: a.name, categoryId: catId } });
     if (!item) item = await prisma.item.create({ data: { name: a.name, categoryId: catId, createdById: admin.id } });
     else if (item.categoryId !== catId) item = await prisma.item.update({ where: { id: item.id }, data: { categoryId: catId } });
     const variant = await prisma.itemVariant.upsert({

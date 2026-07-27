@@ -141,7 +141,7 @@ export const importRoutes = new Hono<AppEnv>()
         },
       });
       await logActivity(
-        { user, clientId: location.clientId, locationId: location.id, action: "import.upload", entity: "ImportBatch", entityId: created.id, summary: `Uploaded ${file.name} — ${rows.length} rows (${kind}, ${extractor})` },
+        { user, clientId: location.clientId, locationId: location.id, action: "import.upload", entity: "ImportBatch", entityId: created.id, summary: `Uploaded ${file.name} — ${rows.length} ${rows.length === 1 ? "row" : "rows"} (${kind}, ${extractor})` },
         tx,
       );
       return created;

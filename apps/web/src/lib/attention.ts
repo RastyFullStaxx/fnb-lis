@@ -45,7 +45,9 @@ export function attentionItems(data: DashboardData, role: Role): AttentionItem[]
           kind: "prices",
           count: missingPrices,
           label: `Complete pricing for ${missingPrices} ${missingPrices === 1 ? "item" : "items"}`,
-          path: "stock",
+          // Deep-link into the filter. Landing on a 200-row catalog and being
+          // told "1 item needs pricing" is a search task, not a fix.
+          path: "stock?missingPrices=1",
           icon: Tags,
           group: "Missing data",
         }
@@ -57,7 +59,7 @@ export function attentionItems(data: DashboardData, role: Role): AttentionItem[]
           kind: "weights",
           count: missingWeights,
           label: `Set bottle weights for ${missingWeights} ${missingWeights === 1 ? "item" : "items"}`,
-          path: "stock",
+          path: "stock?needsWeight=1",
           icon: Scale,
           group: "Missing data",
         }
@@ -69,7 +71,7 @@ export function attentionItems(data: DashboardData, role: Role): AttentionItem[]
           kind: "weightReview",
           count: weightReviews,
           label: `Re-check ${weightReviews} reported bottle ${weightReviews === 1 ? "weight" : "weights"}`,
-          path: "stock",
+          path: "stock?weightReported=1",
           icon: Scale,
           group: "Needs review",
         }

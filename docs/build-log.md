@@ -1202,3 +1202,48 @@ Golden fixture unchanged throughout: **−₱330.69 / −₱869.57**.
 
 Golden fixture after all of it: **−₱330.69 / −₱869.57**.
 
+## Phase 30 — The long tail (2026-07-28)
+
+- **Pluralisation**: "1 users" → "1 user" (package fields), "1 rows" → "1 row"
+  (import activity summaries).
+- **The add-location control stopped vanishing without a reason.** `LocationsField`
+  destructured `limitMessage` and never rendered it, so at the subscription limit
+  the user got no input, no button and no explanation. Now rendered — and the
+  Manage Client dialog, which never passed one, does.
+- **An absent price reads as "—", not "₱0.00"** — every other blank in that table
+  is a dash, and ₱0.00 asserts a real price of zero. On an **Asset** the retail
+  column shows **"n/a"**: it isn't missing, it doesn't apply.
+- **The notification bell deep-links into a filter** instead of dropping you on a
+  200-row catalog: `stock?missingPrices=1`, `?needsWeight=1`, `?weightReported=1`,
+  each with a matching chip. The weight filters are client-side off the same
+  `weighInfo()` the rows render from, so a chip count and its list cannot disagree.
+- **Asset categories no longer show the Liquid Weight field** or the density
+  explainer — an Audio System category has nothing to weigh.
+- **Categories tab gained a search.** 48 rows, and the page toolbar's search only
+  ever filtered the Items tab.
+- **Admin → Users sorts by the name it displays** (last, first) rather than by
+  username, which made the list look unsorted.
+
+### Data hygiene — mostly deliberately left alone
+
+- **The typos are the client's own data.** "Reciept Printer", "Mesh Stairner",
+  "Champagne Fluit", "Dinning Ware" are transcribed verbatim from their Asset
+  Management sheet, and `asset-seed-data.ts` says in its header that this is
+  "their data to correct, not ours to silently rewrite". Left as is — worth
+  asking Lourd, not fixing behind his back.
+- **`pc` vs `Piece` / `Unit` are not duplicates.** The seeder comments explain it:
+  the asset register uses the client's exact UOM words, distinct from the
+  Beverage/Food count units. Left.
+- **Duplicate "First Aid" — root cause fixed, data left.** The two asset seeders
+  used *different* lookup keys (`{name}` vs `{name, categoryId}`), so they
+  disagreed about what already existed. Aligned, so a fresh seed produces one
+  shared item. The two existing rows are each referenced by a real catalog row and
+  committed count lines; merging them would rewrite records the audit trail points
+  at, which is not worth it for a demo artifact.
+- **Removed** the orphaned empty category "Safert First", superseded by
+  "Safety — First Aid" in an earlier pass — after asserting it had zero items.
+
+Verified: Bar catalog shows `₱180.00 / —` for Grenadine; the Assets catalog shows
+`₱8,000.00 / n/a` and its bell reads **"Nothing needs attention"** (was 70).
+Golden fixture: **−₱330.69 / −₱869.57**.
+

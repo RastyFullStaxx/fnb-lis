@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useParams, useSearchParams } from "react-router";
-import { Boxes, Copy, Info, Plus, TriangleAlert } from "lucide-react";
+import { Boxes, Copy, Info, Plus, Scale, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { can, isMissingPrice, MODULE_TYPE_LABELS, resolveBottleWeights, type ModuleType, type Role } from "@fnb/core";
 import { useMe } from "@/api/auth";
@@ -76,10 +76,24 @@ export function StockPage() {
   // ?q= seeds the search — the command palette deep-links here with it.
   const [params] = useSearchParams();
   const [search, setSearch] = useState(params.get("q") ?? "");
-  const [missingOnly, setMissingOnly] = useState(false);
+  const [missingOnly, setMissingOnly] = useState(params.get("missingPrices") === "1");
+  // The notification bell deep-links here; without a matching filter it just
+  // dropped you on the whole catalog and left you to find the row.
+  const [needsWeightOnly, setNeedsWeightOnly] = useState(params.get("needsWeight") === "1");
+  const [reportedOnly, setReportedOnly] = useState(params.get("weightReported") === "1");
   const [attachOpen, setAttachOpen] = useState(false);
   const [copyOpen, setCopyOpen] = useState(false);
-  const rows = useLocationItems({ search: search || undefined, missingPrices: missingOnly });
+  const fetched = useLocationItems({ search: search || undefined, missingPrices: missingOnly });
+  // Weight filters are client-side: the same weighInfo() the rows render from,
+  // so the chip count and the list can never disagree.
+  const rows = {
+    ...fetched,
+    data: fetched.data?.filter((r) => {
+      if (needsWeightOnly && !weighInfo(r).incomplete) return false;
+      if (reportedOnly && !r.itemVariant.weightReviewNote) return false;
+      return true;
+    }),
+  };
   // Unfiltered catalog just for the missing-price count, so the chip's label
   // stays stable under search and the filter never strands the user.
   const catalog = useLocationItems();
@@ -88,6 +102,8 @@ export function StockPage() {
   const canEditPrices = can(role, "prices.edit");
   const missingCount =
     catalog.data?.filter((r) => isMissingPrice(r, r.itemVariant.item.category.productType)).length ?? 0;
+  const needsWeightCount = catalog.data?.filter((r) => weighInfo(r).incomplete).length ?? 0;
+  const reportedCount = catalog.data?.filter((r) => r.itemVariant.weightReviewNote).length ?? 0;
   const locationModules = location?.modules ?? [];
   const moduleScope = locationModules.map((m) => MODULE_TYPE_LABELS[m as ModuleType] ?? m).join(" + ");
   // Asset Details is a whole column of "—" on a Bar or Kitchen catalog, and on a
@@ -128,6 +144,20 @@ export function StockPage() {
                 {missingCount > 0
                   ? `${missingCount} missing price${missingCount === 1 ? "" : "s"}`
                   : "Missing prices"}
+              </Toggle>
+            )}
+            {(needsWeightOnly || needsWeightCount > 0) && (
+              <Toggle pressed={needsWeightOnly} onPressedChange={setNeedsWeightOnly}>
+                <Scale className="size-3.5" />
+                {needsWeightCount > 0
+                  ? `${needsWeightCount} need${needsWeightCount === 1 ? "s" : ""} weight`
+                  : "Needs weight"}
+              </Toggle>
+            )}
+            {(reportedOnly || reportedCount > 0) && (
+              <Toggle pressed={reportedOnly} onPressedChange={setReportedOnly}>
+                <Scale className="size-3.5" />
+                {reportedCount} weight{reportedCount === 1 ? "" : "s"} reported
               </Toggle>
             )}
           </>

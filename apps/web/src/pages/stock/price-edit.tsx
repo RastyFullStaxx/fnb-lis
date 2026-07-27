@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Pencil } from "lucide-react";
 import { toast } from "sonner";
+import { isMissingPrice } from "@fnb/core";
 import { useUpdateLocationItem } from "@/api/location";
 import type { LocationItem } from "@/api/types";
 import { ApiError } from "@/api/http";
@@ -18,11 +19,18 @@ export function PriceEdit({ row, canEdit }: { row: LocationItem; canEdit: boolea
   const [par, setPar] = useState(row.parLevel === null ? "" : String(row.parLevel));
   const update = useUpdateLocationItem();
 
-  const missing = row.cost === 0 || row.retail === 0;
+  const productType = row.itemVariant.item.category.productType;
+  const missing = isMissingPrice(row, productType);
+
+  // An absent price is "—" like every other blank in this table. "₱0.00" reads
+  // as a real price of zero, which is a different (and wrong) claim — and on an
+  // Asset the retail column is not missing at all, it simply doesn't apply.
+  const money = (v: number, applicable = true) =>
+    !applicable ? "n/a" : v > 0 ? formatMoney(v) : "—";
 
   const display = (
     <span className={cn("tnum", missing && "font-medium text-destructive")}>
-      {formatMoney(row.cost)} / {formatMoney(row.retail)}
+      {money(row.cost)} / {money(row.retail, productType !== "Asset")}
     </span>
   );
 

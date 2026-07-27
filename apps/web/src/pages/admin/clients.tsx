@@ -553,6 +553,7 @@ function ClientDetailBody({ client }: { client: AdminClient }) {
         onAdd={addLoc}
         adding={addLocation.isPending}
         atLimit={!!atLimit}
+        limitMessage={`Location limit reached (${maxEntities} max). Raise "Max locations" below to add more.`}
       />
 
       {/* ── Actions: paid status on its own line, then Mark as Paid / Cancel

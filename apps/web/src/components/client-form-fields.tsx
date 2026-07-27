@@ -162,7 +162,12 @@ export function PackageAndModulesFields({
           ) : (
             <div className="space-y-2">
               <Label>Max Users</Label>
-              <ReadOnlyField>{maxUsers || PACKAGE_MAX_USERS[tier]} users</ReadOnlyField>
+              <ReadOnlyField>
+                {(() => {
+                  const n = maxUsers || PACKAGE_MAX_USERS[tier];
+                  return `${n} ${n === 1 ? "user" : "users"}`;
+                })()}
+              </ReadOnlyField>
             </div>
           )}
 
@@ -409,6 +414,12 @@ export function LocationsField({
         )}
       </div>
       {helperText && <p className="text-xs text-muted-foreground">{helperText}</p>}
+      {/* At the limit the add control disappeared and `limitMessage` — which the
+          callers do pass — was destructured and then never rendered, so the user
+          got no input, no button and no reason. Say why, and what to change. */}
+      {atLimit && limitMessage && (
+        <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">{limitMessage}</p>
+      )}
       {!atLimit && (
         <div className="flex gap-2">
           <Input

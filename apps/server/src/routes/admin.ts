@@ -764,7 +764,9 @@ export const userAdminRoutes = new Hono<AppEnv>()
           },
         },
       },
-      orderBy: { username: "asc" },
+      // Sort by what the screen actually shows. Ordering on username while
+      // rendering "Grace Lim, Lourd Borromeo, Maria Santos…" reads as unsorted.
+      orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
     });
     return c.json(users);
   })
