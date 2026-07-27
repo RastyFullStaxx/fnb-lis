@@ -23,6 +23,7 @@
  * "last count → today" are not empty on arrival.
  */
 import { prisma } from "../src/db";
+import { generateAssetCode } from "../src/services/asset-supplier";
 import { ASSET_BREAKAGE, ASSET_CATEGORY_COST, ASSET_ITEMS } from "./asset-seed-data";
 
 // ── Deterministic jitter ──────────────────────────────────────────────────
@@ -1275,11 +1276,33 @@ async function seedAssets() {
       update: {},
       create: { itemId: item.id, size: 1, unitId: unId, contentTracked: false },
     });
+    // Register fields (assetCode / condition / status / initialCost) arrived
+    // with the asset module AFTER this fixture first ran, so rows seeded
+    // earlier carry nulls and render an empty Asset Register. Filled on create
+    // and backfilled on update, so any database seeded before that migration
+    // heals itself on the next run instead of needing a reset.
+    const registerFields = {
+      initialCost: cost,
+      serialNo: a.serialNo ?? null,
+      condition: a.condition ?? "Active",
+      status: "In Use",
+      remarks: `Area: ${a.location}`,
+    };
     const li = await prisma.locationItem.upsert({
       where: { locationId_itemVariantId: { locationId: location.id, itemVariantId: variant.id } },
-      update: { cost, retail: 0 },
-      create: { locationId: location.id, itemVariantId: variant.id, cost, retail: 0, parLevel: null },
+      update: { cost, retail: 0, ...registerFields },
+      create: { locationId: location.id, itemVariantId: variant.id, cost, retail: 0, parLevel: null, ...registerFields },
     });
+    if (!li.assetCode) {
+      // assetCode is globally unique, so reuse the same generator the live
+      // POST /location-items path uses rather than counting locally.
+      await prisma.$transaction(async (tx) => {
+        await tx.locationItem.update({
+          where: { id: li.id },
+          data: { assetCode: await generateAssetCode(tx) },
+        });
+      });
+    }
     liByName.set(a.name, li.id);
     // Both boundary counts equal the reported quantity — breakage happens after.
     for (const session of [open, close]) {

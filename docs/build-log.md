@@ -936,3 +936,31 @@ migrations report in sync, all 18 pages render with no client or server errors,
 and the **golden fixture is unchanged — −₱330.69 / −₱869.57 on both the Full
 Audit and the Legacy Audit.**
 
+### Post-merge audit of the asset module
+
+Reviewed the incoming work against the project's non-negotiables rather than
+assuming it. It holds up: `round2` for every money figure, ACTIVE-only /
+COMMITTED-only filters on the ledger reads, `logActivity` inside the same
+`$transaction` as each mutation, settings persisted as `String` (no `Json`
+scalar), and all new report routes mounted under the existing
+`requireAuth + requireLocationAccess` group. No `Math.round`/`toFixed` in domain
+code and no exact-zero variance comparisons. The Asset Register's "last note"
+column agrees item-for-item with the Asset Breakage report.
+
+The one defect was the misplaced `Category.industry` column (above). One
+integration gap remained: **two independent asset seeding paths** — `seed.ts`
+creates Aurora / Main Warehouse (theirs), `seed-demo.ts` creates Prime / Assets
+(ours) — and only theirs filled the new register fields. Prime's Asset Register
+therefore rendered 70 rows of nulls, which reads as a broken feature. The demo
+fixture now fills `initialCost` / `serialNo` / `condition` / `status` / `remarks`
+on create **and backfills them on update**, so a database seeded before the asset
+migration heals on the next run instead of needing a reset. Codes come from the
+shared `generateAssetCode()` the live route uses — `assetCode` is globally
+unique, so a locally-counted sequence collided with Aurora's AST-001…070 on the
+first attempt.
+
+Verified: both registers full (Aurora AST-001…070, Prime AST-071…140), 70/70
+rows carrying condition, 7 breakage notes each, no code collisions; 18 pages
+render clean; both workspaces typecheck; golden fixture still
+**−₱330.69 / −₱869.57**.
+
