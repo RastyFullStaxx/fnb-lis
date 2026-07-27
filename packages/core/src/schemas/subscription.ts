@@ -9,8 +9,9 @@ export const subscriptionStatus = z.enum(SUBSCRIPTION_STATUSES);
 export const subscriptionCreateBody = z.object({
   clientId: z.string().min(1),
   // packageType is NOT accepted here — it's derived server-side from
-  // billingCycle + maxEntities (see derivePackageType in constants.ts) so
-  // the tier badge can never drift from what the subscription actually is.
+  // billingCycle + maxEntities + maxUsers (see derivePackageType in
+  // constants.ts) so the tier badge can never drift from what the
+  // subscription actually is.
   billingCycle: billingCycle,
   modules: z.array(moduleType).min(1, "Select at least one module"),
   maxEntities: z.number().int().min(0), // 0 = unlimited

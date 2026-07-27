@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Tags } from "lucide-react";
 import { toast } from "sonner";
 import { categoryUpsert, type CategoryUpsert } from "@fnb/core";
-import { useCategories, useCreateCategory, useProductTypes, useUpdateCategory } from "@/api/master";
+import { useAddIndustryOption, useCategories, useCreateCategory, useIndustryOptions, useProductTypes, useUpdateCategory } from "@/api/master";
 import type { Category } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { Button } from "@/components/ui/button";
@@ -35,6 +35,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { TableLoading, TableEmpty } from "@/components/table-surface";
+
+/** Sentinel for the "Other" branch in the Industry select — same convention as AssetDetailsEdit. */
+const OTHER = "__other__";
 
 export function CategoriesTab({
   createOpen,
@@ -67,6 +70,7 @@ export function CategoriesTab({
             <TableRow className="bg-muted hover:bg-muted">
               <TableHead>Category</TableHead>
               <TableHead>Type</TableHead>
+              <TableHead>Industry</TableHead>
               <TableHead className="text-right">Liquid Weight (default)</TableHead>
               <TableHead className="text-right">Items</TableHead>
               <TableHead className="w-20" />
@@ -77,6 +81,7 @@ export function CategoriesTab({
               <TableRow key={cat.id}>
                 <TableCell className="font-medium">{cat.name}</TableCell>
                 <TableCell className="text-muted-foreground">{cat.productType}</TableCell>
+                <TableCell className="text-muted-foreground">{cat.industry ?? "—"}</TableCell>
                 <TableCell className="tnum text-right">
                   {cat.defaultDensityFactor ?? <span className="text-muted-foreground">—</span>}
                 </TableCell>
@@ -116,8 +121,13 @@ function CategoryDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const productTypes = useProductTypes();
+  const industryOptions = useIndustryOptions();
+  const addIndustryOption = useAddIndustryOption();
   const createCategory = useCreateCategory();
   const updateCategory = useUpdateCategory();
+
+  const [industry, setIndustry] = useState("");
+  const [industryOther, setIndustryOther] = useState("");
 
   const form = useForm<CategoryUpsert>({
     resolver: zodResolver(categoryUpsert),
@@ -126,16 +136,39 @@ function CategoryDialog({
       productType: category?.productType ?? "",
       defaultDensityFactor: category?.defaultDensityFactor ?? null,
       sortOrder: category?.sortOrder ?? 0,
+      industry: category?.industry ?? null,
     },
   });
 
+  const productType = form.watch("productType");
+  const isAsset = productType === "Asset";
+
+  // Re-seed Industry from the category every time the dialog opens (same
+  // convention as AssetDetailsEdit) so reopening never shows stale values.
+  useEffect(() => {
+    if (!open) return;
+    const knownIndustries = industryOptions.data?.industryOptions ?? [];
+    if (category?.industry && !knownIndustries.includes(category.industry)) {
+      setIndustry(OTHER);
+      setIndustryOther(category.industry);
+    } else {
+      setIndustry(category?.industry ?? "");
+      setIndustryOther("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, category?.id]);
+
   const onSubmit = form.handleSubmit(async (values) => {
     try {
+      const payload = {
+        ...values,
+        industry: isAsset ? (industry === OTHER ? industryOther.trim() || null : industry || null) : null,
+      };
       if (category) {
-        await updateCategory.mutateAsync({ id: category.id, ...values });
+        await updateCategory.mutateAsync({ id: category.id, ...payload });
         toast.success(`Category "${values.name}" updated`);
       } else {
-        await createCategory.mutateAsync(values);
+        await createCategory.mutateAsync(payload);
         toast.success(`Category "${values.name}" added`);
       }
       onOpenChange(false);
@@ -183,6 +216,57 @@ function CategoryDialog({
               <p className="text-sm text-destructive">Choose a product type</p>
             )}
           </div>
+
+          {isAsset && (
+            <div className="space-y-2">
+              <Label htmlFor="cat-industry">Industry</Label>
+              <Select value={industry} onValueChange={setIndustry}>
+                <SelectTrigger id="cat-industry">
+                  <SelectValue placeholder="Select industry" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(industryOptions.data?.industryOptions ?? []).map((opt) => (
+                    <SelectItem key={opt} value={opt}>
+                      {opt}
+                    </SelectItem>
+                  ))}
+                  <SelectItem value={OTHER}>Other…</SelectItem>
+                </SelectContent>
+              </Select>
+              {industry === OTHER && (
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    placeholder="Describe industry"
+                    value={industryOther}
+                    onChange={(e) => setIndustryOther(e.target.value)}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    disabled={!industryOther.trim() || addIndustryOption.isPending}
+                    onClick={async () => {
+                      const value = industryOther.trim();
+                      if (!value) return;
+                      try {
+                        await addIndustryOption.mutateAsync(value);
+                        setIndustry(value);
+                        toast.success(`"${value}" added to Industry options`);
+                      } catch (err) {
+                        toast.error(err instanceof ApiError ? err.message : "Could not add industry option");
+                      }
+                    }}
+                  >
+                    Add
+                  </Button>
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground">
+                What vertical this category of asset serves — e.g. Dental, Warehouse, Bar &amp; Restaurant. Shared by every asset in this category.
+              </p>
+            </div>
+          )}
           <div className="space-y-2">
             <Label htmlFor="cat-density">Liquid Weight — default density factor (optional)</Label>
             <QuantityInput

@@ -39,8 +39,8 @@ const fullClientBody = z.object({
   name: z.string().trim().min(1),
   extraLocationNames: z.array(z.string().trim().min(1)).default([]),
   // packageType is NOT accepted from the client — it's derived from
-  // billingCycle + maxEntities (derivePackageType), so the tier badge can
-  // never drift from the real subscription.
+  // billingCycle + maxEntities + maxUsers (derivePackageType), so the tier
+  // badge can never drift from the real subscription.
   subscription: subscriptionCreateBody.omit({ clientId: true }),
 });
 const userCreateBody = z.object({
@@ -529,9 +529,9 @@ export const adminRoutes = new Hono<AppEnv>()
 
     const updated = await prisma.$transaction(async (tx) => {
       // Fetch the current row first so packageType can be recomputed from
-      // whichever of billingCycle/maxEntities actually changed, merged with
-      // whichever didn't (both are optional on a partial update) — this is
-      // the one write path where the tier could otherwise go stale.
+      // whichever of billingCycle/maxEntities/maxUsers actually changed,
+      // merged with whichever didn't (all optional on a partial update) —
+      // this is the one write path where the tier could otherwise go stale.
       const existing = await tx.subscription.findUniqueOrThrow({ where: { id } });
       const effectiveBillingCycle = body.billingCycle ?? existing.billingCycle;
       const effectiveMaxEntities = body.maxEntities ?? existing.maxEntities;

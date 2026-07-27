@@ -3,6 +3,7 @@ import {
   ArrowLeftRight,
   BarChart3,
   Boxes,
+  ClipboardCheck,
   ClipboardList,
   Coins,
   Gauge,
@@ -141,6 +142,24 @@ const SECTIONS: Array<{ title: string; blurb: string; reports: Report[] }> = [
         icon: Wrench,
         title: "Asset Breakage",
         description: "Equipment that broke, went missing, or was retired — what happened, valued at cost. (Asset locations.)",
+      },
+    ],
+  },
+  {
+    title: "Asset",
+    blurb: "The equipment register and its Beginning/Ending count. (Asset locations.)",
+    reports: [
+      {
+        path: "asset-register",
+        icon: ClipboardCheck,
+        title: "Asset Register",
+        description: "Every registered asset — code, condition, status, cost, supplier, and its last note.",
+      },
+      {
+        path: "asset-inventory",
+        icon: Boxes,
+        title: "Asset Inventory",
+        description: "Beginning vs Ending count for asset items, with the quantity change.",
       },
     ],
   },

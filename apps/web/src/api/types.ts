@@ -16,6 +16,8 @@ export interface Category {
   productType: string;
   defaultDensityFactor: number | null;
   sortOrder: number;
+  // Asset-only, nullable (client req 2026-07-24). One industry per category.
+  industry: string | null;
   _count?: { items: number };
 }
 
@@ -31,6 +33,9 @@ export interface ItemVariant {
   tareWeightUnit: "g" | "oz" | null;
   densityFactor: number | null;
   barcode: string | null;
+  // Asset-only (architecture.md deviation #21).
+  brand: string | null;
+  model: string | null;
   isActive: boolean;
   unit: Unit;
 }
@@ -57,6 +62,14 @@ export interface LocationItem {
   retail: number;
   parLevel: number | null;
   isActive: boolean;
+  // Asset-only (architecture.md deviation #21), filled in post-attach via
+  // the Local Database edit surface (Phase 5).
+  initialCost: number | null;
+  serialNo: string | null;
+  condition: string | null;
+  status: string | null;
+  remarks: string | null;
+  assetCode: string | null;
   itemVariant: ItemVariant & { item: Item };
 }
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Plus, Scale, Trash2 } from "lucide-react";
+import { Plus, Scale, Tag, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { itemCreate, itemUpdate, type ItemCreate, type ItemUpdate } from "@fnb/core";
 import { useCategories, useCreateItem, useUnits, useUpdateItem } from "@/api/master";
@@ -9,6 +9,7 @@ import { variantLabel, type Item, type ItemVariant } from "@/api/types";
 import { defaultWeighUnit, useUnitSystem } from "@/lib/preferences";
 import { ApiError } from "@/api/http";
 import { VariantQuickEditDialog } from "@/components/variant-quick-edit";
+import { BrandModelEditDialog } from "@/components/brand-model-edit";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { QuantityInput } from "@/components/quantity-input";
@@ -40,6 +41,8 @@ const EMPTY_VARIANT = {
   tareWeightUnit: null,
   densityFactor: null,
   barcode: null,
+  brand: null,
+  model: null,
 } as const;
 
 export function ItemFormSheet({
@@ -151,6 +154,7 @@ export function ItemFormSheet({
               const unitId = form.watch(`variants.${i}.unitId`);
               const unitIsMass = units.data?.find((u) => u.id === unitId)?.kind === "MASS";
               const netMode = !contentTracked && weighMode === "NET";
+              const isAsset = category?.productType === "Asset";
               const vErr = form.formState.errors.variants?.[i];
               return (
                 <div key={field.id} className="space-y-3 rounded-lg border p-3">
@@ -201,118 +205,145 @@ export function ItemFormSheet({
                     </p>
                   )}
 
-                  <div className="flex items-center justify-between gap-4 border-t pt-3">
-                    <div>
-                      <p className="text-sm font-medium">Track Open Content</p>
-                      <p className="text-xs text-muted-foreground">
-                        On: partial amounts count as a fraction of this size (open bottles). Off: counted whole.
-                      </p>
-                    </div>
-                    <Switch
-                      checked={contentTracked}
-                      onCheckedChange={(v) => {
-                        form.setValue(`variants.${i}.contentTracked`, v);
-                        if (v) form.setValue(`variants.${i}.weighMode`, null);
-                      }}
-                    />
-                  </div>
-
-                  {!contentTracked && unitIsMass && (
-                    <div className="flex items-center justify-between gap-4 border-t pt-3">
-                      <div>
-                        <p className="text-sm font-medium">Weigh by Net Weight</p>
-                        <p className="text-xs text-muted-foreground">
-                          Kitchen counting: scale weight − empty weight = quantity in {units.data?.find((u) => u.id === unitId)?.name ?? "the unit"}. No density conversion.
-                        </p>
-                      </div>
-                      <Switch
-                        checked={netMode}
-                        onCheckedChange={(v) => form.setValue(`variants.${i}.weighMode`, v ? "NET" : null)}
-                      />
-                    </div>
-                  )}
-
-                  {netMode && (
-                    <div className="grid grid-cols-2 items-end gap-2">
+                  {isAsset && (
+                    <div className="grid grid-cols-2 gap-2">
                       <div className="space-y-1.5">
-                        <Label className="text-xs">Empty Weight</Label>
-                        <QuantityInput
-                          className="tnum"
-                          placeholder="empty container (0 = none)"
-                          {...form.register(`variants.${i}.tareWeight`, {
-                            setValueAs: (v) => (v === "" || v === null ? null : Number(v)),
+                        <Label className="text-xs">Brand</Label>
+                        <Input
+                          placeholder="e.g. Samsung"
+                          {...form.register(`variants.${i}.brand`, {
+                            setValueAs: (v) => (v === "" ? null : v),
                           })}
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <Label className="text-xs">Weight Unit</Label>
-                        <Select
-                          value={form.watch(`variants.${i}.tareWeightUnit`) ?? ""}
-                          onValueChange={(v) =>
-                            form.setValue(`variants.${i}.tareWeightUnit`, (v || null) as "g" | "oz" | null)
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="g / oz" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="g">g</SelectItem>
-                            <SelectItem value="oz">oz</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        <Label className="text-xs">Model</Label>
+                        <Input
+                          placeholder="e.g. RT38"
+                          {...form.register(`variants.${i}.model`, {
+                            setValueAs: (v) => (v === "" ? null : v),
+                          })}
+                        />
                       </div>
                     </div>
                   )}
 
-                  {contentTracked && (
-                    <div className="grid grid-cols-2 items-end gap-2 sm:grid-cols-3">
-                      <div className="space-y-1.5">
-                        <Label className="text-xs">Empty Weight</Label>
-                        <QuantityInput
-                          className="tnum"
-                          placeholder="empty container"
-                          {...form.register(`variants.${i}.tareWeight`, {
-                            setValueAs: (v) => (v === "" || v === null ? null : Number(v)),
-                          })}
+                  {!isAsset && (
+                    <>
+                      <div className="flex items-center justify-between gap-4 border-t pt-3">
+                        <div>
+                          <p className="text-sm font-medium">Track Open Content</p>
+                          <p className="text-xs text-muted-foreground">
+                            On: partial amounts count as a fraction of this size (open bottles). Off: counted whole.
+                          </p>
+                        </div>
+                        <Switch
+                          checked={contentTracked}
+                          onCheckedChange={(v) => {
+                            form.setValue(`variants.${i}.contentTracked`, v);
+                            if (v) form.setValue(`variants.${i}.weighMode`, null);
+                          }}
                         />
                       </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-xs">Weight Unit</Label>
-                        <Select
-                          value={form.watch(`variants.${i}.tareWeightUnit`) ?? ""}
-                          onValueChange={(v) =>
-                            form.setValue(`variants.${i}.tareWeightUnit`, (v || null) as "g" | "oz" | null)
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="g / oz" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="g">g</SelectItem>
-                            <SelectItem value="oz">oz</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="col-span-2 space-y-1.5 sm:col-span-1">
-                        <Label className="flex items-center gap-1 text-xs">
-                          <Scale className="size-3" /> Liquid Weight
-                        </Label>
-                        <QuantityInput
-                          className="tnum"
-                          placeholder={
-                            category?.defaultDensityFactor
-                              ? `${category.defaultDensityFactor} (from ${category.name})`
-                              : "ml per weight unit"
-                          }
-                          {...form.register(`variants.${i}.densityFactor`, {
-                            setValueAs: (v) => (v === "" || v === null ? null : Number(v)),
-                          })}
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          Liquid Weight: ml of liquid per gram/oz of weight — converts a scale weight into remaining volume.
-                        </p>
-                      </div>
-                    </div>
+
+                      {!contentTracked && unitIsMass && (
+                        <div className="flex items-center justify-between gap-4 border-t pt-3">
+                          <div>
+                            <p className="text-sm font-medium">Weigh by Net Weight</p>
+                            <p className="text-xs text-muted-foreground">
+                              Kitchen counting: scale weight − empty weight = quantity in {units.data?.find((u) => u.id === unitId)?.name ?? "the unit"}. No density conversion.
+                            </p>
+                          </div>
+                          <Switch
+                            checked={netMode}
+                            onCheckedChange={(v) => form.setValue(`variants.${i}.weighMode`, v ? "NET" : null)}
+                          />
+                        </div>
+                      )}
+
+                      {netMode && (
+                        <div className="grid grid-cols-2 items-end gap-2">
+                          <div className="space-y-1.5">
+                            <Label className="text-xs">Empty Weight</Label>
+                            <QuantityInput
+                              className="tnum"
+                              placeholder="empty container (0 = none)"
+                              {...form.register(`variants.${i}.tareWeight`, {
+                                setValueAs: (v) => (v === "" || v === null ? null : Number(v)),
+                              })}
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-xs">Weight Unit</Label>
+                            <Select
+                              value={form.watch(`variants.${i}.tareWeightUnit`) ?? ""}
+                              onValueChange={(v) =>
+                                form.setValue(`variants.${i}.tareWeightUnit`, (v || null) as "g" | "oz" | null)
+                              }
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="g / oz" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="g">g</SelectItem>
+                                <SelectItem value="oz">oz</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      )}
+
+                      {contentTracked && (
+                        <div className="grid grid-cols-2 items-end gap-2 sm:grid-cols-3">
+                          <div className="space-y-1.5">
+                            <Label className="text-xs">Empty Weight</Label>
+                            <QuantityInput
+                              className="tnum"
+                              placeholder="empty container"
+                              {...form.register(`variants.${i}.tareWeight`, {
+                                setValueAs: (v) => (v === "" || v === null ? null : Number(v)),
+                              })}
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-xs">Weight Unit</Label>
+                            <Select
+                              value={form.watch(`variants.${i}.tareWeightUnit`) ?? ""}
+                              onValueChange={(v) =>
+                                form.setValue(`variants.${i}.tareWeightUnit`, (v || null) as "g" | "oz" | null)
+                              }
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="g / oz" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="g">g</SelectItem>
+                                <SelectItem value="oz">oz</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="col-span-2 space-y-1.5 sm:col-span-1">
+                            <Label className="flex items-center gap-1 text-xs">
+                              <Scale className="size-3" /> Liquid Weight
+                            </Label>
+                            <QuantityInput
+                              className="tnum"
+                              placeholder={
+                                category?.defaultDensityFactor
+                                  ? `${category.defaultDensityFactor} (from ${category.name})`
+                                  : "ml per weight unit"
+                              }
+                              {...form.register(`variants.${i}.densityFactor`, {
+                                setValueAs: (v) => (v === "" || v === null ? null : Number(v)),
+                              })}
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              Liquid Weight: ml of liquid per gram/oz of weight — converts a scale weight into remaining volume.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               );
@@ -363,6 +394,9 @@ export function ItemEditSheet({
   // always shows fresh values after a save instead of a stale snapshot.
   const [quickEditId, setQuickEditId] = useState<string | null>(null);
   const quickEdit = item?.variants.find((v) => v.id === quickEditId) ?? null;
+  // Same pattern, second dialog: Brand/Model edit target (Asset rows only).
+  const [brandEditId, setBrandEditId] = useState<string | null>(null);
+  const brandEdit = item?.variants.find((v) => v.id === brandEditId) ?? null;
 
   const form = useForm<ItemUpdate>({
     resolver: zodResolver(itemUpdate),
@@ -380,6 +414,7 @@ export function ItemEditSheet({
       await updateItem.mutateAsync({ id: item.id, ...values });
       toast.success(`Item "${values.name ?? item.name}" updated`);
       setQuickEditId(null);
+      setBrandEditId(null);
       onOpenChange(false);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not save the item");
@@ -390,7 +425,10 @@ export function ItemEditSheet({
     <Sheet
       open={item !== null}
       onOpenChange={(o) => {
-        if (!o) setQuickEditId(null);
+        if (!o) {
+          setQuickEditId(null);
+          setBrandEditId(null);
+        }
         onOpenChange(o);
       }}
     >
@@ -441,20 +479,33 @@ export function ItemEditSheet({
             <div>
               <Label>Sizes / Variants</Label>
               <p className="text-xs text-muted-foreground">
-                Sizes are fixed once created; bottle weight and Liquid Weight can be corrected per size.
+                {item?.category.productType === "Asset"
+                  ? "Sizes are fixed once created; Brand/Model can be corrected per size."
+                  : "Sizes are fixed once created; bottle weight and Liquid Weight can be corrected per size."}
               </p>
             </div>
             {(item?.variants ?? []).map((v) => (
               <div key={v.id} className="flex items-center justify-between gap-4 border-t pt-3">
                 <div className="min-w-0">
                   <p className="tnum text-sm font-medium">{variantLabel(v)}</p>
-                  <p className="text-xs text-muted-foreground">{weighSummary(v)}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {item?.category.productType === "Asset"
+                      ? [v.brand, v.model].filter(Boolean).join(" · ") || "No brand/model set"
+                      : weighSummary(v)}
+                  </p>
                 </div>
-                {(v.contentTracked || v.weighMode === "NET") && (
-                  <Button type="button" variant="outline" size="sm" onClick={() => setQuickEditId(v.id)}>
-                    <Scale className="size-4" /> Bottle Weight
-                  </Button>
-                )}
+                <div className="flex shrink-0 items-center gap-2">
+                  {(v.contentTracked || v.weighMode === "NET") && (
+                    <Button type="button" variant="outline" size="sm" onClick={() => setQuickEditId(v.id)}>
+                      <Scale className="size-4" /> Bottle Weight
+                    </Button>
+                  )}
+                  {item?.category.productType === "Asset" && (
+                    <Button type="button" variant="outline" size="sm" onClick={() => setBrandEditId(v.id)}>
+                      <Tag className="size-4" /> Brand/Model
+                    </Button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -473,6 +524,14 @@ export function ItemEditSheet({
             itemName={item.name}
             variant={quickEdit}
             categoryDefaultDensity={item.category.defaultDensityFactor}
+          />
+        )}
+        {item && brandEdit && (
+          <BrandModelEditDialog
+            open
+            onOpenChange={(o) => !o && setBrandEditId(null)}
+            itemName={item.name}
+            variant={brandEdit}
           />
         )}
       </SheetContent>

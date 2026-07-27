@@ -17,6 +17,7 @@ import {
   PACKAGE_DEFAULT_MAX_ENTITIES,
   PACKAGE_MAX_USERS,
   PACKAGE_DEFAULT_BILLING_CYCLE,
+  PACKAGE_MAX_USERS,
   type BillingCycle,
   type ModuleType,
   type PackageType,

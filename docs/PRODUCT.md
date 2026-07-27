@@ -38,6 +38,7 @@ Any non-ADMIN user can additionally be restricted to specific **modules** (Bar /
 8. **Generate the Full Audit report** — Pick a begin and end count date, get the reconciliation per item/category with variance highlighted, drill into any number's source records, export Excel/CSV or print. Alongside it: Sales, Purchases, Non-Revenue, Transfers, Inventory on Hand, and **Cost Analysis** — beverage and food cost as a share of sales, the report the client's accountants read.
 9. **Correct mistakes** — Committed records can't be edited. Users see "void" and "correct" (with reason); the app keeps both records linked. The activity log answers "who did what, when."
 10. **Ask Stocky** *(read-only)* — A read-only assistant that explains variances, finds records, and teaches the formulas, with links to the actual data.
+11. **Track equipment (Asset)** — Register gear (Brand/Model on the catalog item; Serial No., Condition, Status, Initial Cost, Remarks, and an assigned Asset Code per location), then run a Beginning and an Ending count on it the same way bar/kitchen stock is counted. Two reports read that register: the **Asset Register** (the full equipment list — code, condition, status, cost, current supplier) and **Asset Inventory** (Beginning vs Ending count). When a piece of equipment breaks, goes missing, or is retired, that's logged through Non-Revenue with an asset-specific reason (Broken / Lost / Stolen / Retired) — see workflow 3.
 
 ## Universal by design (beyond food & beverage)
 

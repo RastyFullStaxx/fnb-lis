@@ -21,10 +21,18 @@ schemas, and UI.
 client location. The one thing the client trusts above all is the **Full Audit reconciliation
 report** — its math is sacred.
 
-## Status — 2026-07-19
+## Status — 2026-07-23
 
 Phases 0–9 complete. The full audit cycle, reports, exports, imports, dashboard, admin, Stocky,
 and inter-location transfers are all shipped and verified against hand-computed fixtures.
+
+**Asset module shipped** (build-log Phase 17): Brand/Model on the catalog, six per-location detail
+fields (Serial No., Condition, Status, Initial Cost, Remarks, Asset Code) editable via a Local
+Database dialog, Beginning/Ending counts reusing the existing count-entry screen unchanged, and two
+new reports (Asset Register, Asset Inventory) alongside the Asset Breakage report Phase 16 already
+shipped. Both implementation calls the proposal left open (`assetCode`'s home; the edit-surface
+shape) landed on the plan's own recommended defaults — `LocationItem.assetCode` and a sibling
+`Dialog` component — with no open question left behind.
 
 **Verification stance:** no automated test framework (explicit instruction). Correctness rests on
 [golden-fixtures.md](golden-fixtures.md) plus live checks. Re-verify the relevant fixture after any
