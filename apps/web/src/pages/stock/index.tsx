@@ -41,6 +41,7 @@ import {
 import { Toggle } from "@/components/toggle-chip";
 import { AttachItemDialog } from "./attach-dialog";
 import { PriceEdit } from "./price-edit";
+import { WeightReport } from "./weight-report";
 
 /**
  * Tare + liquid weight (density) for the list, and whether either is missing
@@ -183,6 +184,9 @@ export function StockPage() {
                 </TableHead>
                 {showWeights && <TableHead className="text-right">Tare / Liquid Wt</TableHead>}
                 <TableHead className="text-right">Status</TableHead>
+                {/* Clients can't edit weights, so this is how they flag a bad
+                    one and how the admin sees the ask (client req 2026-07-25). */}
+                <TableHead className="w-[10rem] text-right">Weight Check</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -244,6 +248,9 @@ export function StockPage() {
                       ) : (
                         <Badge variant="success">Ready</Badge>
                       )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <WeightReport row={row} />
                     </TableCell>
                   </TableRow>
                 );

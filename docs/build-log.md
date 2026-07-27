@@ -607,6 +607,30 @@ Verified end to end: Staff sees no numbers but still sees the flag; admin flips 
 whole app re-gates off `/me`; Staff then sees the values but still cannot export (403). Restored to
 hidden. Golden fixture −₱330.69.
 
+## Phase 22 — Clients can request a weight change (2026-07-25, later)
+
+Gap found while reviewing Phase 21: the derived flag only fired when a weight was **missing**. A
+bottle whose weight is present but WRONG (supplier changed the bottle) was invisible — and since
+clients can no longer edit weights, they had no way to say so. That is the "or need update" half of
+the client's original note, previously only half-covered.
+
+`ItemVariant` gained `weightReviewNote` / `weightReviewBy` / `weightReviewAt` (migration
+`20260727115045`). Pending = note non-null — derived like every other attention item, so there is no
+request lifecycle to keep in sync, and only ever one open ask per bottle (no duplicate queue). No new
+model.
+
+- **Raise**: `POST /master/variants/:id/weight-review` under `master.write` — owner AND manager, as
+  they are the ones who notice. Note required (min 3 chars): they report the symptom, LIS does the
+  re-weigh.
+- **Close**: `DELETE` the same path under `weights.manage` — admin only, typically right after
+  correcting the value.
+- Surfaces in the bell/Needs Attention as "Re-check N reported bottle weights" (admin only), and in
+  the Local Database as a "Weight reported" badge whose tooltip carries the note and who raised it.
+
+Verified the full round trip: manager reports → 200; manager still cannot edit the weight (403 "set
+by your LIS administrator") nor close their own report (403); admin sees `weightReviews: 1`, edits
+the weight → 200, closes → count returns to 0. Golden fixture −₱330.69.
+
 ## Contributor history
 
 | Window | Who | What |

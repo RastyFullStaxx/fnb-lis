@@ -21,6 +21,9 @@ export interface DashboardData {
     /** Weighable bottles missing a tare and/or liquid weight — they cannot be
         counted on a scale until an admin fills them in (client req 2026-07-25). */
     missingWeights: number;
+    /** Bottles a client has reported as having a WRONG weight, awaiting the
+        LIS admin (client req 2026-07-25 — the "or need update" half). */
+    weightReviews: number;
     unmatchedRows: number; // PENDING rows in batches awaiting review
     draftPurchases: number; // uncommitted purchases
     openCounts: number; // count sessions still open
@@ -103,6 +106,7 @@ export async function buildDashboard(
             weighMode: true,
             tareWeight: true,
             densityFactor: true,
+            weightReviewNote: true,
             item: { select: { category: { select: { defaultDensityFactor: true } } } },
           },
         },
@@ -173,6 +177,8 @@ export async function buildDashboard(
     return density == null || density <= 0;
   }).length;
 
+  const weightReviews = priceItems.filter((p) => p.itemVariant.weightReviewNote !== null).length;
+
   let varianceLeaders: DashboardData["varianceLeaders"] = [];
   if (latest) {
     const report = await buildFullAudit(locationId, latest.begin, latest.end, undefined, allowedProductTypes);
@@ -199,7 +205,7 @@ export async function buildDashboard(
       canAudit,
       latest,
     },
-    attention: { missingPrices, missingWeights, unmatchedRows, draftPurchases, openCounts },
+    attention: { missingPrices, missingWeights, weightReviews, unmatchedRows, draftPurchases, openCounts },
     readiness: { activeItems: priceItems.length },
     openWork: {
       latestCount: latestCount

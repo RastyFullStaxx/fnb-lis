@@ -37,6 +37,8 @@ export const put = <T>(path: string, body?: unknown) =>
   api<T>(path, { method: "PUT", body: body === undefined ? undefined : JSON.stringify(body) });
 
 /** Streams a file download, honoring the server's content-disposition filename. */
+export const del = <T>(path: string) => api<T>(path, { method: "DELETE" });
+
 export async function downloadFile(path: string): Promise<void> {
   const res = await fetch(path, { credentials: "same-origin" });
   if (!res.ok) {

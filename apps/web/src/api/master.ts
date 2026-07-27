@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { CategoryUpsert, ItemCreate, ItemUpdate, UnitCreate, VariantCreate, VariantUpdate } from "@fnb/core";
-import { api, post, put } from "./http";
+import { api, del, post, put } from "./http";
 import type { Category, Item, ItemVariant, Unit } from "./types";
 
 export function useUnits() {
@@ -99,5 +99,34 @@ export function useUpdateVariant() {
     mutationFn: ({ id, ...body }: VariantUpdate & { id: string }) =>
       put<ItemVariant>(`/api/master/variants/${id}`, body),
     onSuccess: invalidate,
+  });
+}
+
+/**
+ * Report that a bottle's empty/liquid weight looks wrong. Clients cannot edit
+ * the weight library, so this is how an owner/manager asks the LIS admin to
+ * re-weigh it (client req 2026-07-25).
+ */
+export function useReportWeightProblem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ variantId, note }: { variantId: string; note: string }) =>
+      post(`/api/master/variants/${variantId}/weight-review`, { note }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["locationItems"] });
+      void qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
+
+/** LIS admin closes a weight report — usually right after correcting it. */
+export function useResolveWeightProblem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (variantId: string) => del(`/api/master/variants/${variantId}/weight-review`),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["locationItems"] });
+      void qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
   });
 }

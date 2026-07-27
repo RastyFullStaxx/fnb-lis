@@ -20,7 +20,7 @@ import type { DashboardData } from "@/api/dashboard";
  * the topbar bell — so the two can never disagree about what is outstanding.
  */
 
-export type AttentionKind = "prices" | "weights" | "import" | "purchase" | "count";
+export type AttentionKind = "prices" | "weights" | "weightReview" | "import" | "purchase" | "count";
 
 export interface AttentionItem {
   kind: AttentionKind;
@@ -38,7 +38,7 @@ export type AttentionGroup = "Missing data" | "Needs review" | "Open work";
 export const ATTENTION_GROUPS: AttentionGroup[] = ["Missing data", "Needs review", "Open work"];
 
 export function attentionItems(data: DashboardData, role: Role): AttentionItem[] {
-  const { missingPrices, missingWeights, unmatchedRows, draftPurchases, openCounts } = data.attention;
+  const { missingPrices, missingWeights, weightReviews, unmatchedRows, draftPurchases, openCounts } = data.attention;
   const items: Array<AttentionItem | null> = [
     missingPrices > 0 && can(role, "prices.edit")
       ? {
@@ -60,6 +60,18 @@ export function attentionItems(data: DashboardData, role: Role): AttentionItem[]
           path: "stock",
           icon: Scale,
           group: "Missing data",
+        }
+      : null,
+    // A client says a weight is wrong — only the LIS admin can re-weigh, so it
+    // shows for them (client req 2026-07-25).
+    weightReviews > 0 && can(role, "weights.manage")
+      ? {
+          kind: "weightReview",
+          count: weightReviews,
+          label: `Re-check ${weightReviews} reported bottle ${weightReviews === 1 ? "weight" : "weights"}`,
+          path: "stock",
+          icon: Scale,
+          group: "Needs review",
         }
       : null,
     unmatchedRows > 0 && can(role, "imports.upload")

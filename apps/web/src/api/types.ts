@@ -31,6 +31,10 @@ export interface ItemVariant {
   tareWeightUnit: "g" | "oz" | null;
   densityFactor: number | null;
   barcode: string | null;
+  /** Open "this weight looks wrong" report from a client (client req 2026-07-25). */
+  weightReviewNote: string | null;
+  weightReviewBy: string | null;
+  weightReviewAt: string | null;
   isActive: boolean;
   unit: Unit;
 }

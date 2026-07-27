@@ -262,6 +262,58 @@ export const masterRoutes = new Hono<AppEnv>()
     });
     return c.json(variant, 201);
   })
+  /**
+   * A client reports that a bottle's weight looks wrong (client req
+   * 2026-07-25). They cannot edit the library themselves, so this is the ask —
+   * raised by owner/manager (writeGuard), cleared by the LIS admin below.
+   */
+  .post(
+    "/variants/:id/weight-review",
+    writeGuard,
+    zValidator("json", z.object({ note: z.string().trim().min(3, "Say what looks wrong").max(500) })),
+    async (c) => {
+      const variantId = c.req.param("id");
+      const { note } = c.req.valid("json");
+      const user = c.get("user")!;
+      const variant = await prisma.$transaction(async (tx) => {
+        const updated = await tx.itemVariant.update({
+          where: { id: variantId },
+          data: {
+            weightReviewNote: note,
+            weightReviewBy: `${user.firstName} ${user.lastName}`,
+            weightReviewAt: new Date(),
+          },
+          include: { unit: true, item: true },
+        });
+        await logActivity(
+          { user, action: "variant.weightReview", entity: "ItemVariant", entityId: variantId, summary: `Reported a weight problem on ${updated.item.name} ${updated.size} ${updated.unit.name}`, details: { note } },
+          tx,
+        );
+        return updated;
+      });
+      return c.json(variant);
+    },
+  )
+
+  /** LIS admin closes the report — typically right after correcting the weight. */
+  .delete("/variants/:id/weight-review", requirePermission("weights.manage"), async (c) => {
+    const variantId = c.req.param("id");
+    const user = c.get("user")!;
+    const variant = await prisma.$transaction(async (tx) => {
+      const updated = await tx.itemVariant.update({
+        where: { id: variantId },
+        data: { weightReviewNote: null, weightReviewBy: null, weightReviewAt: null },
+        include: { unit: true, item: true },
+      });
+      await logActivity(
+        { user, action: "variant.weightReviewResolved", entity: "ItemVariant", entityId: variantId, summary: `Closed the weight report on ${updated.item.name} ${updated.size} ${updated.unit.name}` },
+        tx,
+      );
+      return updated;
+    });
+    return c.json(variant);
+  })
+
   .put("/variants/:id", writeGuard, zValidator("json", variantUpdate), async (c) => {
     const variantId = c.req.param("id");
     const body = c.req.valid("json");

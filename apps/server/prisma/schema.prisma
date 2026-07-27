@@ -252,6 +252,14 @@ model ItemVariant {
   tareWeightUnit String? // g | oz
   densityFactor  Float? // per-item override of Category.defaultDensityFactor
   barcode        String?
+  // An open "this weight looks wrong" report from a client (client req
+  // 2026-07-25). Clients cannot edit the weight library, so this is how they
+  // ask: a note raised by their owner/manager, cleared by the LIS admin when
+  // he has re-weighed. Non-null note = a review is pending — derived, so there
+  // is no request lifecycle to keep in sync, and only one open ask per bottle.
+  weightReviewNote String?
+  weightReviewBy   String?
+  weightReviewAt   DateTime?
   isActive       Boolean @default(true)
 
   locationItems LocationItem[]
