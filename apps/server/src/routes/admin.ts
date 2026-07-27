@@ -4,10 +4,8 @@ import { zValidator } from "@hono/zod-validator";
 import {
   role as roleSchema,
   derivePackageType,
-  isValidMaxEntities,
   deriveAccessState,
   subscriptionCreateBody,
-  subscriptionCreateBodyValidated,
   subscriptionUpdateBody,
   locationModulesBody,
   moduleType,
@@ -41,8 +39,8 @@ const fullClientBody = z.object({
   name: z.string().trim().min(1),
   extraLocationNames: z.array(z.string().trim().min(1)).default([]),
   // packageType is NOT accepted from the client — it's derived from
-  // billingCycle + maxEntities (derivePackageType), so the tier badge can
-  // never drift from the real subscription.
+  // billingCycle + maxEntities + maxUsers (derivePackageType), so the tier
+  // badge can never drift from the real subscription.
   subscription: subscriptionCreateBody.omit({ clientId: true }),
 });
 const userCreateBody = z.object({
@@ -76,6 +74,36 @@ const accessBody = z.object({ clientIds: z.array(z.string()) });
 // (schemas/subscription.ts) — the same shapes the web client types against.
 // The location-modules subset rule (Fix Plan §2.3) is enforced in the
 // handler below since Prisma/SQLite can't express a cross-table constraint.
+
+/**
+ * Max-user seat check (client req 2026-07-21). Every client the new user would
+ * be granted access to must still have a free seat. `maxUsers = 0` means no cap
+ * saved (legacy rows / owner hasn't set one), so it never blocks.
+ *
+ * Counts UserClientAccess rows — the same thing the client's user list shows.
+ * ADMINs bypass client scoping entirely and hold no access rows, so they don't
+ * consume a client's seats.
+ */
+async function assertUserSeatsAvailable(clientIds: string[], exceptUserId?: string): Promise<void> {
+  for (const clientId of clientIds) {
+    const sub = await prisma.subscription.findUnique({
+      where: { clientId },
+      select: { maxUsers: true, client: { select: { name: true } } },
+    });
+    if (!sub || sub.maxUsers <= 0) continue;
+    // Exclude the user being edited — re-saving their existing access must not
+    // count them against their own seat.
+    const used = await prisma.userClientAccess.count({
+      where: { clientId, ...(exceptUserId ? { userId: { not: exceptUserId } } : {}) },
+    });
+    if (used >= sub.maxUsers) {
+      throw new AppError(
+        403,
+        `User limit reached for "${sub.client.name}". This subscription allows up to ${sub.maxUsers} user account(s). Raise "Max users" on the subscription to add more.`,
+      );
+    }
+  }
+}
 
 export const adminRoutes = new Hono<AppEnv>()
   .use(requireAuth, requirePermission("admin.manage"))
@@ -252,14 +280,6 @@ export const adminRoutes = new Hono<AppEnv>()
     const user = c.get("user")!;
     const maxEntities = subscription.maxEntities;
 
-    // fullClientBody uses subscriptionCreateBody.omit({ clientId: true }) —
-    // the base (un-refined, omit-able) object — so this check, done by
-    // subscriptionCreateBodyValidated for the direct POST /subscriptions
-    // route, has to happen explicitly here instead.
-    if (!isValidMaxEntities(subscription.billingCycle, maxEntities)) {
-      throw new AppError(400, "Monthly subscriptions must be 1 (Basic), 2-5 (Medium), or 6-10 (Full) locations.");
-    }
-
     // Guard against exceeding the chosen maxEntities within the same request
     // (Main + extras), same rule /locations enforces.
     const totalLocations = 1 + extraLocationNames.length;
@@ -276,9 +296,10 @@ export const adminRoutes = new Hono<AppEnv>()
       const sub = await tx.subscription.create({
         data: {
           clientId: created.id,
-          packageType: derivePackageType(subscription.billingCycle, maxEntities),
+          packageType: derivePackageType(subscription.billingCycle, maxEntities, subscription.maxUsers),
           billingCycle: subscription.billingCycle,
           maxEntities,
+          maxUsers: subscription.maxUsers,
           negotiatedPrice: subscription.negotiatedPrice ?? null,
           startDate: subscription.startDate,
           endDate: subscription.endDate ?? null,
@@ -370,6 +391,7 @@ export const adminRoutes = new Hono<AppEnv>()
     const actor = c.get("user")!;
     const existing = await prisma.user.findUnique({ where: { username: body.username } });
     if (existing) throw new AppError(409, "Username already taken");
+    await assertUserSeatsAvailable(body.clientIds);
     const passwordHash = await hashPassword(body.password);
     const created = await prisma.$transaction(async (tx) => {
       const u = await tx.user.create({
@@ -427,6 +449,7 @@ export const adminRoutes = new Hono<AppEnv>()
     const userId = c.req.param("id");
     const { clientIds } = c.req.valid("json");
     const actor = c.get("user")!;
+    await assertUserSeatsAvailable(clientIds, userId);
     await prisma.$transaction(async (tx) => {
       await tx.userClientAccess.deleteMany({ where: { userId } });
       await tx.userClientAccess.createMany({ data: clientIds.map((clientId) => ({ userId, clientId })) });
@@ -451,7 +474,7 @@ export const adminRoutes = new Hono<AppEnv>()
     return c.json(subs);
   })
 
-  .post("/subscriptions", zValidator("json", subscriptionCreateBodyValidated), async (c) => {
+  .post("/subscriptions", zValidator("json", subscriptionCreateBody), async (c) => {
     const body = c.req.valid("json");
     const user = c.get("user")!;
 
@@ -462,9 +485,10 @@ export const adminRoutes = new Hono<AppEnv>()
       const created = await tx.subscription.create({
         data: {
           clientId: body.clientId,
-          packageType: derivePackageType(body.billingCycle, body.maxEntities),
+          packageType: derivePackageType(body.billingCycle, body.maxEntities, body.maxUsers),
           billingCycle: body.billingCycle,
           maxEntities: body.maxEntities,
+          maxUsers: body.maxUsers,
           negotiatedPrice: body.negotiatedPrice ?? null,
           startDate: body.startDate,
           endDate: body.endDate ?? null,
@@ -505,24 +529,14 @@ export const adminRoutes = new Hono<AppEnv>()
 
     const updated = await prisma.$transaction(async (tx) => {
       // Fetch the current row first so packageType can be recomputed from
-      // whichever of billingCycle/maxEntities actually changed, merged with
-      // whichever didn't (both are optional on a partial update) — this is
-      // the one write path where the tier could otherwise go stale.
+      // whichever of billingCycle/maxEntities/maxUsers actually changed,
+      // merged with whichever didn't (all optional on a partial update) —
+      // this is the one write path where the tier could otherwise go stale.
       const existing = await tx.subscription.findUniqueOrThrow({ where: { id } });
       const effectiveBillingCycle = body.billingCycle ?? existing.billingCycle;
       const effectiveMaxEntities = body.maxEntities ?? existing.maxEntities;
-      // The create-body refine only catches this when BOTH fields are in the
-      // same patch; a partial update (e.g. maxEntities alone, against an
-      // existing MONTHLY row) can only be checked here, against the merged
-      // result — same reasoning as the comment on subscriptionUpdateBody's
-      // refine in @fnb/core.
-      if (!isValidMaxEntities(effectiveBillingCycle as BillingCycle, effectiveMaxEntities)) {
-        throw new AppError(
-          400,
-          "Monthly subscriptions must be 1 (Basic), 2-5 (Medium), or 6-10 (Full) locations.",
-        );
-      }
-      data.packageType = derivePackageType(effectiveBillingCycle as BillingCycle, effectiveMaxEntities);
+      const effectiveMaxUsers = body.maxUsers ?? existing.maxUsers;
+      data.packageType = derivePackageType(effectiveBillingCycle as BillingCycle, effectiveMaxEntities, effectiveMaxUsers);
 
       // Moving the startDate re-anchors every billing period, and the
       // first-period rule would otherwise re-credit an arbitrarily old
@@ -726,6 +740,8 @@ export const adminRoutes = new Hono<AppEnv>()
     if (!sub) return c.json({ hasSubscription: false, canAddEntity: true });
     const locationCount = await prisma.location.count({ where: { clientId, status: "ACTIVE" } });
     const canAddEntity = sub.maxEntities === 0 || locationCount < sub.maxEntities;
+    const userCount = await prisma.userClientAccess.count({ where: { clientId } });
+    const canAddUser = sub.maxUsers === 0 || userCount < sub.maxUsers;
     const accessState = deriveAccessState(sub, new Date());
-    return c.json({ hasSubscription: true, subscription: sub, locationCount, canAddEntity, accessState });
+    return c.json({ hasSubscription: true, subscription: sub, locationCount, canAddEntity, userCount, canAddUser, accessState });
   });

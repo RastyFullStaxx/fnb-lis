@@ -192,11 +192,16 @@ export const PACKAGE_LABELS: Record<PackageType, string> = {
   ONE_TIME: "One-Time Installation",
 };
 
-/** Inclusive [min, max] location count each MONTHLY tier accepts (client req 2026-07-26). */
-export const MONTHLY_TIER_RANGES: Record<"BASIC" | "MEDIUM" | "FULL", readonly [number, number]> = {
-  BASIC: [1, 1],
-  MEDIUM: [2, 5],
-  FULL: [6, 10],
+/**
+ * Max USER accounts per monthly tier (client req 2026-07-21): Basic 1,
+ * Medium 5, Full 10. Standalone is owner-set, so it has no fixed number —
+ * `0` here means "whatever the owner saved", never unlimited-by-default.
+ */
+export const PACKAGE_MAX_USERS: Record<PackageType, number> = {
+  BASIC: 1,
+  MEDIUM: 5,
+  FULL: 10,
+  ONE_TIME: 0, // owner sets it explicitly on the subscription
 };
 
 /**
@@ -221,53 +226,34 @@ export const PACKAGE_DEFAULT_BILLING_CYCLE: Record<PackageType, BillingCycle> = 
 };
 
 /**
- * Whether (billingCycle, maxEntities) is a legal combination — call this
- * (or let the zod refine below do it) BEFORE derivePackageType, which
- * assumes a valid pair and is a total function over valid input only.
- *
- * MONTHLY must land in exactly one of the three bounded tiers below — there
- * is no more "0 = unlimited" case for Monthly (client req 2026-07-26: Full
- * replaces the old unlimited-inside-Medium carve-out, capped at 10).
- * STANDALONE accepts any maxEntities >= 0, 0 meaning unlimited — but only
- * because the admin explicitly chose 0, never as a default/implication.
- */
-export function isValidMaxEntities(billingCycle: BillingCycle, maxEntities: number): boolean {
-  if (billingCycle === "STANDALONE") return Number.isInteger(maxEntities) && maxEntities >= 0;
-  return Object.values(MONTHLY_TIER_RANGES).some(([min, max]) => maxEntities >= min && maxEntities <= max);
-}
-
-/**
- * Derives the "Basic / Medium / Full / One-Time Installation" package tier
- * from the two fields that actually define it, per the client's spec
- * (2026-07-24, refined 2026-07-26):
- *   - Basic:   exactly 1 location
- *   - Medium:  2 to 5 locations
- *   - Full:    6 to 10 locations
- *   - One-Time Installation: STANDALONE billing, any admin-set location
- *     count (including 0 = unlimited, but only when explicitly chosen)
+ * Derives the package tier from the fields that actually define it. The tier
+ * is named by MAX USERS (client req 2026-07-21: "monthly, add Full — max users
+ * up to 10"), falling back to max locations for pre-maxUsers rows (maxUsers=0
+ * from the migration default) so nothing already in the database silently
+ * jumps to a different tier the first time this runs against it.
  *
  * packageType is NOT a separately-settable field anywhere in the app — it
  * used to be, and could silently drift from the truth (e.g. a client badged
- * "Basic" while actually licensed for unlimited locations). It's now always
- * computed from billingCycle + maxEntities, both at write time (server) and
- * for display (client), so the badge can never lie again.
+ * "Basic" while actually licensed for unlimited locations). It's always
+ * computed, both at write time (server) and for display (client), so the badge
+ * can never lie again.
  *
- * Assumes `isValidMaxEntities(billingCycle, maxEntities)` already passed —
- * callers must validate first (the zod schemas do this via `.refine()`);
- * this throws rather than silently picking a tier for an out-of-range
- * MONTHLY count, since guessing would reintroduce exactly the kind of
- * drift this function exists to prevent.
+ *  - STANDALONE billing => "One-Time Installation", regardless of the counts —
+ *    the tier is "pay once, no recurring bill", and the owner sets his own
+ *    user cap so accounts can't be generated behind his back.
+ *  - MONTHLY: 1 user => Basic, 2-5 => Medium, 6+ (or unlimited) => Full.
  */
-export function derivePackageType(billingCycle: BillingCycle, maxEntities: number): PackageType {
+export function derivePackageType(
+  billingCycle: BillingCycle,
+  maxEntities: number,
+  maxUsers = 0,
+): PackageType {
   if (billingCycle === "STANDALONE") return "ONE_TIME";
-  for (const [tier, [min, max]] of Object.entries(MONTHLY_TIER_RANGES) as Array<
-    ["BASIC" | "MEDIUM" | "FULL", readonly [number, number]]
-  >) {
-    if (maxEntities >= min && maxEntities <= max) return tier;
-  }
-  throw new Error(
-    `Invalid Monthly location count: ${maxEntities}. Monthly subscriptions must be 1 (Basic), 2-5 (Medium), or 6-10 (Full) locations.`,
-  );
+  // Pre-maxUsers subscriptions carry 0 — fall back to the old location rule so
+  // existing rows keep their badge instead of all jumping to Full.
+  const n = maxUsers > 0 ? maxUsers : maxEntities;
+  if (n === 1) return "BASIC";
+  return n <= PACKAGE_MAX_USERS.MEDIUM && n > 0 ? "MEDIUM" : "FULL";
 }
 
 export const MODULE_TYPE_LABELS: Record<ModuleType, string> = {

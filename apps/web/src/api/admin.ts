@@ -22,12 +22,14 @@ export interface AdminLocation {
 export interface AdminSubscription {
   id: string;
   clientId: string;
-  /** Read-only — derived server-side from billingCycle + maxEntities (derivePackageType). Never sent as input. */
+  /** Read-only — derived server-side from billingCycle + maxEntities + maxUsers (derivePackageType). Never sent as input. */
   packageType: string;
   billingCycle: string;
   /** The client's licensed ceiling (Fix Plan §2.2) — atomic modules, any non-empty subset. */
   modules: string[];
   maxEntities: number;
+  /** Max user accounts (client req 2026-07-21); 0 = no cap saved (legacy rows). */
+  maxUsers: number;
   /** Optional per-client/per-deal price, if tracked at all (Fix Plan §4 open question #2). */
   negotiatedPrice: number | null;
   status: string;
@@ -143,10 +145,12 @@ export interface CreateFullClientBody {
   name: string;
   extraLocationNames: string[];
   subscription: {
-    // packageType is NOT sent — the server derives it from billingCycle + maxEntities.
+    // packageType is NOT sent — the server derives it from billingCycle + maxEntities + maxUsers.
     billingCycle: string;
     modules: string[];
     maxEntities: number;
+    /** Max user accounts (client req 2026-07-21); 0 = no cap saved. */
+    maxUsers: number;
     /** Optional per-client deal price, if tracked at all. */
     negotiatedPrice?: number | null;
     startDate: string;
@@ -325,10 +329,12 @@ export function useAdminSubscriptions() {
 
 export interface CreateSubscriptionBody {
   clientId: string;
-  // packageType is NOT sent — the server derives it from billingCycle + maxEntities.
+  // packageType is NOT sent — the server derives it from billingCycle + maxEntities + maxUsers.
   billingCycle: string;
   modules: string[];
   maxEntities: number;
+  /** Max user accounts (client req 2026-07-21); 0 = no cap saved. */
+  maxUsers: number;
   /** Optional per-client deal price, if tracked at all. */
   negotiatedPrice?: number | null;
   startDate: string;
@@ -349,10 +355,12 @@ export function useCreateSubscription() {
 }
 
 export interface UpdateSubscriptionBody {
-  // packageType is NOT sent — the server derives it from billingCycle + maxEntities.
+  // packageType is NOT sent — the server derives it from billingCycle + maxEntities + maxUsers.
   billingCycle?: string;
   modules?: string[];
   maxEntities?: number;
+  /** Max user accounts (client req 2026-07-21); 0 = no cap saved. */
+  maxUsers?: number;
   /** Optional per-client deal price, if tracked at all. */
   negotiatedPrice?: number | null;
   startDate?: string;

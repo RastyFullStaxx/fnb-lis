@@ -133,22 +133,27 @@ model UserClientAccess {
 
 // ───────────────────────── Subscription & Packages ─────────────────────────
 // packageType: BASIC | MEDIUM | FULL | ONE_TIME — DERIVED, not independently settable.
-//   Computed server-side from (billingCycle, maxEntities) via
+//   Computed server-side from (billingCycle, maxEntities, maxUsers) via
 //   derivePackageType() in @fnb/core on every create/update (see admin.ts).
 //   It used to be a separately-settable field and could drift from the truth
 //   (e.g. badged "Basic" while actually unlimited) — that's fixed now; it's
 //   stored (not computed on read) purely so it can be queried/filtered
-//   without joining, but the column always mirrors billingCycle+maxEntities.
+//   without joining, but the column always mirrors billingCycle+maxEntities+maxUsers.
 // billingCycle: STANDALONE | MONTHLY — directly settable; drives packageType above.
 // modules: SubscriptionModule rows, one per atomic module (BAR | KITCHEN | ASSET)
 //   the client is licensed for in total — the *ceiling* every location's own
 //   LocationModule set must stay within (Fix Plan Phase C §2.3/§2.2).
-// maxEntities: admin-set number of locations. For MONTHLY, must land in one
-//   of the three bounded tiers (1=Basic, 2-5=Medium, 6-10=Full) — validated
-//   via isValidMaxEntities before every write (client req 2026-07-26; there
-//   is no more "0=unlimited" case for Monthly). For STANDALONE, any admin-set
-//   number is valid, including 0 for unlimited — but only because the admin
-//   explicitly chose 0, never a default/implication.
+// maxEntities: admin-set number of locations; 0 = unlimited. No longer what
+//   names the tier (see maxUsers below, client req 2026-07-21) — it still
+//   gates location creation (POST /clients/:id/locations) on its own.
+// maxUsers: admin-set number of USER accounts (client req 2026-07-21) — THIS
+//   is what names the Monthly tier now (Basic 1 / Medium 2-5 / Full 6-10).
+//   0 = no cap saved (legacy rows, pre-dates this field — derivePackageType
+//   falls back to maxEntities for these so they keep their existing badge).
+//   Standalone owners set their own number so accounts can't be generated
+//   without their knowledge — never unlimited by default there either.
+//   Enforced in assertUserSeatsAvailable (admin.ts), called from both
+//   POST /users and PUT /users/:id/access.
 // negotiatedPrice: optional per-client/per-deal price, if tracked in-system at
 //   all — set directly on the subscription, not sourced from any catalog.
 //
@@ -164,7 +169,11 @@ model Subscription {
   client          Client    @relation(fields: [clientId], references: [id])
   packageType     String // BASIC | MEDIUM | FULL | ONE_TIME — derived, see note above
   billingCycle    String // STANDALONE | MONTHLY
-  maxEntities     Int       @default(1) // MONTHLY: 1=BASIC, 2-5=MEDIUM, 6-10=FULL (no 0). STANDALONE: any admin-set number, 0=unlimited.
+  maxEntities     Int       @default(1) // admin-set location count; 0 = unlimited. Gates location creation, no longer names the tier.
+  // Max USER accounts this client may have (client req 2026-07-21). Monthly
+  // tiers cap it (Basic 1 / Medium 5 / Full 10); Standalone owners set their
+  // own number so nobody can quietly generate logins. 0 = unlimited (legacy).
+  maxUsers        Int       @default(0)
   negotiatedPrice Float? // optional per-client deal price — see note above
   status          String    @default("ACTIVE") // ACTIVE | SUSPENDED | CANCELLED | TRIAL
   paid            Boolean   @default(false) // explicit paid flag for the CURRENT billing period

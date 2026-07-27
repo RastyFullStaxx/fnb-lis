@@ -7,10 +7,9 @@ import {
   LOCATION_KINDS,
   MODULE_TYPE_LABELS,
   MODULE_TYPES,
-  MONTHLY_TIER_RANGES,
   PACKAGE_LABELS,
+  PACKAGE_MAX_USERS,
   derivePackageType,
-  isValidMaxEntities,
   type BillingCycle,
   type ModuleType,
   type PackageType,
@@ -49,6 +48,8 @@ export function PackageAndModulesFields({
   onBillingCycleChange,
   maxEntities,
   onMaxEntitiesChange,
+  maxUsers,
+  onMaxUsersChange,
   locked = false,
   modulesLocked = false,
 }: {
@@ -59,6 +60,9 @@ export function PackageAndModulesFields({
   onBillingCycleChange: (v: BillingCycle) => void;
   maxEntities: number;
   onMaxEntitiesChange: (v: number) => void;
+  /** Max user accounts (client req 2026-07-21); 0 = no cap saved. */
+  maxUsers: number;
+  onMaxUsersChange: (v: number) => void;
   locked?: boolean;
   modulesLocked?: boolean;
 }) {
@@ -71,28 +75,17 @@ export function PackageAndModulesFields({
     }
   };
 
-  // derivePackageType throws on an out-of-range MONTHLY count — which can
-  // transiently happen here (e.g. right after switching STANDALONE ->
-  // MONTHLY while maxEntities still holds an old Standalone value). The
-  // form must never crash mid-edit, so compute the tier defensively and
-  // treat "currently invalid" as its own displayable state rather than an
-  // exception; onBillingCycleChange below immediately repairs maxEntities
-  // when that switch happens, but this stays defensive regardless.
-  const tierValid = isValidMaxEntities(billingCycle, maxEntities);
-  const tier = tierValid ? derivePackageType(billingCycle, maxEntities) : null;
+  const tier = derivePackageType(billingCycle, maxEntities, maxUsers);
   const isStandalone = billingCycle === "STANDALONE";
 
+  // Picking a monthly tier sets its user cap (Basic 1 / Medium 5 / Full 10) —
+  // the tier IS the cap (client req 2026-07-21). Locations follow along so a
+  // 1-user Basic can't hold 5 locations.
   const handleTierChange = (next: PackageType) => {
-    if (next === "BASIC") {
-      onMaxEntitiesChange(1);
-    } else if (next === "MEDIUM" && (maxEntities < 2 || maxEntities > 5)) {
-      onMaxEntitiesChange(2);
-    } else if (next === "FULL" && (maxEntities < 6 || maxEntities > 10)) {
-      onMaxEntitiesChange(6);
-    }
+    onMaxUsersChange(PACKAGE_MAX_USERS[next]);
+    if (next === "BASIC") onMaxEntitiesChange(1);
+    else if (maxEntities < 2) onMaxEntitiesChange(2);
   };
-
-  const monthlyRange = tier === "MEDIUM" || tier === "FULL" ? MONTHLY_TIER_RANGES[tier] : null;
 
   return (
     <>
@@ -129,61 +122,68 @@ export function PackageAndModulesFields({
         <div className="space-y-2">
           <Label htmlFor="package-tier">Package</Label>
           {locked ? (
-            <ReadOnlyField>{tier ? PACKAGE_LABELS[tier] : "—"}</ReadOnlyField>
+            <ReadOnlyField>{PACKAGE_LABELS[tier]}</ReadOnlyField>
           ) : isStandalone ? (
             <ReadOnlyField>{PACKAGE_LABELS.ONE_TIME}</ReadOnlyField>
           ) : (
-            <Select value={tier ?? ""} onValueChange={(v) => handleTierChange(v as PackageType)}>
+            <Select value={tier} onValueChange={(v) => handleTierChange(v as PackageType)}>
               <SelectTrigger id="package-tier">
-                <SelectValue placeholder="Choose a tier" />
+                <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="BASIC">Basic — 1 location</SelectItem>
-                <SelectItem value="MEDIUM">Medium — 2–5 locations</SelectItem>
-                <SelectItem value="FULL">Full — 6–10 locations</SelectItem>
+                <SelectItem value="BASIC">Basic — 1 user</SelectItem>
+                <SelectItem value="MEDIUM">Medium — up to 5 users</SelectItem>
+                <SelectItem value="FULL">Full — up to 10 users</SelectItem>
               </SelectContent>
             </Select>
           )}
         </div>
       </div>
 
-      {!locked && !isStandalone && monthlyRange && (
-        <div className="space-y-2">
-          <Label htmlFor="max-entities">Max Locations</Label>
-          <Select value={String(maxEntities)} onValueChange={(v) => onMaxEntitiesChange(Number(v))}>
-            <SelectTrigger id="max-entities">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {Array.from(
-                { length: monthlyRange[1] - monthlyRange[0] + 1 },
-                (_, i) => monthlyRange[0] + i,
-              ).map((n) => (
-                <SelectItem key={n} value={String(n)}>
-                  {n} locations
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
+      {!locked && (
+        <div className="grid grid-cols-2 gap-3">
+          {isStandalone ? (
+            // Standalone: the owner sets his own ceiling so user accounts can't
+            // be generated without his knowledge (client req 2026-07-21).
+            <div className="space-y-2">
+              <Label htmlFor="max-users">Max Users</Label>
+              <QuantityInput
+                id="max-users"
+                className="tnum"
+                value={String(maxUsers || "")}
+                placeholder="e.g. 5"
+                onChange={(e) => {
+                  const n = Number(e.target.value);
+                  onMaxUsersChange(e.target.value === "" || !Number.isFinite(n) ? 0 : Math.max(0, Math.trunc(n)));
+                }}
+              />
+              <p className="text-xs text-muted-foreground">How many accounts this installation may create.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Label>Max Users</Label>
+              <ReadOnlyField>{maxUsers || PACKAGE_MAX_USERS[tier]} users</ReadOnlyField>
+            </div>
+          )}
 
-      {!locked && isStandalone && (
-        <div className="space-y-2">
-          <Label htmlFor="max-entities-standalone">Max Locations</Label>
-          <QuantityInput
-            id="max-entities-standalone"
-            className="tnum"
-            value={String(maxEntities)}
-            onChange={(e) => {
-              const n = Number(e.target.value);
-              onMaxEntitiesChange(e.target.value === "" || !Number.isFinite(n) ? 0 : Math.max(0, Math.trunc(n)));
-            }}
-            placeholder="0 = unlimited"
-          />
-          <p className="text-xs text-muted-foreground">
-            Any number the admin sets — 0 means unlimited locations for this Standalone client.
-          </p>
+          {(isStandalone || tier !== "BASIC") && (
+            <div className="space-y-2">
+              <Label htmlFor="max-entities">Max Locations</Label>
+              <QuantityInput
+                id="max-entities"
+                className="tnum"
+                value={String(maxEntities || "")}
+                placeholder="e.g. 2"
+                onChange={(e) => {
+                  const n = Number(e.target.value);
+                  onMaxEntitiesChange(e.target.value === "" || !Number.isFinite(n) ? 0 : Math.max(0, Math.trunc(n)));
+                }}
+              />
+              {isStandalone && (
+                <p className="text-xs text-muted-foreground">Any number the admin sets — 0 means unlimited locations.</p>
+              )}
+            </div>
+          )}
         </div>
       )}
 
