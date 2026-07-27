@@ -3,7 +3,8 @@ import { useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Scale, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { itemCreate, itemUpdate, type ItemCreate, type ItemUpdate } from "@fnb/core";
+import { can, itemCreate, itemUpdate, type ItemCreate, type ItemUpdate, type Role } from "@fnb/core";
+import { useMe } from "@/api/auth";
 import { useCategories, useCreateItem, useUnits, useUpdateItem } from "@/api/master";
 import { variantLabel, type Item, type ItemVariant } from "@/api/types";
 import { defaultWeighUnit, useUnitSystem } from "@/lib/preferences";
@@ -51,6 +52,11 @@ export function ItemFormSheet({
 }) {
   const categories = useCategories();
   const units = useUnits();
+  // The tare / liquid-weight library is LIS's own data — a client manager runs
+  // his catalog but never edits the weights (client decision 2026-07-25). The
+  // server rejects it too; this just stops offering a field that would 403.
+  const me = useMe();
+  const canEditWeights = can((me.data?.user.role ?? "READONLY") as Role, "weights.manage");
   const createItem = useCreateItem();
   const unitSystem = useUnitSystem();
   // New variants default their tare-weight unit to the signed-in user's
@@ -232,7 +238,7 @@ export function ItemFormSheet({
                     </div>
                   )}
 
-                  {netMode && (
+                  {netMode && canEditWeights && (
                     <div className="grid grid-cols-2 items-end gap-2">
                       <div className="space-y-1.5">
                         <Label className="text-xs">Empty Weight</Label>
@@ -264,7 +270,15 @@ export function ItemFormSheet({
                     </div>
                   )}
 
-                  {contentTracked && (
+                  {(contentTracked || netMode) && !canEditWeights && (
+                    <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
+                      Empty weight and Liquid Weight are maintained by your LIS
+                      administrator. Save this item and it will appear under
+                      Needs Attention for them to complete.
+                    </p>
+                  )}
+
+                  {contentTracked && canEditWeights && (
                     <div className="grid grid-cols-2 items-end gap-2 sm:grid-cols-3">
                       <div className="space-y-1.5">
                         <Label className="text-xs">Empty Weight</Label>

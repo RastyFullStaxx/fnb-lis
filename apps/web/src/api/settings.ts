@@ -113,3 +113,17 @@ export function useUpdateProductTypes() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["productTypes"] }),
   });
 }
+
+/**
+ * Whether this establishment may see raw bottle weights. ADMIN-only to change
+ * (client decision 2026-07-25) — it releases LIS's own calibration data.
+ */
+export function useUpdateBottleWeights(clientId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (showBottleWeights: boolean) =>
+      put<{ showBottleWeights: boolean }>(`/api/settings/bottle-weights?clientId=${clientId}`, { showBottleWeights }),
+    // /me carries the flag, so the whole app re-gates the moment it flips.
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["me"] }),
+  });
+}

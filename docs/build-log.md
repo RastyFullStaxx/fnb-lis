@@ -579,6 +579,34 @@ Two decisions worth keeping:
   and the bell now call the same function, so they cannot disagree about what is outstanding
   (verified live — both list the same four items).
 
+## Phase 21 — Bottle weights are LIS's own data (2026-07-25, later)
+
+Client decision: the tare / liquid-weight library is his IP; clients see it only if he releases it.
+Implemented as a ROLE rule rather than a screen rule, because the list was the *least* leaky of the
+three surfaces — the weigh screen printed both constants to Staff on every weigh, and Manager could
+edit them.
+
+- `weights.manage` permission (**ADMIN only**) — separate from `master.write`, so a client manager
+  still runs his catalog without reading or rewriting the weight library. Server rejects weight
+  fields on `PUT /master/variants/:id` loudly rather than dropping them silently.
+- `Client.showBottleWeights` (migration `20260727113600`, default **false**) — the per-client release
+  switch, in Settings → *Bottle Weights (LIS only)*. Chosen over the client's "I'll produce each
+  download myself" because that is recurring manual work; the toggle is the same control, self-serve.
+- **Admin-only CSV**: `GET /location-items/export` — the catalog *with* weights, for handing over
+  without switching the display on. Staff gets 403.
+- Three surfaces gated through one hook (`useCanSeeBottleWeights`): the Local Database column, the
+  weigh screen's working, and the item-form fields.
+
+**UX pass, walked as each role.** Two dead ends found and fixed — both introduced by the gating:
+1. The weigh screen still said *"set it in Items before weighing"* to people who can no longer do
+   that. It now tells them what they CAN do: count under Full Units, or enter the Open Amount.
+2. "Needs weight" in the list was unexplained jargon with no next step — now a tooltip naming who
+   fixes it and what to do meanwhile.
+
+Verified end to end: Staff sees no numbers but still sees the flag; admin flips the toggle and the
+whole app re-gates off `/me`; Staff then sees the values but still cannot export (403). Restored to
+hidden. Golden fixture −₱330.69.
+
 ## Contributor history
 
 | Window | Who | What |

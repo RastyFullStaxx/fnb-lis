@@ -225,7 +225,22 @@ export function StockPage() {
                       {missing ? (
                         <Badge variant="destructive">No price</Badge>
                       ) : weighInfo(row).incomplete ? (
-                        <Badge variant="warning">Needs weight</Badge>
+                        // "Needs weight" alone is jargon and a dead end — say
+                        // who fixes it, so nobody is left wondering.
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span>
+                                <Badge variant="warning" className="cursor-help">Needs weight</Badge>
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              This bottle can't be weighed until its empty and liquid
+                              weights are set. Your LIS administrator has been flagged
+                              — count it whole, or enter the open amount, meanwhile.
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                       ) : (
                         <Badge variant="success">Ready</Badge>
                       )}

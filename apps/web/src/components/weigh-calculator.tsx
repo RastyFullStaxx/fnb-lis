@@ -1,14 +1,18 @@
 import { useMemo } from "react";
 import { Scale } from "lucide-react";
 import {
+  can,
   netQuantity,
   remainingContent,
   resolveDensityFactor,
   validateNetWeigh,
   validateWeigh,
   openEquivalent,
+  type Role,
 } from "@fnb/core";
+import { useMe } from "@/api/auth";
 import { useUnits } from "@/api/master";
+import { useCanSeeBottleWeights } from "@/lib/weights";
 import type { LocationItem } from "@/api/types";
 import { cn } from "@/lib/utils";
 import { defaultWeighUnit, useUnitSystem } from "@/lib/preferences";
@@ -125,11 +129,19 @@ export function WeighPreviewStrip({
   size: number;
   contentUnit: string;
 }) {
+  const showWeights = useCanSeeBottleWeights();
+  const me = useMe();
+  const canEditWeights = can((me.data?.user.role ?? "READONLY") as Role, "weights.manage");
   if (!preview) return null;
   if (!preview.ready) {
     return (
       <p className="rounded-md bg-warning/10 px-3 py-2 text-sm text-foreground">
-        This item has no {preview.missing} configured — set it in Items before weighing.
+        {/* Never a dead end: whoever hits this must be told what THEY can do
+            next. Only an LIS admin can supply a weight now, so everyone else
+            gets the way around it instead of an instruction they can't follow. */}
+        {canEditWeights
+          ? `This item has no ${preview.missing} configured — set it in Items before weighing.`
+          : `This bottle has no ${preview.missing} yet, so it can't be weighed. It's already flagged for your LIS administrator — meanwhile you can count it under Full Units, or enter what's left under Open Amount.`}
       </p>
     );
   }

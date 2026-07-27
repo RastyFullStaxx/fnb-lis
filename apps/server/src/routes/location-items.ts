@@ -1,15 +1,55 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
-import { allowedProductTypes, locationItemAttach, locationItemUpdate, supplierUpsert } from "@fnb/core";
+import { allowedProductTypes, locationItemAttach, locationItemUpdate, supplierUpsert, toCsv, type CsvValue } from "@fnb/core";
 import { prisma } from "../db";
 import { AppError } from "../lib/errors";
 import { logActivity } from "../services/activity";
 import { requirePermission, type AppEnv } from "../middleware/auth";
 
 const priceGuard = requirePermission("prices.edit");
+/** LIS's own calibration data — only the admin may take it out of the system. */
+const weightsGuard = requirePermission("weights.manage");
 
 /** Mounted under /api/locations/:locationId (requireAuth + requireLocationAccess applied there). */
 export const locationItemRoutes = new Hono<AppEnv>()
+  /**
+   * The establishment's catalog WITH bottle tare + liquid weights, as CSV.
+   * ADMIN only (client decision 2026-07-25: "only I can produce the download
+   * of the local database with liquid and bottle weight") — this is how he
+   * hands the library to a client who asks for it, without exposing it in-app.
+   */
+  .get("/location-items/export", weightsGuard, async (c) => {
+    const location = c.get("location");
+    const user = c.get("user")!;
+    const rows = await prisma.locationItem.findMany({
+      where: { locationId: location.id, isActive: true },
+      include: { itemVariant: { include: { unit: true, item: { include: { category: true } } } } },
+      orderBy: { itemVariant: { item: { name: "asc" } } },
+    });
+    const csv = toCsv([
+      ["Item", "Category", "Size", "Unit", "Cost", "Retail", "Par", "Empty (Tare) Weight", "Tare Unit", "Liquid Weight"],
+      ...rows.map((r): CsvValue[] => [
+        r.itemVariant.item.name,
+        r.itemVariant.item.category.name,
+        r.itemVariant.size,
+        r.itemVariant.unit.name,
+        r.cost,
+        r.retail,
+        r.parLevel ?? "",
+        r.itemVariant.tareWeight ?? "",
+        r.itemVariant.tareWeightUnit ?? "",
+        r.itemVariant.densityFactor ?? r.itemVariant.item.category.defaultDensityFactor ?? "",
+      ]),
+    ]);
+    const name = `local-database-with-weights_${location.name}`.replace(/[^\w.-]+/g, "-");
+    return new Response(csv, {
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${name}.csv"`,
+        "X-Exported-By": `${user.firstName} ${user.lastName}`,
+      },
+    });
+  })
 
   // ── Location catalog ──
   .get("/location-items", async (c) => {
