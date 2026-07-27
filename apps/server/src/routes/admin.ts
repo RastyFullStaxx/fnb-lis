@@ -91,10 +91,16 @@ async function assertUserSeatsAvailable(clientIds: string[], exceptUserId?: stri
       select: { maxUsers: true, client: { select: { name: true } } },
     });
     if (!sub || sub.maxUsers <= 0) continue;
-    // Exclude the user being edited — re-saving their existing access must not
-    // count them against their own seat.
+    // Only ACTIVE accounts hold a seat: when an employee resigns the owner
+    // disables them, and that seat must free up so a replacement can be hired
+    // (client req 2026-07-25). Exclude the user being edited too — re-saving
+    // their existing access must not count them against their own seat.
     const used = await prisma.userClientAccess.count({
-      where: { clientId, ...(exceptUserId ? { userId: { not: exceptUserId } } : {}) },
+      where: {
+        clientId,
+        user: { status: "ACTIVE" },
+        ...(exceptUserId ? { userId: { not: exceptUserId } } : {}),
+      },
     });
     if (used >= sub.maxUsers) {
       throw new AppError(
@@ -425,6 +431,12 @@ export const adminRoutes = new Hono<AppEnv>()
     delete data.modules;
     if (body.password) data.passwordHash = await hashPassword(body.password);
     if (body.email === "") data.email = null;
+    // Re-enabling claims a seat back, so it has to pass the same check as
+    // creating — otherwise disable-then-enable walks straight past the cap.
+    if (body.status === "ACTIVE") {
+      const access = await prisma.userClientAccess.findMany({ where: { userId: id }, select: { clientId: true } });
+      await assertUserSeatsAvailable(access.map((a) => a.clientId), id);
+    }
     const updated = await prisma.$transaction(async (tx) => {
       const u = await tx.user.update({ where: { id }, data });
       if (body.modules !== undefined) {
@@ -740,7 +752,11 @@ export const adminRoutes = new Hono<AppEnv>()
     if (!sub) return c.json({ hasSubscription: false, canAddEntity: true });
     const locationCount = await prisma.location.count({ where: { clientId, status: "ACTIVE" } });
     const canAddEntity = sub.maxEntities === 0 || locationCount < sub.maxEntities;
-    const userCount = await prisma.userClientAccess.count({ where: { clientId } });
+    // Active seats only — matches assertUserSeatsAvailable, so the UI's
+    // "can I add?" answer can't disagree with the server's 403.
+    const userCount = await prisma.userClientAccess.count({
+      where: { clientId, user: { status: "ACTIVE" } },
+    });
     const canAddUser = sub.maxUsers === 0 || userCount < sub.maxUsers;
     const accessState = deriveAccessState(sub, new Date());
     return c.json({ hasSubscription: true, subscription: sub, locationCount, canAddEntity, userCount, canAddUser, accessState });

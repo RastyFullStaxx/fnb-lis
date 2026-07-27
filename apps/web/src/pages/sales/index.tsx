@@ -326,6 +326,9 @@ function EditSaleDialog({
     : (sale.menuItem?.name ?? "—");
   const isItem = Boolean(sale.locationItem);
   const contentTracked = sale.locationItem?.itemVariant.contentTracked ?? false;
+  // Same Bar-vs-Kitchen rule as QuickEntry (client req 2026-07-25) so editing
+  // an entry can't produce a shape the entry form refuses to create.
+  const isBeverage = sale.locationItem?.itemVariant.item.category.productType === "Beverage";
 
   const submit = async () => {
     const q = Number(qty);
@@ -373,7 +376,13 @@ function EditSaleDialog({
             </div>
             <div className="space-y-2">
               <Label htmlFor="e-qty">Quantity</Label>
-              <QuantityInput id="e-qty" className="tnum" value={qty} onChange={(e) => setQty(e.target.value)} />
+              <QuantityInput
+                id="e-qty"
+                className="tnum"
+                allowDecimal={!(kind === "NON_REVENUE" && isBeverage)}
+                value={qty}
+                onChange={(e) => setQty(e.target.value)}
+              />
             </div>
           </div>
 
@@ -408,7 +417,7 @@ function EditSaleDialog({
                   </SelectContent>
                 </Select>
               </div>
-              {isItem && (
+              {isItem && isBeverage && (
                 <div className="space-y-2">
                   <Label htmlFor="e-content">Content per Unit</Label>
                   <QuantityInput
@@ -465,6 +474,11 @@ function QuickEntry({ kind }: { kind: SaleKind }) {
   // Assets aren't consumed — when a non-revenue entry targets an asset, the
   // reason list becomes "what happened" (Broken / Lost / Stolen / Retired).
   const isAsset = item?.itemVariant.item.category.productType === "Asset";
+  // Bar non-revenue keeps the legacy shape (client req 2026-07-25): WHOLE
+  // bottles in Quantity plus a separate content (ml) field. Kitchen and Asset
+  // take a plain quantity that may be decimal — 0.6 kg of trimmings — the same
+  // way Production is entered.
+  const isBeverage = item?.itemVariant.item.category.productType === "Beverage";
 
   const pickTarget = (t: SaleTarget) => {
     setTarget(t);
@@ -588,6 +602,9 @@ function QuickEntry({ kind }: { kind: SaleKind }) {
             <QuantityInput
               id="s-qty"
               className="tnum"
+              // Bar non-revenue counts WHOLE bottles — the partial amount goes
+              // in Content per Unit beside it. Kitchen/Asset may be decimal.
+              allowDecimal={!(kind === "NON_REVENUE" && isBeverage)}
               value={qty}
               onChange={(e) => setQty(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && save()}
@@ -625,7 +642,10 @@ function QuickEntry({ kind }: { kind: SaleKind }) {
                   </SelectContent>
                 </Select>
               </div>
-              {target?.type !== "menu" && (
+              {/* Bar only: a part-used bottle is whole bottles + this content
+                  amount. Kitchen enters the decimal straight into Quantity, and
+                  an asset's "ml" is meaningless — both skip this field. */}
+              {isBeverage && (
                 <div className="space-y-2 @xs:col-span-2 @2xl:col-span-1">
                   <Label htmlFor="s-content">Content per Unit</Label>
                   <QuantityInput

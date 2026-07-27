@@ -4,7 +4,7 @@ import { round2 } from "@fnb/core";
 import { useCountDates } from "@/api/ops";
 import { useLocationId } from "@/api/location";
 import { exportUrl, useCostAnalysisReport } from "@/api/reports";
-import { formatMoney } from "@/lib/utils";
+import { cn, formatMoney } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { TableSurface, ToolbarField, TableLoading, TableError } from "@/components/table-surface";
@@ -212,6 +212,31 @@ export function CostAnalysisPage() {
                 <h3 className="mb-2 text-sm font-semibold">
                   {section.productType.charAt(0) + section.productType.slice(1).toLowerCase()} cost analysis
                 </h3>
+                {/* Profit (client req 2026-07-25: "gross − cost = net"). The
+                    subtraction the cost table never showed — sales minus cost of
+                    goods, gross and VAT-exclusive. */}
+                <div className="mb-3 flex flex-wrap items-start gap-x-8 gap-y-3 rounded-lg border bg-muted/20 px-4 py-3">
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground">Gross Sales</p>
+                    <p className="tnum text-sm font-medium">{formatMoney(round2(section.grossSales))}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground">Cost of Goods</p>
+                    <p className="tnum text-sm font-medium">−{formatMoney(round2(section.totals.cost))}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground">Gross Profit</p>
+                    <p className={cn("tnum text-lg font-semibold", section.grossProfit < 0 && "text-destructive")}>
+                      {formatMoney(section.grossProfit)}
+                    </p>
+                  </div>
+                  <div className="sm:ml-auto sm:text-right">
+                    <p className="text-xs font-medium text-muted-foreground">Net Profit (excl. VAT)</p>
+                    <p className={cn("tnum text-lg font-semibold", section.netProfit < 0 && "text-destructive")}>
+                      {formatMoney(section.netProfit)}
+                    </p>
+                  </div>
+                </div>
                 {/* Sits directly on the table it describes; a single bar would
                     rank nothing, so the block only earns its height from two. */}
                 {bars.length >= 2 && (

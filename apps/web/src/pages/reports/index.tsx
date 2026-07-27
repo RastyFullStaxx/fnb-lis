@@ -41,6 +41,12 @@ const SECTIONS: Array<{ title: string; blurb: string; reports: Report[] }> = [
         description: "Only the items that missed or beat expectation, at cost and retail.",
       },
       {
+        path: "legacy-audit",
+        icon: BarChart3,
+        title: "Full Audit by Category",
+        description: "The client's original 24-column layout, grouped by category, with the cost ratio.",
+      },
+      {
         path: "usage-cost",
         icon: Gauge,
         title: "Usage Cost",

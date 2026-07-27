@@ -706,6 +706,9 @@ export async function transferReport(
   to: string,
   direction: "in" | "out",
   allowedProductTypes?: readonly string[] | null,
+  /** Report on ONE branch only (client req 2026-07-25: "Main to branches —
+      must select Main to branches accounts"). Undefined = every counterparty. */
+  counterpartyId?: string,
 ): Promise<TransferReport> {
   const productTypeFilter = allowedProductTypes
     ? { itemVariant: { item: { category: { productType: { in: [...allowedProductTypes] } } } } }
@@ -718,7 +721,12 @@ export async function transferReport(
     const lines = await prisma.transferLine.findMany({
       where: {
         status: "ACTIVE",
-        transfer: { fromLocationId: locationId, status: "COMMITTED", businessDate: { gte: from, lte: to } },
+        transfer: {
+          fromLocationId: locationId,
+          ...(counterpartyId ? { toLocationId: counterpartyId } : {}),
+          status: "COMMITTED",
+          businessDate: { gte: from, lte: to },
+        },
         locationItem: productTypeFilter,
       },
       include: {
@@ -747,7 +755,14 @@ export async function transferReport(
       where: {
         status: "ACTIVE",
         receiptDate: { gte: from, lte: to },
-        transferLine: { status: "ACTIVE", transfer: { toLocationId: locationId, status: "COMMITTED" } },
+        transferLine: {
+          status: "ACTIVE",
+          transfer: {
+            toLocationId: locationId,
+            ...(counterpartyId ? { fromLocationId: counterpartyId } : {}),
+            status: "COMMITTED",
+          },
+        },
         toLocationItem: productTypeFilter,
       },
       include: {
@@ -818,6 +833,16 @@ export interface CostAnalysisSection {
   productType: string;
   grossSales: number;
   netSales: number;
+  /**
+   * Profit (client req 2026-07-25: "gross - cost = net"). Every input was
+   * already computed here — this is only the subtraction the report never did.
+   *   grossProfit = gross sales − cost of goods
+   *   netProfit   = VAT-exclusive sales − VAT-exclusive cost
+   * NOTE: no operating expenses (payroll/rent/utilities) exist anywhere in this
+   * system, so "net" here means net-of-VAT, NOT accounting net profit.
+   */
+  grossProfit: number;
+  netProfit: number;
   rows: CostAnalysisRow[];
   totals: Omit<CostAnalysisRow, "category">;
 }
@@ -918,6 +943,8 @@ export async function costAnalysisReport(
         productType: group.productType,
         grossSales: gross,
         netSales: netOfVat(gross),
+        grossProfit: 0, // filled after the section's costs are totalled
+        netProfit: 0,
         rows: [],
         totals: { beginningCost: 0, purchasesCost: 0, transfersCost: 0, endingCost: 0, cost: 0, costNet: 0, grossPct: null, netPct: null },
       };
@@ -952,6 +979,8 @@ export async function costAnalysisReport(
     }
     t.grossPct = pctOf(t.cost, section.grossSales);
     t.netPct = pctOf(t.costNet, section.netSales);
+    section.grossProfit = round2(section.grossSales - t.cost);
+    section.netProfit = round2(section.netSales - t.costNet);
   }
   sections.sort((a, b) => a.productType.localeCompare(b.productType));
 

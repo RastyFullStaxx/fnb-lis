@@ -115,6 +115,16 @@ function basisOf(c: Context<AppEnv>): CostBasis {
   return isCostBasis(raw) ? raw : "PRICE";
 }
 
+/**
+ * Optional "which branch" filter for the transfer report (client req
+ * 2026-07-25). No tenant check needed: the query is already pinned to the
+ * caller's own location on one side, so a foreign id simply matches nothing
+ * rather than leaking another client's rows.
+ */
+function counterpartyOf(c: Context<AppEnv>): string | undefined {
+  return c.req.query("counterparty") || undefined;
+}
+
 /** The establishment's saved over/short highlight threshold (%), for exports
     that take it directly rather than through ReportMeta. Falls back to default. */
 function thresholdOf(c: Context<AppEnv>): number {
@@ -240,7 +250,21 @@ export const reportRoutes = new Hono<AppEnv>()
     return xlsxResponse(await fullAuditWorkbook(report, await meta(client, location.name, user)), name);
   })
 
-  // ── Legacy-layout audit exports (client reports #1 Detailed / #2 Inventory) ──
+  // ── Legacy-layout audit (client reports #1 Detailed / #2 Inventory) ──
+  // JSON sibling of the export below (client req 2026-07-25: he wants his old
+  // "Full Audit Report By Category" layout ON SCREEN, not only downloaded).
+  // Deliberately NOT behind exportGuard — the router already requires
+  // reports.view, and that is what lets a view-only auditor read the layout.
+  .get("/reports/legacy-audit", async (c) => {
+    const location = c.get("location");
+    const begin = c.req.query("begin") ?? "";
+    const end = c.req.query("end") ?? "";
+    if (!DATE_RE.test(begin) || !DATE_RE.test(end) || end <= begin) throw new AppError(400, "Valid begin < end required");
+    const variant: LegacyAuditVariant = c.req.query("variant") === "inventory" ? "inventory" : "detailed";
+    const allowed = allowedProductTypes(c.get("locationModules"));
+    return c.json(await legacyAuditReport(location.id, begin, end, allowed, variant, basisOf(c)));
+  })
+
   .get("/reports/legacy-audit/export", exportGuard, async (c) => {
     const location = c.get("location");
     const client = c.get("client");
@@ -470,7 +494,7 @@ export const reportRoutes = new Hono<AppEnv>()
     const { from, to } = requireRange(c);
     const direction = c.req.query("direction") === "in" ? "in" : "out";
     const allowed = allowedProductTypes(c.get("locationModules"));
-    return c.json(await transferReport(location.id, from, to, direction, allowed));
+    return c.json(await transferReport(location.id, from, to, direction, allowed, counterpartyOf(c)));
   })
   .get("/reports/transfers/export", exportGuard, async (c) => {
     const location = c.get("location");
@@ -478,9 +502,13 @@ export const reportRoutes = new Hono<AppEnv>()
     const { from, to } = requireRange(c);
     const direction = c.req.query("direction") === "in" ? "in" : "out";
     const allowed = allowedProductTypes(c.get("locationModules"));
-    const report = await transferReport(location.id, from, to, direction, allowed);
+    const counterparty = counterpartyOf(c);
+    const report = await transferReport(location.id, from, to, direction, allowed, counterparty);
     const user = c.get("user")!;
-    const name = `transfers-${direction}_${location.name}_${from}_${to}`.replace(/[^\w.-]+/g, "-");
+    // Name the branch in the filename, or two differently-filtered exports
+    // collide on disk.
+    const branch = counterparty ? `_${report.rows[0]?.counterparty ?? "branch"}` : "";
+    const name = `transfers-${direction}${branch}_${location.name}_${from}_${to}`.replace(/[^\w.-]+/g, "-");
     const format = c.req.query("format");
     if (format === "csv") return csvResponse(transferCsv(report), name, fullName(user));
     if (format === "pdf") return pdfResponse(await transferPdfDoc(report, await meta(client, location.name, user), direction), name);

@@ -141,6 +141,10 @@ export interface CostAnalysisReport {
     productType: string;
     grossSales: number;
     netSales: number;
+    /** Sales − cost of goods (client req 2026-07-25). "net" = VAT-exclusive,
+        not accounting net profit — this system tracks no operating expenses. */
+    grossProfit: number;
+    netProfit: number;
     rows: Array<{
       category: string;
       beginningCost: number;
@@ -215,6 +219,66 @@ export function usePurchaseReport(from: string, to: string, enabled = true) {
   });
 }
 
+/** The legacy 24-column "Full Audit Report By Category" layout — mirrors
+    LegacyAuditRow/Group in apps/server/src/services/report-suite.ts. */
+export interface LegacyAuditRow {
+  productName: string;
+  sizeUom: string;
+  contentTracked: boolean;
+  beginFull: number;
+  beginOpen: number;
+  bCost: number;
+  purchased: number;
+  purchasedCost: number;
+  forfeited: number;
+  endFull: number;
+  endOpen: number;
+  eCost: number;
+  usage: number;
+  costOfUsage: number;
+  shot: number;
+  bottle: number;
+  costOfSold: number;
+  revenue: number;
+  usedVsSales: number;
+  nonRevUsage: number;
+  nonRevCost: number;
+  overallVariance: number;
+  variancePct: number | null;
+  varianceCost: number;
+  varianceRetail: number;
+}
+export interface LegacyAuditReport {
+  begin: string;
+  end: string;
+  costBasis: string;
+  groups: Array<{
+    categoryName: string;
+    rows: LegacyAuditRow[];
+    totals: Omit<LegacyAuditRow, "productName" | "sizeUom" | "contentTracked" | "variancePct"> & {
+      variancePct: null;
+    };
+  }>;
+  totals: LegacyAuditReport["groups"][number]["totals"];
+  costRatio: number | null;
+}
+
+export function useLegacyAuditReport(
+  begin: string,
+  end: string,
+  variant: "detailed" | "inventory",
+) {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["report", "legacy-audit", locationId, begin, end, variant],
+    queryFn: () =>
+      api<LegacyAuditReport>(
+        `${base(locationId)}/reports/legacy-audit?begin=${begin}&end=${end}&variant=${variant}`,
+      ),
+    enabled: Boolean(begin && end),
+  });
+}
+
 export interface AssetBreakageReport {
   from: string;
   to: string;
@@ -262,12 +326,21 @@ export function useCostAnalysisReport(begin?: string, end?: string) {
   });
 }
 
-export function useTransferReport(from: string, to: string, direction: "in" | "out", enabled = true) {
+export function useTransferReport(
+  from: string,
+  to: string,
+  direction: "in" | "out",
+  enabled = true,
+  /** Report on one branch only; empty = every counterparty. */
+  counterparty = "",
+) {
   const locationId = useLocationId();
   return useQuery({
-    queryKey: ["report", "transfers", locationId, from, to, direction],
+    queryKey: ["report", "transfers", locationId, from, to, direction, counterparty],
     queryFn: () =>
-      api<TransferReport>(`${base(locationId)}/reports/transfers?from=${from}&to=${to}&direction=${direction}`),
+      api<TransferReport>(
+        `${base(locationId)}/reports/transfers?from=${from}&to=${to}&direction=${direction}${counterparty ? `&counterparty=${counterparty}` : ""}`,
+      ),
     enabled: enabled && Boolean(from && to),
   });
 }

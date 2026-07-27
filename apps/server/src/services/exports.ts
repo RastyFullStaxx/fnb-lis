@@ -678,6 +678,11 @@ export async function costAnalysisWorkbook(report: CostAnalysisReport, meta: Rep
     ws.addRow([]);
     const sh = ws.addRow([`${section.productType.toUpperCase()} COST ANALYSIS — ${meta.clientName}`]);
     sh.font = { bold: true, color: { argb: BLUE } };
+    // Profit line (client req 2026-07-25): sales − cost of goods.
+    const pr = ws.addRow(["Gross profit (sales − cost)", "", "Net profit (excl. VAT)"]);
+    pr.font = { bold: true };
+    moneyCell(pr.getCell(2), section.grossProfit);
+    moneyCell(pr.getCell(4), section.netProfit);
     styleHeaderRow(ws.addRow(COST_HEADERS));
     for (const row of section.rows) {
       const r = ws.addRow([row.category]);
@@ -716,6 +721,7 @@ export function costAnalysisCsv(report: CostAnalysisReport): string {
   for (const section of report.sections) {
     rows.push([]);
     rows.push([`${section.productType.toUpperCase()} COST ANALYSIS`]);
+    rows.push(["Gross profit (sales - cost)", round2(section.grossProfit), "Net profit (excl. VAT)", round2(section.netProfit)]);
     rows.push(COST_HEADERS);
     for (const row of section.rows) {
       rows.push([

@@ -28,6 +28,7 @@ const REPORTS = [
   { title: "Par Level", path: "reports/par-level" },
   { title: "Non-Moving Items", path: "reports/non-moving" },
   { title: "Asset Breakage", path: "reports/asset-breakage" },
+  { title: "Full Audit by Category", path: "reports/legacy-audit" },
 ];
 
 // Computed once — the handler accepts metaKey too, so macOS shows its own chord.

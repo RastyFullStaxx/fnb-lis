@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { ArrowLeftRight } from "lucide-react";
 import { round2 } from "@fnb/core";
 import { useLocationId } from "@/api/location";
+import { useMe } from "@/api/auth";
 import { useCountDates } from "@/api/ops";
 import { exportUrl, useTransferReport } from "@/api/reports";
 import { formatMoney } from "@/lib/utils";
@@ -11,6 +12,13 @@ import { DateRangeControl, ExportButtons } from "@/components/report-toolbar";
 import { ChartBlock } from "@/components/charts/chart-block";
 import { MagnitudeBars } from "@/components/charts/magnitude-bars";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -25,12 +33,24 @@ import { useReportRange } from "./use-report-range";
 
 const n2 = (v: number) => round2(v).toLocaleString("en-US", { maximumFractionDigits: 2 });
 
+const ALL_BRANCHES = "__all__";
+
 export function TransferReportPage() {
   const locationId = useLocationId();
   const dates = useCountDates();
+  const me = useMe();
   const [from, to, setFrom, setTo] = useReportRange(dates.data?.dates);
   const [direction, setDirection] = useState<"out" | "in">("out");
-  const report = useTransferReport(from, to, direction);
+  // Which branch this report is for (client req 2026-07-25: "Main to branches —
+  // must select Main to branches accounts"). Same sibling-location list the
+  // Transfers screen uses to pick a destination.
+  const [branch, setBranch] = useState(ALL_BRANCHES);
+  const branches = useMemo(() => {
+    const client = me.data?.clients.find((c) => c.locations.some((l) => l.id === locationId));
+    return (client?.locations ?? []).filter((l) => l.id !== locationId);
+  }, [me.data, locationId]);
+  const counterparty = branch === ALL_BRANCHES ? "" : branch;
+  const report = useTransferReport(from, to, direction, true, counterparty);
 
   // Dispatched vs received at cost — the signature transfer metric. The gap
   // between the two bars is stock that left one location and never arrived at
@@ -61,9 +81,9 @@ export function TransferReportPage() {
         title="Transfers Report"
         actions={
           <ExportButtons
-            xlsxUrl={exportUrl(locationId, "transfers", "xlsx", { from, to, direction })}
-            csvUrl={exportUrl(locationId, "transfers", "csv", { from, to, direction })}
-            pdfUrl={exportUrl(locationId, "transfers", "pdf", { from, to, direction })}
+            xlsxUrl={exportUrl(locationId, "transfers", "xlsx", { from, to, direction, ...(counterparty ? { counterparty } : {}) })}
+            csvUrl={exportUrl(locationId, "transfers", "csv", { from, to, direction, ...(counterparty ? { counterparty } : {}) })}
+            pdfUrl={exportUrl(locationId, "transfers", "pdf", { from, to, direction, ...(counterparty ? { counterparty } : {}) })}
             disabled={!report.data?.rows.length}
           />
         }
@@ -81,6 +101,23 @@ export function TransferReportPage() {
                 </TabsList>
               </Tabs>
             </ToolbarField>
+            {branches.length > 0 && (
+              <ToolbarField label={direction === "out" ? "To Branch" : "From Branch"} htmlFor="tr-branch">
+                <Select value={branch} onValueChange={setBranch}>
+                  <SelectTrigger id="tr-branch" className="w-44 bg-background">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ALL_BRANCHES}>All Branches</SelectItem>
+                    {branches.map((l) => (
+                      <SelectItem key={l.id} value={l.id}>
+                        {l.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </ToolbarField>
+            )}
             <DateRangeControl from={from} to={to} onFrom={setFrom} onTo={setTo} />
           </>
         }

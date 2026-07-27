@@ -495,6 +495,45 @@ Parked: note 3 ("gayahin ang full audit") — the legacy 24-column layout alread
 Full Audit → **Client Formats → Detailed Full Audit Report** (xlsx/csv/pdf). Confirm with the client
 whether he means that download or wants it rendered on screen before building anything.
 
+## Phase 18 — Legacy layout on screen, branch filter, profit, Bar/Kitchen qty (2026-07-25)
+
+A batch of client notes, audited first (7 parallel readers, each adversarially verified) — three of
+them turned out to be the opposite of what the note implied.
+
+**Full Audit by Category, on screen** (he sent a screenshot of his old system). The 24-column dataset
+already existed — `legacyAuditReport()` — but was export-only. Added the JSON sibling route
+(deliberately NOT behind `exportGuard`; the router's `reports.view` already scopes it, and that is
+what lets a view-only auditor read the layout), a `useLegacyAuditReport` hook, and a page that renders
+the same rows the XLSX/CSV/PDF build — so screen and file cannot disagree. Category banding,
+per-category TOTAL rows, the cost-ratio badge, Detailed/Inventory variants, and the same materiality
+highlight as the Full Audit. Verified: its grand total is −₱330.69, identical to the golden fixture.
+
+**Transfers: branch selector.** `transferReport()` gained an optional `counterpartyId`; the route
+accepts `?counterparty=`, the export filename names the branch, and the page has a To/From Branch
+Select reusing the same sibling-location list the Transfers screen uses. Verified it genuinely
+filters: Depot 4 rows / qty 50, Kitchen and Assets 0.
+
+**Gross & Net Profit.** Cost Analysis already computed every input and only ever *divided* — added the
+subtraction: `grossProfit = grossSales − cost`, `netProfit = netSales − costNet`, on screen and in
+both exports. Verified ₱50,820 − ₱18,202.68 = ₱32,617.32. **Stated plainly to the client:** this
+system records no operating expenses, so "net" here means net-of-VAT, NOT accounting net profit.
+
+**Non-revenue qty (Bar vs Kitchen).** The note read as "allow decimals", but decimals were already
+accepted end-to-end — the real gap was the inverse. Bar non-revenue now takes WHOLE bottles plus the
+separate content/ML field (his legacy screenshot); Kitchen and Asset take a plain decimal quantity
+like Production, with no ML field. Applied to both QuickEntry and EditSaleDialog so they can't drift.
+Verified live: Absolut Vodka → `inputmode=numeric` + ML shown; Butter → `decimal`, no ML.
+
+**Bug fixed in last phase's seat cap:** a DISABLED user still consumed a `maxUsers` seat, so an owner
+could not hire a replacement. Seats now count ACTIVE accounts only, re-enabling re-checks the cap
+(otherwise disable→enable walks past it), and `/subscriptions/:clientId/check` counts the same way so
+the UI can't disagree with the 403.
+
+Not built, needs the client (see the review doc): owner-managed sub-accounts (today ALL user
+management is LIS-admin-only, and opening it up needs per-client scoping + a role ceiling first),
+the tare-weight notification/approval gate, and the decoupled audit/activity date range — where
+JJ's "yes" was half-wrong.
+
 ## Contributor history
 
 | Window | Who | What |
