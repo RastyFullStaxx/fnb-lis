@@ -257,9 +257,9 @@ function DisplayPreferencesSection() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="default">Default</SelectItem>
-              <SelectItem value="large">Large</SelectItem>
-              <SelectItem value="x-large">Extra Large</SelectItem>
+              <SelectItem value="default">Small</SelectItem>
+              <SelectItem value="large">Medium</SelectItem>
+              <SelectItem value="x-large">Large</SelectItem>
             </SelectContent>
           </Select>
         </div>
