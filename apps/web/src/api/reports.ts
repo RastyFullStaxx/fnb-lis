@@ -195,6 +195,9 @@ export interface DrillRecord {
   detail: string;
   qty: number | null;
   amount: number | null;
+  // Source-record id (CountSession/Purchase/SaleRecord) for drill-down navigation.
+  // null for kinds with no landing page yet (FORFEIT, TRANSFER_IN, TRANSFER_OUT).
+  id: string | null;
 }
 
 // ── Hooks ──

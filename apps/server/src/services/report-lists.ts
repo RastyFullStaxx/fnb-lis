@@ -1000,6 +1000,11 @@ export interface DrillRecord {
   detail: string;
   qty: number | null;
   amount: number | null;
+  // Source-record id for drill-down navigation (Full Audit → source record).
+  // COUNT → CountSession.id · PURCHASE → Purchase.id · SALE/NON_REVENUE/PRODUCTION → SaleRecord.id.
+  // null for kinds with no landing page yet (FORFEIT, TRANSFER_IN, TRANSFER_OUT) — see
+  // docs/2026-07-28-full-audit-drilldown-redirect-plan.md, "Open questions".
+  id: string | null;
 }
 
 export async function fullAuditDrill(
@@ -1075,13 +1080,28 @@ export async function fullAuditDrill(
           : `${c.countSession.countDate === begin ? "Beginning" : "Ending"} count · weigh ${c.scaleWeight} ${c.scaleUnit} → ${c.remainingContent}`,
       qty: c.countType === "FULL" ? c.qtyFull : c.remainingContent,
       amount: null,
+      id: c.countSession.id,
     });
   }
   for (const p of purchaseLines) {
-    records.push({ kind: "PURCHASE", date: p.purchase.purchaseDate, detail: `Purchase ×${p.qty} @ ${p.unitCost}`, qty: p.qty, amount: p.lineTotal });
+    records.push({
+      kind: "PURCHASE",
+      date: p.purchase.purchaseDate,
+      detail: `Purchase ×${p.qty} @ ${p.unitCost}`,
+      qty: p.qty,
+      amount: p.lineTotal,
+      id: p.purchase.id,
+    });
   }
   for (const f of forfeits) {
-    records.push({ kind: "FORFEIT", date: f.forfeitDate, detail: f.remainingContent > 0 ? `Returned ${f.remainingContent} content` : `Returned ×${f.qty}`, qty: f.remainingContent > 0 ? f.remainingContent : f.qty, amount: null });
+    records.push({
+      kind: "FORFEIT",
+      date: f.forfeitDate,
+      detail: f.remainingContent > 0 ? `Returned ${f.remainingContent} content` : `Returned ×${f.qty}`,
+      qty: f.remainingContent > 0 ? f.remainingContent : f.qty,
+      amount: null,
+      id: null,
+    });
   }
   for (const s of directSales) {
     const kind = s.kind as DrillRecord["kind"];
@@ -1096,6 +1116,7 @@ export async function fullAuditDrill(
             : `Production ×${s.qty}`,
       qty: s.qty,
       amount: s.kind === "SALE" ? s.unitPrice * s.qty : null,
+      id: s.id,
     });
   }
   for (const m of menuSales) {
@@ -1106,6 +1127,7 @@ export async function fullAuditDrill(
       detail: `${m.menuItem?.name ?? "Menu"} ×${m.qty} · ${line?.servingQty ?? "?"}/serving`,
       qty: m.qty,
       amount: m.kind === "SALE" ? m.unitPrice * m.qty : null,
+      id: m.id,
     });
   }
   for (const t of transferOutLines) {
@@ -1115,6 +1137,7 @@ export async function fullAuditDrill(
       detail: `Transferred ×${t.qty} to ${t.transfer.toLocation.name}`,
       qty: t.qty,
       amount: t.lineTotal,
+      id: null,
     });
   }
   for (const r of transferReceipts) {
@@ -1124,6 +1147,7 @@ export async function fullAuditDrill(
       detail: `Received ×${r.qtyReceived} of ${r.transferLine.qty} sent from ${r.transferLine.transfer.fromLocation.name}`,
       qty: r.qtyReceived,
       amount: r.qtyReceived * r.transferLine.unitCost,
+      id: null,
     });
   }
 

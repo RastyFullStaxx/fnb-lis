@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router";
-import { BarChart3, ChevronDown, FileDown, Info } from "lucide-react";
+import { useNavigate, useSearchParams } from "react-router";
+import { BarChart3, ChevronDown, ChevronRight, FileDown, Info } from "lucide-react";
 import { can, hasVariance, MATERIAL_VARIANCE_PCT, round2, varianceSeverity, type Role } from "@fnb/core";
 import { toast } from "sonner";
 import { useMe } from "@/api/auth";
@@ -8,7 +8,7 @@ import { useCountDates, useFullAudit } from "@/api/ops";
 import { useLocationId } from "@/api/location";
 import { useProductTypes } from "@/api/master";
 import { useCompanyInfo, useVarianceThreshold } from "@/api/settings";
-import { exportUrl, useFullAuditDrill } from "@/api/reports";
+import { exportUrl, useFullAuditDrill, type DrillRecord } from "@/api/reports";
 import { ApiError, downloadFile } from "@/api/http";
 import { formatMoney, formatNumber, formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
@@ -466,7 +466,7 @@ export function FullAuditPage() {
         ) : null}
       </div>
 
-      <DrillDialog item={drill} begin={effectiveBegin} end={effectiveEnd} onClose={() => setDrill(null)} />
+      <DrillDialog item={drill} begin={effectiveBegin} end={effectiveEnd} locationId={locationId} onClose={() => setDrill(null)} />
     </div>
   );
 }
@@ -731,17 +731,31 @@ const DRILL_LABELS: Record<string, string> = {
   TRANSFER_OUT: "Transfer out",
 };
 
+// Where a drill row's source record lives, if it has a dedicated landing page yet.
+// COUNT and PURCHASE have one today; SALE/NON_REVENUE/PRODUCTION don't (no per-record
+// Sales route — see docs/2026-07-28-full-audit-drilldown-redirect-plan.md, Open Questions
+// #1) and FORFEIT/TRANSFER_* were never part of this ask. Those rows stay plain.
+function drillHref(locationId: string, record: DrillRecord): string | null {
+  if (!record.id) return null;
+  if (record.kind === "COUNT") return `/l/${locationId}/counts/${record.id}`;
+  if (record.kind === "PURCHASE") return `/l/${locationId}/purchases/${record.id}`;
+  return null;
+}
+
 function DrillDialog({
   item,
   begin,
   end,
+  locationId,
   onClose,
 }: {
   item: { id: string; name: string } | null;
   begin?: string;
   end?: string;
+  locationId: string;
   onClose: () => void;
 }) {
+  const navigate = useNavigate();
   const drill = useFullAuditDrill(begin ?? "", end ?? "", item?.id ?? null);
 
   return (
@@ -750,7 +764,8 @@ function DrillDialog({
         <DialogHeader>
           <DialogTitle>{item?.name}</DialogTitle>
           <DialogDescription>
-            The source records behind this row, {formatDate(begin)} → {formatDate(end)}.
+            The source records behind this row, {formatDate(begin)} → {formatDate(end)}. Click a Count or Purchase
+            entry to open it.
           </DialogDescription>
         </DialogHeader>
         {drill.isPending ? (
@@ -767,18 +782,40 @@ function DrillDialog({
           <p className="py-6 text-center text-sm text-muted-foreground">No source records in this period.</p>
         ) : (
           <div className="divide-y rounded-lg border">
-            {drill.data!.records.map((r, i) => (
-              <div key={i} className="flex items-center gap-3 px-3 py-2">
-                <Badge variant="outline" className="shrink-0">
-                  {DRILL_LABELS[r.kind] ?? r.kind}
-                </Badge>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm">{r.detail}</p>
-                  <p className="tnum text-xs text-muted-foreground">{formatDate(r.date)}</p>
+            {drill.data!.records.map((r, i) => {
+              const href = drillHref(locationId, r);
+              const row = (
+                <>
+                  <Badge variant="outline" className="shrink-0">
+                    {DRILL_LABELS[r.kind] ?? r.kind}
+                  </Badge>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm">{r.detail}</p>
+                    <p className="tnum text-xs text-muted-foreground">{formatDate(r.date)}</p>
+                  </div>
+                  {r.amount !== null && <span className="tnum text-sm">{formatMoney(r.amount)}</span>}
+                  {href && <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />}
+                </>
+              );
+              return href ? (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    navigate(href);
+                  }}
+                  className="flex w-full items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-muted/50"
+                  aria-label={`Open ${DRILL_LABELS[r.kind] ?? r.kind} record`}
+                >
+                  {row}
+                </button>
+              ) : (
+                <div key={i} className="flex items-center gap-3 px-3 py-2">
+                  {row}
                 </div>
-                {r.amount !== null && <span className="tnum text-sm">{formatMoney(r.amount)}</span>}
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </DialogContent>
