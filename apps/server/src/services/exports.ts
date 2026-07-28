@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import ExcelJS from "exceljs";
 import {
   COST_BASIS_LABELS,
@@ -42,6 +44,16 @@ const QTY = "#,##0.######";
 // on-screen row tint. Hex twins in pdf.ts (PDF) / full-audit.tsx (screen).
 const FILL_SHORT = "FFFDECEA";
 const FILL_OVER = "FFFEF3C7";
+
+// LIS brand mark, top-right of every exported workbook (same asset the login
+// page and app shell use, and the PDF header). Read once as a raw buffer —
+// `workbook.addImage` takes a buffer directly, no data-URL encoding needed.
+const LOGO_PATH = fileURLToPath(new URL("../assets/lis-logo.png", import.meta.url));
+const LOGO_BUFFER = readFileSync(LOGO_PATH);
+// Square source (500×500). Default row height is 15pt ≈ 20px, so 60px spans
+// roughly three rows — tall enough to read as a real mark, not a favicon,
+// without swallowing the title block's own two rows.
+const LOGO_SIZE_PX = 60;
 
 /** ARGB row fill for a material over/short row, or null when not material. */
 export function severityFill(sev: VarianceSeverity): string | null {
@@ -109,6 +121,53 @@ export function basisSubtitle(subtitle: string, meta: ReportMeta): string {
   return `${subtitle} · Valuation: ${COST_BASIS_LABELS[meta.costBasis]}`;
 }
 
+// Excel's column-width unit → pixel conversion (96 DPI, the same DPI ExcelJS's
+// image ext.width/height use). Verified empirically against a real render:
+// a width-8.43 (Excel's own default) column measures ~60–63px wide, matching
+// this formula: https://learn.microsoft.com/en-us/office/troubleshoot/excel/determine-column-widths
+// pixels = Truncate(((256 * width + Truncate(128 / MDW)) / 256) * MDW), MDW=7
+// simplifies closely enough to width*7+5 for our purposes (placement, not
+// print-exact layout).
+const EXCEL_DEFAULT_COL_WIDTH = 8.43;
+function colWidthPx(ws: ExcelJS.Worksheet, colNumber: number): number {
+  const width = ws.getColumn(colNumber).width ?? ws.properties.defaultColWidth ?? EXCEL_DEFAULT_COL_WIDTH;
+  return width * 7 + 5;
+}
+
+/** Places the LIS mark top-right, spanning rows 1–3 (title, subtitle, and the
+    blank spacer row) — same spot every PDF header uses. Split out of
+    titleBlock so the one hand-rolled title block in exports-suite.ts
+    (legacyAuditWorkbook) can call it too without duplicating the addImage
+    plumbing.
+
+    Anchored by real pixel position, not a fixed column-index offset — sheets
+    like Full Audit set explicit, wide column widths for a landscape
+    print layout, while sheets like Sales/Purchases never set widths and fall
+    back to Excel's ~8.43 default. A fixed "1.15 columns in" offset lands at
+    very different absolute positions on those two kinds of sheets (this was
+    the bug: the logo drifted off past the real right edge on narrow-column
+    reports). Walking the actual column widths keeps it flush everywhere. */
+export function stampLogo(ws: ExcelJS.Worksheet, colCount: number) {
+  const imageId = ws.workbook.addImage({ buffer: LOGO_BUFFER as unknown as ExcelJS.Buffer, extension: "png" });
+  let rightEdgePx = 0;
+  for (let c = 1; c <= colCount; c++) rightEdgePx += colWidthPx(ws, c);
+  // Inset a fixed 6px from the true right edge — same visual gap regardless
+  // of whether the sheet's columns are narrow (Sales) or wide (Full Audit).
+  const leftEdgePx = Math.max(0, rightEdgePx - LOGO_SIZE_PX - 6);
+  // Walk pixels back into a fractional {col, colOff} anchor, since that's
+  // the coordinate system ExcelJS's tl anchor expects.
+  let remaining = leftEdgePx;
+  let col = 0;
+  while (col < colCount && remaining >= colWidthPx(ws, col + 1)) {
+    remaining -= colWidthPx(ws, col + 1);
+    col++;
+  }
+  ws.addImage(imageId, {
+    tl: { col: col + remaining / colWidthPx(ws, Math.min(col + 1, colCount)), row: 0.05 },
+    ext: { width: LOGO_SIZE_PX, height: LOGO_SIZE_PX },
+  });
+}
+
 export function titleBlock(ws: ExcelJS.Worksheet, title: string, subtitle: string, colCount: number, meta: ReportMeta) {
   const last = String.fromCharCode(64 + colCount);
   ws.mergeCells(`A1:${last}1`);
@@ -119,6 +178,13 @@ export function titleBlock(ws: ExcelJS.Worksheet, title: string, subtitle: strin
   ws.getCell("A2").font = { size: 10, color: { argb: "FF6B7280" } };
   ws.addRow([]);
   brandFooter(ws, meta);
+  // NOTE: stampLogo is NOT called here. Every workbook function sets its real
+  // column widths *after* this titleBlock call returns (widths are set right
+  // before the final `return toBuffer(wb)`), so anchoring the logo here would
+  // measure against default/unset widths, not the sheet's actual final
+  // layout — that mismatch was the original bug (logo drifting off to the
+  // right on narrow-column reports like Sales/Purchases). Each function must
+  // call stampLogo(ws, colCount) itself, once column widths are finalized.
 }
 
 export function moneyCell(cell: Cell, value: number, negativeRed = true) {
@@ -258,6 +324,7 @@ export async function fullAuditWorkbook(report: ReconReport, meta: ReportMeta): 
   ws.getColumn(1).width = 30;
   for (let i = 2; i <= colCount; i++) ws.getColumn(i).width = 11;
 
+  stampLogo(ws, colCount);
   return toBuffer(wb);
 }
 
@@ -324,6 +391,7 @@ export async function salesWorkbook(report: SalesReport, meta: ReportMeta, title
   ws.getColumn(1).width = 14;
   ws.getColumn(2).width = 32;
   for (let i = 3; i <= SALES_HEADERS.length; i++) ws.getColumn(i).width = 12;
+  stampLogo(ws, SALES_HEADERS.length);
   return toBuffer(wb);
 }
 
@@ -385,6 +453,7 @@ export async function purchaseWorkbook(report: PurchaseReport, meta: ReportMeta)
   ws.getColumn(2).width = 24;
   ws.getColumn(4).width = 30;
   for (const i of [3, 5, 6, 7, 8]) ws.getColumn(i).width = 12;
+  stampLogo(ws, PURCHASE_HEADERS.length);
   return toBuffer(wb);
 }
 
@@ -450,6 +519,7 @@ export async function nonRevenueWorkbook(
   ws.getColumn(1).width = 14;
   ws.getColumn(2).width = 30;
   for (const i of [3, 4, 5, 6, 7, 8]) ws.getColumn(i).width = 13;
+  stampLogo(ws, NONREV_HEADERS.length);
   return toBuffer(wb);
 }
 
@@ -490,6 +560,7 @@ export async function onHandWorkbook(report: OnHandReport, meta: ReportMeta): Pr
   ws.getColumn(1).width = 30;
   ws.getColumn(2).width = 18;
   for (const i of [3, 4, 5, 6, 7, 8]) ws.getColumn(i).width = 13;
+  stampLogo(ws, ONHAND_HEADERS.length);
   return toBuffer(wb);
 }
 
@@ -534,6 +605,7 @@ export async function parLevelWorkbook(report: ParLevelReport, meta: ReportMeta)
   ws.getColumn(1).width = 30;
   ws.getColumn(2).width = 18;
   for (const i of [3, 4, 5, 6, 7, 8]) ws.getColumn(i).width = 15;
+  stampLogo(ws, PAR_LEVEL_HEADERS.length);
   return toBuffer(wb);
 }
 
@@ -575,6 +647,7 @@ export async function nonMovingWorkbook(report: NonMovingReport, meta: ReportMet
   ws.getColumn(1).width = 30;
   ws.getColumn(2).width = 18;
   for (const i of [3, 4, 5, 6]) ws.getColumn(i).width = 15;
+  stampLogo(ws, NON_MOVING_HEADERS.length);
   return toBuffer(wb);
 }
 
@@ -621,6 +694,7 @@ export async function assetBreakageWorkbook(report: AssetBreakageReport, meta: R
   ws.getColumn(2).width = 22;
   ws.getColumn(7).width = 34;
   for (const i of [3, 4, 5, 6, 8]) ws.getColumn(i).width = 13;
+  stampLogo(ws, ASSET_BREAKAGE_HEADERS.length);
   return toBuffer(wb);
 }
 
@@ -711,6 +785,7 @@ export async function costAnalysisWorkbook(report: CostAnalysisReport, meta: Rep
 
   ws.getColumn(1).width = 28;
   for (let i = 2; i <= COST_HEADERS.length; i++) ws.getColumn(i).width = 13;
+  stampLogo(ws, COST_HEADERS.length);
   return toBuffer(wb);
 }
 
@@ -786,6 +861,7 @@ export async function transferWorkbook(report: TransferReport, meta: ReportMeta)
   ws.getColumn(3).width = 30;
   ws.getColumn(4).width = 18;
   for (const i of [5, 6, 7, 8, 9]) ws.getColumn(i).width = 12;
+  stampLogo(ws, TRANSFER_HEADERS.length);
   return toBuffer(wb);
 }
 
@@ -863,6 +939,7 @@ export async function topSellersWorkbook(report: TopSellersReport, meta: ReportM
   ws.getColumn(4).width = 13;
   ws.getColumn(5).width = 13;
 
+  stampLogo(ws, TOP_BRANDS_HEADERS.length);
   return toBuffer(wb);
 }
 
@@ -961,6 +1038,7 @@ export async function assetRegisterWorkbook(report: AssetRegisterReport, meta: R
   ws.getColumn(17).width = 24;
   ws.getColumn(18).width = 14;
   ws.getColumn(19).width = 24;
+  stampLogo(ws, ASSET_REGISTER_HEADERS.length);
   return toBuffer(wb);
 }
 
@@ -1032,6 +1110,7 @@ export async function assetInventoryWorkbook(report: AssetInventoryReport, meta:
   ws.getColumn(4).width = 18;
   ws.getColumn(5).width = 14;
   for (const i of [6, 7, 8]) ws.getColumn(i).width = 13;
+  stampLogo(ws, ASSET_INVENTORY_HEADERS.length);
   return toBuffer(wb);
 }
 

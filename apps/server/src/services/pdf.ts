@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import PdfPrinter from "pdfmake";
 import type { Content, TDocumentDefinitions } from "pdfmake/interfaces";
 
@@ -26,6 +28,15 @@ const INK = "#26282e";
 const MUTED = "#6b7280";
 const HEADER_FILL = "#eef0f5";
 const GROUP_FILL = "#f4f5f8";
+
+// LIS brand mark, top-right of every exported PDF (same asset the login page
+// and app shell use). Read once as a data URL — pdfmake's `images` dictionary
+// wants a data URL or remote URL, not a raw Buffer.
+const LOGO_PATH = fileURLToPath(new URL("../assets/lis-logo.png", import.meta.url));
+const LOGO_DATA_URL = `data:image/png;base64,${readFileSync(LOGO_PATH).toString("base64")}`;
+// Matches the XLSX mark's proportions (60px square there) so the same report
+// downloaded as either format reads at the same visual weight.
+const LOGO_WIDTH = 55;
 
 export interface PdfColumn {
   header: string;
@@ -122,8 +133,19 @@ export function tablePdf(spec: PdfTableSpec): Promise<Buffer> {
   const doc: TDocumentDefinitions = {
     pageSize: "A4",
     pageOrientation: spec.landscape ?? colCount > 8 ? "landscape" : "portrait",
-    pageMargins: [28, 28, 28, 40],
+    // Top margin sized for the header row: logo height (55) + its own top/bottom
+    // margin (8 + 6) + a little breathing room before the title starts.
+    pageMargins: [28, 72, 28, 40],
     defaultStyle: { font: "Helvetica", fontSize: 8 },
+    images: { lisLogo: LOGO_DATA_URL },
+    // A `header` fn (mirrors the existing `footer` fn) so the mark repeats on
+    // every page a long report spans, not just page 1.
+    header: () => ({
+      image: "lisLogo",
+      width: LOGO_WIDTH,
+      alignment: "right",
+      margin: [0, 8, 28, 0],
+    }),
     content,
     footer: (currentPage, pageCount) => ({
       columns: [

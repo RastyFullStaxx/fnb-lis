@@ -25,6 +25,7 @@ import {
   qtyCell,
   SALES_HEADERS,
   severityFill,
+  stampLogo,
   styleHeaderRow,
   titleBlock,
   toBuffer,
@@ -217,6 +218,7 @@ export async function legacyAuditWorkbook(
   ws.getColumn(2).width = 10;
   for (let c = 3; c <= 24; c++) ws.getColumn(c).width = 11;
   ws.getColumn(25).width = 8;
+  stampLogo(ws, 25);
   return toBuffer(wb);
 }
 
@@ -323,6 +325,7 @@ export async function costSnapshotWorkbook(
   ws.getColumn(1).width = 34;
   ws.getColumn(2).width = 12;
   for (let c = 3; c <= 6; c++) ws.getColumn(c).width = 16;
+  stampLogo(ws, SNAPSHOT_HEADERS.length);
   return toBuffer(wb);
 }
 
@@ -388,6 +391,7 @@ export async function forfeitsWorkbook(report: ForfeitsReport, meta: ReportMeta)
   t.font = { bold: true };
   ws.getColumn(2).width = 34;
   for (const c of [1, 3, 4, 5, 6, 7]) ws.getColumn(c).width = 14;
+  stampLogo(ws, FORFEIT_HEADERS.length);
   return toBuffer(wb);
 }
 
@@ -443,6 +447,7 @@ export async function usageCostWorkbook(report: UsageCostReport, meta: ReportMet
   t.font = { bold: true };
   ws.getColumn(1).width = 34;
   for (const c of [2, 3, 4]) ws.getColumn(c).width = 15;
+  stampLogo(ws, USAGE_HEADERS.length);
   return toBuffer(wb);
 }
 
@@ -501,6 +506,7 @@ export async function salesByItemWorkbook(report: SalesByItemReport, meta: Repor
   t.font = { bold: true };
   ws.getColumn(1).width = 34;
   for (let c = 2; c <= 7; c++) ws.getColumn(c).width = 14;
+  stampLogo(ws, SALES_ITEM_HEADERS.length);
   return toBuffer(wb);
 }
 
