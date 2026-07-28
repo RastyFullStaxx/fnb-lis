@@ -466,7 +466,15 @@ export function FullAuditPage() {
         ) : null}
       </div>
 
-      <DrillDialog item={drill} begin={effectiveBegin} end={effectiveEnd} locationId={locationId} onClose={() => setDrill(null)} />
+      <DrillDialog
+        item={drill}
+        begin={effectiveBegin}
+        end={effectiveEnd}
+        productType={productType}
+        varianceOnly={varianceOnly}
+        locationId={locationId}
+        onClose={() => setDrill(null)}
+      />
     </div>
   );
 }
@@ -742,21 +750,50 @@ function drillHref(locationId: string, record: DrillRecord): string | null {
   return null;
 }
 
+// The exact Full Audit URL to come back to — same period/type/variance filters
+// the dialog was opened with, plus ?drill=<itemId> so the dialog reopens on
+// arrival (mirrors the dashboard's existing deep-link contract, see the
+// consumedDrill effect above). Passed as router state so Counts/Purchases can
+// send the user back here instead of to their own list page.
+function fullAuditReturnUrl(opts: {
+  locationId: string;
+  begin?: string;
+  end?: string;
+  productType: string;
+  varianceOnly: boolean;
+  itemId: string;
+}): string {
+  const qs = new URLSearchParams();
+  if (opts.begin) qs.set("begin", opts.begin);
+  if (opts.end) qs.set("end", opts.end);
+  if (opts.productType !== ALL) qs.set("productType", opts.productType);
+  if (opts.varianceOnly) qs.set("variance", "only");
+  qs.set("drill", opts.itemId);
+  return `/l/${opts.locationId}/reports/full-audit?${qs.toString()}`;
+}
+
 function DrillDialog({
   item,
   begin,
   end,
+  productType,
+  varianceOnly,
   locationId,
   onClose,
 }: {
   item: { id: string; name: string } | null;
   begin?: string;
   end?: string;
+  productType: string;
+  varianceOnly: boolean;
   locationId: string;
   onClose: () => void;
 }) {
   const navigate = useNavigate();
   const drill = useFullAuditDrill(begin ?? "", end ?? "", item?.id ?? null);
+  const returnTo = item
+    ? fullAuditReturnUrl({ locationId, begin, end, productType, varianceOnly, itemId: item.id })
+    : null;
 
   return (
     <Dialog open={item !== null} onOpenChange={(open) => !open && onClose()}>
@@ -803,7 +840,7 @@ function DrillDialog({
                   type="button"
                   onClick={() => {
                     onClose();
-                    navigate(href);
+                    navigate(href, returnTo ? { state: { returnTo } } : undefined);
                   }}
                   className="flex w-full items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-muted/50"
                   aria-label={`Open ${DRILL_LABELS[r.kind] ?? r.kind} record`}

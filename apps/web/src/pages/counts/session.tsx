@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Link, useParams } from "react-router";
+import { Link, useLocation, useParams } from "react-router";
 import { ArrowLeft, Check, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { can, type Role } from "@fnb/core";
@@ -35,10 +35,21 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { cn, formatDate } from "@/lib/utils";
 
+// Arriving here via Full Audit's drilldown (see full-audit.tsx's
+// fullAuditReturnUrl) stashes the exact report URL — filters, period, and
+// ?drill=<item> — in router state. "Back" should return there, not to the
+// plain Counts list, or the user loses the report context they came from.
+function useBackHref(locationId: string): string {
+  const location = useLocation();
+  const returnTo = (location.state as { returnTo?: string } | null)?.returnTo;
+  return returnTo || `/l/${locationId}/counts`;
+}
+
 export function CountSessionPage() {
   const { sessionId } = useParams();
   const locationId = useLocationId();
   const session = useCountSession(sessionId!);
+  const backHref = useBackHref(locationId);
 
   if (session.isPending) return <SessionSkeleton />;
   if (session.isError)
@@ -46,7 +57,7 @@ export function CountSessionPage() {
       <div className="flex flex-col items-center gap-3 py-24 text-center">
         <p className="text-sm">Couldn't load this count session — it may have been removed.</p>
         <Button asChild variant="outline" size="sm">
-          <Link to={`/l/${locationId}/counts`}>Back to Counts</Link>
+          <Link to={backHref}>Back to Counts</Link>
         </Button>
       </div>
     );
@@ -95,10 +106,11 @@ type SessionWithLines = NonNullable<ReturnType<typeof useCountSession>["data"]>;
 
 function SessionHeader({ session }: { session: SessionWithLines }) {
   const locationId = useLocationId();
+  const backHref = useBackHref(locationId);
   return (
     <div className="mb-4 flex items-center gap-3">
-      <Button asChild variant="ghost" size="icon" aria-label="Back to Counts">
-        <Link to={`/l/${locationId}/counts`}>
+      <Button asChild variant="ghost" size="icon" aria-label="Back">
+        <Link to={backHref}>
           <ArrowLeft className="size-4" />
         </Link>
       </Button>

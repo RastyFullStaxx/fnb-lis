@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Link, useParams } from "react-router";
+import { Link, useLocation, useParams } from "react-router";
 import { ArrowLeft, Check, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { can, type Role } from "@fnb/core";
@@ -46,6 +46,13 @@ export function PurchaseEditorPage() {
   const me = useMe();
   const mutations = usePurchaseMutations(purchaseId);
   const locationId = useLocationId();
+  // Arriving here via Full Audit's drilldown (see full-audit.tsx's
+  // fullAuditReturnUrl) stashes the exact report URL — filters, period, and
+  // ?drill=<item> — in router state. "Back" should return there, not to the
+  // plain Purchases list, or the user loses the report context they came from.
+  const routerLocation = useLocation();
+  const returnTo = (routerLocation.state as { returnTo?: string } | null)?.returnTo;
+  const backHref = returnTo || `/l/${locationId}/purchases`;
 
   const [item, setItem] = useState<LocationItem | null>(null);
   const [qty, setQty] = useState("");
@@ -59,7 +66,7 @@ export function PurchaseEditorPage() {
       <div className="flex flex-col items-center gap-3 py-24 text-center">
         <p className="text-sm">Couldn't load this delivery — it may have been removed.</p>
         <Button asChild variant="outline" size="sm">
-          <Link to={`/l/${locationId}/purchases`}>Back to Purchases</Link>
+          <Link to={backHref}>Back to Purchases</Link>
         </Button>
       </div>
     );
@@ -105,8 +112,8 @@ export function PurchaseEditorPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="mb-4 flex items-center gap-3">
-        <Button asChild variant="ghost" size="icon" aria-label="Back to Purchases">
-          <Link to={`/l/${locationId}/purchases`}>
+        <Button asChild variant="ghost" size="icon" aria-label="Back">
+          <Link to={backHref}>
             <ArrowLeft className="size-4" />
           </Link>
         </Button>
