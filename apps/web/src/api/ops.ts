@@ -141,6 +141,11 @@ export function usePurchaseMutations(purchaseId?: string) {
         post<PurchaseLine>(`${base(locationId)}/purchases/${purchaseId}/lines/${lineId}/void`, { reason }),
       onSuccess: invalidate,
     }),
+    correctLine: useMutation({
+      mutationFn: ({ lineId, ...body }: PurchaseLineCreate & { lineId: string; reason: string }) =>
+        post<PurchaseLine>(`${base(locationId)}/purchases/${purchaseId}/lines/${lineId}/correct`, body),
+      onSuccess: invalidate,
+    }),
   };
 }
 
@@ -227,6 +232,14 @@ export function useTransferMutations(transferId?: string) {
     voidLine: useMutation({
       mutationFn: ({ lineId, reason }: { lineId: string; reason: string }) =>
         post<TransferLine>(`${base(locationId)}/transfers/${transferId}/lines/${lineId}/void`, { reason }),
+      onSuccess: invalidate,
+    }),
+    // Correct = void original + create replacement, server-side in one transaction.
+    // unitCost is optional here (unlike Purchases) — the server falls back to the
+    // original line's cost when it's omitted.
+    correctLine: useMutation({
+      mutationFn: ({ lineId, ...body }: Pick<TransferLineCreate, "qty" | "unitCost"> & { lineId: string; reason: string }) =>
+        post<TransferLine>(`${base(locationId)}/transfers/${transferId}/lines/${lineId}/correct`, body),
       onSuccess: invalidate,
     }),
     receive: useMutation({

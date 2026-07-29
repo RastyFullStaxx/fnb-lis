@@ -189,6 +189,58 @@ export const purchaseRoutes = new Hono<AppEnv>()
     return c.json(voided);
   })
 
+  /** Post-commit correction: void the old line and create a linked replacement.
+   *  Unlike Counts, unitCost is NOT frozen from the original — it's the invoice
+   *  figure staff typed by hand, the most likely field to be wrong on the line,
+   *  so the client sends the (possibly edited) value and lineTotal is recomputed
+   *  through core rounding here rather than carried over from the original. */
+  .post(
+    "/purchases/:id/lines/:lineId/correct",
+    voidGuard,
+    zValidator("json", purchaseLineCreate.and(voidRequest)),
+    async (c) => {
+      const location = c.get("location");
+      const user = c.get("user")!;
+      const body = c.req.valid("json");
+      const purchase = await getOwnedPurchase(location.id, c.req.param("id"));
+      const original = await prisma.purchaseLine.findUnique({ where: { id: c.req.param("lineId") } });
+      if (!original || original.purchaseId !== purchase.id) throw new AppError(404, "Purchase line not found");
+      if (original.status === "VOID") throw new AppError(409, "Line is already voided");
+
+      const locationItem = await prisma.locationItem.findUnique({
+        where: { id: body.locationItemId },
+        include: { itemVariant: { include: { item: true } } },
+      });
+      if (!locationItem || locationItem.locationId !== location.id) throw new AppError(404, "Item not found in this catalog");
+
+      const replacement = await prisma.$transaction(async (tx) => {
+        await tx.purchaseLine.update({
+          where: { id: original.id },
+          data: { status: "VOID", voidedAt: new Date(), voidedById: user.id, voidReason: body.reason },
+        });
+        const created = await tx.purchaseLine.create({
+          data: {
+            purchaseId: purchase.id,
+            locationItemId: body.locationItemId,
+            qty: body.qty,
+            unitCost: body.unitCost,
+            lineTotal: lineTotal(body.qty, body.unitCost),
+            correctionOfId: original.id,
+            createdById: user.id,
+            createdByName: `${user.firstName} ${user.lastName}`,
+          },
+          include: LI_INCLUDE,
+        });
+        await logActivity(
+          { user, clientId: location.clientId, locationId: location.id, action: "purchaseLine.correct", entity: "PurchaseLine", entityId: created.id, summary: `Corrected purchase line (${locationItem.itemVariant.item.name} ×${body.qty}): ${body.reason}`, details: { originalId: original.id } },
+          tx,
+        );
+        return created;
+      });
+      return c.json(replacement, 201);
+    },
+  )
+
   // ── Forfeits: returned partial bottles — content re-entering stock ──
   .get("/forfeits", async (c) => {
     const location = c.get("location");

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useParams } from "react-router";
 import { ArrowLeft, Check, Pencil } from "lucide-react";
 import { toast } from "sonner";
@@ -18,6 +18,7 @@ import { useWeighPreview, WeighPreviewStrip } from "@/components/weigh-calculato
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { QuantityInput } from "@/components/quantity-input";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -32,6 +33,14 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { cn, formatDate } from "@/lib/utils";
 
@@ -120,7 +129,7 @@ function SessionHeader({ session }: { session: SessionWithLines }) {
           {session.status === "OPEN"
             ? "Counting in progress — every saved line lands below."
             : session.status === "COMMITTED"
-              ? "Committed. Lines are locked — cancel an entry and re-enter it to fix a mistake."
+              ? "Committed. Lines are locked — use Correct to fix a mistake."
               : `Cancelled: ${session.voidReason}`}
         </p>
       </div>
@@ -388,7 +397,7 @@ function OpenSession({ session }: { session: SessionWithLines }) {
                   <div className="space-y-3">
                     <p>
                       {activeLines.length} line{activeLines.length === 1 ? "" : "s"} for {formatDate(session.countDate)}.
-                      Once committed, lines lock — to fix a mistake you cancel the entry and re-enter it, and the date becomes available as a report boundary.
+                      Once committed, lines lock — to fix a mistake you use Correct on the line, and the date becomes available as a report boundary.
                     </p>
                     {remaining.length > 0 && (
                       // The one thing worth interrupting for: uncounted items
@@ -535,8 +544,12 @@ function ReadOnlySession({ session }: { session: SessionWithLines }) {
   const me = useMe();
   const mutations = useCountMutations(session.id);
   const [voiding, setVoiding] = useState<CountLine | null>(null);
+  const [correcting, setCorrecting] = useState<CountLine | null>(null);
   const role = (me.data?.user.role ?? "READONLY") as Role;
   const canVoid = can(role, "entries.void") && session.status === "COMMITTED";
+  // Correcting does both a void and a create, so it needs both rights — same
+  // as Sales' Edit button.
+  const canCorrect = canVoid && can(role, "entries.create");
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -549,6 +562,7 @@ function ReadOnlySession({ session }: { session: SessionWithLines }) {
               key={line.id}
               line={line}
               onVoid={canVoid && line.status === "ACTIVE" ? () => setVoiding(line) : undefined}
+              onCorrect={canCorrect && line.status === "ACTIVE" ? () => setCorrecting(line) : undefined}
             />
           ))}
         </div>
@@ -569,7 +583,208 @@ function ReadOnlySession({ session }: { session: SessionWithLines }) {
           }
         }}
       />
+
+      <CorrectLineDialog
+        sessionId={session.id}
+        line={correcting}
+        onOpenChange={(open) => !open && setCorrecting(null)}
+      />
     </div>
+  );
+}
+
+/**
+ * Correct a committed line. Modeled on Sales' EditSaleDialog: the item/menu
+ * stays locked (you're fixing the numbers, not what was counted), a reason is
+ * required in addition to the count itself, and saving voids the original and
+ * writes a linked replacement so the audit trail matches Sales exactly.
+ *
+ * All three entry shapes (FULL, WEIGH, OPEN) are supported with the same live
+ * weigh preview as the counting screen — a qty-only dialog couldn't correct a
+ * weighed bottle at all.
+ */
+function CorrectLineDialog({
+  sessionId,
+  line,
+  onOpenChange,
+}: {
+  sessionId: string;
+  line: CountLine | null;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const mutations = useCountMutations(sessionId);
+  const [mode, setMode] = useState<"FULL" | "WEIGH" | "OPEN">("FULL");
+  const [qty, setQty] = useState("");
+  const [scale, setScale] = useState("");
+  const [openAmount, setOpenAmount] = useState("");
+  const [reason, setReason] = useState("");
+
+  // Re-seed every field when a different line opens the dialog, same as
+  // startEdit() on the OPEN screen.
+  useEffect(() => {
+    if (!line) return;
+    setReason("");
+    if (line.countType === "FULL") {
+      setMode("FULL");
+      setQty(String(line.qtyFull));
+      setScale("");
+      setOpenAmount("");
+    } else if (line.scaleWeight == null) {
+      setMode("OPEN");
+      setOpenAmount(String(line.remainingContent));
+      setScale("");
+      setQty("");
+    } else {
+      setMode("WEIGH");
+      setScale(String(line.scaleWeight));
+      setQty("");
+      setOpenAmount("");
+    }
+  }, [line]);
+
+  // Called unconditionally (Rules of Hooks) — item is null while the dialog
+  // is closed, which useWeighPreview already handles by returning null.
+  const preview = useWeighPreview(line?.locationItem ?? null, scale);
+
+  if (!line) return null;
+  const item = line.locationItem;
+  const variant = item.itemVariant;
+  const weighable = variant.contentTracked || variant.weighMode === "NET";
+  const activeMode = weighable ? mode : "FULL";
+
+  const submit = async () => {
+    if (reason.trim().length < 3) return toast.error("Add a reason for the change");
+    try {
+      if (activeMode === "FULL") {
+        const n = Number(qty);
+        if (qty === "" || !Number.isFinite(n) || n < 0) return toast.error("Enter the counted quantity");
+        await mutations.correctLine.mutateAsync({
+          lineId: line.id,
+          locationItemId: item.id,
+          countType: "FULL",
+          qtyFull: n,
+          reason: reason.trim(),
+        });
+      } else if (activeMode === "OPEN") {
+        const n = Number(openAmount);
+        if (openAmount === "" || !Number.isFinite(n) || n < 0) return toast.error("Enter the remaining amount");
+        await mutations.correctLine.mutateAsync({
+          lineId: line.id,
+          locationItemId: item.id,
+          countType: "WEIGH",
+          remainingContent: n,
+          reason: reason.trim(),
+        });
+      } else {
+        if (!preview || !preview.ready || !preview.entered || preview.blocking) {
+          return toast.error("Fix the scale reading first");
+        }
+        await mutations.correctLine.mutateAsync({
+          lineId: line.id,
+          locationItemId: item.id,
+          countType: "WEIGH",
+          scaleWeight: preview.scale,
+          scaleUnit: preview.unit as "g" | "oz",
+          tareWeight: preview.tare,
+          densityFactor: preview.density ?? undefined,
+          reason: reason.trim(),
+        });
+      }
+      toast.success("Line updated — the original is kept, marked corrected");
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not save the change");
+    }
+  };
+
+  return (
+    <Dialog open={line !== null} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Correct Count Line</DialogTitle>
+          <DialogDescription>
+            {variant.item.name} {variantLabel(variant)}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          {weighable && (
+            <Tabs value={activeMode} onValueChange={(v) => setMode(v as "FULL" | "WEIGH" | "OPEN")}>
+              <TabsList className="w-full">
+                <TabsTrigger value="FULL" className="flex-1">
+                  Full Units
+                </TabsTrigger>
+                <TabsTrigger value="WEIGH" className="flex-1">
+                  Weigh Partial
+                </TabsTrigger>
+                <TabsTrigger value="OPEN" className="flex-1">
+                  Open Amount
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+          )}
+
+          {activeMode === "FULL" ? (
+            <div className="space-y-2">
+              <Label htmlFor="c-qty">Counted Quantity</Label>
+              <QuantityInput
+                id="c-qty"
+                className="tnum"
+                placeholder="0"
+                value={qty}
+                onChange={(e) => setQty(e.target.value)}
+              />
+            </div>
+          ) : activeMode === "OPEN" ? (
+            <div className="space-y-2">
+              <Label htmlFor="c-open">Remaining {variant.unit.name}</Label>
+              <QuantityInput
+                id="c-open"
+                className="tnum"
+                placeholder={variant.size ? `e.g. ${variant.size} = a full one` : "Amount left"}
+                value={openAmount}
+                onChange={(e) => setOpenAmount(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Type the amount left in the open container — no scale or empty weight needed.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Label htmlFor="c-scale">Scale reading{preview?.ready ? ` (${preview.unit})` : ""}</Label>
+              <QuantityInput
+                id="c-scale"
+                className="tnum"
+                placeholder="Put the bottle on the scale"
+                value={scale}
+                onChange={(e) => setScale(e.target.value)}
+              />
+              <WeighPreviewStrip preview={preview} size={variant.size ?? 0} contentUnit={variant.unit.name} />
+              <WeightReport row={item} />
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <Label htmlFor="c-reason">Reason for change</Label>
+            <Input
+              id="c-reason"
+              placeholder="e.g. Miscounted, typed wrong number"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button onClick={submit} disabled={mutations.correctLine.isPending}>
+            {mutations.correctLine.isPending ? "Saving…" : "Save Changes"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -580,6 +795,7 @@ function LineRow({
   onEdit,
   onRemove,
   onVoid,
+  onCorrect,
 }: {
   line: CountLine;
   removable?: boolean;
@@ -587,6 +803,7 @@ function LineRow({
   onEdit?: () => void;
   onRemove?: () => void;
   onVoid?: () => void;
+  onCorrect?: () => void;
 }) {
   const variant = line.locationItem.itemVariant;
   const voided = line.status === "VOID";
@@ -630,11 +847,16 @@ function LineRow({
               {(line.remainingContent / (variant.size || 1)).toFixed(2)} of {variantLabel(variant)}
             </Badge>
           )}
-          {(onVoid || (removable && (onEdit || onRemove))) && (
+          {(onVoid || onCorrect || (removable && (onEdit || onRemove))) && (
             <div className="mt-auto flex gap-1">
               {onVoid && (
                 <Button variant="destructive" size="xs" onClick={onVoid}>
                   Cancel
+                </Button>
+              )}
+              {onCorrect && (
+                <Button variant="outline" size="xs" onClick={onCorrect}>
+                  Correct
                 </Button>
               )}
               {removable && onRemove && (

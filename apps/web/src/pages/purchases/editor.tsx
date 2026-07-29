@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useParams } from "react-router";
 import { ArrowLeft, Check, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -18,6 +18,15 @@ import { Button } from "@/components/ui/button";
 import { QuantityInput } from "@/components/quantity-input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -58,6 +67,7 @@ export function PurchaseEditorPage() {
   const [qty, setQty] = useState("");
   const [cost, setCost] = useState("");
   const [voidingLine, setVoidingLine] = useState<PurchaseLine | null>(null);
+  const [correctingLine, setCorrectingLine] = useState<PurchaseLine | null>(null);
   const comboRef = useRef<HTMLButtonElement>(null);
 
   if (purchase.isPending) return <EditorSkeleton />;
@@ -75,6 +85,8 @@ export function PurchaseEditorPage() {
   const isDraft = p.status === "DRAFT";
   const role = (me.data?.user.role ?? "READONLY") as Role;
   const canVoid = can(role, "entries.void") && p.status === "COMMITTED";
+  // Correcting voids the original and creates a replacement, so it needs both.
+  const canCorrect = canVoid && can(role, "entries.create");
   const activeLines = p.lines.filter((l) => l.status === "ACTIVE");
   const total = activeLines.reduce((s, l) => s + l.lineTotal, 0);
 
@@ -141,7 +153,7 @@ export function PurchaseEditorPage() {
                 <AlertDialogTitle>Commit this delivery?</AlertDialogTitle>
                 <AlertDialogDescription>
                   {activeLines.length} line{activeLines.length === 1 ? "" : "s"}, {formatMoney(total)} total.
-                  Committed deliveries count into reports; fixes then go through void &amp; correct.
+                  Committed deliveries count into reports; fixes then go through Cancel &amp; Correct on each line.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -211,6 +223,9 @@ export function PurchaseEditorPage() {
                       <span className="ml-1.5 text-sm text-muted-foreground">
                         {variantLabel(line.locationItem.itemVariant)}
                       </span>
+                      {line.correctionOfId && (
+                        <span className="ml-2 text-xs text-muted-foreground">corrected</span>
+                      )}
                       {voided && line.voidReason && (
                         <span className="ml-2 text-xs text-muted-foreground">cancelled: {line.voidReason}</span>
                       )}
@@ -232,10 +247,19 @@ export function PurchaseEditorPage() {
                         >
                           <Trash2 className="size-4" />
                         </Button>
-                      ) : canVoid && !voided ? (
-                        <Button variant="destructive" size="xs" onClick={() => setVoidingLine(line)}>
-                          Cancel
-                        </Button>
+                      ) : !voided && (canVoid || canCorrect) ? (
+                        <div className="flex justify-end gap-1">
+                          {canVoid && (
+                            <Button variant="destructive" size="xs" onClick={() => setVoidingLine(line)}>
+                              Cancel
+                            </Button>
+                          )}
+                          {canCorrect && (
+                            <Button variant="outline" size="xs" onClick={() => setCorrectingLine(line)}>
+                              Correct
+                            </Button>
+                          )}
+                        </div>
                       ) : null}
                     </TableCell>
                   </TableRow>
@@ -274,7 +298,128 @@ export function PurchaseEditorPage() {
           }
         }}
       />
+
+      <CorrectPurchaseLineDialog
+        line={correctingLine}
+        onOpenChange={(open) => !open && setCorrectingLine(null)}
+        correctLine={mutations.correctLine}
+      />
     </div>
+  );
+}
+
+/**
+ * Correct a committed purchase line. The item is fixed — this fixes the
+ * numbers of a delivery line, not what it was for (to reassign, cancel and
+ * re-enter). Unlike Counts, Unit Cost stays editable: it's the invoice
+ * figure staff typed by hand, the most likely field to be wrong on the
+ * line, and defaults here to the original's value. Saving voids the
+ * original and writes a linked replacement; a reason is required, the same
+ * way a cancel requires one.
+ */
+function CorrectPurchaseLineDialog({
+  line,
+  onOpenChange,
+  correctLine,
+}: {
+  line: PurchaseLine | null;
+  onOpenChange: (open: boolean) => void;
+  correctLine: ReturnType<typeof usePurchaseMutations>["correctLine"];
+}) {
+  const [qty, setQty] = useState("");
+  const [cost, setCost] = useState("");
+  const [reason, setReason] = useState("");
+
+  // Re-seed every field when a different line opens the dialog.
+  useEffect(() => {
+    if (!line) return;
+    setQty(String(line.qty));
+    setCost(String(line.unitCost));
+    setReason("");
+  }, [line]);
+
+  if (!line) return null;
+  const name = line.locationItem.itemVariant.item.name;
+  const size = variantLabel(line.locationItem.itemVariant);
+
+  const submit = async () => {
+    const q = Number(qty);
+    const c = Number(cost);
+    if (!q || q <= 0) return toast.error("Enter the quantity received");
+    if (!Number.isFinite(c) || c < 0) return toast.error("Enter the unit cost");
+    if (reason.trim().length < 3) return toast.error("Add a reason for the change");
+    try {
+      await correctLine.mutateAsync({
+        lineId: line.id,
+        locationItemId: line.locationItemId,
+        qty: q,
+        unitCost: c,
+        reason: reason.trim(),
+      });
+      toast.success("Line updated — the original is kept, marked corrected");
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not save the change");
+    }
+  };
+
+  return (
+    <Dialog open={line !== null} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Correct Purchase Line</DialogTitle>
+          <DialogDescription>
+            {name}
+            {size && <span className="ml-1.5 text-muted-foreground">{size}</span>}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="cpl-qty">Qty</Label>
+              <QuantityInput
+                id="cpl-qty"
+                className="tnum"
+                value={qty}
+                onChange={(e) => setQty(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && submit()}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="cpl-cost">Unit Cost</Label>
+              <QuantityInput
+                id="cpl-cost"
+                className="tnum"
+                value={cost}
+                onChange={(e) => setCost(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && submit()}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="cpl-reason">Reason for the change</Label>
+            <Textarea
+              id="cpl-reason"
+              rows={2}
+              placeholder="Why is this line wrong?"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Keep Original
+          </Button>
+          <Button onClick={submit} disabled={correctLine.isPending}>
+            {correctLine.isPending ? "Saving…" : "Save Correction"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

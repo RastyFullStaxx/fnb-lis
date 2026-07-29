@@ -1,185 +1,329 @@
-import { z } from "zod";
-import { NON_REVENUE_REASONS, SALE_KINDS } from "../constants";
-import { dateString, id, nonNegative, positive } from "./common";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type {
+  CountLineCreate,
+  CountSessionCreate,
+  ForfeitCreate,
+  PurchaseCreate,
+  PurchaseLineCorrect,
+  PurchaseLineCreate,
+  ReconReport,
+  SaleCorrect,
+  SaleCreate,
+  TransferCreate,
+  TransferLineCreate,
+  TransferReceive,
+} from "@fnb/core";
+import { api, post, put } from "./http";
+import { useLocationId } from "./location";
+import type { CountLine, CountSession, Forfeit, Purchase, PurchaseLine, SaleRecord, Transfer, TransferLine } from "./types";
+
+const base = (locationId: string) => `/api/locations/${locationId}`;
 
 // ── Counts ──
 
-export const countSessionCreate = z.object({
-  countDate: dateString,
-  name: z.string().trim().max(80).optional(),
-  note: z.string().trim().max(500).optional(),
-});
-export type CountSessionCreate = z.infer<typeof countSessionCreate>;
-
-export const countLineCreate = z
-  .object({
-    locationItemId: id,
-    countType: z.enum(["FULL", "WEIGH"]),
-    qtyFull: nonNegative.optional(),
-    scaleWeight: nonNegative.optional(),
-    scaleUnit: z.enum(["g", "oz"]).optional(),
-    tareWeight: nonNegative.optional(),
-    densityFactor: positive.optional(),
-    /**
-     * Direct open-amount entry (client req 2026-07-21): the counter types the
-     * remaining content itself, without weighing — so an open item can be
-     * recorded even with no liquid/tare weight. When present on a WEIGH line it
-     * replaces the scale/tare calculation; reconciliation reads it identically.
-     */
-    remainingContent: nonNegative.optional(),
-  })
-  .superRefine((val, ctx) => {
-    if (val.countType === "FULL") {
-      if (val.qtyFull === undefined) {
-        ctx.addIssue({ code: "custom", path: ["qtyFull"], message: "Enter the counted quantity" });
-      }
-    } else if (val.remainingContent === undefined) {
-      // Weighing path — needs scale + tare. (Skipped entirely when the counter
-      // enters the remaining amount directly.)
-      if (val.scaleWeight === undefined) {
-        ctx.addIssue({ code: "custom", path: ["scaleWeight"], message: "Enter the scale reading" });
-      }
-      if (val.tareWeight === undefined) {
-        ctx.addIssue({ code: "custom", path: ["tareWeight"], message: "Tare weight is required" });
-      }
-      // densityFactor is mode-dependent (DENSITY needs one, NET must not) —
-      // the server enforces it per the variant's weighMode.
-      if (
-        val.scaleWeight !== undefined &&
-        val.tareWeight !== undefined &&
-        val.scaleWeight < val.tareWeight
-      ) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["scaleWeight"],
-          message: "Scale reading is below the empty-container weight",
-        });
-      }
-    }
+export function useCountSessions() {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["counts", locationId],
+    queryFn: () => api<CountSession[]>(`${base(locationId)}/counts`),
   });
-export type CountLineCreate = z.infer<typeof countLineCreate>;
+}
 
-// ── Purchases ──
-
-export const purchaseCreate = z.object({
-  purchaseDate: dateString,
-  supplierId: id.nullable().optional(),
-  refNo: z.string().trim().max(60).nullable().optional(),
-  note: z.string().trim().max(500).nullable().optional(),
-});
-export type PurchaseCreate = z.infer<typeof purchaseCreate>;
-
-export const purchaseLineCreate = z.object({
-  locationItemId: id,
-  qty: positive,
-  unitCost: nonNegative,
-});
-export type PurchaseLineCreate = z.infer<typeof purchaseLineCreate>;
-
-// ── Sales / non-revenue / production ──
-
-export const saleCreate = z
-  .object({
-    saleDate: dateString,
-    kind: z.enum(SALE_KINDS),
-    locationItemId: id.optional(),
-    menuItemId: id.optional(),
-    qty: positive,
-    unitPrice: nonNegative.optional(),
-    discountPct: z.number().min(0).max(100).optional(),
-    contentOverride: positive.optional(),
-    reason: z.enum(NON_REVENUE_REASONS).optional(),
-    note: z.string().trim().max(500).optional(),
-  })
-  .superRefine((val, ctx) => {
-    const hasItem = Boolean(val.locationItemId);
-    const hasMenu = Boolean(val.menuItemId);
-    if (hasItem === hasMenu) {
-      ctx.addIssue({ code: "custom", path: ["locationItemId"], message: "Choose an item or a menu (one of the two)" });
-    }
-    if (val.contentOverride !== undefined && val.kind !== "NON_REVENUE") {
-      ctx.addIssue({
-        code: "custom",
-        path: ["contentOverride"],
-        message: "A manual content amount applies to non-revenue entries only",
-      });
-    }
-    if (val.kind === "NON_REVENUE" && !val.reason) {
-      ctx.addIssue({ code: "custom", path: ["reason"], message: "Pick a reason" });
-    }
+export function useCountSession(sessionId: string) {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["counts", locationId, sessionId],
+    queryFn: () => api<CountSession & { lines: CountLine[] }>(`${base(locationId)}/counts/${sessionId}`),
   });
-export type SaleCreate = z.infer<typeof saleCreate>;
+}
 
-/**
- * Correcting a committed sale = void the old + create the replacement in one
- * step. The replacement is a full saleCreate; the void needs its own reason,
- * kept under `voidReason` so it never collides with saleCreate's `reason`
- * (the non-revenue bucket). Intersecting saleCreate with a plain `reason`
- * would force the void reason to satisfy the non-revenue enum — the source of
- * a latent bug that made SALE corrections un-submittable.
- */
-export const saleCorrect = saleCreate.and(
-  z.object({ voidReason: z.string().trim().min(3, "A reason for the change is required") }),
-);
-export type SaleCorrect = z.infer<typeof saleCorrect>;
+export function useCountMutations(sessionId?: string) {
+  const locationId = useLocationId();
+  const qc = useQueryClient();
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["counts", locationId] });
+    qc.invalidateQueries({ queryKey: ["report"] });
+  };
+  return {
+    createSession: useMutation({
+      mutationFn: (body: CountSessionCreate) => post<CountSession>(`${base(locationId)}/counts`, body),
+      onSuccess: invalidate,
+    }),
+    addLine: useMutation({
+      mutationFn: (body: CountLineCreate) => post<CountLine>(`${base(locationId)}/counts/${sessionId}/lines`, body),
+      onSuccess: invalidate,
+    }),
+    // Atomic in-place edit — never add-then-remove (a failure between the two
+    // leaves a duplicate ACTIVE line that double-counts inventory).
+    updateLine: useMutation({
+      mutationFn: ({ lineId, ...body }: CountLineCreate & { lineId: string }) =>
+        api<CountLine>(`${base(locationId)}/counts/${sessionId}/lines/${lineId}`, {
+          method: "PUT",
+          body: JSON.stringify(body),
+        }),
+      onSuccess: invalidate,
+    }),
+    removeLine: useMutation({
+      mutationFn: (lineId: string) =>
+        api<{ ok: boolean }>(`${base(locationId)}/counts/${sessionId}/lines/${lineId}`, { method: "DELETE" }),
+      onSuccess: invalidate,
+    }),
+    commit: useMutation({
+      mutationFn: () => post<CountSession>(`${base(locationId)}/counts/${sessionId}/commit`),
+      onSuccess: invalidate,
+    }),
+    voidSession: useMutation({
+      mutationFn: (reason: string) => post<CountSession>(`${base(locationId)}/counts/${sessionId}/void`, { reason }),
+      onSuccess: invalidate,
+    }),
+    voidLine: useMutation({
+      mutationFn: ({ lineId, reason }: { lineId: string; reason: string }) =>
+        post<CountLine>(`${base(locationId)}/counts/${sessionId}/lines/${lineId}/void`, { reason }),
+      onSuccess: invalidate,
+    }),
+    correctLine: useMutation({
+      mutationFn: ({ lineId, ...body }: CountLineCreate & { lineId: string; reason: string }) =>
+        post<CountLine>(`${base(locationId)}/counts/${sessionId}/lines/${lineId}/correct`, body),
+      onSuccess: invalidate,
+    }),
+  };
+}
 
-// ── Inter-location transfers ──
+// ── Purchases & forfeits ──
 
-export const transferCreate = z.object({
-  toLocationId: id,
-  businessDate: dateString,
-  note: z.string().trim().max(500).nullable().optional(),
-});
-export type TransferCreate = z.infer<typeof transferCreate>;
-
-export const transferLineCreate = z.object({
-  locationItemId: id, // source-catalog row
-  qty: positive,
-  /** Optional override; defaults server-side to the source LocationItem.cost snapshot. */
-  unitCost: nonNegative.optional(),
-});
-export type TransferLineCreate = z.infer<typeof transferLineCreate>;
-
-/** Destination-side receive: what actually arrived, per dispatched line. */
-export const transferReceive = z.object({
-  receiptDate: dateString,
-  lines: z
-    .array(
-      z.object({
-        transferLineId: id,
-        qtyReceived: nonNegative, // 0 = nothing arrived (still an explicit receipt)
-        note: z.string().trim().max(500).nullable().optional(),
-      }),
-    )
-    .min(1, "Receive at least one line"),
-});
-export type TransferReceive = z.infer<typeof transferReceive>;
-
-// ── Forfeits (returned bottles) ──
-
-export const forfeitCreate = z
-  .object({
-    forfeitDate: dateString,
-    locationItemId: id,
-    scaleWeight: nonNegative.optional(),
-    scaleUnit: z.enum(["g", "oz"]).optional(),
-    tareWeight: nonNegative.optional(),
-    densityFactor: positive.optional(),
-    qty: nonNegative.optional(),
-    note: z.string().trim().max(500).optional(),
-  })
-  .superRefine((val, ctx) => {
-    const weighed = val.scaleWeight !== undefined;
-    if (weighed) {
-      if (val.tareWeight === undefined) {
-        ctx.addIssue({ code: "custom", path: ["tareWeight"], message: "Tare weight is required when weighing" });
-      }
-      // densityFactor is mode-dependent (server enforces per weighMode).
-      if (val.tareWeight !== undefined && val.scaleWeight! < val.tareWeight) {
-        ctx.addIssue({ code: "custom", path: ["scaleWeight"], message: "Scale reading is below the tare weight" });
-      }
-    } else if (!val.qty || val.qty <= 0) {
-      ctx.addIssue({ code: "custom", path: ["qty"], message: "Enter a quantity or weigh the container" });
-    }
+export function usePurchases() {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["purchases", locationId],
+    queryFn: () => api<Purchase[]>(`${base(locationId)}/purchases`),
   });
-export type ForfeitCreate = z.infer<typeof forfeitCreate>;
+}
+
+export function usePurchase(purchaseId: string) {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["purchases", locationId, purchaseId],
+    queryFn: () => api<Purchase & { lines: PurchaseLine[] }>(`${base(locationId)}/purchases/${purchaseId}`),
+  });
+}
+
+export function usePurchaseMutations(purchaseId?: string) {
+  const locationId = useLocationId();
+  const qc = useQueryClient();
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["purchases", locationId] });
+    qc.invalidateQueries({ queryKey: ["report"] });
+  };
+  return {
+    create: useMutation({
+      mutationFn: (body: PurchaseCreate) => post<Purchase>(`${base(locationId)}/purchases`, body),
+      onSuccess: invalidate,
+    }),
+    addLine: useMutation({
+      mutationFn: (body: PurchaseLineCreate) =>
+        post<PurchaseLine>(`${base(locationId)}/purchases/${purchaseId}/lines`, body),
+      onSuccess: invalidate,
+    }),
+    removeLine: useMutation({
+      mutationFn: (lineId: string) =>
+        api<{ ok: boolean }>(`${base(locationId)}/purchases/${purchaseId}/lines/${lineId}`, { method: "DELETE" }),
+      onSuccess: invalidate,
+    }),
+    commit: useMutation({
+      mutationFn: () => post<Purchase>(`${base(locationId)}/purchases/${purchaseId}/commit`),
+      onSuccess: invalidate,
+    }),
+    voidPurchase: useMutation({
+      mutationFn: (reason: string) => post<Purchase>(`${base(locationId)}/purchases/${purchaseId}/void`, { reason }),
+      onSuccess: invalidate,
+    }),
+    voidLine: useMutation({
+      mutationFn: ({ lineId, reason }: { lineId: string; reason: string }) =>
+        post<PurchaseLine>(`${base(locationId)}/purchases/${purchaseId}/lines/${lineId}/void`, { reason }),
+      onSuccess: invalidate,
+    }),
+    // Correct = void original + create replacement, server-side in one transaction.
+    correctLine: useMutation({
+      mutationFn: ({ lineId, ...body }: PurchaseLineCorrect & { lineId: string }) =>
+        post<PurchaseLine>(`${base(locationId)}/purchases/${purchaseId}/lines/${lineId}/correct`, body),
+      onSuccess: invalidate,
+    }),
+  };
+}
+
+export function useForfeits() {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["forfeits", locationId],
+    queryFn: () => api<Forfeit[]>(`${base(locationId)}/forfeits`),
+  });
+}
+
+export function useForfeitMutations() {
+  const locationId = useLocationId();
+  const qc = useQueryClient();
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["forfeits", locationId] });
+    qc.invalidateQueries({ queryKey: ["report"] });
+  };
+  return {
+    create: useMutation({
+      mutationFn: (body: ForfeitCreate) => post<Forfeit>(`${base(locationId)}/forfeits`, body),
+      onSuccess: invalidate,
+    }),
+    voidForfeit: useMutation({
+      mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+        post<Forfeit>(`${base(locationId)}/forfeits/${id}/void`, { reason }),
+      onSuccess: invalidate,
+    }),
+  };
+}
+
+// ── Transfers ──
+
+export function useTransfers(direction: "out" | "in") {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["transfers", locationId, direction],
+    queryFn: () => api<Transfer[]>(`${base(locationId)}/transfers?direction=${direction}`),
+  });
+}
+
+export function useTransfer(transferId: string) {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["transfers", locationId, transferId],
+    queryFn: () => api<Transfer & { lines: TransferLine[] }>(`${base(locationId)}/transfers/${transferId}`),
+  });
+}
+
+export function useTransferMutations(transferId?: string) {
+  const locationId = useLocationId();
+  const qc = useQueryClient();
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["transfers"] }); // both sides + both directions
+    qc.invalidateQueries({ queryKey: ["report"] });
+  };
+  return {
+    create: useMutation({
+      mutationFn: (body: TransferCreate) => post<Transfer>(`${base(locationId)}/transfers`, body),
+      onSuccess: invalidate,
+    }),
+    update: useMutation({
+      mutationFn: (body: Partial<TransferCreate>) => put<Transfer>(`${base(locationId)}/transfers/${transferId}`, body),
+      onSuccess: invalidate,
+    }),
+    addLine: useMutation({
+      mutationFn: (body: TransferLineCreate) =>
+        post<TransferLine>(`${base(locationId)}/transfers/${transferId}/lines`, body),
+      onSuccess: invalidate,
+    }),
+    removeLine: useMutation({
+      mutationFn: (lineId: string) =>
+        api<{ ok: boolean }>(`${base(locationId)}/transfers/${transferId}/lines/${lineId}`, { method: "DELETE" }),
+      onSuccess: invalidate,
+    }),
+    commit: useMutation({
+      mutationFn: () => post<Transfer>(`${base(locationId)}/transfers/${transferId}/commit`),
+      onSuccess: invalidate,
+    }),
+    voidTransfer: useMutation({
+      mutationFn: (reason: string) => post<Transfer>(`${base(locationId)}/transfers/${transferId}/void`, { reason }),
+      onSuccess: invalidate,
+    }),
+    voidLine: useMutation({
+      mutationFn: ({ lineId, reason }: { lineId: string; reason: string }) =>
+        post<TransferLine>(`${base(locationId)}/transfers/${transferId}/lines/${lineId}/void`, { reason }),
+      onSuccess: invalidate,
+    }),
+    receive: useMutation({
+      mutationFn: ({ id, ...body }: TransferReceive & { id: string }) =>
+        post(`${base(locationId)}/transfers/${id}/receive`, body),
+      onSuccess: invalidate,
+    }),
+    voidReceipt: useMutation({
+      mutationFn: ({ id, receiptId, reason }: { id: string; receiptId: string; reason: string }) =>
+        post(`${base(locationId)}/transfers/${id}/receipts/${receiptId}/void`, { reason }),
+      onSuccess: invalidate,
+    }),
+  };
+}
+
+// ── Sales ──
+
+/** rows is capped at the latest 300; totalCount and netTotal cover every
+ *  non-void entry, so the summary stays true past the display cap. */
+export interface SalesResponse {
+  rows: SaleRecord[];
+  totalCount: number;
+  netTotal: number;
+}
+
+export function useSales(filters: { kind?: string; date?: string } = {}) {
+  const locationId = useLocationId();
+  const params = new URLSearchParams();
+  if (filters.kind) params.set("kind", filters.kind);
+  if (filters.date) params.set("date", filters.date);
+  return useQuery({
+    queryKey: ["sales", locationId, filters],
+    queryFn: () => api<SalesResponse>(`${base(locationId)}/sales?${params}`),
+  });
+}
+
+export function useSaleMutations() {
+  const locationId = useLocationId();
+  const qc = useQueryClient();
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["sales", locationId] });
+    qc.invalidateQueries({ queryKey: ["report"] });
+  };
+  return {
+    create: useMutation({
+      mutationFn: (body: SaleCreate) => post<SaleRecord>(`${base(locationId)}/sales`, body),
+      onSuccess: invalidate,
+    }),
+    voidSale: useMutation({
+      mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+        post<SaleRecord>(`${base(locationId)}/sales/${id}/void`, { reason }),
+      onSuccess: invalidate,
+    }),
+    // Edit = void original + create replacement, server-side in one transaction.
+    correct: useMutation({
+      mutationFn: ({ id, body }: { id: string; body: SaleCorrect }) =>
+        post<SaleRecord>(`${base(locationId)}/sales/${id}/correct`, body),
+      onSuccess: invalidate,
+    }),
+  };
+}
+
+// ── Reports ──
+
+export function useCountDates() {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["report", "countDates", locationId],
+    queryFn: () => api<{ dates: string[] }>(`${base(locationId)}/reports/count-dates`),
+  });
+}
+
+export function useFullAudit(begin?: string, end?: string, productType?: string) {
+  const locationId = useLocationId();
+  const params = new URLSearchParams({ begin: begin ?? "", end: end ?? "" });
+  if (productType) params.set("productType", productType);
+  return useQuery({
+    queryKey: ["report", "fullAudit", locationId, begin, end, productType],
+    queryFn: () => api<ReconReport>(`${base(locationId)}/reports/full-audit?${params}`),
+    enabled: Boolean(begin && end),
+  });
+}
+
+export function useOnHand() {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["report", "onHand", locationId],
+    queryFn: () =>
+      api<Array<{ locationItemId: string; onHand: number; lastCountDate: string | null }>>(
+        `${base(locationId)}/stock/on-hand`,
+      ),
+  });
+}
