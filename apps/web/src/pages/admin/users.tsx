@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { BadgeCheck, Copy, KeyRound, Package, Plus, RefreshCw, UserCog } from "lucide-react";
+import { BadgeCheck, Copy, History, KeyRound, Package, Plus, RefreshCw, UserCog } from "lucide-react";
 import { toast } from "sonner";
 import {
   ROLES,
@@ -24,6 +24,7 @@ import { useMe } from "@/api/auth";
 import { ApiError } from "@/api/http";
 import { PageHeader } from "@/components/page-header";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { UserSessionsDialog } from "@/components/user-sessions-dialog";
 import {
   TableSurface,
   TableLoading,
@@ -96,6 +97,9 @@ export function AdminUsersPage() {
   // Generated passwords persist in a dialog until explicitly dismissed — a
   // 12-second toast is too easy to miss, and a missed password is unrecoverable.
   const [issued, setIssued] = useState<IssuedPassword | null>(null);
+  // Login history dialog target (STAFF/MANAGER/ACCOUNTANT rows only — see the
+  // row-action gate below; OWNER/ADMIN rows never offer this trigger).
+  const [sessionsFor, setSessionsFor] = useState<AdminUser | null>(null);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("ALL");
   const [pkgFilter, setPkgFilter] = useState("ALL");
@@ -292,9 +296,24 @@ export function AdminUsersPage() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="sm" onClick={() => setEditing(u)}>
-                      Edit
-                    </Button>
+                    <div className="flex justify-end gap-1">
+                      {/* Login history is watched for STAFF, MANAGER, and
+                          ACCOUNTANT only (client req 2026-07-29) — OWNER and
+                          ADMIN rows never get this trigger. */}
+                      {(u.role === "STAFF" || u.role === "MANAGER" || u.role === "ACCOUNTANT") && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setSessionsFor(u)}
+                          title="Login history"
+                        >
+                          <History className="size-4" />
+                        </Button>
+                      )}
+                      <Button variant="ghost" size="sm" onClick={() => setEditing(u)}>
+                        Edit
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -306,6 +325,11 @@ export function AdminUsersPage() {
       <CreateUserDialog open={creating} onOpenChange={setCreating} onPassword={setIssued} />
       <EditUserDialog user={editing} onClose={() => setEditing(null)} onPassword={setIssued} />
       <PasswordRevealDialog issued={issued} onClose={() => setIssued(null)} />
+      <UserSessionsDialog
+        userId={sessionsFor?.id ?? null}
+        userLabel={sessionsFor ? `${sessionsFor.firstName} ${sessionsFor.lastName}` : ""}
+        onClose={() => setSessionsFor(null)}
+      />
     </div>
   );
 }
