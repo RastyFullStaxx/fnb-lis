@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { NON_REVENUE_REASONS, SALE_KINDS } from "../constants";
-import { dateString, id, nonNegative, positive } from "./common";
+import { dateString, id, nonNegative, positive, voidRequest } from "./common";
 
 // ── Counts ──
 
@@ -75,6 +75,20 @@ export const purchaseLineCreate = z.object({
   unitCost: nonNegative,
 });
 export type PurchaseLineCreate = z.infer<typeof purchaseLineCreate>;
+
+/**
+ * Correcting a committed purchase line = void the old + write the replacement
+ * onto the SAME purchase in one step. Keeping it on the same document is the
+ * point: the replacement inherits the invoice's date, supplier and ref, so it
+ * lands in exactly the report period the original did. The item is fixed —
+ * you're correcting the numbers, not what was delivered (for a missed item,
+ * record a new delivery). Omitting `unitCost` keeps the original's snapshot.
+ */
+export const purchaseLineCorrect = purchaseLineCreate
+  .pick({ qty: true })
+  .extend({ unitCost: nonNegative.optional() })
+  .and(voidRequest);
+export type PurchaseLineCorrect = z.infer<typeof purchaseLineCorrect>;
 
 // ── Sales / non-revenue / production ──
 

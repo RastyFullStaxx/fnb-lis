@@ -141,6 +141,13 @@ export function usePurchaseMutations(purchaseId?: string) {
         post<PurchaseLine>(`${base(locationId)}/purchases/${purchaseId}/lines/${lineId}/void`, { reason }),
       onSuccess: invalidate,
     }),
+    // Post-commit fix: voids the line and writes the replacement onto this same
+    // delivery, so the correction keeps the invoice's date and report period.
+    correctLine: useMutation({
+      mutationFn: ({ lineId, ...body }: { lineId: string; qty: number; unitCost?: number; reason: string }) =>
+        post<PurchaseLine>(`${base(locationId)}/purchases/${purchaseId}/lines/${lineId}/correct`, body),
+      onSuccess: invalidate,
+    }),
   };
 }
 

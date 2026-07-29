@@ -4,6 +4,7 @@ import {
   forfeitCreate,
   lineTotal,
   purchaseCreate,
+  purchaseLineCorrect,
   purchaseLineCreate,
   remainingContent,
   resolveDensityFactor,
@@ -94,7 +95,8 @@ export const purchaseRoutes = new Hono<AppEnv>()
     const location = c.get("location");
     const user = c.get("user")!;
     const purchase = await getOwnedPurchase(location.id, c.req.param("id"));
-    if (purchase.status !== "DRAFT") throw new AppError(409, "Committed purchases take corrections, not new draft lines");
+    if (purchase.status !== "DRAFT")
+      throw new AppError(409, "This delivery is committed — correct an existing line, or record a missed item as a new delivery");
     const body = c.req.valid("json");
     const locationItem = await prisma.locationItem.findUnique({ where: { id: body.locationItemId } });
     if (!locationItem || locationItem.locationId !== location.id) throw new AppError(404, "Item not found in this catalog");
@@ -187,6 +189,48 @@ export const purchaseRoutes = new Hono<AppEnv>()
       return updated;
     });
     return c.json(voided);
+  })
+
+  /** Post-commit correction: void the wrong line and write its replacement onto
+   *  the SAME purchase, linked by correctionOfId (sales.ts / transfers.ts
+   *  pattern). Reports read only ACTIVE lines, so the void drops the original
+   *  and the replacement takes its place in the same period — no double count,
+   *  no gap. */
+  .post("/purchases/:id/lines/:lineId/correct", voidGuard, zValidator("json", purchaseLineCorrect), async (c) => {
+    const location = c.get("location");
+    const user = c.get("user")!;
+    const body = c.req.valid("json");
+    const purchase = await getOwnedPurchase(location.id, c.req.param("id"));
+    if (purchase.status !== "COMMITTED") throw new AppError(409, "Only committed deliveries take corrections");
+    const line = await prisma.purchaseLine.findUnique({ where: { id: c.req.param("lineId") }, include: LI_INCLUDE });
+    if (!line || line.purchaseId !== purchase.id) throw new AppError(404, "Purchase line not found");
+    if (line.status === "VOID") throw new AppError(409, "Already voided — correct the replacement instead");
+    const unitCost = body.unitCost ?? line.unitCost;
+    const replacement = await prisma.$transaction(async (tx) => {
+      await tx.purchaseLine.update({
+        where: { id: line.id },
+        data: { status: "VOID", voidedAt: new Date(), voidedById: user.id, voidReason: body.reason },
+      });
+      const created = await tx.purchaseLine.create({
+        data: {
+          purchaseId: purchase.id,
+          locationItemId: line.locationItemId,
+          qty: body.qty,
+          unitCost,
+          lineTotal: lineTotal(body.qty, unitCost),
+          correctionOfId: line.id,
+          createdById: user.id,
+          createdByName: `${user.firstName} ${user.lastName}`,
+        },
+        include: LI_INCLUDE,
+      });
+      await logActivity(
+        { user, clientId: location.clientId, locationId: location.id, action: "purchaseLine.correct", entity: "PurchaseLine", entityId: created.id, summary: `Corrected purchase line (${line.locationItem.itemVariant.item.name}) ×${line.qty} → ×${body.qty}: ${body.reason}`, details: { correctionOfId: line.id } },
+        tx,
+      );
+      return created;
+    });
+    return c.json(replacement, 201);
   })
 
   // ── Forfeits: returned partial bottles — content re-entering stock ──
