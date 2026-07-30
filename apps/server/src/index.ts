@@ -18,8 +18,19 @@ mkdirSync(path.join(serverRoot, "data", "uploads"), { recursive: true });
 const app = createApp();
 
 // Production: serve the built SPA from apps/web/dist (single origin, no CORS).
+//
+// Explicitly NOT in dev. This used to key off `existsSync(webDist)` alone, so
+// any stale `apps/web/dist` left over from an old `npm run build` was served at
+// :3001 alongside the API — a second, silently out-of-date copy of the whole app
+// running against the live database, three weeks behind the source on :5173.
+// Two UIs that disagree while sharing one database is the worst possible failure
+// for an audit system: whichever one you happened to open decided what you saw.
+//
+// A flag, not NODE_ENV: this is set by the dev script and nothing else, so a
+// production deploy that never exports NODE_ENV still serves the SPA correctly.
+const isDev = process.argv.includes("--dev");
 const webDist = path.resolve(serverRoot, "..", "web", "dist");
-if (existsSync(webDist)) {
+if (!isDev && existsSync(webDist)) {
   const relDist = path.relative(process.cwd(), webDist);
   app.use("*", serveStatic({ root: relDist }));
   app.use("*", serveStatic({ root: relDist, path: "index.html" }));

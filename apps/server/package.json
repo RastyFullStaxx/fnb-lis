@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node --watch --import tsx src/index.ts",
+    "dev": "node --watch --import tsx src/index.ts --dev",
     "start": "tsx src/index.ts",
     "typecheck": "tsc -p tsconfig.json",
     "db:migrate": "prisma migrate dev",
