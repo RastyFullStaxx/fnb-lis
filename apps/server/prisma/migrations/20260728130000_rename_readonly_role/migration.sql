@@ -1,0 +1,11 @@
+-- Data backfill for the READONLY -> AUDIT_VIEWER rename.
+--
+-- The rename changed the ROLES tuple in @fnb/core but shipped no migration, so
+-- every existing user still carrying 'READONLY' fails `can()` on every
+-- permission: they can still sign in, then get 403 on the dashboard and on
+-- every report. Silently bricked rather than visibly broken.
+--
+-- AUDIT_VIEWER is the closest equivalent — the old READONLY could view and
+-- export reports, which is exactly the paid audit-service tier. Anyone who
+-- should be on the unpaid tier can be moved to AUDIT_VIEWER_LIMITED by hand.
+UPDATE "User" SET "role" = 'AUDIT_VIEWER' WHERE "role" = 'READONLY';

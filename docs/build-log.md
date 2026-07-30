@@ -1247,3 +1247,59 @@ Verified: Bar catalog shows `₱180.00 / —` for Grenadine; the Assets catalog 
 `₱8,000.00 / n/a` and its bell reads **"Nothing needs attention"** (was 70).
 Golden fixture: **−₱330.69 / −₱869.57**.
 
+## Phase 31 — Client round 4 (2026-07-28)
+
+### Report access tiers (client notes 1 & 2)
+
+The roles already existed (a teammate renamed READONLY → **AUDIT_VIEWER** and
+added **AUDIT_VIEWER_LIMITED**). Three things were missing.
+
+- **Unpaid clients could still download.** The billing lockout only tested for
+  writes, and an export is a GET — so a past-due establishment kept taking files
+  out. Exports are now refused with a message that says downloads are paused
+  while viewing continues. Verified: view 200, download 403.
+- **A manual switch**, independent of billing: `Client.allowReportDownloads`
+  (migration `20260728120000`, defaults true). The LIS admin can let an
+  establishment read every report on screen while withholding the files.
+  Verified on a *paid* client: manager view 200, download 403, ADMIN 200.
+- **Reports are narrowed by role.** Audit-service viewers see the
+  reconciliation set only — 19 cards down to 6. One declaration
+  (`AUDIT_VIEWER_REPORTS`) read by the hub, the client route guard and the
+  server, so a hidden card cannot still be reachable by URL. Verified as
+  AUDIT_VIEWER: all 5 permitted reports reachable, **13/13 others 404, none
+  leaked**, dashboard still 200.
+
+  Paid and unpaid see the same list; only downloading differs. Withholding the
+  numbers from an unpaid client removes their reason to settle up.
+
+**A real bug the work surfaced:** the READONLY → AUDIT_VIEWER rename shipped
+with **no data migration**, so every existing user still carrying `READONLY`
+failed `can()` on every permission — they could sign in, then got 403 on the
+dashboard and on every report. Silently bricked, not visibly broken. Backfilled
+in `20260728130000_rename_readonly_role`.
+
+### Centavos on unit prices (client note 3)
+
+Storage was never the limit — `cost`/`retail` are doubles and `2.705`
+round-trips exactly (verified end to end). Only the **display** truncated:
+`formatMoney` is capped at 2dp, so a per-gram price rendered ₱0.00 and read as
+unpriced. Added `formatUnitPrice` at 3dp — matching legacy's `decimal(11,3)` and
+the `1.000` in the client's screenshot — for unit-price cells only, leaving
+every total (and the whole Full Audit) on the 2dp formatter. Butter now reads
+**₱1.08 / ₱2.705**.
+
+### Typo detection when creating an item (client note 5)
+
+Imports already fuzzy-match (alias → exact → Levenshtein); tested against six
+realistic typos, all caught, unrelated names correctly rejected. The gap was
+**creating** an item — a typo silently produced a second master item and split
+that product's history. Now a near-duplicate returns `409 SIMILAR_ITEM` with
+"Yes, it's a different item — create it" / "Let me fix the name". Threshold 0.85,
+above the import matcher's 0.6, so `Absolut Vodkaa` is caught while
+`Absolut Citron` saves normally — both verified.
+
+`ApiError` now carries the server's `code`, which it had always been sending and
+the client had been discarding — callers had to match on message text.
+
+Golden fixture throughout: **−₱330.69 / −₱869.57**.
+

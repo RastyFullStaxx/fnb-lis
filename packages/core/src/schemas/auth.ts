@@ -41,9 +41,16 @@ export interface MeClientSubscription {
   status: string;
 }
 
+/**
+ * Why report downloads are (un)available to this establishment.
+ * ALLOWED · DISABLED (admin switched them off) · PAST_DUE (billing lockout).
+ */
+export type ReportDownloadState = "ALLOWED" | "DISABLED" | "PAST_DUE";
+
 export interface MeClient {
   id: string;
   name: string;
+  reportDownloads: ReportDownloadState;
   locations: MeLocation[];
   subscription: MeClientSubscription | null;
 }

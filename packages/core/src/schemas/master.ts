@@ -52,6 +52,12 @@ export const itemCreate = z.object({
   categoryId: id,
   description: z.string().trim().max(500).nullable().optional(),
   variants: z.array(variantCreate).min(1, "Add at least one size/variant"),
+  /**
+   * Set once the user has been shown a near-duplicate name and confirmed the
+   * new item really is a different product (client req 2026-07-28 — catch the
+   * staff typo without banning legitimate siblings like "Absolut Citron").
+   */
+  confirmSimilar: z.boolean().optional(),
 });
 export type ItemCreate = z.infer<typeof itemCreate>;
 

@@ -2,6 +2,13 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    /**
+     * Machine-readable reason from the server (`SIMILAR_ITEM`,
+     * `SUBSCRIPTION_VIEW_ONLY`, `DUPLICATE`, …). The server has always sent
+     * this; dropping it forced callers to match on message text, which breaks
+     * the moment the wording is improved.
+     */
+    public code?: string | null,
   ) {
     super(message);
     this.name = "ApiError";
@@ -19,13 +26,15 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     let message = res.statusText;
+    let code: string | null = null;
     try {
-      const body = (await res.json()) as { error?: string };
+      const body = (await res.json()) as { error?: string; code?: string | null };
       if (body.error) message = body.error;
+      code = body.code ?? null;
     } catch {
       // non-JSON error body
     }
-    throw new ApiError(res.status, message);
+    throw new ApiError(res.status, message, code);
   }
   return res.json() as Promise<T>;
 }

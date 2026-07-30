@@ -5,7 +5,7 @@ import { useLocationId } from "@/api/location";
 import { useMe } from "@/api/auth";
 import { useCountDates } from "@/api/ops";
 import { exportUrl, useTransferReport } from "@/api/reports";
-import { formatMoney, formatNumber, formatDate } from "@/lib/utils";
+import { formatMoney, formatNumber, formatDate, formatUnitPrice } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { TableSurface, TableLoading, TableEmpty, TableError, ToolbarField } from "@/components/table-surface";
 import { DateRangeControl, ExportButtons } from "@/components/report-toolbar";
@@ -174,7 +174,7 @@ export function TransferReportPage() {
                           formatNumber(row.qtyReceived)
                         )}
                       </TableCell>
-                      <TableCell className="tnum text-right">{formatMoney(row.unitCost)}</TableCell>
+                      <TableCell className="tnum text-right">{formatUnitPrice(row.unitCost)}</TableCell>
                       <TableCell className="tnum text-right">{formatMoney(row.costValue)}</TableCell>
                       <TableCell className="tnum text-right">{formatMoney(row.retailValue)}</TableCell>
                     </TableRow>

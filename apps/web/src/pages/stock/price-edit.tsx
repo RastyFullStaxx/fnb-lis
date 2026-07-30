@@ -5,7 +5,7 @@ import { isMissingPrice } from "@fnb/core";
 import { useUpdateLocationItem } from "@/api/location";
 import type { LocationItem } from "@/api/types";
 import { ApiError } from "@/api/http";
-import { cn, formatMoney } from "@/lib/utils";
+import { cn, formatMoney, formatUnitPrice } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { QuantityInput } from "@/components/quantity-input";
 import { Label } from "@/components/ui/label";
@@ -26,7 +26,7 @@ export function PriceEdit({ row, canEdit }: { row: LocationItem; canEdit: boolea
   // as a real price of zero, which is a different (and wrong) claim — and on an
   // Asset the retail column is not missing at all, it simply doesn't apply.
   const money = (v: number, applicable = true) =>
-    !applicable ? "n/a" : v > 0 ? formatMoney(v) : "—";
+    !applicable ? "n/a" : v > 0 ? formatUnitPrice(v) : "—";
 
   const display = (
     <span className={cn("tnum", missing && "font-medium text-destructive")}>

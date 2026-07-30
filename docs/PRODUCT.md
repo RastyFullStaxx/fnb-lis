@@ -22,9 +22,41 @@ The company (LIS) runs these audits for **multiple client establishments** (bars
 | Operations lead | MANAGER | Everything staff does + prices, recipes, imports, voids/corrections. Investigates variance. |
 | Owner (Lourd) | ADMIN | Onboards clients/locations/users, maintains the master catalog, reads everything. |
 | Client bookkeeper | ACCOUNTANT | Generates and exports reports; read-only elsewhere. |
-| Client viewer | READONLY | Views and downloads reports, changes nothing. Used for establishments that hired LIS as a third-party audit service: sessions expire after 20 minutes, report screens carry a watermark naming the viewer, and every export is stamped "Exported by". |
+| Establishment owner | OWNER | Hires and disables his own staff (including managers) — the only client-side role that manages accounts. Everything a manager can do. |
+| Audit-service viewer | AUDIT_VIEWER | Views **and downloads** the reconciliation reports, changes nothing. For establishments that hired LIS as a third-party audit service: sessions expire after 20 minutes, report screens carry a watermark naming the viewer, and every export is stamped "Exported by". |
+| Audit-service viewer, unpaid | AUDIT_VIEWER_LIMITED | The same reports, **view-only — no downloads**. The tier an audit-service client sits in until the invoice is settled. |
 
 Any non-ADMIN user can additionally be restricted to specific **modules** (Bar / Kitchen / Asset), which is how the client's five access packages are expressed. Locations outside a user's modules disappear from their switcher entirely.
+
+### What an audit-service viewer can open
+
+Both viewer tiers are narrowed to the **reconciliation set** — they are reading an
+audit, not running the establishment, so the operational reports are both noise
+to them and commercially sensitive to the client:
+
+| Visible | Hidden |
+|---|---|
+| Full Audit · Variance Report · Full Audit by Category · Usage Cost · Beginning/Ending Cost · Cost Analysis | Sales · Sales by Item · Top Sellers · Purchases · Transfers · Inventory on Hand · Par Level · Non-Moving · Non-Revenue · Forfeited Bottles · Asset Register · Asset Inventory · Asset Breakage |
+
+The list lives in one place — `AUDIT_VIEWER_REPORTS` in `packages/core/src/constants.ts`
+— read by the reports hub, the client route guard, and the server, so a hidden
+card can never still be reachable by typing its URL.
+
+**Paid and unpaid see the same reports.** The difference is downloading, not
+visibility: withholding the numbers from an unpaid client removes their reason
+to settle up, while letting them read a variance they cannot export does not.
+
+### Three ways a download can be refused
+
+| Gate | Who sets it | Effect |
+|---|---|---|
+| `reports.export` permission | Fixed by role | AUDIT_VIEWER_LIMITED never downloads |
+| `Client.allowReportDownloads` | LIS ADMIN, per establishment | View on screen, no files out — independent of payment |
+| Billing lockout (`VIEW_ONLY`) | Derived from the subscription | Past due ⇒ no downloads **and** no writes |
+
+ADMIN bypasses all three — otherwise an unpaid client's administrator could not
+get in to mark the invoice paid. Where the download buttons would be, the toolbar
+says *"Download unavailable"* and names which gate applies.
 
 ## The workflows (user-facing language, ledger hidden)
 

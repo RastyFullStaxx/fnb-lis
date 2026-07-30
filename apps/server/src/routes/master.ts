@@ -13,14 +13,21 @@ import {
   unitCreate,
   variantCreate,
   variantUpdate,
-  type Role,
-} from "@fnb/core";
+  type Role, fuzzyScore } from "@fnb/core";
 import { prisma } from "../db";
 import { AppError } from "../lib/errors";
 import { logActivity } from "../services/activity";
 import { requireAuth, requirePermission, type AppEnv } from "../middleware/auth";
 
 const writeGuard = requirePermission("master.write");
+
+/**
+ * How alike two item names must be before creating the second one asks for
+ * confirmation. Higher than the import matcher's 0.6: this blocks a save, so it
+ * should only fire on a genuine typo ("Absolut Vodkaa"), never on a real
+ * sibling product ("Absolut Citron" scores ~0.55 against "Absolut Vodka").
+ */
+const NEAR_DUPLICATE_THRESHOLD = 0.85;
 
 /**
  * NET weigh mode (client req #16) is only coherent when (a) the variant is
@@ -246,6 +253,27 @@ export const masterRoutes = new Hono<AppEnv>()
     const user = c.get("user")!;
     const duplicate = await prisma.item.findFirst({ where: { name: { equals: body.name } } });
     if (duplicate) throw new AppError(409, `An item named "${body.name}" already exists`);
+
+    // Near-duplicate detection (client req 2026-07-28: "namamali spelling ng
+    // staff nya mag-enter, gusto magkaron ng detection para dun"). Imports
+    // already fuzzy-match against the catalog; creating an item did not, so a
+    // typo silently produced a SECOND master item and split that product's
+    // history in two. A warning, not a ban — "Absolut Vodka" and "Absolut
+    // Citron" are both legitimate — so the caller can confirm and proceed.
+    if (!body.confirmSimilar) {
+      const candidates = await prisma.item.findMany({ where: { isActive: true }, select: { id: true, name: true } });
+      const near = candidates
+        .map((i) => ({ ...i, score: fuzzyScore(body.name, i.name) }))
+        .filter((i) => i.score >= NEAR_DUPLICATE_THRESHOLD)
+        .sort((a, b) => b.score - a.score)[0];
+      if (near) {
+        throw new AppError(
+          409,
+          `"${body.name}" looks like an existing item, "${near.name}". If it really is a different product, confirm to continue.`,
+          "SIMILAR_ITEM",
+        );
+      }
+    }
     for (const v of body.variants) {
       await assertWeighModeValid(v.weighMode ?? null, v.contentTracked, v.unitId);
     }

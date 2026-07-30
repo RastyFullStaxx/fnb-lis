@@ -169,7 +169,15 @@ export const adminRoutes = new Hono<AppEnv>()
 
   .put(
     "/clients/:id",
-    zValidator("json", clientBody.extend({ status: z.enum(["ACTIVE", "ARCHIVED"]).optional() })),
+    zValidator(
+      "json",
+      clientBody.extend({
+        status: z.enum(["ACTIVE", "ARCHIVED"]).optional(),
+        // Client req 2026-07-28 — view reports without being able to take them
+        // out of the system. ADMIN-only: this whole router is admin.manage.
+        allowReportDownloads: z.boolean().optional(),
+      }),
+    ),
     async (c) => {
       const id = c.req.param("id");
       const body = c.req.valid("json");
@@ -177,7 +185,12 @@ export const adminRoutes = new Hono<AppEnv>()
       const client = await prisma.$transaction(async (tx) => {
         const updated = await tx.client.update({ where: { id }, data: body });
         await logActivity(
-          { user, clientId: id, action: "client.update", entity: "Client", entityId: id, summary: `Updated client "${updated.name}"`, details: body },
+          { user, clientId: id, action: "client.update", entity: "Client", entityId: id, summary:
+              body.allowReportDownloads === undefined
+                ? `Updated client "${updated.name}"`
+                : `Report downloads ${body.allowReportDownloads ? "enabled" : "disabled"} for "${updated.name}"`,
+            details: body,
+          },
           tx,
         );
         return updated;

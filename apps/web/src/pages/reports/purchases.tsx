@@ -4,7 +4,7 @@ import { PAYMENT_TERMS_LABELS, round2 } from "@fnb/core";
 import { useLocationId } from "@/api/location";
 import { useCountDates } from "@/api/ops";
 import { exportUrl, usePurchaseReport } from "@/api/reports";
-import { formatMoney, formatNumber, formatDate } from "@/lib/utils";
+import { formatMoney, formatNumber, formatDate, formatUnitPrice } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { TableSurface, TableLoading, TableEmpty, TableError, ToolbarSearch } from "@/components/table-surface";
 import { DateRangeControl, ExportButtons } from "@/components/report-toolbar";
@@ -120,7 +120,7 @@ export function PurchaseReportPage() {
                       </TableCell>
                       <TableCell className="max-w-[22rem] break-words font-medium">{row.name}</TableCell>
                       <TableCell className="tnum text-right">{formatNumber(row.qty)}</TableCell>
-                      <TableCell className="tnum text-right">{formatMoney(row.unitCost)}</TableCell>
+                      <TableCell className="tnum text-right">{formatUnitPrice(row.unitCost)}</TableCell>
                       <TableCell className="tnum text-right">{formatMoney(row.lineTotal)}</TableCell>
                     </TableRow>
                   ))}

@@ -9,8 +9,7 @@ import {
   NON_REVENUE_GROUP_LABELS,
   NON_REVENUE_GROUPS,
   type CostBasis,
-  type NonRevenueGroup,
-} from "@fnb/core";
+  type NonRevenueGroup, canViewReport, isAuditViewer, type Role } from "@fnb/core";
 import { AppError } from "../lib/errors";
 import { requirePermission, type AppEnv } from "../middleware/auth";
 import { buildFullAudit, committedCountDates } from "../services/report-assembly";
@@ -195,6 +194,27 @@ function requireRange(c: { req: { query: (k: string) => string | undefined } }):
 
 export const reportRoutes = new Hono<AppEnv>()
   .use(requirePermission("reports.view"))
+  /**
+   * Narrow audit-service viewers to the reconciliation set (client req
+   * 2026-07-28). Enforced here rather than only in the hub, so a typed URL or a
+   * direct API call is refused too — hiding a card is not access control.
+   *
+   * 404, not 403: a report this account may never open should be
+   * indistinguishable from one that does not exist, the same convention the
+   * cross-tenant location guard uses.
+   */
+  .use(async (c, next) => {
+    const user = c.get("user")!;
+    if (isAuditViewer(user.role as Role)) {
+      // "/reports/full-audit/export" and "/reports/full-audit/drill" both
+      // belong to the full-audit report — take the first segment after it.
+      const slug = c.req.path.split("/reports/")[1]?.split("/")[0]?.split("?")[0];
+      if (slug && slug !== "count-dates" && !canViewReport(user.role as Role, slug)) {
+        throw new AppError(404, "Not found");
+      }
+    }
+    await next();
+  })
 
   .get("/reports/count-dates", async (c) => {
     const location = c.get("location");

@@ -31,6 +31,29 @@ const DATE = new Intl.DateTimeFormat("en-PH", {
   year: "numeric",
 });
 
+const PESO_UNIT = new Intl.NumberFormat("en-PH", {
+  style: "currency",
+  currency: "PHP",
+  minimumFractionDigits: 2,
+  // Legacy stores unit prices as decimal(11,3) and the client's own screenshot
+  // shows "1.000" — an item sold by the gram costs a fraction of a peso, so two
+  // decimals rounds a real price to ₱0.00 and it reads as unpriced.
+  maximumFractionDigits: 3,
+});
+
+/**
+ * A UNIT price — cost or retail for one gram/ml/piece — which legitimately
+ * carries centavo fractions.
+ *
+ * Deliberately NOT the same formatter as money totals: widening `formatMoney`
+ * would put three decimals on every figure in the Full Audit, and that report's
+ * presentation must not move. Storage was never the problem — `cost`/`retail`
+ * are doubles and 2.705 round-trips exactly; only the display was truncating.
+ */
+export function formatUnitPrice(value: number): string {
+  return PESO_UNIT.format(Math.abs(value) < 0.0005 ? 0 : value);
+}
+
 /**
  * A business date (`YYYY-MM-DD` TEXT) as people read it: "Jul 20, 2026".
  *

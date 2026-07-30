@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { zValidator } from "@hono/zod-validator";
 import {
+  deriveAccessState,
   loginRequest,
   LOGIN_LOCKOUT_MS,
   LOGIN_LOCKOUT_THRESHOLD,
@@ -146,7 +147,7 @@ async function buildMe(user: MeResponse["user"]): Promise<MeResponse> {
           where: { status: "ACTIVE" },
           include: {
             locations: { where: { status: "ACTIVE" }, include: { modules: true } },
-            subscription: { select: { packageType: true, status: true, modules: true } },
+            subscription: { select: { packageType: true, status: true, modules: true, billingCycle: true, startDate: true, paid: true, lastPaidAt: true } },
           },
           orderBy: { name: "asc" },
         })
@@ -157,7 +158,7 @@ async function buildMe(user: MeResponse["user"]): Promise<MeResponse> {
               client: {
                 include: {
                   locations: { where: { status: "ACTIVE" }, include: { modules: true } },
-                  subscription: { select: { packageType: true, status: true, modules: true } },
+                  subscription: { select: { packageType: true, status: true, modules: true, billingCycle: true, startDate: true, paid: true, lastPaidAt: true } },
                 },
               },
             },
@@ -184,6 +185,13 @@ async function buildMe(user: MeResponse["user"]): Promise<MeResponse> {
     .map((cl) => ({
       id: cl.id,
       name: cl.name,
+      // Effective, not raw: the admin switch AND the billing state both gate
+      // downloads, so the UI shows one honest answer instead of re-deriving it.
+      reportDownloads: !cl.allowReportDownloads
+        ? ("DISABLED" as const)
+        : cl.subscription && deriveAccessState(cl.subscription, new Date()) === "VIEW_ONLY"
+          ? ("PAST_DUE" as const)
+          : ("ALLOWED" as const),
       locations: cl.locations.flatMap((l) => {
         // Same rule as requireLocationAccess: a non-ACTIVE subscription
         // (TRIAL/SUSPENDED/CANCELLED) falls back to an unrestricted location

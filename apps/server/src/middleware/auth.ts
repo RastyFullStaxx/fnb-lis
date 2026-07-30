@@ -111,11 +111,29 @@ export const requireLocationAccess = createMiddleware<AppEnv>(async (c, next) =>
   // administrator could not get in to mark the invoice paid.
   const sub = location.client.subscription;
   const isWrite = !["GET", "HEAD", "OPTIONS"].includes(c.req.method);
-  if (isWrite && user.role !== "ADMIN" && sub && deriveAccessState(sub, new Date()) === "VIEW_ONLY") {
+  // Downloads count as restricted too, not just writes (client 2026-07-28:
+  // "pag hindi pa nagbayad, pwede view report lang — no download reports and no
+  // manipulation"). An export is a GET, so the write test alone let a past-due
+  // establishment keep taking files out of the system.
+  const isDownload = c.req.path.includes("/export");
+  if ((isWrite || isDownload) && user.role !== "ADMIN" && sub && deriveAccessState(sub, new Date()) === "VIEW_ONLY") {
     throw new AppError(
       403,
-      "This establishment's subscription is past due, so the system is read-only. Contact your LIS administrator to restore access.",
+      isDownload
+        ? "This establishment's subscription is past due. Reports can still be viewed on screen, but downloads are paused until payment is settled."
+        : "This establishment's subscription is past due, so the system is read-only. Contact your LIS administrator to restore access.",
       "SUBSCRIPTION_VIEW_ONLY",
+    );
+  }
+
+  // Independent of billing: the LIS admin can withhold downloads from a client
+  // outright (client 2026-07-28: "pwede ko din enable na view reports lang sya
+  // at disable download reports"). Viewing on screen is unaffected.
+  if (isDownload && user.role !== "ADMIN" && !location.client.allowReportDownloads) {
+    throw new AppError(
+      403,
+      "Report downloads are turned off for this establishment. You can still view every report on screen.",
+      "DOWNLOADS_DISABLED",
     );
   }
 

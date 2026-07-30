@@ -3,7 +3,7 @@ import { Boxes } from "lucide-react";
 import { round2 } from "@fnb/core";
 import { useLocationId } from "@/api/location";
 import { exportUrl, useOnHandReport } from "@/api/reports";
-import { formatMoney, formatNumber, formatDate } from "@/lib/utils";
+import { formatMoney, formatNumber, formatDate, formatUnitPrice } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { TableSurface, TableLoading, TableEmpty, TableError, ToolbarSearch } from "@/components/table-surface";
 import { ExportButtons } from "@/components/report-toolbar";
@@ -137,8 +137,8 @@ export function OnHandReportPage() {
                       <TableCell className={cn("tnum text-right", row.onHand < 0 && "text-destructive")}>
                         {formatNumber(row.onHand)}
                       </TableCell>
-                      <TableCell className="tnum text-right">{formatMoney(row.cost)}</TableCell>
-                      <TableCell className="tnum text-right">{formatMoney(row.retail)}</TableCell>
+                      <TableCell className="tnum text-right">{formatUnitPrice(row.cost)}</TableCell>
+                      <TableCell className="tnum text-right">{formatUnitPrice(row.retail)}</TableCell>
                       <TableCell className="tnum text-right">{formatMoney(row.costValue)}</TableCell>
                       <TableCell className="tnum text-right">{formatMoney(row.retailValue)}</TableCell>
                     </TableRow>

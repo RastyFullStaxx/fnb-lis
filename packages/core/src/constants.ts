@@ -459,3 +459,39 @@ export function isMissingPrice(
   return row.cost <= 0 || row.retail <= 0;
 }
 
+/**
+ * The reports a 3rd-party audit-service viewer may open (client req 2026-07-28).
+ *
+ * These accounts exist to read the reconciliation and nothing else — they are
+ * not running the establishment, so Sales, Purchases, Transfers, Par Level,
+ * Top Sellers and the asset register are noise to them and commercially
+ * sensitive to the client. The paid and unpaid tiers see the SAME list; what
+ * separates them is downloading, enforced by `reports.export` and the billing
+ * lockout, not by hiding reports. Withholding the numbers entirely from an
+ * unpaid client removes their reason to settle up.
+ *
+ * Slugs match the report route segment (`/reports/<slug>`).
+ */
+export const AUDIT_VIEWER_REPORTS = [
+  "full-audit",
+  "legacy-audit",
+  "usage-cost",
+  "cost-snapshot",
+  "cost-analysis",
+] as const;
+
+/** Audit-service viewers, paid and unpaid — read-only 3rd-party report readers. */
+export function isAuditViewer(role: Role): boolean {
+  return role === "AUDIT_VIEWER" || role === "AUDIT_VIEWER_LIMITED";
+}
+
+/**
+ * May this role open this report? Everyone who runs the establishment sees the
+ * full set; audit-service viewers are narrowed to the reconciliation.
+ */
+export function canViewReport(role: Role, slug: string): boolean {
+  if (!can(role, "reports.view")) return false;
+  if (!isAuditViewer(role)) return true;
+  return (AUDIT_VIEWER_REPORTS as readonly string[]).includes(slug);
+}
+

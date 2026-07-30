@@ -81,15 +81,27 @@ export function ItemFormSheet({
   const categoryId = form.watch("categoryId");
   const category = categories.data?.find((c) => c.id === categoryId);
 
-  const onSubmit = form.handleSubmit(async (values) => {
+  // The server answers 409 SIMILAR_ITEM when a new name looks like a typo of an
+  // existing one. Hold the message here and let the user decide — banning the
+  // save outright would block legitimate siblings ("Absolut Citron").
+  const [similarWarning, setSimilarWarning] = useState<string | null>(null);
+
+  const submit = async (values: ItemCreate, confirmSimilar = false) => {
     try {
-      const created = await createItem.mutateAsync(values);
+      const created = await createItem.mutateAsync({ ...values, ...(confirmSimilar ? { confirmSimilar: true } : {}) });
       toast.success(`Item "${created.name}" added — every client location can now price it`);
+      setSimilarWarning(null);
       onOpenChange(false);
     } catch (err) {
+      if (err instanceof ApiError && err.code === "SIMILAR_ITEM") {
+        setSimilarWarning(err.message);
+        return;
+      }
       toast.error(err instanceof ApiError ? err.message : "Could not save the item");
     }
-  });
+  };
+
+  const onSubmit = form.handleSubmit((values) => submit(values));
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -366,6 +378,29 @@ export function ItemFormSheet({
               <p className="text-sm text-destructive">{form.formState.errors.variants.root.message}</p>
             )}
           </div>
+
+          {similarWarning && (
+            // A typo splits one product's history across two master items and
+            // nothing downstream ever reconciles them — worth one deliberate
+            // confirmation before it happens.
+            <div className="space-y-2 rounded-md bg-warning/10 p-3">
+              <p className="text-sm text-foreground">{similarWarning}</p>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={createItem.isPending}
+                  onClick={() => void submit(form.getValues(), true)}
+                >
+                  Yes, it's a different item — create it
+                </Button>
+                <Button type="button" size="sm" variant="ghost" onClick={() => setSimilarWarning(null)}>
+                  Let me fix the name
+                </Button>
+              </div>
+            </div>
+          )}
 
           <SheetFooter className="px-0">
             <Button type="submit" disabled={createItem.isPending}>

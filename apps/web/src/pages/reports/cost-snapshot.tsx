@@ -5,7 +5,7 @@ import { round2 } from "@fnb/core";
 import { useCountDates } from "@/api/ops";
 import { useLocationId } from "@/api/location";
 import { exportUrl, useCostSnapshotReport } from "@/api/reports";
-import { formatMoney, formatNumber, formatDate } from "@/lib/utils";
+import { formatMoney, formatNumber, formatDate, formatUnitPrice } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import {
@@ -194,7 +194,7 @@ export function CostSnapshotPage() {
                       <TableCell className="max-w-[22rem] font-medium break-words">{row.name}</TableCell>
                       <TableCell className="text-muted-foreground">{row.uom}</TableCell>
                       <TableCell className="tnum text-right">{formatNumber(row.qty)}</TableCell>
-                      <TableCell className="tnum text-right">{formatMoney(row.cost)}</TableCell>
+                      <TableCell className="tnum text-right">{formatUnitPrice(row.cost)}</TableCell>
                       <TableCell className="tnum text-right">{formatMoney(row.value)}</TableCell>
                       <TableCell>
                         <Badge variant={row.basis === "average" ? "secondary" : "outline"}>

@@ -1,4 +1,6 @@
 import { Link } from "react-router";
+import { canViewReport, type Role } from "@fnb/core";
+import { useMe } from "@/api/auth";
 import {
   ArrowLeftRight,
   BarChart3,
@@ -175,6 +177,16 @@ export function ReportsPage() {
   const locationId = useLocationId();
   const href = (path: string) => `/l/${locationId}/reports/${path}`;
 
+  // Audit-service viewers get the reconciliation set only — the same list the
+  // server enforces, read from one declaration so the hub can never offer a
+  // card that 404s. Everyone running the establishment sees all of them.
+  const me = useMe();
+  const role = (me.data?.user.role ?? "AUDIT_VIEWER_LIMITED") as Role;
+  const sections = SECTIONS.map((section) => ({
+    ...section,
+    reports: section.reports.filter((r) => canViewReport(role, r.path.split("?")[0]!)),
+  })).filter((section) => section.reports.length > 0);
+
   return (
     <div className="space-y-10">
       <div>
@@ -205,7 +217,7 @@ export function ReportsPage() {
         </Link>
       </div>
 
-      {SECTIONS.map((section) => (
+      {sections.map((section) => (
         <section key={section.title} className="space-y-4">
           <div className="space-y-1">
             <h3 className="text-base font-medium">{section.title}</h3>

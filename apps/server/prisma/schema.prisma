@@ -77,6 +77,11 @@ model Client {
   // Whether this establishment may SEE bottle tare / liquid weights (client
   // decision 2026-07-25). Off by default: that calibration library is LIS's
   // own IP, shown to a client only when the LIS admin turns it on for them.
+  // Client req 2026-07-28: the LIS admin can let an establishment VIEW reports
+  // while withholding downloads — used for audit-service clients and as leverage
+  // separate from the billing lockout. Default on; only ADMIN can change it.
+  allowReportDownloads Boolean @default(true)
+
   // Superseded 2026-07-25: clients weigh their own bottles into LocationItem
   // overrides and always see them. Column kept — migrations stay additive.
   showBottleWeights Boolean @default(false)

@@ -3,7 +3,7 @@ import { PackageX } from "lucide-react";
 import { round2 } from "@fnb/core";
 import { useLocationId } from "@/api/location";
 import { exportUrl, useNonMovingReport } from "@/api/reports";
-import { formatMoney, formatNumber } from "@/lib/utils";
+import { formatMoney, formatNumber, formatUnitPrice } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { TableSurface, TableLoading, TableEmpty, TableError, ToolbarSearch } from "@/components/table-surface";
 import { ExportButtons } from "@/components/report-toolbar";
@@ -118,7 +118,7 @@ export function NonMovingReportPage() {
                       <TableCell className="max-w-[22rem] font-medium break-words">{row.name}</TableCell>
                       <TableCell className="text-muted-foreground">{row.category}</TableCell>
                       <TableCell className="tnum text-right">{formatNumber(row.onHand)}</TableCell>
-                      <TableCell className="tnum text-right">{formatMoney(row.cost)}</TableCell>
+                      <TableCell className="tnum text-right">{formatUnitPrice(row.cost)}</TableCell>
                       <TableCell className="tnum text-right">{formatMoney(row.costValue)}</TableCell>
                       <TableCell className="tnum text-right">{formatMoney(row.retailValue)}</TableCell>
                     </TableRow>

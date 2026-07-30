@@ -8,7 +8,7 @@ import {
   useParams,
 } from "react-router";
 import { Check, ChevronsUpDown, Lock, LogOut, Sparkles } from "lucide-react";
-import { can, LOCATION_KIND_LABELS, type LocationKind, type MeResponse, type Role } from "@fnb/core";
+import { can, canViewReport, LOCATION_KIND_LABELS, type LocationKind, type MeResponse, type Role } from "@fnb/core";
 import { useLogout, useMe } from "@/api/auth";
 import { ApiError } from "@/api/http";
 import { BootError, BootSkeleton } from "@/components/full-page-spinner";
@@ -165,6 +165,25 @@ function RouteGuard({ role }: { role: Role }) {
   const { locationId } = useParams();
   const relative = locationId ? pathname.split(`/l/${locationId}/`)[1] ?? "" : "";
   const needed = permissionForPath(relative);
+
+  // Reports are gated per report, not just per section: an audit-service
+  // viewer may open the reconciliation set and nothing else. Same predicate the
+  // hub filters with and the server enforces.
+  const reportSlug = relative.startsWith("reports/") ? relative.slice("reports/".length).split("/")[0] : null;
+  if (reportSlug && !canViewReport(role, reportSlug)) {
+    return (
+      <EmptyState
+        icon={Lock}
+        title="This report isn't part of your access"
+        description="Your account covers the reconciliation reports. Ask the establishment owner or your LIS administrator if you need more."
+        action={
+          <Button asChild variant="outline">
+            <Link to={`/l/${locationId}/reports`}>Back to Reports</Link>
+          </Button>
+        }
+      />
+    );
+  }
 
   if (needed && !can(role, needed)) {
     return (

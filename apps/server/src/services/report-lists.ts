@@ -594,7 +594,7 @@ export async function nonMovingReport(
       name: it.name,
       category: it.category,
       onHand: round2(it.onHand),
-      cost: round2(it.cost),
+      cost: it.cost, // unit price keeps its centavo fractions (client req 2026-07-28)
       costValue: round2(it.onHand * it.cost),
       retailValue: round2(it.onHand * it.retail),
     }))

@@ -1,8 +1,10 @@
 import { useState } from "react";
-import { Download, FileSpreadsheet, FileText, Loader2, Printer } from "lucide-react";
+import { Download, FileSpreadsheet, FileText, Loader2, Lock, Printer } from "lucide-react";
 import { toast } from "sonner";
 import { can, type Role } from "@fnb/core";
 import { useMe } from "@/api/auth";
+import { useLocationId } from "@/api/location";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { downloadFile, ApiError } from "@/api/http";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -71,8 +73,20 @@ export function ExportButtons({
   disabled?: boolean;
 }) {
   const me = useMe();
+  const locationId = useLocationId();
   const role = (me.data?.user.role ?? "AUDIT_VIEWER_LIMITED") as Role;
-  const canExport = can(role, "reports.export");
+  // Three independent gates, and the user deserves to know WHICH one applies:
+  // the role, the admin's per-client switch, and the billing lockout. Hidden
+  // buttons with no explanation was the previous behaviour.
+  const client = me.data?.clients.find((c) => c.locations.some((l) => l.id === locationId));
+  const downloads = client?.reportDownloads ?? "ALLOWED";
+  const canExport = can(role, "reports.export") && downloads === "ALLOWED";
+  const blockedReason =
+    can(role, "reports.export") && downloads !== "ALLOWED"
+      ? downloads === "PAST_DUE"
+        ? "Downloads are paused while this establishment's subscription is past due — reports stay viewable on screen."
+        : "Report downloads are turned off for this establishment by your LIS administrator."
+      : null;
   // Slow workbooks invite double-clicks — disable every button while one runs.
   const [running, setRunning] = useState<"xlsx" | "csv" | "pdf" | null>(null);
 
@@ -94,6 +108,18 @@ export function ExportButtons({
         <Button variant="outline" size="sm" onClick={onPrint}>
           <Printer className="size-4" /> Print
         </Button>
+      )}
+      {blockedReason && (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex cursor-help items-center gap-1 text-xs text-muted-foreground">
+                <Lock className="size-3.5" /> Download unavailable
+              </span>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-xs">{blockedReason}</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       )}
       {canExport && (
         <>

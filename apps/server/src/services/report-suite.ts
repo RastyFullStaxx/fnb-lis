@@ -236,7 +236,7 @@ export async function costSnapshotReport(
         name: li.itemVariant.item.name,
         uom: uomLabel(li),
         qty: round2(qty),
-        cost: round2(cost),
+        cost, // unit price keeps its centavo fractions (client req 2026-07-28)
         value: round2(qty * cost),
         basis: (average !== undefined ? "average" : "price") as CostSnapshotRow["basis"],
         _sort: `${li.itemVariant.item.category.sortOrder}`.padStart(4, "0") + li.itemVariant.item.name,
