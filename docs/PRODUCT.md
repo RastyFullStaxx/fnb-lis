@@ -42,6 +42,13 @@ The list lives in one place — `AUDIT_VIEWER_REPORTS` in `packages/core/src/con
 — read by the reports hub, the client route guard, and the server, so a hidden
 card can never still be reachable by typing its URL.
 
+The hub filters on a **second axis** as well: reports that need a module the
+location doesn't have are hidden for everyone, not just viewers. An Asset-only
+warehouse no longer offers "Sales by Item (Shot & Bottle)", Top Sellers, Cost
+Analysis, Forfeited Bottles or the Sales report — all of which opened to an empty
+table there. Conversely a Bar location no longer lists the three Asset reports.
+Section headings appear only when there are enough reports left to need them.
+
 **Paid and unpaid see the same reports.** The difference is downloading, not
 visibility: withholding the numbers from an unpaid client removes their reason
 to settle up, while letting them read a variance they cannot export does not.

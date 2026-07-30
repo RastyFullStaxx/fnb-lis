@@ -1,6 +1,7 @@
 import { Link } from "react-router";
-import { canViewReport, type Role } from "@fnb/core";
+import { canViewReport, type Role, allowedProductTypes } from "@fnb/core";
 import { useMe } from "@/api/auth";
+import { useCurrentLocation } from "@/api/location";
 import {
   ArrowLeftRight,
   BarChart3,
@@ -24,7 +25,22 @@ import { useLocationId } from "@/api/location";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
-type Report = { path: string; icon: LucideIcon; title: string; description: string };
+type Report = {
+  path: string;
+  icon: LucideIcon;
+  title: string;
+  description: string;
+  /**
+   * Product types this report needs at least one of to say anything. Omit for
+   * the module-agnostic majority — those still make sense with zero rows.
+   *
+   * Deliberately conservative. Sales is NOT listed: an Asset location uses its
+   * Non-revenue tab for breakage/loss write-offs, a decision already taken for
+   * the sidebar (asset-module-phases.md 3.3). Par Level is not listed either —
+   * a reorder point applies to Supplies as much as to drink.
+   */
+  requiresProductTypes?: readonly string[];
+};
 
 /**
  * Thirteen reports in one flat grid meant reading every description to find
@@ -69,24 +85,34 @@ const SECTIONS: Array<{ title: string; blurb: string; reports: Report[] }> = [
     reports: [
       {
         path: "sales",
+        // Gated, unlike the Sales NAV item which is deliberately module-agnostic
+        // (asset-module-phases.md 3.3). Different objects: the sales *page* is
+        // where an asset write-off gets recorded, via its Non-revenue tab; this
+        // *report* is about revenue, and an asset location has none. Verified on
+        // the Assets location — sales report 0 rows / ₱0, while the write-offs
+        // show up in Non-Revenue (7 rows / ₱16,280) where they belong.
+        requiresProductTypes: ["Beverage", "Food"],
         icon: Receipt,
         title: "Sales",
         description: "Revenue and quantities by day, item, and menu — with Discounted and Production views.",
       },
       {
         path: "sales-by-item",
+        requiresProductTypes: ["Beverage", "Food"],
         icon: GlassWater,
         title: "Sales by Item (Shot & Bottle)",
         description: "Per-item shot and bottle sales for an audit period, with cost of sold and revenue.",
       },
       {
         path: "top-sellers",
+        requiresProductTypes: ["Beverage", "Food"],
         icon: TrendingUp,
         title: "Top Sellers",
         description: "Best-selling items, menus, and ingredients by quantity or revenue.",
       },
       {
         path: "cost-analysis",
+        requiresProductTypes: ["Beverage", "Food"],
         icon: PieChart,
         title: "Cost Analysis",
         description: "Beverage and food cost: beginning + purchases − ending, as a share of sales.",
@@ -141,12 +167,14 @@ const SECTIONS: Array<{ title: string; blurb: string; reports: Report[] }> = [
       },
       {
         path: "forfeits",
+        requiresProductTypes: ["Beverage"],
         icon: Undo2,
         title: "Forfeited Bottles",
         description: "Returned bottles and their open content, valued at cost and retail.",
       },
       {
         path: "asset-breakage",
+        requiresProductTypes: ["Asset"],
         icon: Wrench,
         title: "Asset Breakage",
         description: "Equipment that broke, went missing, or was retired — what happened, valued at cost. (Asset locations.)",
@@ -159,12 +187,14 @@ const SECTIONS: Array<{ title: string; blurb: string; reports: Report[] }> = [
     reports: [
       {
         path: "asset-register",
+        requiresProductTypes: ["Asset"],
         icon: ClipboardCheck,
         title: "Asset Register",
         description: "Every registered asset — code, condition, status, cost, supplier, and its last note.",
       },
       {
         path: "asset-inventory",
+        requiresProductTypes: ["Asset"],
         icon: Boxes,
         title: "Asset Inventory",
         description: "Beginning vs Ending count for asset items, with the quantity change.",
@@ -182,10 +212,26 @@ export function ReportsPage() {
   // card that 404s. Everyone running the establishment sees all of them.
   const me = useMe();
   const role = (me.data?.user.role ?? "AUDIT_VIEWER_LIMITED") as Role;
+  // Two filters, same mechanism. Role: an audit-service viewer reads the
+  // reconciliation and nothing else. Module: an Asset-only warehouse has no use
+  // for "Sales by Item (Shot & Bottle)", and the hub was offering all nineteen
+  // regardless — every irrelevant one opening to an empty table.
+  const location = useCurrentLocation();
+  const allowedTypes = allowedProductTypes(location?.modules);
   const sections = SECTIONS.map((section) => ({
     ...section,
-    reports: section.reports.filter((r) => canViewReport(role, r.path.split("?")[0]!)),
+    reports: section.reports.filter(
+      (r) =>
+        canViewReport(role, r.path.split("?")[0]!) &&
+        (!r.requiresProductTypes || !allowedTypes || r.requiresProductTypes.some((t) => allowedTypes.includes(t))),
+    ),
   })).filter((section) => section.reports.length > 0);
+
+  // Section headers exist to make nineteen reports findable. Below a handful
+  // they stop earning their space and start looking odd — an audit viewer saw a
+  // "Sales & Revenue" heading over a single card. Small set, one flat grid.
+  const visibleCount = sections.reduce((n, s) => n + s.reports.length, 0);
+  const grouped = visibleCount > 6;
 
   return (
     <div className="space-y-10">
@@ -217,26 +263,36 @@ export function ReportsPage() {
         </Link>
       </div>
 
-      {sections.map((section) => (
-        <section key={section.title} className="space-y-4">
-          <div className="space-y-1">
-            <h3 className="text-base font-medium">{section.title}</h3>
-            <p className="text-sm text-muted-foreground">{section.blurb}</p>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {section.reports.map((r) => (
-              <Link key={r.path} to={href(r.path)}>
-                <Card className="h-full transition-colors hover:border-primary/40">
-                  <CardHeader>
-                    <r.icon className="mb-1 size-5 text-primary" />
-                    <CardTitle className="text-base">{r.title}</CardTitle>
-                    <CardDescription>{r.description}</CardDescription>
-                  </CardHeader>
-                </Card>
-              </Link>
-            ))}
-          </div>
-        </section>
+      {grouped ? (
+        sections.map((section) => (
+          <section key={section.title} className="space-y-4">
+            <div className="space-y-1">
+              <h3 className="text-base font-medium">{section.title}</h3>
+              <p className="text-sm text-muted-foreground">{section.blurb}</p>
+            </div>
+            <ReportGrid reports={section.reports} href={href} />
+          </section>
+        ))
+      ) : (
+        <ReportGrid reports={sections.flatMap((s) => s.reports)} href={href} />
+      )}
+    </div>
+  );
+}
+
+function ReportGrid({ reports, href }: { reports: Report[]; href: (path: string) => string }) {
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {reports.map((r) => (
+        <Link key={r.path} to={href(r.path)}>
+          <Card className="h-full transition-colors hover:border-primary/40">
+            <CardHeader>
+              <r.icon className="mb-1 size-5 text-primary" />
+              <CardTitle className="text-base">{r.title}</CardTitle>
+              <CardDescription>{r.description}</CardDescription>
+            </CardHeader>
+          </Card>
+        </Link>
       ))}
     </div>
   );

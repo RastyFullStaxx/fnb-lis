@@ -37,11 +37,20 @@ export function PriceEdit({ row, canEdit }: { row: LocationItem; canEdit: boolea
   if (!canEdit) return display;
 
   const save = async () => {
+    // `Number("") || 0` silently stored ₱0.00 for a cleared field — a real price
+    // of zero is a different claim from "I haven't set one", and every other
+    // quantity form in the app rejects empty rather than inventing a value.
+    // parLevel is genuinely optional, which is why it maps to null instead.
+    const invalid = ([
+      ["cost", cost],
+      ["retail price", retail],
+    ] as const).find(([, raw]) => raw.trim() === "" || !(Number(raw) >= 0));
+    if (invalid) return toast.error(`Enter a ${invalid[0]} — use 0 only if it really is free.`);
     try {
       await update.mutateAsync({
         id: row.id,
-        cost: Number(cost) || 0,
-        retail: Number(retail) || 0,
+        cost: Number(cost),
+        retail: Number(retail),
         parLevel: par === "" ? null : Number(par),
       });
       toast.success(`${row.itemVariant.item.name} prices updated`);

@@ -1303,3 +1303,121 @@ the client had been discarding — callers had to match on message text.
 
 Golden fixture throughout: **−₱330.69 / −₱869.57**.
 
+### Hub grouping and module relevance (2026-07-28)
+
+Narrowing by role left an audit viewer looking at a **"Sales & Revenue" heading
+over a single card**. The fix was not to move that card: the sections exist to
+make nineteen reports findable, so below roughly six they stop earning their
+space. Small set now renders as one flat grid, no headings — role-agnostic, and
+it also covers the Asset-only case.
+
+Took the chance to close a finding left open from the ADMIN sweep: **the hub
+offered all 19 reports on an ASSET-only location**, seven of which opened to an
+empty table. Reports now declare `requiresProductTypes` the way nav items
+already did. Deliberately conservative — Par Level is left universal (a reorder
+point applies to Supplies too), and Non-Revenue stays because that is exactly
+where asset write-offs live.
+
+The one judgement call: the Sales **report** is gated to Beverage/Food even
+though the Sales **nav item** deliberately is not. Different objects — the page
+records asset write-offs through its Non-revenue tab, the report is about
+revenue. Checked rather than assumed: on the Assets location the sales report
+returns 0 rows / ₱0 while Non-Revenue carries the 7 write-offs worth ₱16,280.
+
+Verified: audit viewer 6 cards / no headings · Assets location 14 cards /
+4 sections (was 19/5) · Main Bar 16 cards / 4 sections, Asset section correctly
+absent · golden fixture **−₱330.69 / −₱869.57**.
+
+## Phase 32 — Client note 4: long forms and edit-qty (2026-07-28)
+
+### The primary button leaving the viewport
+
+- **CRITICAL — the Transfer "Receive" dialog could not be completed.**
+  `DialogContent` is `position:fixed` and vertically centred with **no height cap
+  and no overflow**, so a tall dialog grows past both edges and the page never
+  gains a scrollbar to chase it. Measured at 1280×800: at 10 receive lines
+  "Confirm Receipt" sat at y=824 with no way to reach it; at 20 lines, y=1069.
+  A ten-line transfer is ordinary. Capped at the primitive
+  (`max-h-[calc(100vh-2rem)] overflow-y-auto`), which fixes every dialog at once
+  including ones not written yet. Verified: at 20 rows the dialog now sits
+  37→763 inside an 800px viewport and scrolls internally.
+
+- **HIGH — the recipe builder, which is the client's actual screenshot.** Call
+  sites put `overflow-y-auto` on `SheetContent` itself — the same element that
+  holds the header, body and footer — so `SheetFooter`'s `mt-auto` only pushed
+  the button to the bottom of the *content*, and it scrolled away with the
+  ingredient list. Publish left the viewport at **4 ingredients** (button bottom
+  819.9 on an 800px screen) and reached y=1508 at 13. "New version" broke a row
+  earlier. Same defect on both item-form sheets, from **2 variants**.
+
+  Fixed by making `SheetFooter` sticky to the bottom of the scrollport rather
+  than restructuring three sheets — the item form's footer lives *inside* its
+  `<form>`, so a body wrapper would have meant surgery at every call site.
+  Verified 0 → 15 simulated rows: footer bottom stays at exactly 800.
+
+  Not broken, and worth keeping as the reference pattern: the Purchases and
+  Transfers editors put the add-line strip in a fixed `TableSurface` toolbar and
+  the commit button in the fixed page header, so only rows scroll.
+
+### Edit quantity
+
+Every quantity field round-trips correctly — decimals, clearing, `0`, blur and
+Enter all verified across recipes, sales, purchases, transfers and counts. The
+client's "minsan hindi gumagana" was **not** the fields themselves:
+
+- **My own regression from Phase 29.** `focusEntry()` read `activeMode` from the
+  pre-update render, so whenever the same state update also changed the mode it
+  focused a field that had just unmounted — and the `?.` swallowed the miss.
+  Repro: pick a weighable item, switch to Weigh Partial, then Edit a Full-units
+  line — focus stayed on the picker and the counter's keystrokes went nowhere.
+  `focusEntry(mode)` now takes the target explicitly; `startEdit` passes the mode
+  it is switching to, and the item picker derives it from the item being chosen
+  (a non-weighable item forces FULL).
+
+- **The recipe builder silently dropped ingredients.** `publish` filtered out any
+  row whose serving quantity was blank or 0, with no warning — add six
+  ingredients, miss one amount, publish, and that ingredient is simply gone with
+  the recipe's cost and margin quietly understated. Far worse with the button
+  off-screen, since you could not see the rows and the action at once. It now
+  names the offending ingredients and refuses.
+
+- **A cleared price silently stored ₱0.00.** `Number(cost) || 0` turned an empty
+  field into a real price of zero — a different claim from "not set" — while
+  every other quantity form rejects empty. Now rejected, with `parLevel` still
+  mapping blank to null because it is genuinely optional.
+
+### The boot hang — diagnosed and made survivable
+
+**Symptom fixed; the underlying library behaviour is documented, not explained.**
+
+Instrumenting the query cache found it immediately: with the API down, `["me"]`
+sits at `fetchStatus: "paused"`, `status: "pending"`, `failureCount: 0` — never
+attempted, no error — so `AppShell` renders its skeleton and never reaches
+`BootError`. `["settings","preferences"]` errors normally in the same load, so it
+is specific to the paused query, not to error handling in general.
+
+Paused pointed at `networkMode`, whose default `"online"` pauses when offline.
+Setting it to `"always"` **did not stop the pause**. Measured on
+@tanstack/react-query **5.101.2**, with `networkMode: "always"` confirmed on the
+query's own options, `onlineManager.isOnline()` true and `navigator.onLine`
+true, the query still paused — and stayed paused through an explicit
+`refetchQueries`. By React Query's own `canFetch` rule
+(`networkMode !== "online" || onlineManager.isOnline()`) that combination should
+never pause. I could not account for it, and say so rather than dress up a guess.
+
+What shipped:
+
+- `networkMode: "always"` on the QueryClient defaults. Kept because it is the
+  right policy regardless — this API is same-origin, and the online heuristic
+  answers "is a network interface up", not "is my server reachable".
+- `AppShell` treats `fetchStatus === "paused"` as a reachability failure, before
+  the `isPending` check. Order matters: a paused query is still pending.
+- The recovery action is a **reload**, not `refetch()` — refetch provably does
+  not escape the pause, so a Try Again wired to it is a dead button. The comments
+  at both sites record the measurements, not the abandoned theory.
+
+Verified end to end: API down → *"Can't reach the inventory service. Check your
+connection, then reload."* with a working button; API back → one click restores
+the app. No more infinite skeleton, and no manual URL editing to escape.
+
+Golden fixture: **−₱330.69 / −₱869.57**.

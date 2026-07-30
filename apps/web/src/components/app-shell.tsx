@@ -52,6 +52,22 @@ export function AppShell() {
   const me = useMe();
   const { locationId } = useParams();
 
+  // A PAUSED query is still `pending`, so this order matters: treat it as a
+  // reachability failure, not as loading, or the shell shows a skeleton with no
+  // error and no retry for as long as the pause lasts.
+  if (me.fetchStatus === "paused") {
+    return (
+      <BootError
+        message="Can't reach the inventory service. Check your connection, then reload."
+        // Deliberately a reload, not `me.refetch()`. A paused query stays paused
+        // through refetchQueries — measured on @tanstack/react-query 5.101.2 with
+        // networkMode "always" and onlineManager.isOnline() === true, which by
+        // its own canFetch() rule should never pause at all. Until that is
+        // understood, the honest recovery is the one that provably works.
+        onRetry={() => window.location.reload()}
+      />
+    );
+  }
   if (me.isPending) return <BootSkeleton />;
   if (me.isError) {
     if (me.error instanceof ApiError && me.error.status === 401) {

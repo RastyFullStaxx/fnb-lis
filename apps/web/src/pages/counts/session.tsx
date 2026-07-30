@@ -164,9 +164,9 @@ function OpenSession({ session }: { session: SessionWithLines }) {
    * already know the item (Edit, and tapping a row in "Not counted") focusing
    * the picker was actively wrong.
    */
-  const focusEntry = () => {
+  const focusEntry = (mode: "FULL" | "WEIGH" | "OPEN" = activeMode) => {
     requestAnimationFrame(() => {
-      const id = activeMode === "FULL" ? "count-qty" : activeMode === "OPEN" ? "count-open" : "count-scale";
+      const id = mode === "FULL" ? "count-qty" : mode === "OPEN" ? "count-open" : "count-scale";
       document.getElementById(id)?.focus();
     });
   };
@@ -182,24 +182,30 @@ function OpenSession({ session }: { session: SessionWithLines }) {
   const startEdit = (line: CountLine) => {
     setEditingLineId(line.id);
     setItem(line.locationItem);
+    // Pass the mode we are switching TO. Reading it back off state focuses the
+    // field that just unmounted, and the optional-chain swallows the miss.
+    let target: "FULL" | "WEIGH" | "OPEN";
     if (line.countType === "FULL") {
+      target = "FULL";
       setMode("FULL");
       setQty(String(line.qtyFull));
       setScale("");
       setOpenAmount("");
     } else if (line.scaleWeight == null) {
       // Weigh line entered as a direct amount (no scale/tare).
+      target = "OPEN";
       setMode("OPEN");
       setOpenAmount(String(line.remainingContent));
       setScale("");
       setQty("");
     } else {
+      target = "WEIGH";
       setMode("WEIGH");
       setScale(String(line.scaleWeight));
       setQty("");
       setOpenAmount("");
     }
-    focusEntry();
+    focusEntry(target);
   };
 
   const save = async () => {
@@ -294,7 +300,12 @@ function OpenSession({ session }: { session: SessionWithLines }) {
               value={item}
               onSelect={(li) => {
                 setItem(li);
-                focusEntry();
+                // activeMode is derived from the item: a non-weighable one is
+                // forced to FULL, so the field about to render depends on the
+                // item we are only now selecting.
+                const nowWeighable =
+                  li.itemVariant.contentTracked || li.itemVariant.weighMode === "NET";
+                focusEntry(nowWeighable ? mode : "FULL");
               }}
               autoFocus
             />

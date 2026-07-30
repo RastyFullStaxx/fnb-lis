@@ -99,7 +99,17 @@ function SheetFooter({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="sheet-footer"
-      className={cn("mt-auto flex flex-col gap-2 p-4", className)}
+      // Sticky, not just mt-auto. Call sites put the scroll container on
+      // SheetContent itself, so mt-auto only pushes the footer to the bottom of
+      // the CONTENT — with 4+ recipe ingredients or 2+ item variants the primary
+      // button scrolled out of sight, which is exactly the client's report that
+      // "pag marami yun ingredients, hindi na kita yun add menu button". Sticking
+      // it to the bottom of the scrollport keeps it reachable at any length,
+      // without restructuring every sheet.
+      className={cn(
+        "sticky bottom-0 z-10 mt-auto flex shrink-0 flex-col gap-2 border-t bg-background p-4",
+        className,
+      )}
       {...props}
     />
   )

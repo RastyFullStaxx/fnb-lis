@@ -105,9 +105,27 @@ export function RecipeBuilderSheet({
   };
 
   const publish = async () => {
-    const cleanLines = lines
-      .filter((l) => Number(l.servingQty) > 0)
-      .map((l, i) => ({ locationItemId: l.item.id, servingQty: Number(l.servingQty), sortOrder: i }));
+    // Rows with no serving amount used to be filtered out SILENTLY: you added
+    // six ingredients, missed one quantity, published — and that ingredient was
+    // simply gone, with the recipe's cost and margin quietly understated. Worse
+    // when the list is long enough that you cannot see the rows and the button
+    // at once. Name them instead of dropping them.
+    const incomplete = lines.filter((l) => !(Number(l.servingQty) > 0));
+    if (incomplete.length > 0) {
+      return toast.error(
+        incomplete.length === 1
+          ? `${incomplete[0]!.item.itemVariant.item.name} has no serving amount — enter one, or remove the ingredient.`
+          : `${incomplete.length} ingredients have no serving amount: ${incomplete
+              .slice(0, 3)
+              .map((l) => l.item.itemVariant.item.name)
+              .join(", ")}${incomplete.length > 3 ? `, and ${incomplete.length - 3} more` : ""}.`,
+      );
+    }
+    const cleanLines = lines.map((l, i) => ({
+      locationItemId: l.item.id,
+      servingQty: Number(l.servingQty),
+      sortOrder: i,
+    }));
     if (cleanLines.length === 0) return toast.error("Add at least one ingredient with a serving amount");
     try {
       let menuId = menu?.id;
