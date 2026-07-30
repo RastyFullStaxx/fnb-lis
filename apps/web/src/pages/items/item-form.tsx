@@ -59,7 +59,7 @@ export function ItemFormSheet({
   // his catalog but never edits the weights (client decision 2026-07-25). The
   // server rejects it too; this just stops offering a field that would 403.
   const me = useMe();
-  const canEditWeights = can((me.data?.user.role ?? "READONLY") as Role, "weights.manage");
+  const canEditWeights = can((me.data?.user.role ?? "AUDIT_VIEWER_LIMITED") as Role, "weights.manage");
   const createItem = useCreateItem();
   const unitSystem = useUnitSystem();
   // New variants default their tare-weight unit to the signed-in user's

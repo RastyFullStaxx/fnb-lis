@@ -103,7 +103,7 @@ export function TransferEditorPage() {
   const t = transfer.data;
   const isSource = t.fromLocationId === locationId;
   const isDraft = t.status === "DRAFT";
-  const role = (me.data?.user.role ?? "READONLY") as Role;
+  const role = (me.data?.user.role ?? "AUDIT_VIEWER_LIMITED") as Role;
   const canVoid = isSource && can(role, "entries.void") && t.status === "COMMITTED";
   // Correcting voids the original and creates a replacement, so it needs both.
   const canCorrect = canVoid && can(role, "entries.create");

@@ -107,7 +107,7 @@ function EntityResults({ onGo }: { onGo: (path: string) => void }) {
   // permissions they lack. Same gate as the nav, so search can't route someone
   // to a wall.
   const me = useMe();
-  const role = (me.data?.user.role ?? "READONLY") as Role;
+  const role = (me.data?.user.role ?? "AUDIT_VIEWER_LIMITED") as Role;
   const canSeeMenus = can(role, "menus.write");
   const canSeeSuppliers = can(role, "master.write");
 

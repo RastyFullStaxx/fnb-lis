@@ -83,7 +83,7 @@ export function PurchaseEditorPage() {
 
   const p = purchase.data;
   const isDraft = p.status === "DRAFT";
-  const role = (me.data?.user.role ?? "READONLY") as Role;
+  const role = (me.data?.user.role ?? "AUDIT_VIEWER_LIMITED") as Role;
   const canVoid = can(role, "entries.void") && p.status === "COMMITTED";
   // Editing voids the original and writes a replacement, so it needs both
   // rights — same rule as Sales.

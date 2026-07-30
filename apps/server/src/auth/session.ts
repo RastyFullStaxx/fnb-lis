@@ -6,13 +6,19 @@ export const SESSION_COOKIE = "fnb_session";
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days, sliding
 const RENEW_WHEN_REMAINING_MS = 6 * 24 * 60 * 60 * 1000;
 
-// READONLY (3rd-party audit-service viewers) get a short ABSOLUTE session:
-// it hard-expires this long after login regardless of activity, forcing a
-// re-login — the client's requested 15–20 minute viewing window.
+// AUDIT_VIEWER / AUDIT_VIEWER_LIMITED (3rd-party audit-service viewers, paid
+// and unpaid respectively) get a short ABSOLUTE session: it hard-expires this
+// long after login regardless of activity, forcing a re-login — the client's
+// requested 15–20 minute viewing window. Applies to both: an unpaid viewer is
+// at least as much a short-session case as a paid one, arguably more so.
 const READONLY_SESSION_TTL_MS = 20 * 60 * 1000;
 
+function isAuditViewerRole(role: string): boolean {
+  return role === "AUDIT_VIEWER" || role === "AUDIT_VIEWER_LIMITED";
+}
+
 function ttlForRole(role: string): number {
-  return role === "READONLY" ? READONLY_SESSION_TTL_MS : SESSION_TTL_MS;
+  return isAuditViewerRole(role) ? READONLY_SESSION_TTL_MS : SESSION_TTL_MS;
 }
 
 function hashToken(token: string): string {
@@ -44,15 +50,17 @@ export async function getSessionUser(token: string): Promise<SessionUser | null>
     return null;
   }
   if (session.user.status !== "ACTIVE") return null;
-  // A user demoted to READONLY mid-session must not ride out a long session:
-  // clamp any pre-existing expiry down to the 20-minute cap on first read.
-  if (session.user.role === "READONLY" && session.expiresAt.getTime() - Date.now() > READONLY_SESSION_TTL_MS) {
+  // A user demoted to AUDIT_VIEWER/AUDIT_VIEWER_LIMITED mid-session must not
+  // ride out a long session: clamp any pre-existing expiry down to the
+  // 20-minute cap on first read.
+  if (isAuditViewerRole(session.user.role) && session.expiresAt.getTime() - Date.now() > READONLY_SESSION_TTL_MS) {
     const clamped = new Date(Date.now() + READONLY_SESSION_TTL_MS);
     await prisma.authSession.update({ where: { id: session.id }, data: { expiresAt: clamped } }).catch(() => {});
   }
   // Sliding expiry: extend once the session has aged past a day.
-  // READONLY sessions never renew — their 20-minute window is absolute.
-  if (session.user.role !== "READONLY" && session.expiresAt.getTime() - Date.now() < RENEW_WHEN_REMAINING_MS) {
+  // AUDIT_VIEWER / AUDIT_VIEWER_LIMITED sessions never renew — their
+  // 20-minute window is absolute.
+  if (!isAuditViewerRole(session.user.role) && session.expiresAt.getTime() - Date.now() < RENEW_WHEN_REMAINING_MS) {
     await prisma.authSession
       .update({
         where: { id: session.id },

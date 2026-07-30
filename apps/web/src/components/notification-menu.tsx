@@ -25,7 +25,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 export function NotificationMenu({ locationId }: { locationId: string }) {
   const me = useMe();
   const dashboard = useDashboard();
-  const role = (me.data?.user.role ?? "READONLY") as Role;
+  const role = (me.data?.user.role ?? "AUDIT_VIEWER_LIMITED") as Role;
   const items = dashboard.data ? attentionItems(dashboard.data, role) : [];
   const total = attentionCount(items);
   const to = (path: string) => `/l/${locationId}/${path}`;

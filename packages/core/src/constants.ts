@@ -5,7 +5,15 @@
  * sits above MANAGER but is scoped to his own establishment: he manages his own
  * staff and never sees another tenant.
  */
-export const ROLES = ["ADMIN", "OWNER", "MANAGER", "STAFF", "ACCOUNTANT", "READONLY"] as const;
+export const ROLES = [
+  "ADMIN",
+  "OWNER",
+  "MANAGER",
+  "STAFF",
+  "ACCOUNTANT",
+  "AUDIT_VIEWER",
+  "AUDIT_VIEWER_LIMITED",
+] as const;
 export type Role = (typeof ROLES)[number];
 
 export const USER_STATUSES = ["ACTIVE", "DISABLED"] as const;
@@ -371,10 +379,19 @@ export const PERMISSIONS = {
   "menus.write": ["ADMIN", "OWNER", "MANAGER"],
   "imports.upload": ["ADMIN", "OWNER", "MANAGER"],
   "imports.commit": ["ADMIN", "OWNER", "MANAGER"],
-  "reports.view": ["ADMIN", "OWNER", "MANAGER", "STAFF", "ACCOUNTANT", "READONLY"],
-  // READONLY included per client request: 3rd-party audit-service viewers may
-  // view AND download reports — their exports carry the exporter footer.
-  "reports.export": ["ADMIN", "OWNER", "MANAGER", "ACCOUNTANT", "READONLY"],
+  "reports.view": [
+    "ADMIN",
+    "OWNER",
+    "MANAGER",
+    "STAFF",
+    "ACCOUNTANT",
+    "AUDIT_VIEWER",
+    "AUDIT_VIEWER_LIMITED",
+  ],
+  // AUDIT_VIEWER (paid) included per client request: 3rd-party audit-service
+  // viewers may view AND download reports — their exports carry the exporter
+  // footer. AUDIT_VIEWER_LIMITED (unpaid) gets reports.view only, above.
+  "reports.export": ["ADMIN", "OWNER", "MANAGER", "ACCOUNTANT", "AUDIT_VIEWER"],
   "activity.view": ["ADMIN", "OWNER", "MANAGER"],
 } as const satisfies Record<string, readonly Role[]>;
 
@@ -383,7 +400,13 @@ export const PERMISSIONS = {
  * never mint an ADMIN (cross-tenant) or another OWNER (his own peer) — that
  * stays with the LIS operator.
  */
-export const OWNER_ASSIGNABLE_ROLES = ["MANAGER", "STAFF", "ACCOUNTANT", "READONLY"] as const;
+export const OWNER_ASSIGNABLE_ROLES = [
+  "MANAGER",
+  "STAFF",
+  "ACCOUNTANT",
+  "AUDIT_VIEWER",
+  "AUDIT_VIEWER_LIMITED",
+] as const;
 
 export type Permission = keyof typeof PERMISSIONS;
 

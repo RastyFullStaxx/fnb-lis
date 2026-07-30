@@ -68,17 +68,19 @@ const ROLE_HINT: Record<Role, string> = {
   MANAGER: "Manage catalog, prices, imports, reports",
   STAFF: "Record counts, purchases, sales",
   ACCOUNTANT: "View & export reports",
-  READONLY: "View reports only",
+  AUDIT_VIEWER: "View & download reports",
+  AUDIT_VIEWER_LIMITED: "View reports only, no export",
 };
 
-// Raw enum values (READONLY, ACCOUNTANT) are jargon — show plain labels.
+// Raw enum values (AUDIT_VIEWER, ACCOUNTANT) are jargon — show plain labels.
 const ROLE_LABELS: Record<Role, string> = {
   ADMIN: "Admin",
   OWNER: "Owner",
   MANAGER: "Manager",
   STAFF: "Staff",
   ACCOUNTANT: "Accountant",
-  READONLY: "Read-only",
+  AUDIT_VIEWER: "Audit Viewer",
+  AUDIT_VIEWER_LIMITED: "Audit Viewer (View Only)",
 };
 
 function generatePassword(): string {
