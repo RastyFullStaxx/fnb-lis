@@ -1421,3 +1421,105 @@ connection, then reload."* with a working button; API back → one click restore
 the app. No more infinite skeleton, and no manual URL editing to escape.
 
 Golden fixture: **−₱330.69 / −₱869.57**.
+
+## Phase 33 — Seeder verification harness (2026-07-28)
+
+The ask was to wipe the seeders and rebuild them "fully loaded". Two things had
+to exist before that was safe, and building them changed what the work should be.
+
+**1. A way to prove a from-scratch seed.** `prisma migrate reset` is off-limits
+here, so nothing could ever run the seeder against an empty database — meaning
+no rewrite could be verified, and the golden fixture is *produced by* the seed
+data. Added `FNB_DB_FILE` to `src/db.ts` and `prisma.config.ts` (defaults to the
+dev database, so normal runs are unchanged), then `npm run verify:seed -w
+@fnb/server`: temp file → `migrate deploy` → seed → assert → delete.
+
+**2. Assertions worth trusting.** 41 checks: both period anchors, every table
+that drives a screen, and the report-specific shapes (all three sale kinds,
+discounted sales, forfeits, asset codes, par levels, the void trail, and each
+dashboard next-action). **The existing seeder passes** — the golden fixture
+reproduces byte-identical from empty, which is the answer to "can this be
+rebuilt safely": yes, and now provably.
+
+### What the harness found immediately
+
+- **No voided records anywhere.** Void + correct is a core guarantee — committed
+  records are immutable — and nothing in the seed demonstrated it, so the
+  correction UI and the "corrected" badge were undemonstrable. Added
+  `seedCorrections()`: a case of 24 keyed as 42, voided with a reason, replaced
+  by a correction carrying `correctionOfId`, with the matching Activity entry.
+
+- **A trap worth recording.** Dating that pair 2026-07-16 kept the June fixture
+  perfect while silently shifting the 07-14 → 07-20 period by exactly the
+  corrected quantity (₱1,080 = 24 × ₱45). "Outside the golden window" is not
+  enough — it has to be outside **all** count-anchored periods. Moved to
+  2026-07-25, after the last committed count, where it shows up in on-hand
+  (correct — that is activity since the count) and moves no reconciliation.
+  The 07-14 → 07-20 period is now a **second asserted anchor** so this class of
+  mistake fails loudly instead of hiding behind a passing June.
+
+### Test residue found and repaired
+
+The dev database carried a committed count line of **3,123,123 bottles** of Blue
+Curaçao — an audit agent had exercised void-and-correct with a junk quantity and
+never restored it, which distorted the July period's variance to ₱1.5 billion.
+The seeded line (qty 6) had been voided to make way for it. Removed the junk
+line, restored the original to ACTIVE, and the period returned to its expected
+−₱537 / −₱1,410. Worth noting the agents' "cleanup verified" claims were not
+complete.
+
+### On the rewrite itself
+
+Given the harness now proves it, a rewrite is safe to attempt — but the measured
+gaps are specific rather than structural: Depot is a stub (1 catalog item,
+existing only for the transfer fixture), Non-Moving is empty on Main Bar, and
+forfeits/par levels exist on one location each. That is filling, not rebuilding.
+Recorded here so the next pass targets those rather than re-deriving them.
+
+## Phase 34 — Filling the coverage gaps (2026-07-28)
+
+Worked the three gaps from Phase 33 against `verify:seed`. Two of the three
+turned out differently than the measurement suggested, which is the point of
+re-measuring rather than trusting a note.
+
+**Non-Moving on Main Bar was never a seeding gap.** It read 0 because the
+corrupted Blue Curaçao count line (3,123,123 bottles) gave that item a usage of
+−3.1M, so `hasVariance()` excluded it from the dead-stock filter. Repairing the
+residue in Phase 33 already fixed it — Main Bar now reports 1 non-moving row.
+No data added.
+
+**Forfeits on more locations: deliberately not done.** They are returned bottles
+a customer left behind. Main Bar has 13; the Depot is a stockroom and Casa Verde
+is a kitchen. Seeding forfeits there to make a report non-empty would be worse
+than an honest empty one — the report is correctly empty because the event
+cannot happen at those locations.
+
+**The Depot was the real gap, and is now a working stockroom.** It had one
+catalog row and existed only to receive the transfer fixture, leaving Par Level,
+Non-Moving, Purchases, On Hand, Cost Snapshot and Usage Cost all empty on the
+app's only second BAR location — so a multi-location bar operation, which is the
+shape most of these clients run, could not be demonstrated. Added a five-item
+catalog with par levels, four committed counts bracketing the existing 06-10
+transfer, and a delivery. Modelled honestly: no direct sales, no forfeits, one
+item (Bacardi) stocked and never touched so Non-Moving has genuine dead stock.
+
+Depot now reports: par-level 5 · non-moving 4 · purchases 2 · on-hand 5 ·
+transfers-in 4 · usage-cost 1.
+
+### What the harness caught in my own work
+
+- **An over-broad idempotency guard.** `if (any Depot count exists) return`
+  short-circuited the whole function, because the demo history also counts the
+  Depot — so the delivery and the dead-stock row were silently never seeded, and
+  the fresh-database run failed on exactly those two checks. Guarding on the
+  function's own marker (`name: "Stockroom count"`) fixed it. A broad guard on
+  shared data is indistinguishable from a no-op.
+- **A comment asserting a number I don't control.** It claimed "a two-bottle
+  shortage"; the Depot's period actually lands at +₱585 because the demo history
+  counts this location too. Reworded — these lines shape the period without
+  owning it, and only the two Main Bar anchors are pinned.
+
+`verify:seed` now runs **47 checks** and passes from an empty database. Both
+anchors unchanged on the dev database after reseeding: **−₱330.69 / −₱869.57**
+and **−₱537 / −₱1,410**.
+

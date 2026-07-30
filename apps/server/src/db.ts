@@ -4,7 +4,16 @@ import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import { PrismaClient } from "./generated/prisma/client";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const dbFile = path.resolve(here, "..", "data", "fnb.db");
+/**
+ * `FNB_DB_FILE` overrides the database path. Defaults to the dev database, so
+ * normal runs are unchanged — it exists so the seeder can be executed against a
+ * throwaway file and verified (golden fixture + report coverage) without
+ * touching anyone's working data. `prisma migrate reset` is off-limits here, so
+ * a disposable database is the only way to prove a from-scratch seed.
+ */
+const dbFile = process.env.FNB_DB_FILE
+  ? path.resolve(process.env.FNB_DB_FILE)
+  : path.resolve(here, "..", "data", "fnb.db");
 
 const adapter = new PrismaBetterSqlite3({ url: `file:${dbFile}` });
 

@@ -7,7 +7,8 @@ import { defineConfig } from "prisma/config";
 export default defineConfig({
   schema: path.join("prisma", "schema.prisma"),
   datasource: {
-    url: `file:${path.join("data", "fnb.db")}`,
+    // Mirrors FNB_DB_FILE in src/db.ts so migrate/seed can target a throwaway db.
+    url: `file:${process.env.FNB_DB_FILE ?? path.join("data", "fnb.db")}`,
   },
   migrations: {
     path: path.join("prisma", "migrations"),

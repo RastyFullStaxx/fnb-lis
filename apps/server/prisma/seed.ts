@@ -1151,6 +1151,186 @@ async function seedKitchenCycle() {
   await count("2026-06-08", [[chicken, 22.7], [steak, 10.5], [fries, 30.3], [oil, 8.2]]);
 }
 
+/**
+ * The void → correct trail. Committed records are immutable in this system:
+ * you void the wrong one (with a reason) and enter a replacement that points
+ * back at it via correctionOfId. Nothing in the seed demonstrated that, so the
+ * correction UI, the "corrected" badge and the Activity entry were all
+ * undemonstrable — the verify harness caught it as "voided records: 0".
+ *
+ * Dated 2026-07-25 — AFTER the last committed count (2026-07-20), so it falls
+ * outside every closed audit period and moves no reconciliation figure. Placing
+ * it on 07-16 (inside the 07-14 → 07-20 period) shifted that period's variance
+ * by exactly the corrected quantity, which is the trap: "outside the golden
+ * window" is not enough, it has to be outside ALL count-anchored periods.
+ * It still shows up in on-hand, which is correct — that is activity since the
+ * last count.
+ */
+/**
+ * The Depot as a working stockroom rather than a one-item prop.
+ *
+ * It existed only to be the receiving end of the transfer fixture — a single
+ * catalog row, no counts of its own, no par levels — so Par Level, Non-Moving,
+ * Purchases, On Hand and Cost Snapshot were all empty on the app's only
+ * second BAR location. That made it impossible to demo a multi-location bar
+ * operation, which is the shape most of these clients actually run.
+ *
+ * Modelled as a stockroom: it receives deliveries and feeds the bar. No direct
+ * sales and no forfeits — a customer never leaves a half-finished bottle in a
+ * storeroom, and inventing some to make a report non-empty would be worse than
+ * an honest empty one. Counts bracket the existing 2026-06-10 transfer so the
+ * Transfers In column has something to reconcile against.
+ */
+const DEPOT_COUNT = "Stockroom count";
+
+async function seedDepotOperations() {
+  const depot = await prisma.location.findFirst({
+    where: { name: "Depot", client: { name: "Prime Hospitality Group" } },
+  });
+  const staff = await prisma.user.findUnique({ where: { username: "staff" } });
+  const manager = await prisma.user.findUnique({ where: { username: "manager" } });
+  if (!depot || !staff || !manager) return;
+
+  await seedLocationCatalog("Prime Hospitality Group", "Depot", [
+    ["San Miguel Pale Pilsen", 330, "ml", 45, 120, 240],
+    ["Absolut Vodka", 700, "ml", 620, 1650, 12],
+    ["Tonic Water", 200, "ml", 30, 90, 96],
+    ["Cola", 1, "L", 42, 120, 48],
+    ["Bacardi Superior", 750, "ml", 550, 1400, 10],
+  ]);
+  await assertLocationCatalogWithinModules("Prime Hospitality Group", "Depot");
+
+  // Guard on THIS function's own marker, not on "any Depot count" — the demo
+  // history also counts the Depot, so a broad guard silently skipped everything
+  // below it and left the purchase and the dead-stock row unseeded.
+  if (await prisma.countSession.findFirst({ where: { locationId: depot.id, name: DEPOT_COUNT } })) return;
+
+  const encoder = { createdById: staff.id, createdByName: "Paolo Reyes" };
+  const row = async (name: string, size: number) => {
+    const li = await prisma.locationItem.findFirst({
+      where: { locationId: depot.id, itemVariant: { size, item: { name } } },
+    });
+    if (!li) throw new Error(`Depot seed: missing ${name} ${size}`);
+    return li;
+  };
+  const beer = await row("San Miguel Pale Pilsen", 330);
+  const vodka = await row("Absolut Vodka", 700);
+  const tonic = await row("Tonic Water", 200);
+  const cola = await row("Cola", 1);
+  const rum = await row("Bacardi Superior", 750);
+
+  const count = async (countDate: string, lines: Array<{ item: typeof beer; full: number }>) => {
+    const session = await prisma.countSession.create({
+      data: {
+        locationId: depot.id, countDate, name: DEPOT_COUNT, status: "COMMITTED",
+        committedAt: new Date(), committedById: manager.id, ...encoder,
+      },
+    });
+    for (const l of lines) {
+      await prisma.countLine.create({
+        data: {
+          countSessionId: session.id, locationItemId: l.item.id, countType: "FULL",
+          qtyFull: l.full, unitCost: l.item.cost, unitRetail: l.item.retail, ...encoder,
+        },
+      });
+    }
+  };
+
+  // 06-08 opening. The 06-10 transfer brings in 8 beer (10 sent, 8 received —
+  // the existing short-receipt fixture), so 06-15 closes 8 higher on beer.
+  // Rum is stocked and never touched: the Non-Moving report needs a real
+  // example of dead stock, not a contrived one.
+  await count("2026-06-08", [
+    { item: beer, full: 120 }, { item: vodka, full: 6 }, { item: tonic, full: 48 },
+    { item: cola, full: 24 }, { item: rum, full: 4 },
+  ]);
+  await count("2026-06-15", [
+    { item: beer, full: 128 }, { item: vodka, full: 6 }, { item: tonic, full: 48 },
+    { item: cola, full: 24 }, { item: rum, full: 4 },
+  ]);
+
+  // A delivery into the stockroom, then the latest closed period 07-14 → 07-20.
+  const supplier = await prisma.supplier.findFirst({ where: { name: { contains: "Metro" } } });
+  const existingDelivery = await prisma.purchase.findFirst({ where: { locationId: depot.id, refNo: "DEP-0716-1" } });
+  const purchase = existingDelivery ?? await prisma.purchase.create({
+    data: {
+      locationId: depot.id, purchaseDate: "2026-07-16", supplierId: supplier?.id ?? null,
+      refNo: "DEP-0716-1", status: "COMMITTED", committedAt: new Date(), committedById: manager.id, ...encoder,
+    },
+  });
+  if (!existingDelivery) {
+    for (const [item, qty, unitCost] of [[beer, 96, 44], [tonic, 48, 29]] as const) {
+      await prisma.purchaseLine.create({
+        data: { purchaseId: purchase.id, locationItemId: item.id, qty, unitCost, lineTotal: qty * unitCost, ...encoder },
+      });
+    }
+  }
+  await count("2026-07-14", [
+    { item: beer, full: 96 }, { item: vodka, full: 5 }, { item: tonic, full: 36 },
+    { item: cola, full: 18 }, { item: rum, full: 4 },
+  ]);
+  // Beer closes 2 under what the delivery implies, so the Depot's Full Audit
+  // carries a real variance to investigate rather than a flat zero. The exact
+  // total is deliberately NOT asserted anywhere: the demo history also counts
+  // this location, so these lines shape the period without owning it. Only the
+  // two Main Bar anchors are pinned.
+  await count("2026-07-20", [
+    { item: beer, full: 190 }, { item: vodka, full: 5 }, { item: tonic, full: 84 },
+    { item: cola, full: 18 }, { item: rum, full: 4 },
+  ]);
+}
+
+async function seedCorrections() {
+  const location = await prisma.location.findFirst({
+    where: { name: "Main Bar", client: { name: "Prime Hospitality Group" } },
+  });
+  const manager = await prisma.user.findUnique({ where: { username: "manager" } });
+  if (!location || !manager) return;
+
+  const already = await prisma.saleRecord.findFirst({ where: { locationId: location.id, status: "VOID" } });
+  if (already) return;
+
+  const item = await prisma.locationItem.findFirst({
+    where: { locationId: location.id, itemVariant: { item: { name: "San Miguel Pale Pilsen" } } },
+  });
+  if (!item) return;
+
+  const encoder = { createdById: manager.id, createdByName: `${manager.firstName} ${manager.lastName}` };
+
+  // The mistake: a case of 24 keyed as 42 — a transposition, the most ordinary
+  // encoding error there is, and the reason the correction flow exists.
+  const wrong = await prisma.saleRecord.create({
+    data: {
+      locationId: location.id, saleDate: "2026-07-25", kind: "SALE",
+      locationItemId: item.id, qty: 42, unitPrice: 120, ...encoder,
+    },
+  });
+  await prisma.saleRecord.update({
+    where: { id: wrong.id },
+    data: {
+      status: "VOID", voidedAt: new Date(), voidedById: manager.id,
+      voidReason: "Keyed 42 instead of 24 — transposed while encoding the evening's tickets",
+    },
+  });
+  await prisma.saleRecord.create({
+    data: {
+      locationId: location.id, saleDate: "2026-07-25", kind: "SALE",
+      locationItemId: item.id, qty: 24, unitPrice: 120,
+      correctionOfId: wrong.id,
+      note: "Corrects the voided entry of 42",
+      ...encoder,
+    },
+  });
+  await prisma.activityLog.create({
+    data: {
+      userId: manager.id, userName: `${manager.firstName} ${manager.lastName}`,
+      clientId: location.clientId, locationId: location.id,
+      action: "sale.void", entity: "SaleRecord", entityId: wrong.id,
+      summary: "Voided sale: San Miguel Pale Pilsen ×42 on 2026-07-25 (transposed quantity)",
+    },
+  });
+}
+
 async function seedActivity() {
   const location = await demoLocation("Prime Hospitality Group", "Main Bar");
   const manager = await demoActor("manager");
@@ -1201,6 +1381,8 @@ async function main() {
   await seedImportBatches();
   await seedTransferFixture();
   await seedKitchenCycle();
+  await seedDepotOperations();
+  await seedCorrections();
   await seedActivity();
   // Everything above is the fixture layer — the exact records the golden
   // fixtures are computed from. seedDemoHistory stacks months of ordinary

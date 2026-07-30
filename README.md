@@ -22,6 +22,16 @@ npm run db:seed      # idempotent seed, includes the golden audit fixture
 npm run dev          # web on :5173 + server on :3001
 ```
 
+After ANY change to the seeder:
+
+```bash
+npm run verify:seed -w @fnb/server   # throwaway db: migrate -> seed -> assert -> delete
+```
+
+It proves the seed from an EMPTY database — `prisma migrate reset` is off-limits here, so this is
+the only way — and asserts the two pinned fixture anchors plus 43 coverage checks. Never touches
+`data/fnb.db`.
+
 Seed logins: `admin` · `manager` · `staff` · `accountant` · `readonly` — password `Fnb!2026`.
 
 XAMPP owns ports 80/3306 on the dev machine; don't touch them.
@@ -49,7 +59,14 @@ These are not style preferences — breaking one produces wrong numbers or a bro
 5. **Role + client scoping is enforced server-side on every route**, never in the UI alone.
 6. **Imports and AI never mutate inventory without human review.** Stocky gets read-only tools only.
 7. **No automated test framework during the initial build** (explicit client instruction) —
-   correctness rests on the golden fixtures plus live checks.
+   correctness rests on the golden fixtures plus live checks. The one exception is
+   `npm run verify:seed -w @fnb/server`, which is not a unit-test suite but a guard on the
+   fixtures themselves: the golden numbers are *produced by* the seed data, so a seeder change
+   can silently invalidate the whole answer key. It asserts **two** period anchors — one is not
+   enough, see [docs/golden-fixtures.md §0](docs/golden-fixtures.md).
+8. **New seed data goes after the last committed count** (2026-07-20), never inside a
+   count-anchored period. Landing inside one moves that period's variance while the golden
+   window stays byte-perfect, which is exactly how it hides.
 
 ## Documentation
 

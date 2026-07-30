@@ -317,6 +317,54 @@ populated.
 
 ---
 
+## Round 4 (2026-07-28) — report access, centavos, typos, long forms
+
+**1 & 2 · Who may see and download which reports.** The roles already existed
+(`AUDIT_VIEWER` paid / `AUDIT_VIEWER_LIMITED` unpaid). Three things were missing:
+
+- Unpaid clients could still **download** — the billing lockout only tested writes, and an export
+  is a GET, so a past-due establishment kept taking files out. Now refused, with a message that
+  says downloads are paused while viewing continues.
+- A **manual switch** independent of billing — `Client.allowReportDownloads`, ADMIN-only. Lets you
+  release reading while withholding the files, on a client who *is* paid up.
+- **Reports narrowed by role** — audit-service viewers see the reconciliation set only, 19 cards
+  down to 6. One declaration (`AUDIT_VIEWER_REPORTS`) read by the hub, the client route guard and
+  the server, so a hidden card can't still be reached by typing its URL.
+
+Paid and unpaid see the **same** reports; only downloading differs. Withholding the numbers from an
+unpaid client removes their reason to settle up; letting them read a variance they can't export
+does not. → Reports hub, Settings, and the toolbar's "Download unavailable" note.
+
+The work surfaced a real bug: the `READONLY → AUDIT_VIEWER` rename shipped **with no data
+migration**, so every existing user still carrying `READONLY` failed every permission check — they
+could sign in, then got 403 everywhere. Silently bricked. Backfilled.
+
+**3 · Centavos on per-gram prices.** Storage was never the limit — `cost`/`retail` are doubles and
+`2.705` round-trips exactly. Only the *display* truncated: `formatMoney` caps at 2 decimals, so a
+per-gram price rendered ₱0.00 and read as unpriced. Unit prices now show 3 decimals
+(`formatUnitPrice`), matching legacy's `decimal(11,3)` and the `1.000` in your screenshot. Totals —
+including the entire Full Audit — stay at 2. → Local Database, On Hand, Purchases, Transfers.
+
+**4 · Long forms hiding their button.** Your screenshot was real and worse elsewhere:
+
+- **Recipe builder** — Publish left the viewport at **4 ingredients** and sat at y=1508 by 13.
+- **Item form** — same from **2 variants**.
+- **Transfer "Receive" dialog** — *could not be completed at all*: at 10 lines Confirm Receipt sat
+  at y=824 on an 800px screen with no way to scroll to it.
+
+Fixed at the primitives (sticky sheet footer, capped dialog height), so every current and future
+dialog and sheet is covered. Edit-quantity itself was fine everywhere — decimals, clearing, `0`,
+blur and Enter all verified. The "minsan hindi gumagana" was a focus bug: after picking an item the
+cursor stayed on the picker instead of the number field, so keystrokes went nowhere.
+
+**5 · Spelling detection.** Imports already fuzzy-match (alias → exact → Levenshtein); verified
+against six realistic typos. The gap was **creating** an item — a typo silently produced a second
+master item and split that product's history. Now warns with "Yes, it's a different item — create
+it" / "Let me fix the name". Threshold is set so `Absolut Vodkaa` is caught while `Absolut Citron`
+saves normally.
+
+---
+
 ## What we intentionally did *not* change
 
 - **Reconciliation math** — the highlight and the two new reports are a *presentation* layer only;
@@ -330,5 +378,6 @@ populated.
 
 ## Where the canonical records live
 - Architecture rationale (incl. the additive-rule note): [architecture.md](architecture.md), deviation **#25**.
-- Shipped-history log: [build-log.md](build-log.md), **Phase 14** (Round 1) and **Phase 15** (Round 2).
+- Shipped-history log: [build-log.md](build-log.md), **Phase 14** (Round 1), **Phase 15** (Round 2), **Phases 31–32** (Round 4).
+- Report access + unit-price precision rationale: [architecture.md](architecture.md), deviations **#28** and **#29**.
 - Request tracker + the two parked specs (barcode, offline): [project-overview.md](project-overview.md), **2026-07-21 additions**.

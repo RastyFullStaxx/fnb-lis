@@ -21,7 +21,7 @@ schemas, and UI.
 client location. The one thing the client trusts above all is the **Full Audit reconciliation
 report** — its math is sacred.
 
-## Status — 2026-07-23
+## Status — 2026-07-28
 
 Phases 0–9 complete. The full audit cycle, reports, exports, imports, dashboard, admin, Stocky,
 and inter-location transfers are all shipped and verified against hand-computed fixtures.
@@ -34,9 +34,22 @@ shipped. Both implementation calls the proposal left open (`assetCode`'s home; t
 shape) landed on the plan's own recommended defaults — `LocationItem.assetCode` and a sibling
 `Dialog` component — with no open question left behind.
 
+**Client round 4 shipped** (build-log Phases 31–32): report access is now tiered — audit-service
+viewers see the reconciliation set only, and downloads are refused by any of three independent
+gates (role, the admin's per-client switch, or a past-due subscription). Unit prices display at 3
+decimals for per-gram items. Near-duplicate item names are caught at creation. The long-form
+surfaces that hid their primary button (recipe builder, item form, and a Transfer receipt dialog
+that could not be completed at all) are fixed at the primitives.
+
 **Verification stance:** no automated test framework (explicit instruction). Correctness rests on
 [golden-fixtures.md](golden-fixtures.md) plus live checks. Re-verify the relevant fixture after any
 change to `packages/core` or the report services.
+
+Since 2026-07-28 there is one automated guard, and it guards the fixtures rather than the code:
+`npm run verify:seed -w @fnb/server` rebuilds the seed in a **throwaway database** and asserts both
+pinned anchors plus 43 coverage checks. It exists because the golden numbers are *produced by* the
+seed data, so a seeder change could silently invalidate the answer key. **Run it after any seeder
+change.** See [golden-fixtures.md §0](golden-fixtures.md).
 
 ## Where things live
 
@@ -72,7 +85,12 @@ change to `packages/core` or the report services.
    logs to ActivityLog in the same transaction.
 3. Imports never touch inventory without human review; batches reverse precisely.
 4. Role + client scoping enforced server-side on every route.
-5. The fixtures in [golden-fixtures.md](golden-fixtures.md) keep reproducing.
+5. The fixtures in [golden-fixtures.md](golden-fixtures.md) keep reproducing — **both** pinned
+   anchors, not just the golden window. New seed data belongs after the last committed count
+   (2026-07-20); inside a count-anchored period it moves that period's variance while June stays
+   byte-perfect, which is exactly how such a change hides.
+6. A screen hidden from the sidebar stays unreachable by URL — nav and routing read the same
+   permission declarations (architecture.md deviation **#30**).
 
 ## Client request tracker — 2026-07 round
 

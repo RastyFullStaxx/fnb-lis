@@ -8,8 +8,21 @@ during the initial build, per AGENTS.md).
 > `reconciliation.ts`, `weighing.ts`, `pricing.ts`, `rounding.ts`, `billing.ts`, `cost-analysis.ts`
 > — or to `services/report-assembly.ts` / `report-lists.ts` / `exports.ts`.
 
-**How to verify:** `npm run db:seed` (idempotent), then read the numbers off the running app —
-Full Audit at `/l/:locationId/reports/full-audit` with the stated dates, or call the service
+**How to verify — automated:**
+
+```
+npm run verify:seed -w @fnb/server
+```
+
+Builds a **throwaway database** (temp file → `migrate deploy` → seed → assert → delete), so it
+proves the seeder from empty without touching `data/fnb.db`. `prisma migrate reset` is off-limits
+here, which is why the harness exists at all. It asserts both anchors below plus 43 coverage
+checks — every table that drives a screen, and the report-specific shapes (all three sale kinds,
+discounted sales, forfeits, asset codes, par levels, the void trail, each dashboard next-action,
+and the Depot's second-BAR-location data). **Run it after any seeder change.**
+
+**How to verify — by hand:** `npm run db:seed` (idempotent), then read the numbers off the running
+app — Full Audit at `/l/:locationId/reports/full-audit` with the stated dates, or call the service
 functions directly with `npx tsx` from `apps/server`. Compare to 6 decimal places.
 
 > **Seeding rule.** `prisma/seed.ts` writes the fixture layer; `prisma/seed-demo.ts` stacks demo
@@ -18,6 +31,27 @@ functions directly with `npx tsx` from `apps/server`. Compare to 6 decimal place
 > no fixtures. Weighted-average cost values an item from counts at or before the as-of date and
 > purchases strictly before it, so later activity cannot move an earlier valuation.
 > Re-verified byte-identical after the Phase 13 demo layer landed (2026-07-21), on both bases.
+
+---
+
+## 0. The two pinned anchors
+
+These are the numbers `verify:seed` asserts. Everything else in this file is hand-computed
+supporting detail; these two are the ones a seeder change must not move.
+
+| Anchor | Location | Period | At cost | At retail |
+|---|---|---|---|---|
+| Golden cycle (§1) | Main Bar | 2026-06-01 → 06-08 | **−330.6857142857142** | **−869.5714285714284** |
+| Latest closed period | Main Bar | 2026-07-14 → 07-20 | **−537** | **−1410** |
+
+The second anchor was added 2026-07-28 after a near-miss: a void/correct pair seeded at 2026-07-16
+left the June fixture byte-perfect while shifting the July period by exactly the corrected quantity
+(₱1,080 = 24 × ₱45). **One anchor is not enough** — a seed change that lands in a different period
+sails past a passing June. New seed data must sit outside *every* count-anchored period, not just
+outside the golden window; after the last committed count (2026-07-20) is the safe place.
+
+Deliberately **not** pinned: the Depot's own period. The demo history also counts that location, so
+the Depot fixture shapes its period without owning it.
 
 ---
 
