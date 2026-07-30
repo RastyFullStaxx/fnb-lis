@@ -2238,3 +2238,87 @@ every web user and fork the renderer the desktop exists to reuse verbatim.
 Dev-only note: `verify:mirror` needs one free licence slot and a provisioned
 desktop holds it, so the test client's `maxDevices` is now 2. The shipped
 default stays 1, matching §18.
+
+---
+
+## 2026-07-31 — Windows installer, and a UX pass by the interaction laws
+
+### Packaging (`npm run dist -w @fnb/desktop`)
+
+`electron-builder.yml` → `LIS Setup <version>.exe`, ~90 MB, per-user install so
+no admin password, desktop + Start Menu shortcuts. Unsigned, so SmartScreen
+warns on first run until a certificate is bought.
+
+Four defects that only appear once installed — each invisible from source:
+
+- **better-sqlite3 was not packed at all.** It lives in
+  `apps/desktop/node_modules` (placed by `native.mjs`, not npm), so the
+  dependency walker never saw it. Now a declared dependency + `asarUnpack`.
+- **electron-builder 25 silently omits `call-bind-apply-helpers`.** Its
+  collector mishandles npm workspace hoisting when a package exists both at the
+  root and nested under `call-bind`; it kept only the nested copy, so
+  `dunder-proto` could not resolve it and the local server died at launch.
+  **v26+ is required.**
+- **`@electron/rebuild` recompiled the root better-sqlite3** — needs a C++
+  toolchain, and on success would have broken `verify:seed` and the dev server
+  with an ABI mismatch. `npmRebuild: false`.
+- **Uploads resolved into the read-only install directory.** `FNB_UPLOADS_DIR`
+  now points at the per-user data dir; `FNB_CWD` does the same for
+  `serve-static`, whose relative root a shortcut's "Start in" could break.
+
+Cut 57 MB: Prisma ships a WASM query compiler per database and we were packing
+MySQL, Postgres, CockroachDB and SQL Server for an app that opens one SQLite
+file. Asar 97 → 41 MB.
+
+The host now pipes stdout/stderr to `%APPDATA%\@fnb\desktop\host.log`. Windows
+gives a packaged GUI app no console, so `stdio: "inherit"` sent every crash
+trace to nowhere — the `call-bind-apply-helpers` bug was undiagnosable until
+this existed.
+
+### UX pass
+
+Audited against Jakob / Fitts / Miller / Hick / Proximity / Tesler. Most of the
+app already satisfied them — the Full Audit's 8 columns are chunked into three
+labelled header bands, the dashboard computes the next action rather than asking,
+and "Not counted" is tappable to jump to the item. Two real defects:
+
+- **`EntryActions`** (`components/entry-fact.tsx`). The row action cluster was
+  hand-rolled in five screens and each ordered it differently — Sales
+  Cancel→Edit, Transfers Correct→Void, Purchases editor Void→Edit. The same row
+  teaching three muscle memories is Jakob's Law broken *inside* the product.
+  Now one component taking **data, not markup**, so a caller cannot express a
+  different order. Safe actions first, destructive last, 12px apart —
+  Fitts's Law inverted for a button that cancels someone's count line, where
+  distance is the safeguard. `xs`→`sm`: 27px → 36px tall (the 18px root scales
+  `sm` up 12.5%), +76% target area on Edit, and the Edit→Remove gap went 5px → 21px.
+- **Recent Activity folds runs** of the same action by the same person. Four
+  failed PIN attempts from one terminal filled four of five slots and pushed a
+  voided sale off the bottom. Only *consecutive* entries fold, so the feed stays
+  chronological; the dashboard query now reads 25 and folds to 5, because
+  folding at `take: 5` would have left a two-row panel instead of refilling it.
+  Reads "4 similar events", never "4×" — some summaries carry their own tally
+  ("3 failed PIN attempts") and a bare multiplier beside one reads as arithmetic.
+  ActivityLog is untouched; Administration → Activity still lists every row.
+
+### Deliberately NOT changed
+
+- **"Local Database" / "Main Database" stay.** They look like jargon but they
+  are Lourd's own words (2026-07-28: "Since Local Database lang naman ang
+  nakikita ni user at hindi whole Main Database"). Renaming them would break
+  Jakob's Law, not serve it.
+- **Print / Excel / CSV / PDF stay as four buttons.** Hick's Law would suggest
+  one "Export" menu, but those labels are *recognised*, not evaluated, so the
+  choice cost is near zero — while burying them adds a click to a task an audit
+  firm repeats daily.
+
+### Verified
+
+- Packaged app: SPA 200, `/_desktop/people` returns 5 users (native addon loads
+  from outside the asar), `/api/auth/me` 401 (auth middleware ran, so Prisma
+  reached SQLite).
+- Golden anchors after touching `dashboard.ts`: −330.6857142857142 /
+  −869.5714285714284 and −537 / −1410. Both exact.
+- Collapse verified on live data: the PIN run folded and three previously
+  hidden events surfaced.
+- Typechecks clean across server, web, desktop. `@types/better-sqlite3` added —
+  the desktop typecheck had been failing at HEAD too.

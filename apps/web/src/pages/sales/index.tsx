@@ -21,7 +21,7 @@ import { formatMoney, formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { TableSurface, ToolbarField } from "@/components/table-surface";
 import { VoidDialog } from "@/components/void-dialog";
-import { EntryFact, EntryFacts } from "@/components/entry-fact";
+import { EntryActions, EntryFact, EntryFacts } from "@/components/entry-fact";
 import {
   Dialog,
   DialogContent,
@@ -229,19 +229,15 @@ export function SalesPage() {
                             </Badge>
                           );
                         })()}
-                        {!voided && (canVoid || canEdit) && (
-                          <div className="mt-auto flex gap-1">
-                            {canVoid && (
-                              <Button variant="destructive" size="xs" onClick={() => setVoiding(sale)}>
-                                Cancel
-                              </Button>
-                            )}
-                            {canEdit && (
-                              <Button variant="outline" size="xs" onClick={() => setEditing(sale)}>
-                                Edit
-                              </Button>
-                            )}
-                          </div>
+                        {!voided && (
+                          <EntryActions
+                            actions={[
+                              ...(canEdit ? [{ label: "Edit", onClick: () => setEditing(sale) }] : []),
+                              ...(canVoid
+                                ? [{ label: "Cancel", destructive: true, onClick: () => setVoiding(sale) }]
+                                : []),
+                            ]}
+                          />
                         )}
                       </div>
                     </div>

@@ -148,7 +148,20 @@ export async function buildDashboard(
     prisma.activityLog.findMany({
       where: { locationId },
       orderBy: { ts: "desc" },
-      take: 5,
+      /**
+       * Over-fetch so the dashboard can collapse repeats and still fill its list.
+       *
+       * The panel shows five rows. At `take: 5` a single repeating event — four
+       * failed PIN attempts from one terminal — consumed four of them and
+       * pushed real events off the bottom; folding the run client-side would
+       * then have left a two-row panel. Reading 25 and folding down to five
+       * gives the summariser something to promote. Indexed on `ts` and capped,
+       * so the extra rows cost nothing worth measuring.
+       *
+       * Stocky slices its own 5 off the front of this list, so its view is
+       * unchanged.
+       */
+      take: 25,
       select: {
         id: true,
         ts: true,

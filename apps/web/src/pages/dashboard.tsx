@@ -725,19 +725,77 @@ function RecentActivity({
           </p>
         ) : (
           <ul className="mt-4 divide-y">
-            {data.recentActivity.map((item) => (
+            {collapseRuns(data.recentActivity)
+              .slice(0, RECENT_ACTIVITY_ROWS)
+              .map((item) => (
               <li key={item.id} className="py-3 first:pt-0 last:pb-0">
                 <p className="line-clamp-2 text-sm">{item.summary}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {item.userName ?? "System"} <span aria-hidden="true">·</span> {relativeTime(item.ts)}
-                </p>
-              </li>
-            ))}
+                  {item.userName ?? "System"} <span aria-hidden="true">·</span>{" "}
+                  {/* "4 similar events", never "4×". Some summaries carry their own
+                      tally ("3 failed PIN attempts"), and a bare multiplier next to
+                      one reads as arithmetic — the four folded PIN rows were seven
+                      attempts, not four. This counts entries and says so. */}
+                  {item.repeats > 1
+                    ? `${item.repeats} similar events · ${timeSpan(item.oldestTs, item.ts)}`
+                    : relativeTime(item.ts)}
+                  </p>
+                </li>
+              ))}
           </ul>
         )}
       </CardContent>
     </Card>
   );
+}
+
+/** How many rows the Recent Activity panel shows after runs are folded. */
+const RECENT_ACTIVITY_ROWS = 5;
+
+/**
+ * "2h ago – 1h ago", collapsing to a single term when both ends round the same.
+ * At this resolution a run inside one hour reads "3d ago – 3d ago", which looks
+ * like a rendering bug rather than a range.
+ */
+function timeSpan(from: string, to: string): string {
+  const start = relativeTime(from);
+  const end = relativeTime(to);
+  return start === end ? end : `${start} – ${end}`;
+}
+
+/**
+ * Fold a run of the same action by the same person into one row.
+ *
+ * This panel shows five entries, and five is the whole budget for "what
+ * happened here lately". A repeating event spends the lot: four failed PIN
+ * attempts from one terminal filled four of five slots on the live dashboard
+ * and pushed a voided sale — the one entry an auditor needs to see — off the
+ * bottom. Collapsing them says the same thing in one line and gives the other
+ * four slots back to events that differ.
+ *
+ * Only CONSECUTIVE entries fold, so the feed stays strictly chronological and a
+ * run interrupted by something else still reads as two separate episodes. The
+ * ActivityLog itself is untouched — this is presentation. Administration →
+ * Activity still lists every row individually, which is what the audit trail is
+ * for and why it is safe to summarise here.
+ */
+function collapseRuns(
+  items: DashboardData["recentActivity"],
+): Array<DashboardData["recentActivity"][number] & { repeats: number; oldestTs: string }> {
+  const out: Array<DashboardData["recentActivity"][number] & { repeats: number; oldestTs: string }> = [];
+  for (const item of items) {
+    const prev = out[out.length - 1];
+    // Entity is part of the key on purpose: two voids by the same manager are a
+    // run, but a void and a price edit are not, even back to back.
+    if (prev && prev.action === item.action && prev.userName === item.userName && prev.entity === item.entity) {
+      prev.repeats += 1;
+      // Items arrive newest-first, so each fold pushes the range's start back.
+      prev.oldestTs = item.ts;
+      continue;
+    }
+    out.push({ ...item, repeats: 1, oldestTs: item.ts });
+  }
+  return out;
 }
 
 function DashboardSkeleton() {

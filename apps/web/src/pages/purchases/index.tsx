@@ -12,7 +12,7 @@ import { ApiError } from "@/api/http";
 import { formatMoney, formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { TableSurface, TableLoading, TableEmpty, ToolbarField, ToolbarSearch } from "@/components/table-surface";
-import { EntryFact, EntryFacts } from "@/components/entry-fact";
+import { EntryActions, EntryFact, EntryFacts } from "@/components/entry-fact";
 import { ItemCombobox } from "@/components/item-combobox";
 import { VoidDialog } from "@/components/void-dialog";
 import { useWeighPreview, WeighPreviewStrip } from "@/components/weigh-calculator";
@@ -444,9 +444,11 @@ function ForfeitsTab() {
                       {voided && f.voidReason && <EntryFact label="Cancelled" value={f.voidReason} />}
                     </EntryFacts>
                     {canVoid && !voided && (
-                      <Button variant="destructive" size="xs" className="shrink-0" onClick={() => setVoiding(f)}>
-                        Cancel
-                      </Button>
+                      <div className="shrink-0">
+                        <EntryActions
+                          actions={[{ label: "Cancel", destructive: true, onClick: () => setVoiding(f) }]}
+                        />
+                      </div>
                     )}
                   </div>
                 </div>

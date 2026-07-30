@@ -10,6 +10,7 @@ import { useTransfer, useTransferMutations } from "@/api/ops";
 import { variantLabel, type LocationItem, type TransferLine } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { formatMoney } from "@/lib/utils";
+import { EntryActions } from "@/components/entry-fact";
 import { ItemCombobox } from "@/components/item-combobox";
 import { VoidDialog } from "@/components/void-dialog";
 import { TableSurface, TableLoading } from "@/components/table-surface";
@@ -266,15 +267,15 @@ export function TransferEditorPage() {
                           <Trash2 className="size-4" />
                         </Button>
                       ) : canVoid && !voided ? (
-                        <div className="flex justify-end gap-1">
-                          {canCorrect && (
-                            <Button variant="outline" size="xs" onClick={() => setCorrectingLine(line)}>
-                              Correct
-                            </Button>
-                          )}
-                          <Button variant="destructive" size="xs" onClick={() => setVoidingLine(line)}>
-                            Cancel
-                          </Button>
+                        <div className="flex justify-end">
+                          <EntryActions
+                            actions={[
+                              ...(canCorrect
+                                ? [{ label: "Correct", onClick: () => setCorrectingLine(line) }]
+                                : []),
+                              { label: "Cancel", destructive: true, onClick: () => setVoidingLine(line) },
+                            ]}
+                          />
                         </div>
                       ) : canVoidReceipt && !voided && receipt ? (
                         <Button

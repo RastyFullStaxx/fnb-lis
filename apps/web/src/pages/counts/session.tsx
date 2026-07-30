@@ -13,7 +13,7 @@ import { ItemCombobox } from "@/components/item-combobox";
 import { WeightReport } from "@/pages/stock/weight-report";
 import { VoidDialog } from "@/components/void-dialog";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { EntryFact, EntryFacts } from "@/components/entry-fact";
+import { EntryActions, EntryFact, EntryFacts } from "@/components/entry-fact";
 import { useWeighPreview, WeighPreviewStrip } from "@/components/weigh-calculator";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -844,23 +844,15 @@ function LineRow({
           {/* Edit is no longer draft-only: a committed line corrects through the
               same button, so the parent decides by passing onEdit or not. */}
           {(onVoid || onEdit || (removable && onRemove)) && (
-            <div className="mt-auto flex gap-1">
-              {onVoid && (
-                <Button variant="destructive" size="xs" onClick={onVoid}>
-                  Cancel
-                </Button>
-              )}
-              {removable && onRemove && (
-                <Button variant="destructive" size="xs" onClick={() => setConfirmRemove(true)}>
-                  Remove
-                </Button>
-              )}
-              {onEdit && (
-                <Button variant="outline" size="xs" onClick={onEdit}>
-                  Edit
-                </Button>
-              )}
-            </div>
+            <EntryActions
+              actions={[
+                ...(onEdit ? [{ label: "Edit", onClick: onEdit }] : []),
+                ...(onVoid ? [{ label: "Cancel", destructive: true, onClick: onVoid }] : []),
+                ...(removable && onRemove
+                  ? [{ label: "Remove", destructive: true, onClick: () => setConfirmRemove(true) }]
+                  : []),
+              ]}
+            />
           )}
         </div>
       </div>

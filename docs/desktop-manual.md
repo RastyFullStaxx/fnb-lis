@@ -79,10 +79,17 @@ recoverable mistake. To wipe a machine completely, delete
 > - electron-builder **26+** is required. v25's dependency collector mishandles
 >   npm workspace hoisting and silently omits `call-bind-apply-helpers`, which
 >   only shows up as the local server dying at launch.
-> - If a rebuild fails with `EBUSY` on `release\...\app.asar`, an antivirus or
->   file-sync client is holding the previous build. Delete `apps/desktop/release`
->   (a reboot releases it) or build elsewhere with
->   `npx electron-builder -c.directories.output=<path>`.
+> - **Do not let a sync client watch `apps/desktop/release`.** A rebuild that
+>   fails with `EBUSY` on `release\...\app.asar` means something has a handle on
+>   the previous build. On the current dev machine that is Google Drive: it holds
+>   a ~90 MB asar open, and because it is a filesystem filter no process shows up
+>   in Restart Manager and neither `del`, `rd`, nor renaming the parent directory
+>   works. Only a reboot or pausing Drive releases it.
+>
+>   Uploading a 90 MB installer to the cloud on every build is worth avoiding on
+>   its own. Exclude `apps/desktop/release` from the sync client, or build
+>   outside the synced tree:
+>   `npx electron-builder -c.directories.output=%TEMP%\lis-build`.
 
 ---
 

@@ -10,6 +10,7 @@ import { usePurchase, usePurchaseMutations } from "@/api/ops";
 import { variantLabel, type LocationItem, type PurchaseLine } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { formatMoney, formatDate } from "@/lib/utils";
+import { EntryActions } from "@/components/entry-fact";
 import { ItemCombobox } from "@/components/item-combobox";
 import { TableSurface } from "@/components/table-surface";
 import { VoidDialog } from "@/components/void-dialog";
@@ -251,17 +252,15 @@ export function PurchaseEditorPage() {
                           <Trash2 className="size-4" />
                         </Button>
                       ) : !voided && (canVoid || canEdit) ? (
-                        <div className="flex justify-end gap-1">
-                          {canVoid && (
-                            <Button variant="destructive" size="xs" onClick={() => setVoidingLine(line)}>
-                              Cancel
-                            </Button>
-                          )}
-                          {canEdit && (
-                            <Button variant="outline" size="xs" onClick={() => setEditingLine(line)}>
-                              Edit
-                            </Button>
-                          )}
+                        <div className="flex justify-end">
+                          <EntryActions
+                            actions={[
+                              ...(canEdit ? [{ label: "Edit", onClick: () => setEditingLine(line) }] : []),
+                              ...(canVoid
+                                ? [{ label: "Cancel", destructive: true, onClick: () => setVoidingLine(line) }]
+                                : []),
+                            ]}
+                          />
                         </div>
                       ) : null}
                     </TableCell>
