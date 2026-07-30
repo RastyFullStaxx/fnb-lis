@@ -45,7 +45,7 @@ export function WeightReport({
   as?: "badge" | "action";
 }) {
   const me = useMe();
-  const role = (me.data?.user.role ?? "READONLY") as Role;
+  const role = (me.data?.user.role ?? "AUDIT_VIEWER_LIMITED") as Role;
   const canReport = can(role, "entries.create");
   const canResolve = can(role, "weights.manage");
   const report = useReportWeightProblem();

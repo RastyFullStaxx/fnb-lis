@@ -545,7 +545,7 @@ function ReadOnlySession({ session }: { session: SessionWithLines }) {
   const mutations = useCountMutations(session.id);
   const [voiding, setVoiding] = useState<CountLine | null>(null);
   const [editing, setEditing] = useState<CountLine | null>(null);
-  const role = (me.data?.user.role ?? "READONLY") as Role;
+  const role = (me.data?.user.role ?? "AUDIT_VIEWER_LIMITED") as Role;
   const canVoid = can(role, "entries.void") && session.status === "COMMITTED";
   // Editing voids the original and writes a replacement, so it needs both
   // rights — same rule as Sales.

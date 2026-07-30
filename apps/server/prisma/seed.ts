@@ -17,7 +17,7 @@ async function seedUsers() {
     { username: "manager", firstName: "Maria", lastName: "Santos", role: "MANAGER" },
     { username: "staff", firstName: "Paolo", lastName: "Reyes", role: "STAFF" },
     { username: "accountant", firstName: "Grace", lastName: "Lim", role: "ACCOUNTANT" },
-    { username: "readonly", firstName: "Vis", lastName: "Itor", role: "READONLY" },
+    { username: "readonly", firstName: "Vis", lastName: "Itor", role: "AUDIT_VIEWER" },
   ];
   for (const u of users) {
     await prisma.user.upsert({

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
 import { ArrowLeft, Check, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -16,8 +16,17 @@ import { TableSurface, TableLoading } from "@/components/table-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { QuantityInput } from "@/components/quantity-input";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -50,6 +59,7 @@ export function TransferEditorPage() {
   const [item, setItem] = useState<LocationItem | null>(null);
   const [qty, setQty] = useState("");
   const [voidingLine, setVoidingLine] = useState<TransferLine | null>(null);
+  const [correctingLine, setCorrectingLine] = useState<TransferLine | null>(null);
   const [voidingTransfer, setVoidingTransfer] = useState(false);
   const [voidingReceipt, setVoidingReceipt] = useState<{ receiptId: string; label: string } | null>(null);
   const comboRef = useRef<HTMLButtonElement>(null);
@@ -93,8 +103,10 @@ export function TransferEditorPage() {
   const t = transfer.data;
   const isSource = t.fromLocationId === locationId;
   const isDraft = t.status === "DRAFT";
-  const role = (me.data?.user.role ?? "READONLY") as Role;
+  const role = (me.data?.user.role ?? "AUDIT_VIEWER_LIMITED") as Role;
   const canVoid = isSource && can(role, "entries.void") && t.status === "COMMITTED";
+  // Correcting voids the original and creates a replacement, so it needs both.
+  const canCorrect = canVoid && can(role, "entries.create");
   // Discarding one's own draft is entry-level work (the server agrees);
   // voiding a committed document stays a manager action.
   const canDiscard = isSource && isDraft && can(role, "entries.create");
@@ -254,9 +266,16 @@ export function TransferEditorPage() {
                           <Trash2 className="size-4" />
                         </Button>
                       ) : canVoid && !voided ? (
-                        <Button variant="destructive" size="xs" onClick={() => setVoidingLine(line)}>
-                          Cancel
-                        </Button>
+                        <div className="flex justify-end gap-1">
+                          {canCorrect && (
+                            <Button variant="outline" size="xs" onClick={() => setCorrectingLine(line)}>
+                              Correct
+                            </Button>
+                          )}
+                          <Button variant="destructive" size="xs" onClick={() => setVoidingLine(line)}>
+                            Cancel
+                          </Button>
+                        </div>
                       ) : canVoidReceipt && !voided && receipt ? (
                         <Button
                           variant="ghost"
@@ -313,6 +332,11 @@ export function TransferEditorPage() {
           }
         }}
       />
+      <CorrectLineDialog
+        transferId={t.id}
+        line={correctingLine}
+        onOpenChange={(open) => !open && setCorrectingLine(null)}
+      />
       <VoidDialog
         open={voidingTransfer}
         onOpenChange={setVoidingTransfer}
@@ -344,5 +368,119 @@ export function TransferEditorPage() {
         }}
       />
     </div>
+  );
+}
+
+/**
+ * Correct a committed transfer line. Same void-and-replace shape as Counts
+ * and Purchases: item stays locked, a reason is required, saving voids the
+ * original and writes a linked replacement.
+ *
+ * Unlike Counts (whose unitCost is a frozen valuation snapshot), a transfer
+ * line's unitCost is editable here — same reasoning as Purchases, since it's
+ * a real recorded cost that can be wrong, not a system-derived number.
+ *
+ * The server enforces receipt-first ordering: correcting a line the
+ * destination has already received against will fail server-side. That
+ * matches how Cancel already behaves next to this button, so this dialog
+ * doesn't duplicate the guard client-side.
+ */
+function CorrectLineDialog({
+  transferId,
+  line,
+  onOpenChange,
+}: {
+  transferId: string;
+  line: TransferLine | null;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const mutations = useTransferMutations(transferId);
+  const [qty, setQty] = useState("");
+  const [unitCost, setUnitCost] = useState("");
+  const [reason, setReason] = useState("");
+
+  // Re-seed every time a different line opens the dialog.
+  useEffect(() => {
+    if (!line) return;
+    setQty(String(line.qty));
+    setUnitCost(String(line.unitCost));
+    setReason("");
+  }, [line]);
+
+  if (!line) return null;
+  const variant = line.locationItem.itemVariant;
+
+  const submit = async () => {
+    const q = Number(qty);
+    if (qty === "" || !Number.isFinite(q) || q <= 0) return toast.error("Enter the quantity sent");
+    const cost = Number(unitCost);
+    if (unitCost === "" || !Number.isFinite(cost) || cost < 0) return toast.error("Enter the unit cost");
+    if (reason.trim().length < 3) return toast.error("Add a reason for the change");
+    try {
+      await mutations.correctLine.mutateAsync({
+        lineId: line.id,
+        qty: q,
+        unitCost: cost,
+        reason: reason.trim(),
+      });
+      toast.success("Line updated — the original is kept, marked corrected");
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not save the change");
+    }
+  };
+
+  return (
+    <Dialog open={line !== null} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Correct Transfer Line</DialogTitle>
+          <DialogDescription>
+            {variant.item.name} {variantLabel(variant)}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="tlc-qty">Quantity Sent</Label>
+            <QuantityInput
+              id="tlc-qty"
+              className="tnum"
+              placeholder="0"
+              value={qty}
+              onChange={(e) => setQty(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="tlc-cost">Unit Cost</Label>
+            <QuantityInput
+              id="tlc-cost"
+              className="tnum"
+              placeholder="0.00"
+              value={unitCost}
+              onChange={(e) => setUnitCost(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="tlc-reason">Reason for change</Label>
+            <Input
+              id="tlc-reason"
+              placeholder="e.g. Miscounted, typed wrong number"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button onClick={submit} disabled={mutations.correctLine.isPending}>
+            {mutations.correctLine.isPending ? "Saving…" : "Save Changes"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

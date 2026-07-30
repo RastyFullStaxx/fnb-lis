@@ -496,7 +496,7 @@ function LegacyFormatMenu({
   disabled?: boolean;
 }) {
   const me = useMe();
-  const role = (me.data?.user.role ?? "READONLY") as Role;
+  const role = (me.data?.user.role ?? "AUDIT_VIEWER_LIMITED") as Role;
   if (!can(role, "reports.export")) return null;
 
   const download = async (url: string) => {

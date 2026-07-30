@@ -71,7 +71,7 @@ export function ExportButtons({
   disabled?: boolean;
 }) {
   const me = useMe();
-  const role = (me.data?.user.role ?? "READONLY") as Role;
+  const role = (me.data?.user.role ?? "AUDIT_VIEWER_LIMITED") as Role;
   const canExport = can(role, "reports.export");
   // Slow workbooks invite double-clicks — disable every button while one runs.
   const [running, setRunning] = useState<"xlsx" | "csv" | "pdf" | null>(null);

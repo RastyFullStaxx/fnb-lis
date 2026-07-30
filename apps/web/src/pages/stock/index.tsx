@@ -98,7 +98,7 @@ export function StockPage() {
   // stays stable under search and the filter never strands the user.
   const catalog = useLocationItems();
 
-  const role = (me.data?.user.role ?? "READONLY") as Role;
+  const role = (me.data?.user.role ?? "AUDIT_VIEWER_LIMITED") as Role;
   const canEditPrices = can(role, "prices.edit");
   const missingCount =
     catalog.data?.filter((r) => isMissingPrice(r, r.itemVariant.item.category.productType)).length ?? 0;

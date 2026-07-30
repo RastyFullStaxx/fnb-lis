@@ -97,7 +97,7 @@ export function SalesPage() {
   const [voiding, setVoiding] = useState<SaleRecord | null>(null);
   const [editing, setEditing] = useState<SaleRecord | null>(null);
 
-  const role = (me.data?.user.role ?? "READONLY") as Role;
+  const role = (me.data?.user.role ?? "AUDIT_VIEWER_LIMITED") as Role;
   const canVoid = can(role, "entries.void");
   // Editing voids the original and creates a replacement, so it needs both.
   const canEdit = canVoid && can(role, "entries.create");

@@ -313,7 +313,7 @@ function ForfeitsTab() {
   const [qty, setQty] = useState("");
   const [voiding, setVoiding] = useState<Forfeit | null>(null);
 
-  const role = (me.data?.user.role ?? "READONLY") as Role;
+  const role = (me.data?.user.role ?? "AUDIT_VIEWER_LIMITED") as Role;
   const canVoid = can(role, "entries.void");
   const weighable = (item?.itemVariant.contentTracked || item?.itemVariant.weighMode === "NET") ?? false;
   const preview = useWeighPreview(item, scale);

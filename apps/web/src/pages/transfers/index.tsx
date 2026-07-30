@@ -90,7 +90,7 @@ export function TransfersPage() {
   const [tab, setTab] = useState("out");
   const [createOpen, setCreateOpen] = useState(false);
   const me = useMe();
-  const role = (me.data?.user.role ?? "READONLY") as Role;
+  const role = (me.data?.user.role ?? "AUDIT_VIEWER_LIMITED") as Role;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">

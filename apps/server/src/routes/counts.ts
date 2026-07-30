@@ -334,7 +334,7 @@ export const countRoutes = new Hono<AppEnv>()
       const session = await getOwnedSession(location.id, c.req.param("id"));
       const original = await prisma.countLine.findUnique({ where: { id: c.req.param("lineId") } });
       if (!original || original.countSessionId !== session.id) throw new AppError(404, "Count line not found");
-      if (original.status === "VOID") throw new AppError(409, "Line is already voided — add a new line instead");
+      if (original.status === "VOID") throw new AppError(409, "Line is already voided");
 
       const { locationItem, data } = await buildLineData(location.id, body);
       const replacement = await prisma.$transaction(async (tx) => {

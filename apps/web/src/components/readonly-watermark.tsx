@@ -2,15 +2,16 @@ import { useMemo } from "react";
 import { useLocation } from "react-router";
 
 /**
- * Faint tiled identity watermark over report pages for READONLY viewers
- * (3rd-party audit-service clients). This is a deterrent, not DRM — a browser
- * cannot block screenshots; what this does is make any leaked capture
- * attributable to the account that took it. The export footer carries the
- * same fact for downloaded files.
+ * Faint tiled identity watermark over report pages for AUDIT_VIEWER /
+ * AUDIT_VIEWER_LIMITED viewers (3rd-party audit-service clients, paid and
+ * unpaid). This is a deterrent, not DRM — a browser cannot block screenshots;
+ * what this does is make any leaked capture attributable to the account that
+ * took it. The export footer carries the same fact for downloaded files.
  */
 export function ReadonlyWatermark({ role, name }: { role: string; name: string }) {
   const { pathname } = useLocation();
-  const active = role === "READONLY" && pathname.includes("/reports");
+  const active =
+    (role === "AUDIT_VIEWER" || role === "AUDIT_VIEWER_LIMITED") && pathname.includes("/reports");
 
   const tile = useMemo(() => {
     if (!active) return null;

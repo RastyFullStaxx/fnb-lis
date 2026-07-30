@@ -47,7 +47,7 @@ export function RecipesPage() {
   const [searchParams] = useSearchParams();
   const [search, setSearch] = useState(searchParams.get("q") ?? "");
 
-  const role = (me.data?.user.role ?? "READONLY") as Role;
+  const role = (me.data?.user.role ?? "AUDIT_VIEWER_LIMITED") as Role;
   const canWrite = can(role, "menus.write");
 
   const q = search.trim().toLowerCase();

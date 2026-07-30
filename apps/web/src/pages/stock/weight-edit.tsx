@@ -37,7 +37,7 @@ import {
  */
 export function WeightEdit({ row }: { row: LocationItem }) {
   const me = useMe();
-  const role = (me.data?.user.role ?? "READONLY") as Role;
+  const role = (me.data?.user.role ?? "AUDIT_VIEWER_LIMITED") as Role;
   // Same permission the PUT enforces (prices.edit), so the button can never
   // appear to someone the server will refuse.
   const canEdit = can(role, "prices.edit");

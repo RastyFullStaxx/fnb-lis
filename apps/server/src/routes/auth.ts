@@ -54,6 +54,38 @@ export const authRoutes = new Hono<AppEnv>()
     }
 
     const ip = c.req.header("x-forwarded-for") ?? "";
+
+    // STAFF may hold only one active session at a time — a new login always
+    // ends whatever session that account already had, logged so the closed
+    // device is traceable. Every other role (ADMIN, OWNER, MANAGER,
+    // ACCOUNTANT, READONLY) can hold multiple concurrent sessions as before.
+    if (user.role === "STAFF") {
+      const priorSessions = await prisma.authSession.findMany({
+        where: { userId: user.id, expiresAt: { gt: new Date() } },
+        select: { id: true },
+      });
+      if (priorSessions.length > 0) {
+        await prisma.authSession.deleteMany({
+          where: { id: { in: priorSessions.map((s) => s.id) } },
+        });
+        await logActivity({
+          user: {
+            id: user.id,
+            username: user.username,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            role: user.role,
+            modules: null,
+          } as MeResponse["user"],
+          action: "auth.autoLogout",
+          entity: "User",
+          entityId: user.id,
+          summary: `${user.username}'s prior session was ended by a new login`,
+          details: { ip, userAgent: c.req.header("user-agent") ?? null, endedSessionCount: priorSessions.length },
+        });
+      }
+    }
+
     const { token, expiresAt } = await createSession(user.id, user.role, ip, c.req.header("user-agent"));
     setCookie(c, SESSION_COOKIE, token, {
       httpOnly: true,
@@ -79,6 +111,7 @@ export const authRoutes = new Hono<AppEnv>()
       entity: "User",
       entityId: user.id,
       summary: `${user.username} signed in`,
+      details: { ip, userAgent: c.req.header("user-agent") ?? null },
     });
 
     return c.json(await buildMe(sessionUser as MeResponse["user"]));
@@ -96,6 +129,7 @@ export const authRoutes = new Hono<AppEnv>()
         entity: "User",
         entityId: user.id,
         summary: `${user.username} signed out`,
+        details: { ip: c.req.header("x-forwarded-for") ?? "", userAgent: c.req.header("user-agent") ?? null },
       });
     }
     return c.json({ ok: true });

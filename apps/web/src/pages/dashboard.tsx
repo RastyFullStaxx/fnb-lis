@@ -59,7 +59,7 @@ export function DashboardPage() {
   const me = useMe();
   const { locationId } = useParams();
   const dash = useDashboard();
-  const role = (me.data?.user.role ?? "READONLY") as Role;
+  const role = (me.data?.user.role ?? "AUDIT_VIEWER_LIMITED") as Role;
   const firstName = me.data?.user.firstName ?? "";
   const to = (path: string) => `/l/${locationId}/${path}`;
 

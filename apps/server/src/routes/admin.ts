@@ -11,6 +11,7 @@ import {
   moduleType,
   LOCATION_KINDS,
   OWNER_ASSIGNABLE_ROLES,
+  voidRequest,
   type BillingCycle,
 } from "@fnb/core";
 import { prisma } from "../db";
@@ -723,6 +724,37 @@ async function assertActorMayAssign(
   if (foreign.length > 0) throw new AppError(403, "You can only assign users to your own establishment");
 }
 
+/**
+ * Rough "Browser on OS" label from a raw User-Agent string, for display only.
+ * Covers the common cases (Chrome/Safari/Firefox/Edge × Windows/Mac/Android/
+ * iOS) — good enough to tell devices apart in a history list, not a full UA
+ * parser.
+ */
+function deviceLabel(userAgent: string | null): string {
+  if (!userAgent) return "Unknown device";
+  const browser = /Edg\//.test(userAgent)
+    ? "Edge"
+    : /Chrome\//.test(userAgent)
+      ? "Chrome"
+      : /Firefox\//.test(userAgent)
+        ? "Firefox"
+        : /Safari\//.test(userAgent)
+          ? "Safari"
+          : "Browser";
+  const os = /iPhone|iPad/.test(userAgent)
+    ? "iOS"
+    : /Android/.test(userAgent)
+      ? "Android"
+      : /Mac OS X/.test(userAgent)
+        ? "Mac"
+        : /Windows/.test(userAgent)
+          ? "Windows"
+          : /Linux/.test(userAgent)
+            ? "Linux"
+            : "Unknown OS";
+  return `${browser} on ${os}`;
+}
+
 export const userAdminRoutes = new Hono<AppEnv>()
   .use("/users", requireAuth, requirePermission("users.manage"))
   .use("/users/*", requireAuth, requirePermission("users.manage"))
@@ -853,6 +885,70 @@ export const userAdminRoutes = new Hono<AppEnv>()
         { user: actor, action: "user.access", entity: "User", entityId: userId, summary: "Updated client assignments", details: { clientIds } },
         tx,
       );
+    });
+    return c.json({ ok: true });
+  })
+
+  // ── Login history (client req 2026-07-29: visibility into whether a staff
+  // account is being used on multiple devices). STAFF is excluded from this
+  // route by the shared "users.manage" guard above (STAFF is not in
+  // ["ADMIN", "OWNER"]) — called out again here since getting that gate wrong
+  // on this specific route has real consequences.
+  .get("/users/:id/sessions", async (c) => {
+    const userId = c.req.param("id");
+    await assertActorMayTouchUser(c, userId);
+    const [events, activeSessions] = await Promise.all([
+      prisma.activityLog.findMany({
+        where: { entity: "User", entityId: userId, action: { in: ["auth.login", "auth.logout", "auth.autoLogout"] } },
+        orderBy: { ts: "desc" },
+        select: { id: true, ts: true, action: true, detailsJson: true },
+      }),
+      prisma.authSession.findMany({
+        where: { userId, expiresAt: { gt: new Date() } },
+        select: { id: true, ip: true, userAgent: true, createdAt: true, expiresAt: true },
+      }),
+    ]);
+    const history = events.map((e) => {
+      let details: { ip?: string; userAgent?: string | null; endedSessionCount?: number } = {};
+      try {
+        details = e.detailsJson ? JSON.parse(e.detailsJson) : {};
+      } catch {
+        details = {};
+      }
+      return {
+        id: e.id,
+        ts: e.ts,
+        action: e.action,
+        ip: details.ip ?? null,
+        device: deviceLabel(details.userAgent ?? null),
+      };
+    });
+    const active = activeSessions.map((s) => ({
+      id: s.id,
+      ip: s.ip,
+      device: deviceLabel(s.userAgent),
+      loginAt: s.createdAt,
+      expiresAt: s.expiresAt,
+    }));
+    return c.json({ history, active });
+  })
+
+  .post("/users/:id/sessions/:sessionId/revoke", zValidator("json", voidRequest), async (c) => {
+    const userId = c.req.param("id");
+    const sessionId = c.req.param("sessionId");
+    const { reason } = c.req.valid("json");
+    const actor = c.get("user")!;
+    await assertActorMayTouchUser(c, userId);
+    const session = await prisma.authSession.findUnique({ where: { id: sessionId } });
+    if (!session || session.userId !== userId) throw new AppError(404, "Session not found");
+    await prisma.authSession.delete({ where: { id: sessionId } });
+    await logActivity({
+      user: actor,
+      action: "auth.revoke",
+      entity: "User",
+      entityId: userId,
+      summary: `Signed out ${deviceLabel(session.userAgent)}`,
+      details: { reason, ip: session.ip, userAgent: session.userAgent },
     });
     return c.json({ ok: true });
   });

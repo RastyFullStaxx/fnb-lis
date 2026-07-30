@@ -34,7 +34,7 @@ import {
 
 export function SettingsPage() {
   const me = useMe();
-  const role = (me.data?.user.role ?? "READONLY") as Role;
+  const role = (me.data?.user.role ?? "AUDIT_VIEWER_LIMITED") as Role;
 
   return (
     <div>
@@ -63,7 +63,7 @@ function CostBasisSection() {
   const saved = useCostBasis(clientId);
   const update = useUpdateCostBasis(clientId);
   const me = useMe();
-  const role = (me.data?.user.role ?? "READONLY") as Role;
+  const role = (me.data?.user.role ?? "AUDIT_VIEWER_LIMITED") as Role;
   const canEdit = can(role, "master.write");
 
   const current = saved.data?.costBasis ?? "PRICE";
@@ -129,7 +129,7 @@ function VarianceThresholdSection() {
   const saved = useVarianceThreshold(clientId);
   const update = useUpdateVarianceThreshold(clientId);
   const me = useMe();
-  const role = (me.data?.user.role ?? "READONLY") as Role;
+  const role = (me.data?.user.role ?? "AUDIT_VIEWER_LIMITED") as Role;
   const canEdit = can(role, "master.write");
 
   const [value, setValue] = useState("");

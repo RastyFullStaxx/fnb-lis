@@ -307,6 +307,52 @@ export function useUpdateUserAccess() {
   });
 }
 
+// ── Login history / active sessions (client req 2026-07-29) ────────────────
+// Mirrors apps/server/src/routes/admin.ts GET/POST .../sessions[...]/revoke.
+// STAFF is never fetched through this — the route itself excludes STAFF
+// actors, and the frontend never renders a trigger for a STAFF-role viewer.
+
+/** One past login/logout/auto-logout event, most recent first. */
+export interface UserSessionHistoryEntry {
+  id: string;
+  ts: string;
+  action: "auth.login" | "auth.logout" | "auth.autoLogout";
+  ip: string | null;
+  device: string;
+}
+
+/** A currently-active session — revokable. */
+export interface UserActiveSession {
+  id: string;
+  ip: string | null;
+  device: string;
+  loginAt: string;
+  expiresAt: string;
+}
+
+export interface UserSessionsResponse {
+  history: UserSessionHistoryEntry[];
+  active: UserActiveSession[];
+}
+
+export function useUserSessions(userId: string | null) {
+  return useQuery({
+    queryKey: ["admin", "users", userId, "sessions"],
+    queryFn: () => api<UserSessionsResponse>(`/api/admin/users/${userId}/sessions`),
+    enabled: !!userId,
+  });
+}
+
+export function useRevokeUserSession(userId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ sessionId, reason }: { sessionId: string; reason: string }) =>
+      post<{ ok: boolean }>(`/api/admin/users/${userId}/sessions/${sessionId}/revoke`, { reason }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "users", userId, "sessions"] }),
+  });
+}
+
+
 // ── Subscriptions ──────────────────────────────────────────────────────────
 
 export interface AdminSubscriptionWithClient extends AdminSubscription {

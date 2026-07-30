@@ -134,7 +134,7 @@ export function WeighPreviewStrip({
   contentUnit: string;
 }) {
   const me = useMe();
-  const canEditWeights = can((me.data?.user.role ?? "READONLY") as Role, "prices.edit");
+  const canEditWeights = can((me.data?.user.role ?? "AUDIT_VIEWER_LIMITED") as Role, "prices.edit");
   if (!preview) return null;
   if (!preview.ready) {
     return (
