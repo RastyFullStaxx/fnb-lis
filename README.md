@@ -32,6 +32,18 @@ It proves the seed from an EMPTY database — `prisma migrate reset` is off-limi
 the only way — and asserts the two pinned fixture anchors plus 43 coverage checks. Never touches
 `data/fnb.db`.
 
+After ANY change to the sync/idempotency/device paths:
+
+```bash
+npm run verify:sync -w @fnb/server    # same throwaway-db harness, 30 checks
+```
+
+It drives the real Hono app in-process and proves the guarantees the offline desktop rests on: a
+retried push doesn't duplicate, a supplied id can't reach another establishment's rows, a device
+session survives a long offline stretch and dies on revocation, and the snapshot carries what a
+mirror needs (and no password hashes). See
+[docs/sync-and-data-lifecycle.md](docs/sync-and-data-lifecycle.md).
+
 Seed logins: `admin` · `manager` · `staff` · `accountant` · `readonly` — password `Fnb!2026`.
 
 XAMPP owns ports 80/3306 on the dev machine; don't touch them.
@@ -67,6 +79,11 @@ These are not style preferences — breaking one produces wrong numbers or a bro
 8. **New seed data goes after the last committed count** (2026-07-20), never inside a
    count-anchored period. Landing inside one moves that period's variance while the golden
    window stays byte-perfect, which is exactly how it hides.
+9. **One writer per row.** The offline desktop mirror is only correct because master data flows
+   server → device and transactions flow device → server, with no row written from both ends.
+   Before making a device-writable table server-writable (or vice versa), read
+   [docs/sync-and-data-lifecycle.md §2](docs/sync-and-data-lifecycle.md) — that table is the
+   design, not a description of it.
 
 ## Documentation
 
@@ -80,5 +97,6 @@ lives, and the open client decisions.
 | [docs/DESIGN.md](docs/DESIGN.md) | The royal-blue/white design system |
 | [docs/architecture.md](docs/architecture.md) | Stack, data model, **formula appendix (§6)**, deviation log |
 | [docs/golden-fixtures.md](docs/golden-fixtures.md) | The hand-computed numbers that must never change |
+| [docs/sync-and-data-lifecycle.md](docs/sync-and-data-lifecycle.md) | Offline desktop mirror: ownership, the two flows, retention/backup |
 | [docs/build-log.md](docs/build-log.md) | What shipped when, and what the audits found |
 | [docs/reference/](docs/reference/) | Legacy-system behaviour (read-only answer key) |

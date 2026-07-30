@@ -12,6 +12,7 @@ import {
 import { prisma } from "../db";
 import { AppError } from "../lib/errors";
 import { verifyPassword } from "../auth/password";
+import { resolveDevice } from "../auth/device";
 import { createSession, destroySession, SESSION_COOKIE } from "../auth/session";
 import { logActivity } from "../services/activity";
 import { requireAuth, type AppEnv } from "../middleware/auth";
@@ -20,7 +21,7 @@ const isProd = process.env.NODE_ENV === "production";
 
 export const authRoutes = new Hono<AppEnv>()
   .post("/login", zValidator("json", loginRequest), async (c) => {
-    const { username, password, rememberMe } = c.req.valid("json");
+    const { username, password, rememberMe, device } = c.req.valid("json");
 
     const user = await prisma.user.findUnique({
       where: { username: username.toLowerCase() },
@@ -56,11 +57,21 @@ export const authRoutes = new Hono<AppEnv>()
 
     const ip = c.req.header("x-forwarded-for") ?? "";
 
+    // Resolved AFTER the password check, never before: doing it earlier would
+    // let an unauthenticated caller probe which fingerprints are registered and
+    // burn licence slots.
+    const registeredDevice = device ? await resolveDevice(user, device) : null;
+
     // STAFF may hold only one active session at a time — a new login always
     // ends whatever session that account already had, logged so the closed
     // device is traceable. Every other role (ADMIN, OWNER, MANAGER,
     // ACCOUNTANT, READONLY) can hold multiple concurrent sessions as before.
-    if (user.role === "STAFF") {
+    //
+    // Exempt on a registered desktop: the single-session rule exists so a staff
+    // login can't be shared across two browsers, but the desktop IS the shared
+    // machine (§18 "sole operational interface") and evicting its session every
+    // time another staff member signs in would log the bar out mid-count.
+    if (user.role === "STAFF" && !registeredDevice) {
       const priorSessions = await prisma.authSession.findMany({
         where: { userId: user.id, expiresAt: { gt: new Date() } },
         select: { id: true },
@@ -87,7 +98,13 @@ export const authRoutes = new Hono<AppEnv>()
       }
     }
 
-    const { token, expiresAt } = await createSession(user.id, user.role, ip, c.req.header("user-agent"));
+    const { token, expiresAt } = await createSession(
+      user.id,
+      user.role,
+      ip,
+      c.req.header("user-agent"),
+      registeredDevice?.id,
+    );
     setCookie(c, SESSION_COOKIE, token, {
       httpOnly: true,
       sameSite: "Lax",
@@ -111,11 +128,20 @@ export const authRoutes = new Hono<AppEnv>()
       action: "auth.login",
       entity: "User",
       entityId: user.id,
-      summary: `${user.username} signed in`,
-      details: { ip, userAgent: c.req.header("user-agent") ?? null },
+      summary: registeredDevice
+        ? `${user.username} signed in on "${device!.name}"`
+        : `${user.username} signed in`,
+      details: { ip, userAgent: c.req.header("user-agent") ?? null, deviceId: registeredDevice?.id ?? null },
     });
 
-    return c.json(await buildMe(sessionUser as MeResponse["user"]));
+    return c.json({
+      ...(await buildMe(sessionUser as MeResponse["user"])),
+      // Only present on a desktop login — tells the mirror which location it is
+      // provisioned for, so it knows what to pull without being told twice.
+      device: registeredDevice
+        ? { id: registeredDevice.id, clientId: registeredDevice.clientId, locationId: registeredDevice.locationId }
+        : undefined,
+    });
   })
 
   .post("/logout", async (c) => {

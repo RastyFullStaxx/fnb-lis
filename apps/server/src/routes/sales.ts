@@ -3,6 +3,7 @@ import { zValidator } from "@hono/zod-validator";
 import { saleCorrect, saleCreate, voidRequest } from "@fnb/core";
 import { prisma } from "../db";
 import { AppError } from "../lib/errors";
+import { replay } from "../lib/idempotency";
 import { logActivity } from "../services/activity";
 import { requirePermission, type AppEnv } from "../middleware/auth";
 
@@ -62,6 +63,15 @@ export const saleRoutes = new Hono<AppEnv>()
     const user = c.get("user")!;
     const body = c.req.valid("json");
 
+    // A desktop re-pushing after a dropped connection gets its own record back,
+    // not a second sale. 200 rather than 201: nothing was created this time.
+    const already = await replay(
+      body.id,
+      (id) => prisma.saleRecord.findUnique({ where: { id }, include: SALE_INCLUDE }),
+      (row) => row.locationId === location.id,
+    );
+    if (already) return c.json(already, 200);
+
     let unitPrice = body.unitPrice ?? 0;
     let recipeVersionId: string | null = null;
 
@@ -88,6 +98,9 @@ export const saleRoutes = new Hono<AppEnv>()
     const sale = await prisma.$transaction(async (tx) => {
       const created = await tx.saleRecord.create({
         data: {
+          // undefined on every browser request, so Prisma's cuid() default applies.
+          id: body.id,
+          occurredAt: body.occurredAt,
           locationId: location.id,
           saleDate: body.saleDate,
           kind: body.kind,
@@ -146,6 +159,18 @@ export const saleRoutes = new Hono<AppEnv>()
     const location = c.get("location");
     const user = c.get("user")!;
     const body = c.req.valid("json");
+
+    // Before the already-voided check, not after: a replayed correction finds
+    // its own original already VOID — this route did that on the first attempt
+    // — and would otherwise be rejected as a double-void, leaving the device
+    // permanently unable to converge on a correction it already made.
+    const already = await replay(
+      body.id,
+      (id) => prisma.saleRecord.findUnique({ where: { id }, include: SALE_INCLUDE }),
+      (row) => row.locationId === location.id,
+    );
+    if (already) return c.json(already, 200);
+
     const original = await prisma.saleRecord.findUnique({ where: { id: c.req.param("id") }, include: SALE_INCLUDE });
     if (!original || original.locationId !== location.id) throw new AppError(404, "Record not found");
     if (original.status === "VOID") throw new AppError(409, "Record is already voided — create a new entry instead");
@@ -157,6 +182,8 @@ export const saleRoutes = new Hono<AppEnv>()
       });
       const created = await tx.saleRecord.create({
         data: {
+          id: body.id,
+          occurredAt: body.occurredAt,
           locationId: location.id,
           saleDate: body.saleDate,
           kind: body.kind,

@@ -57,8 +57,48 @@ model AuthSession {
   createdAt DateTime @default(now())
   ip        String?
   userAgent String?
+  // Set when this session belongs to a registered offline desktop rather than
+  // a browser. Device sessions get a far longer, NON-sliding TTL: a mirror can
+  // be off the network for weeks, and the 7-day sliding browser session would
+  // lock the establishment out of its own till. Revocation is via Device.status,
+  // which is checked on every use — so a long TTL is not an unrevokable one.
+  deviceId  String?
+  device    Device?  @relation(fields: [deviceId], references: [id])
 
   @@index([userId])
+  @@index([deviceId])
+}
+
+// ─────────────────── Offline desktop (local mirror) ───────────────────
+// Proposal §18: the desktop is the "sole operational interface" on "one (1)
+// client computer". That single-writer guarantee is what makes a local mirror
+// tractable — see docs/sync-and-data-lifecycle.md. A Device is the identity
+// that guarantee is enforced against: registration is what binds a licence to
+// a machine (§20), and revoking one kills its sessions without touching the
+// human accounts that used it.
+model Device {
+  id           String    @id @default(cuid())
+  clientId     String
+  client       Client    @relation(fields: [clientId], references: [id])
+  // The mirror's home location. Null means the desktop has not been pointed at
+  // one yet (registered but not provisioned) — it can authenticate but has
+  // nothing to pull.
+  locationId   String?
+  location     Location? @relation(fields: [locationId], references: [id])
+  name         String // "Front bar PC" — what the LIS admin sees in the device list
+  // Machine identifier the desktop reports at registration. Unique across the
+  // install so one physical computer cannot hold two licences.
+  fingerprint  String    @unique
+  status       String    @default("ACTIVE") // ACTIVE | REVOKED
+  registeredAt DateTime  @default(now())
+  lastSeenAt   DateTime?
+  // Last successful push. The gap between this and now() is the "how much work
+  // is stranded on that machine" number an admin needs when a device goes dark.
+  lastSyncAt   DateTime?
+
+  sessions AuthSession[]
+
+  @@index([clientId])
 }
 
 model Client {
@@ -92,6 +132,7 @@ model Client {
   suppliers    Supplier[]
   aliases      ItemAlias[]
   subscription Subscription?
+  devices      Device[]
 }
 
 model Location {
@@ -115,6 +156,7 @@ model Location {
   importBatches ImportBatch[]
   transfersOut  Transfer[]       @relation("TransferFrom")
   transfersIn   Transfer[]       @relation("TransferTo")
+  devices       Device[]
 
   @@index([clientId])
 }
@@ -185,6 +227,13 @@ model Subscription {
   // tiers cap it (Basic 1 / Medium 5 / Full 10); Standalone owners set their
   // own number so nobody can quietly generate logins. 0 = unlimited (legacy).
   maxUsers        Int       @default(0)
+  // Max registered offline desktops. Proposal §18 sells the desktop as running
+  // on "one (1) client computer", and §20 binds the licence to it — so this is
+  // the licence, expressed as a number the admin can raise per deal. 0 =
+  // unlimited. Enforced at registration, not at sync: a device that is already
+  // registered keeps working even if the cap is later lowered, because the
+  // alternative is stranding a night's counts on a machine that can't push.
+  maxDevices      Int       @default(1)
   negotiatedPrice Float? // optional per-client deal price — see note above
   status          String    @default("ACTIVE") // ACTIVE | SUSPENDED | CANCELLED | TRIAL
   paid            Boolean   @default(false) // explicit paid flag for the CURRENT billing period
@@ -397,6 +446,18 @@ model CountSession {
   createdById   String
   createdByName String
   createdAt     DateTime  @default(now())
+  // When the work actually happened on the device, as against createdAt = when
+  // the server received it. An offline desktop that syncs a whole day at 9pm
+  // would otherwise stamp every record 9pm, and the audit trail would claim a
+  // 40-minute stock count took place in one second.
+  //
+  // Reconciliation is untouched by this either way — every report keys off the
+  // business date (countDate/saleDate/purchaseDate/...), which is TEXT and has
+  // always come from the user. This is for the audit trail and for ordering.
+  //
+  // Null on everything written through the browser, where the two are the same
+  // instant. Read it as `occurredAt ?? createdAt`.
+  occurredAt    DateTime?
   committedAt   DateTime?
   committedById String?
   voidedAt      DateTime?
@@ -433,6 +494,7 @@ model CountLine {
   createdById      String
   createdByName    String
   createdAt        DateTime     @default(now())
+  occurredAt       DateTime? // device time — see CountSession.occurredAt
 
   @@index([countSessionId])
   @@index([locationItemId])
@@ -451,6 +513,7 @@ model Purchase {
   createdById   String
   createdByName String
   createdAt     DateTime  @default(now())
+  occurredAt    DateTime? // device time — see CountSession.occurredAt
   committedAt   DateTime?
   committedById String?
   voidedAt      DateTime?
@@ -481,6 +544,7 @@ model PurchaseLine {
   createdById    String
   createdByName  String
   createdAt      DateTime       @default(now())
+  occurredAt     DateTime? // device time — see CountSession.occurredAt
 
   @@index([purchaseId])
   @@index([locationItemId])
@@ -515,6 +579,7 @@ model SaleRecord {
   createdById     String
   createdByName   String
   createdAt       DateTime       @default(now())
+  occurredAt      DateTime? // device time — see CountSession.occurredAt
 
   @@index([locationId, saleDate, kind])
   @@index([locationItemId])
@@ -544,6 +609,7 @@ model Forfeit {
   createdById      String
   createdByName    String
   createdAt        DateTime     @default(now())
+  occurredAt       DateTime? // device time — see CountSession.occurredAt
 
   @@index([locationId, forfeitDate])
 }
@@ -574,6 +640,7 @@ model Transfer {
   createdById    String
   createdByName  String
   createdAt      DateTime  @default(now())
+  occurredAt     DateTime? // device time — see CountSession.occurredAt
   committedAt    DateTime?
   committedById  String?
   voidedAt       DateTime?
@@ -605,6 +672,7 @@ model TransferLine {
   createdById    String
   createdByName  String
   createdAt      DateTime       @default(now())
+  occurredAt     DateTime? // device time — see CountSession.occurredAt
 
   receipts TransferReceiptLine[]
 
@@ -635,6 +703,7 @@ model TransferReceiptLine {
   createdById      String
   createdByName    String
   createdAt        DateTime              @default(now())
+  occurredAt       DateTime? // device time — see CountSession.occurredAt
 
   @@index([transferLineId])
   @@index([toLocationItemId])
@@ -753,6 +822,13 @@ model ActivityLog {
   entityId    String?
   summary     String
   detailsJson String? // old/new values (TEXT)
+  // ts = when the server logged it; occurredAt = when the user did it on an
+  // offline device. Same distinction as CountSession.occurredAt, and the reason
+  // the audit trail of a synced day is still readable as a sequence of events.
+  occurredAt  DateTime?
+  // Which desktop the action came from, null for the browser. An admin
+  // investigating a discrepancy needs to know it arrived from the bar PC.
+  deviceId    String?
 
   @@index([ts])
   @@index([entity, entityId])

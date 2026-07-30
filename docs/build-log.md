@@ -1523,3 +1523,83 @@ transfers-in 4 · usage-cost 1.
 anchors unchanged on the dev database after reseeding: **−₱330.69 / −₱869.57**
 and **−₱537 / −₱1,410**.
 
+
+---
+
+## Phase 35 — Offline-desktop groundwork (2026-07-30)
+
+The question that started it: *"so if this is a local mirror, what now shall we
+build in this system before we build the electron?"* — plus the standing
+instruction to plan the data lifecycle for the long term.
+
+### The architectural call, first
+
+Proposal §18 sells the desktop as **"one (1) client computer"** acting as the
+**"sole operational interface"**. That is not decoration — it is the reason a
+local mirror is buildable at all. One writer per establishment means two-way
+merge never arises, and the design collapses into two one-way flows that map
+exactly onto the schema split that already existed: `ItemVariant` is global and
+LIS-owned (server → device), transactions are per-location and append-only
+(device → server). Written up in **docs/sync-and-data-lifecycle.md**, with the
+ownership table, the failure cases, and the retention/backup policy.
+
+### What was actually missing
+
+A survey of the schema found four gaps, and the fix for the biggest one turned
+out to be smaller than expected:
+
+- **No idempotency anywhere, and no unique constraints on transactional tables.**
+  One dropped connection mid-upload silently duplicates a night's sales. Fixed by
+  accepting a client-supplied `id` on every create — **the record's primary key
+  IS the idempotency key**. The device mints a cuid before writing to its local
+  mirror, so a record has one identity from the moment it exists. No token table,
+  and therefore no expiry policy for one.
+- **7-day sliding sessions.** A machine offline for a fortnight could not
+  re-authenticate. Device-bound sessions now last a year and do not slide.
+- **`createdAt` is server time.** A day of offline work would stamp itself 9pm.
+  Added `occurredAt` (device time) on all ten device-writable models. Purely
+  additive and nullable — no report reads it, so the fixtures could not move.
+- **No device identity.** Added `Device` + registration on first login
+  (trust-on-first-use, capped by the new `Subscription.maxDevices`, default 1)
+  + `POST /admin/devices/:id/revoke`.
+
+### What was deliberately NOT built
+
+`updatedAt` columns, tombstones, a "changes since X" cursor, and a batch push
+endpoint — the obvious incremental-sync apparatus. A location is 1–2 MB of JSON,
+so `GET /sync/snapshot` returns the whole thing and the device replaces its copy;
+`?from=` bounds it later, safely, because committed periods are immutable. Push
+reuses the ordinary create routes, so the desktop cannot drift from the browser
+on validation, permissions or activity logging. Recorded as deviation **#34**.
+
+### Two bugs caught in my own work
+
+- **I deleted five fields while adding one.** The `occurredAt` edits on
+  `CountSession` and `Purchase` used a multi-line anchor that swallowed
+  `committedAt`/`committedById`/`voidedAt`/`voidedById`/`voidReason`. Caught by
+  diffing the schema for removed lines rather than trusting that an "additive"
+  edit was additive — `git diff | grep '^-'` on a migration-bearing file is now
+  the habit. Final diff: 66 insertions, 0 deletions.
+- **`purchaseCreate.partial()` on a PUT became a primary-key rewrite.** That route
+  passes `data: body` straight through, so the moment `id` joined the create
+  schema, a caller could PUT a new primary key onto a draft. Fixed by omitting the
+  sync fields from the editable set — same for `transferCreate.partial()`. The
+  lesson generalises: adding a field to a create schema silently widens every
+  `.partial()` passthrough derived from it.
+
+### Verified
+
+- `npm run verify:sync -w @fnb/server` — **new**, 30 checks, passed first run:
+  retry doesn't duplicate · a foreign id is refused and writes nothing · a
+  far-future `occurredAt` is rejected · staff can't register a machine · the
+  licence cap holds at one · a device session is 365 days · the snapshot is
+  complete and carries no password hashes · revocation locks the machine out
+  immediately.
+- `npm run verify:seed -w @fnb/server` — 47 checks, **both anchors unchanged**
+  after the migration: **−₱330.69 / −₱869.57** and **−₱537 / −₱1,410**.
+- Typecheck clean in both workspaces.
+
+The migration also finally drops the stray `LocationItem.industry` column that
+`20260724070711` added to the wrong table. `20260728060000` chose to leave it;
+the gain has since appeared, because Prisma regenerated that drop on every
+`migrate dev`. Verified empty first — 172 rows, 0 non-null.

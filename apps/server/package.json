@@ -10,7 +10,8 @@
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
     "db:seed": "tsx prisma/seed.ts",
-    "verify:seed": "node prisma/verify-seed.mjs"
+    "verify:seed": "node prisma/verify-seed.mjs",
+    "verify:sync": "node prisma/verify-sync.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

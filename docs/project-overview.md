@@ -41,6 +41,13 @@ decimals for per-gram items. Near-duplicate item names are caught at creation. T
 surfaces that hid their primary button (recipe builder, item form, and a Transfer receipt dialog
 that could not be completed at all) are fixed at the primitives.
 
+**Offline-desktop groundwork shipped** (build-log Phase 35): the server half of the Electron mirror
+is done — device registration and revocation, year-long device-bound sessions, idempotent pushes on
+every create route, `occurredAt` for device time, and a whole-location snapshot endpoint. The
+architecture (a **local mirror**, not a write buffer) and the long-term retention/backup policy are
+in [sync-and-data-lifecycle.md](sync-and-data-lifecycle.md). **One decision blocks the desktop:** how
+staff authenticate with no network — see §5 of that doc.
+
 **Verification stance:** no automated test framework (explicit instruction). Correctness rests on
 [golden-fixtures.md](golden-fixtures.md) plus live checks. Re-verify the relevant fixture after any
 change to `packages/core` or the report services.
@@ -51,6 +58,12 @@ pinned anchors plus 43 coverage checks. It exists because the golden numbers are
 seed data, so a seeder change could silently invalidate the answer key. **Run it after any seeder
 change.** See [golden-fixtures.md §0](golden-fixtures.md).
 
+Since 2026-07-30 there is a second, on the same harness: `npm run verify:sync -w @fnb/server` drives
+the real app in-process and asserts the 30 guarantees the offline mirror rests on (no duplicate on
+retry, no cross-tenant id reuse, device sessions that outlive an offline stretch and die on
+revocation, a complete snapshot carrying no password hashes). **Run it after any change to the
+sync, idempotency or device paths.**
+
 ## Where things live
 
 | Question | Document |
@@ -60,6 +73,7 @@ change.** See [golden-fixtures.md §0](golden-fixtures.md).
 | How should a screen look and behave | [DESIGN.md](DESIGN.md) |
 | Stack, data model, **formula appendix (§6)**, deviation log | [architecture.md](architecture.md) |
 | The numbers that must never change | [golden-fixtures.md](golden-fixtures.md) |
+| How the offline desktop shares data, and how data is kept safe long-term | [sync-and-data-lifecycle.md](sync-and-data-lifecycle.md) |
 | What shipped when, and what the audit found | [build-log.md](build-log.md) |
 | How the legacy system behaved (answer key) | [reference/](reference/) — read-only |
 | Original project brief | `AGENTS.md` (repo root, historical) |
@@ -74,7 +88,7 @@ change.** See [golden-fixtures.md §0](golden-fixtures.md).
 | Domain | `@fnb/core` pure TS (schemas, units, weighing, reconciliation, pricing, billing, cost-analysis, phpRound) |
 | AI | `@anthropic-ai/sdk` · `claude-sonnet-5` · structured outputs · env-gated |
 | Exports | exceljs (xlsx) · core CSV · print stylesheets |
-| Later | Electron + local SQLite + sync outbox · PostHog/Sentry (wired, env-gated) · Playwright (post-build) |
+| Later | Electron + local SQLite **mirror** (server half shipped — see [sync-and-data-lifecycle.md](sync-and-data-lifecycle.md)) · PostHog/Sentry (wired, env-gated) · Playwright (post-build) |
 
 ## What must never regress
 

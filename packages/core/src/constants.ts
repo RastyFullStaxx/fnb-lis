@@ -366,6 +366,14 @@ export const PERMISSIONS = {
    */
   "users.manage": ["ADMIN", "OWNER"],
   /**
+   * Register a new offline desktop, and revoke one. Consuming a licence slot
+   * (Subscription.maxDevices, proposal §18/§20) is a commercial act, so it sits
+   * with the establishment's OWNER and the LIS ADMIN — not with MANAGER, who
+   * can sign in on a machine that is already registered but cannot bind the
+   * licence to another one.
+   */
+  "devices.manage": ["ADMIN", "OWNER"],
+  /**
    * Tare + liquid (density) weights are LIS's own calibration data — a client
    * reports that a bottle needs one, the LIS admin supplies it (client decision
    * 2026-07-25). Separate from master.write so a client MANAGER can still run

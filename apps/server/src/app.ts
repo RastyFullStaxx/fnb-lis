@@ -9,6 +9,7 @@ import {
 } from "./middleware/auth";
 import { authRoutes } from "./routes/auth";
 import { adminRoutes, userAdminRoutes } from "./routes/admin";
+import { deviceRoutes } from "./routes/devices";
 import { masterRoutes } from "./routes/master";
 import { locationItemRoutes } from "./routes/location-items";
 import { countRoutes } from "./routes/counts";
@@ -22,6 +23,7 @@ import { dashboardRoutes } from "./routes/dashboard";
 import { activityRoutes } from "./routes/activity";
 import { settingsRoutes, preferencesRoutes } from "./routes/settings";
 import { stockyRoutes } from "./routes/stocky";
+import { syncRoutes } from "./routes/sync";
 
 export function createApp() {
   const app = new Hono<AppEnv>();
@@ -36,6 +38,9 @@ export function createApp() {
   // Same prefix, softer guard: user accounts are managed by the LIS ADMIN and
   // by each establishment's OWNER (client req 2026-07-25).
   app.route("/api/admin", userAdminRoutes);
+  // Same prefix again, its own guard: registered desktops are managed by the
+  // LIS ADMIN and by each establishment's OWNER (devices.manage).
+  app.route("/api/admin", deviceRoutes);
   app.route("/api/master", masterRoutes);
   app.route("/api/activity", activityRoutes);
   app.route("/api/settings", settingsRoutes);
@@ -53,7 +58,8 @@ export function createApp() {
     .route("/", importRoutes)
     .route("/", reportRoutes)
     .route("/", dashboardRoutes)
-    .route("/", stockyRoutes);
+    .route("/", stockyRoutes)
+    .route("/", syncRoutes);
   app.route("/api/locations/:locationId", locationScoped);
 
   app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));

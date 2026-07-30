@@ -1,10 +1,11 @@
 import { z } from "zod";
 import { NON_REVENUE_REASONS, SALE_KINDS } from "../constants";
-import { dateString, id, nonNegative, positive, voidRequest } from "./common";
+import { dateString, id, nonNegative, positive, syncFields, voidRequest } from "./common";
 
 // ── Counts ──
 
 export const countSessionCreate = z.object({
+  ...syncFields,
   countDate: dateString,
   name: z.string().trim().max(80).optional(),
   note: z.string().trim().max(500).optional(),
@@ -13,6 +14,7 @@ export type CountSessionCreate = z.infer<typeof countSessionCreate>;
 
 export const countLineCreate = z
   .object({
+    ...syncFields,
     locationItemId: id,
     countType: z.enum(["FULL", "WEIGH"]),
     qtyFull: nonNegative.optional(),
@@ -62,6 +64,7 @@ export type CountLineCreate = z.infer<typeof countLineCreate>;
 // ── Purchases ──
 
 export const purchaseCreate = z.object({
+  ...syncFields,
   purchaseDate: dateString,
   supplierId: id.nullable().optional(),
   refNo: z.string().trim().max(60).nullable().optional(),
@@ -70,6 +73,7 @@ export const purchaseCreate = z.object({
 export type PurchaseCreate = z.infer<typeof purchaseCreate>;
 
 export const purchaseLineCreate = z.object({
+  ...syncFields,
   locationItemId: id,
   qty: positive,
   unitCost: nonNegative,
@@ -86,7 +90,10 @@ export type PurchaseLineCreate = z.infer<typeof purchaseLineCreate>;
  */
 export const purchaseLineCorrect = purchaseLineCreate
   .pick({ qty: true })
-  .extend({ unitCost: nonNegative.optional() })
+  // .pick() drops the sync fields, and a correction is a create like any other
+  // — it needs its own idempotency key or a retried correction writes a second
+  // replacement line against an already-voided original.
+  .extend({ ...syncFields, unitCost: nonNegative.optional() })
   .and(voidRequest);
 export type PurchaseLineCorrect = z.infer<typeof purchaseLineCorrect>;
 
@@ -94,6 +101,7 @@ export type PurchaseLineCorrect = z.infer<typeof purchaseLineCorrect>;
 
 export const saleCreate = z
   .object({
+    ...syncFields,
     saleDate: dateString,
     kind: z.enum(SALE_KINDS),
     locationItemId: id.optional(),
@@ -140,6 +148,7 @@ export type SaleCorrect = z.infer<typeof saleCorrect>;
 // ── Inter-location transfers ──
 
 export const transferCreate = z.object({
+  ...syncFields,
   toLocationId: id,
   businessDate: dateString,
   note: z.string().trim().max(500).nullable().optional(),
@@ -147,6 +156,7 @@ export const transferCreate = z.object({
 export type TransferCreate = z.infer<typeof transferCreate>;
 
 export const transferLineCreate = z.object({
+  ...syncFields,
   locationItemId: id, // source-catalog row
   qty: positive,
   /** Optional override; defaults server-side to the source LocationItem.cost snapshot. */
@@ -159,7 +169,11 @@ export const transferReceive = z.object({
   receiptDate: dateString,
   lines: z
     .array(
+      // Each entry becomes one TransferReceiptLine, so the idempotency key
+      // belongs on the line, not on the envelope — a retried receive has to
+      // land on the same rows the first attempt created.
       z.object({
+        ...syncFields,
         transferLineId: id,
         qtyReceived: nonNegative, // 0 = nothing arrived (still an explicit receipt)
         note: z.string().trim().max(500).nullable().optional(),
@@ -173,6 +187,7 @@ export type TransferReceive = z.infer<typeof transferReceive>;
 
 export const forfeitCreate = z
   .object({
+    ...syncFields,
     forfeitDate: dateString,
     locationItemId: id,
     scaleWeight: nonNegative.optional(),

@@ -12,6 +12,7 @@ import {
 } from "@fnb/core";
 import { prisma, type Tx } from "../db";
 import { AppError } from "../lib/errors";
+import { replay } from "../lib/idempotency";
 import { logActivity } from "../services/activity";
 import { requirePermission, type AppEnv } from "../middleware/auth";
 
@@ -175,9 +176,20 @@ export const countRoutes = new Hono<AppEnv>()
     const location = c.get("location");
     const user = c.get("user")!;
     const body = c.req.valid("json");
+
+    const already = await replay(
+      body.id,
+      (id) => prisma.countSession.findUnique({ where: { id } }),
+      (row) => row.locationId === location.id,
+    );
+    if (already) return c.json(already, 200);
+
     const session = await prisma.$transaction(async (tx) => {
       const created = await tx.countSession.create({
         data: {
+          // undefined on every browser request — Prisma's cuid() default applies.
+          id: body.id,
+          occurredAt: body.occurredAt,
           locationId: location.id,
           countDate: body.countDate,
           name: body.name ?? null,
@@ -212,10 +224,20 @@ export const countRoutes = new Hono<AppEnv>()
     if (session.status !== "OPEN") throw new AppError(409, "This count session is committed — void or correct lines instead");
 
     const body = c.req.valid("json");
+
+    const already = await replay(
+      body.id,
+      (id) => prisma.countLine.findUnique({ where: { id }, include: LINE_INCLUDE }),
+      (row) => row.countSessionId === session.id,
+    );
+    if (already) return c.json(already, 200);
+
     const { locationItem, data } = await buildLineData(location.id, body);
 
     const line = await prisma.countLine.create({
       data: {
+        id: body.id,
+        occurredAt: body.occurredAt,
         countSessionId: session.id,
         locationItemId: locationItem.id,
         ...data,
@@ -332,6 +354,17 @@ export const countRoutes = new Hono<AppEnv>()
       const user = c.get("user")!;
       const body = c.req.valid("json");
       const session = await getOwnedSession(location.id, c.req.param("id"));
+
+      // Ahead of the already-voided check: a replayed correction finds the
+      // original already VOID from its own first attempt, and would otherwise
+      // be rejected forever as a double-void.
+      const already = await replay(
+        body.id,
+        (id) => prisma.countLine.findUnique({ where: { id }, include: LINE_INCLUDE }),
+        (row) => row.countSessionId === session.id,
+      );
+      if (already) return c.json(already, 200);
+
       const original = await prisma.countLine.findUnique({ where: { id: c.req.param("lineId") } });
       if (!original || original.countSessionId !== session.id) throw new AppError(404, "Count line not found");
       if (original.status === "VOID") throw new AppError(409, "Line is already voided");
@@ -344,6 +377,8 @@ export const countRoutes = new Hono<AppEnv>()
         });
         const created = await tx.countLine.create({
           data: {
+            id: body.id,
+            occurredAt: body.occurredAt,
             countSessionId: session.id,
             locationItemId: locationItem.id,
             ...data,

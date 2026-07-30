@@ -12,6 +12,7 @@ import {
 } from "@fnb/core";
 import { prisma } from "../db";
 import { AppError } from "../lib/errors";
+import { replay } from "../lib/idempotency";
 import { logActivity } from "../services/activity";
 import { effectiveWeighMode, netRemaining } from "./counts";
 import { requirePermission, type AppEnv } from "../middleware/auth";
@@ -51,9 +52,20 @@ export const purchaseRoutes = new Hono<AppEnv>()
     const location = c.get("location");
     const user = c.get("user")!;
     const body = c.req.valid("json");
+
+    const already = await replay(
+      body.id,
+      (id) => prisma.purchase.findUnique({ where: { id } }),
+      (row) => row.locationId === location.id,
+    );
+    if (already) return c.json(already, 200);
+
     const purchase = await prisma.$transaction(async (tx) => {
       const created = await tx.purchase.create({
         data: {
+          // undefined on every browser request — Prisma's cuid() default applies.
+          id: body.id,
+          occurredAt: body.occurredAt,
           locationId: location.id,
           purchaseDate: body.purchaseDate,
           supplierId: body.supplierId ?? null,
@@ -82,7 +94,11 @@ export const purchaseRoutes = new Hono<AppEnv>()
     return c.json(purchase);
   })
 
-  .put("/purchases/:id", createGuard, zValidator("json", purchaseCreate.partial()), async (c) => {
+  // `id` and `occurredAt` are stripped from the editable set, not merely
+  // ignored: `data: body` is a passthrough, so leaving purchaseCreate's sync
+  // fields in the partial would let a caller PUT a new primary key onto someone
+  // else's draft — or rewrite when the work supposedly happened.
+  .put("/purchases/:id", createGuard, zValidator("json", purchaseCreate.omit({ id: true, occurredAt: true }).partial()), async (c) => {
     const location = c.get("location");
     const purchase = await getOwnedPurchase(location.id, c.req.param("id"));
     if (purchase.status !== "DRAFT") throw new AppError(409, "Only drafts can be edited");
@@ -98,10 +114,20 @@ export const purchaseRoutes = new Hono<AppEnv>()
     if (purchase.status !== "DRAFT")
       throw new AppError(409, "This delivery is committed — correct an existing line, or record a missed item as a new delivery");
     const body = c.req.valid("json");
+
+    const already = await replay(
+      body.id,
+      (id) => prisma.purchaseLine.findUnique({ where: { id }, include: LI_INCLUDE }),
+      (row) => row.purchaseId === purchase.id,
+    );
+    if (already) return c.json(already, 200);
+
     const locationItem = await prisma.locationItem.findUnique({ where: { id: body.locationItemId } });
     if (!locationItem || locationItem.locationId !== location.id) throw new AppError(404, "Item not found in this catalog");
     const line = await prisma.purchaseLine.create({
       data: {
+        id: body.id,
+        occurredAt: body.occurredAt,
         purchaseId: purchase.id,
         locationItemId: body.locationItemId,
         qty: body.qty,
@@ -202,6 +228,16 @@ export const purchaseRoutes = new Hono<AppEnv>()
     const body = c.req.valid("json");
     const purchase = await getOwnedPurchase(location.id, c.req.param("id"));
     if (purchase.status !== "COMMITTED") throw new AppError(409, "Only committed deliveries take corrections");
+
+    // Ahead of the already-voided check: a replayed correction finds the
+    // original already VOID from its own first attempt.
+    const already = await replay(
+      body.id,
+      (id) => prisma.purchaseLine.findUnique({ where: { id }, include: LI_INCLUDE }),
+      (row) => row.purchaseId === purchase.id,
+    );
+    if (already) return c.json(already, 200);
+
     const line = await prisma.purchaseLine.findUnique({ where: { id: c.req.param("lineId") }, include: LI_INCLUDE });
     if (!line || line.purchaseId !== purchase.id) throw new AppError(404, "Purchase line not found");
     if (line.status === "VOID") throw new AppError(409, "Already voided — correct the replacement instead");
@@ -213,6 +249,8 @@ export const purchaseRoutes = new Hono<AppEnv>()
       });
       const created = await tx.purchaseLine.create({
         data: {
+          id: body.id,
+          occurredAt: body.occurredAt,
           purchaseId: purchase.id,
           locationItemId: line.locationItemId,
           qty: body.qty,
@@ -249,6 +287,14 @@ export const purchaseRoutes = new Hono<AppEnv>()
     const location = c.get("location");
     const user = c.get("user")!;
     const body = c.req.valid("json");
+
+    const already = await replay(
+      body.id,
+      (id) => prisma.forfeit.findUnique({ where: { id }, include: LI_INCLUDE }),
+      (row) => row.locationId === location.id,
+    );
+    if (already) return c.json(already, 200);
+
     const locationItem = await prisma.locationItem.findUnique({
       where: { id: body.locationItemId },
       include: { itemVariant: { include: { unit: true, item: { include: { category: true } } } } },
@@ -296,6 +342,8 @@ export const purchaseRoutes = new Hono<AppEnv>()
     const forfeit = await prisma.$transaction(async (tx) => {
       const created = await tx.forfeit.create({
         data: {
+          id: body.id,
+          occurredAt: body.occurredAt,
           locationId: location.id,
           forfeitDate: body.forfeitDate,
           locationItemId: body.locationItemId,

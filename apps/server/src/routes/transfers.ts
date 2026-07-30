@@ -12,6 +12,7 @@ import {
 } from "@fnb/core";
 import { prisma } from "../db";
 import { AppError } from "../lib/errors";
+import { replay } from "../lib/idempotency";
 import { logActivity } from "../services/activity";
 import { requirePermission, type AppEnv } from "../middleware/auth";
 
@@ -115,6 +116,17 @@ export const transferRoutes = new Hono<AppEnv>()
     const user = c.get("user")!;
     const body = c.req.valid("json");
 
+    const already = await replay(
+      body.id,
+      (id) =>
+        prisma.transfer.findUnique({
+          where: { id },
+          include: { toLocation: { select: { id: true, name: true, kind: true } } },
+        }),
+      (row) => row.fromLocationId === location.id,
+    );
+    if (already) return c.json(already, 200);
+
     if (body.toLocationId === location.id) throw new AppError(400, "A location can't transfer stock to itself");
     const toLocation = await prisma.location.findUnique({ where: { id: body.toLocationId } });
     // Tenant isolation: the destination must be another location of the SAME
@@ -129,6 +141,9 @@ export const transferRoutes = new Hono<AppEnv>()
     const transfer = await prisma.$transaction(async (tx) => {
       const created = await tx.transfer.create({
         data: {
+          // undefined on every browser request — Prisma's cuid() default applies.
+          id: body.id,
+          occurredAt: body.occurredAt,
           fromLocationId: location.id,
           toLocationId: toLocation.id,
           businessDate: body.businessDate,
@@ -173,7 +188,9 @@ export const transferRoutes = new Hono<AppEnv>()
     return c.json(transfer);
   })
 
-  .put("/transfers/:id", createGuard, zValidator("json", transferCreate.partial()), async (c) => {
+  // Sync fields omitted from the editable set: `data: body` is a passthrough,
+  // so leaving them in would let a caller PUT a new primary key onto a draft.
+  .put("/transfers/:id", createGuard, zValidator("json", transferCreate.omit({ id: true, occurredAt: true }).partial()), async (c) => {
     const location = c.get("location");
     const transfer = await getOwnedTransfer(location.id, c.req.param("id"));
     requireSourceSide(transfer, location.id);
@@ -198,11 +215,21 @@ export const transferRoutes = new Hono<AppEnv>()
     requireSourceSide(transfer, location.id);
     if (transfer.status !== "DRAFT") throw new AppError(409, "Committed transfers take corrections, not new draft lines");
     const body = c.req.valid("json");
+
+    const already = await replay(
+      body.id,
+      (id) => prisma.transferLine.findUnique({ where: { id }, include: LINE_INCLUDE }),
+      (row) => row.transferId === transfer.id,
+    );
+    if (already) return c.json(already, 200);
+
     const locationItem = await prisma.locationItem.findUnique({ where: { id: body.locationItemId } });
     if (!locationItem || locationItem.locationId !== location.id) throw new AppError(404, "Item not found in this catalog");
     const unitCost = body.unitCost ?? locationItem.cost;
     const line = await prisma.transferLine.create({
       data: {
+        id: body.id,
+        occurredAt: body.occurredAt,
         transferId: transfer.id,
         locationItemId: body.locationItemId,
         qty: body.qty,
@@ -291,6 +318,28 @@ export const transferRoutes = new Hono<AppEnv>()
       throw new AppError(400, "Duplicate transfer line in the receipt");
     }
 
+    // Replayed receive. This one is a whole-batch check rather than the usual
+    // single `replay()` call, because a receive writes N receipt lines inside
+    // one transaction: either all of them landed or none did. Without it a
+    // retry hits the already-received 409 below and the device can never
+    // converge — the receipt it is retrying is the very thing blocking it.
+    const suppliedIds = body.lines.map((l) => l.id);
+    if (suppliedIds.every((v): v is string => Boolean(v))) {
+      const existing = await prisma.transferReceiptLine.findMany({
+        where: { id: { in: suppliedIds as string[] } },
+        include: { transferLine: { select: { transferId: true } } },
+      });
+      if (existing.length > 0) {
+        // A partial match means these ids are not this batch's — same scoping
+        // rule as replay(): a caller-supplied id must never reach another
+        // establishment's rows.
+        if (existing.length !== suppliedIds.length || existing.some((r) => r.transferLine.transferId !== transfer.id)) {
+          throw new AppError(409, "That record id is already in use");
+        }
+        return c.json(existing.map(({ transferLine: _tl, ...r }) => r), 200);
+      }
+    }
+
     const created = await prisma.$transaction(async (tx) => {
       // Validate INSIDE the transaction so a concurrent receive can't slip a
       // second ACTIVE receipt past a stale snapshot (single-writer SQLite
@@ -338,6 +387,8 @@ export const transferRoutes = new Hono<AppEnv>()
         receipts.push(
           await tx.transferReceiptLine.create({
             data: {
+              id: entry.id,
+              occurredAt: entry.occurredAt,
               transferLineId: line.id,
               toLocationItemId: toItem.id,
               qtyReceived: entry.qtyReceived,
@@ -397,13 +448,34 @@ export const transferRoutes = new Hono<AppEnv>()
   .post(
     "/transfers/:id/receipts/:receiptId/correct",
     voidGuard,
-    zValidator("json", voidRequest.and(transferReceive.shape.lines.element.pick({ qtyReceived: true, note: true }))),
+    // id/occurredAt kept in the pick: a correction is a create like any other,
+    // so it needs its own idempotency key or a retry writes a second
+    // replacement against an already-voided original.
+    zValidator(
+      "json",
+      voidRequest.and(
+        transferReceive.shape.lines.element.pick({ qtyReceived: true, note: true, id: true, occurredAt: true }),
+      ),
+    ),
     async (c) => {
       const location = c.get("location");
       const user = c.get("user")!;
       const body = c.req.valid("json");
       const transfer = await getOwnedTransfer(location.id, c.req.param("id"));
       requireDestinationSide(transfer, location.id);
+
+      // Ahead of the already-voided check, which a replay would otherwise trip.
+      const already = await replay(
+        body.id,
+        (id) =>
+          prisma.transferReceiptLine.findUnique({ where: { id }, include: { transferLine: { select: { transferId: true } } } }),
+        (row) => row.transferLine.transferId === transfer.id,
+      );
+      if (already) {
+        const { transferLine: _tl, ...plain } = already;
+        return c.json(plain, 200);
+      }
+
       const receipt = await prisma.transferReceiptLine.findUnique({
         where: { id: c.req.param("receiptId") },
         include: { transferLine: true },
@@ -418,6 +490,8 @@ export const transferRoutes = new Hono<AppEnv>()
         });
         const created = await tx.transferReceiptLine.create({
           data: {
+            id: body.id,
+            occurredAt: body.occurredAt,
             transferLineId: receipt.transferLineId,
             toLocationItemId: receipt.toLocationItemId,
             qtyReceived: body.qtyReceived,
@@ -512,7 +586,9 @@ export const transferRoutes = new Hono<AppEnv>()
   .post(
     "/transfers/:id/lines/:lineId/correct",
     voidGuard,
-    zValidator("json", voidRequest.and(transferLineCreate.pick({ qty: true, unitCost: true }))),
+    // id/occurredAt kept in the pick — a correction is a create, and needs its
+    // own idempotency key.
+    zValidator("json", voidRequest.and(transferLineCreate.pick({ qty: true, unitCost: true, id: true, occurredAt: true }))),
     async (c) => {
       const location = c.get("location");
       const user = c.get("user")!;
@@ -520,6 +596,15 @@ export const transferRoutes = new Hono<AppEnv>()
       const transfer = await getOwnedTransfer(location.id, c.req.param("id"));
       requireSourceSide(transfer, location.id);
       if (transfer.status !== "COMMITTED") throw new AppError(409, "Only committed transfers take corrections");
+
+      // Ahead of the already-voided check, which a replay would otherwise trip.
+      const already = await replay(
+        body.id,
+        (id) => prisma.transferLine.findUnique({ where: { id }, include: LINE_INCLUDE }),
+        (row) => row.transferId === transfer.id,
+      );
+      if (already) return c.json(already, 200);
+
       const line = await prisma.transferLine.findUnique({ where: { id: c.req.param("lineId") }, include: LI_INCLUDE });
       if (!line || line.transferId !== transfer.id) throw new AppError(404, "Transfer line not found");
       if (line.status === "VOID") throw new AppError(409, "Already voided — correct the replacement instead");
@@ -534,6 +619,8 @@ export const transferRoutes = new Hono<AppEnv>()
         });
         const created = await tx.transferLine.create({
           data: {
+            id: body.id,
+            occurredAt: body.occurredAt,
             transferId: transfer.id,
             locationItemId: line.locationItemId,
             qty: body.qty,
