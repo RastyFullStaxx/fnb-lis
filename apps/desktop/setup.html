@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
+    <title>Set up this computer — LIS</title>
+    <style>
+      /* Deliberately self-contained: this page runs BEFORE the app has a
+         server to load assets from, so it cannot depend on the SPA's bundle. */
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; min-height: 100vh; display: grid; place-items: center;
+        background: #16255c; color: #eef1fa;
+        font: 16px/1.5 "Segoe UI", system-ui, sans-serif;
+      }
+      .card { width: min(30rem, 92vw); }
+      /* Three sizes only — 1.5 / 1 / .75rem. Labels and hints are the same size;
+         weight and colour separate them, which reads more clearly than a 1.07x
+         step nobody perceives as a step. */
+      h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+      p.sub { margin: 0 0 1.75rem; color: #a8b3d8; }
+      label { display: block; font-size: .75rem; font-weight: 700; letter-spacing: .02em; margin: 1rem 0 .375rem; }
+      input, select {
+        width: 100%; padding: .625rem .75rem; border-radius: .5rem;
+        border: 1px solid #3a4a86; background: #0f1b47; color: #eef1fa; font: inherit;
+      }
+      input:focus, select:focus { outline: 2px solid #4f7cff; border-color: transparent; }
+      button {
+        width: 100%; margin-top: 1.5rem; padding: .75rem; border: 0; border-radius: .5rem;
+        background: #2f6bff; color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+      }
+      button:disabled { opacity: .55; cursor: default; }
+      .hint { font-size: .75rem; color: #8f9cc6; margin-top: .375rem; }
+      .msg { margin-top: 1rem; padding: .75rem; border-radius: .5rem; font-size: .75rem; display: none; }
+      .msg.err { display: block; background: #4a1d24; color: #ffc9d1; }
+      .msg.ok { display: block; background: #14361f; color: #b9f0cd; }
+      .step2 { display: none; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Set up this computer</h1>
+      <p class="sub">Connect it to your establishment's LIS server. You only do this once.</p>
+
+      <div class="step1">
+        <label for="url">Server address</label>
+        <input id="url" placeholder="lis.yourcompany.com" autocomplete="off" />
+        <div class="hint">Ask your LIS administrator if you're not sure.</div>
+
+        <label for="name">Name this computer</label>
+        <input id="name" placeholder="Front bar PC" autocomplete="off" />
+        <div class="hint">How it appears in the administrator's device list.</div>
+
+        <label for="user">Owner or administrator username</label>
+        <input id="user" autocomplete="off" />
+        <div class="hint">Staff sign in later — setup needs an owner or LIS admin.</div>
+
+        <label for="pass">Password</label>
+        <input id="pass" type="password" autocomplete="off" />
+
+        <button id="connect">Connect</button>
+      </div>
+
+      <div class="step2">
+        <label for="loc">Which location does this computer count?</label>
+        <select id="loc"></select>
+        <div class="hint">It will hold a copy of this location's records and work offline.</div>
+        <button id="finish">Download data &amp; finish</button>
+      </div>
+
+      <div id="msg" class="msg"></div>
+    </div>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const msg = $("msg");
+      let registration = null;
+
+      function say(text, kind) {
+        msg.textContent = text;
+        msg.className = "msg " + kind;
+      }
+
+      $("connect").addEventListener("click", async () => {
+        const btn = $("connect");
+        btn.disabled = true;
+        say("Connecting…", "ok");
+        try {
+          registration = await window.lisSetup.register({
+            remoteUrl: $("url").value,
+            deviceName: $("name").value,
+            username: $("user").value,
+            password: $("pass").value,
+          });
+          const sel = $("loc");
+          sel.innerHTML = "";
+          for (const l of registration.locations) {
+            const o = document.createElement("option");
+            o.value = l.id;
+            o.textContent = l.name;
+            if (l.id === registration.suggestedLocationId) o.selected = true;
+            sel.appendChild(o);
+          }
+          if (registration.locations.length === 0) {
+            say("That account has no locations to mirror.", "err");
+            btn.disabled = false;
+            return;
+          }
+          document.querySelector(".step1").style.display = "none";
+          document.querySelector(".step2").style.display = "block";
+          say("Computer registered. Now choose its location.", "ok");
+        } catch (e) {
+          say(e.message || String(e), "err");
+          btn.disabled = false;
+        }
+      });
+
+      $("finish").addEventListener("click", async () => {
+        const btn = $("finish");
+        btn.disabled = true;
+        const sel = $("loc");
+        say("Downloading… this can take a moment on first run.", "ok");
+        try {
+          const r = await window.lisSetup.finish({
+            locationId: sel.value,
+            locationName: sel.options[sel.selectedIndex].textContent,
+          });
+          say(`Done — ${r.total} records copied. Starting…`, "ok");
+        } catch (e) {
+          say(e.message || String(e), "err");
+          btn.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>

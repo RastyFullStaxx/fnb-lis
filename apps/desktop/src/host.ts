@@ -35,6 +35,32 @@ if (result.applied.length > 0) {
 const raw = new Database(dbFile);
 raw.exec(OUTBOX_DDL);
 
+/**
+ * Apply-only mode, used during first-run setup.
+ *
+ * The mirror is written from THIS process even then, because two processes
+ * writing one SQLite file is the corruption case WAL does not protect against.
+ * Exits without starting a server: at setup time there is no session to serve
+ * requests with anyway.
+ */
+if (process.env.FNB_APPLY_ONLY === "1") {
+  const { applySnapshot } = await import("./sync/apply-snapshot");
+  process.parentPort?.on("message", (e) => {
+    const data = e.data as { type?: string; payload?: Record<string, unknown> };
+    if (data?.type !== "applySnapshot" || !data.payload) return;
+    try {
+      const result = applySnapshot(raw, data.payload);
+      console.log(`[fnb-desktop] first snapshot applied: ${result.total} rows`);
+      process.parentPort?.postMessage({ type: "applied", total: result.total });
+    } catch (err) {
+      process.parentPort?.postMessage({
+        type: "applyError",
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  });
+} else {
+
 // FNB_DB_FILE is set by the PARENT (main.ts), not here — the server reads it at
 // module-init time and esbuild inlines dynamic imports, so assigning it in this
 // file would race its own bundle's initialisation order.
@@ -69,10 +95,9 @@ const server = serve({ fetch: app.fetch, hostname: "127.0.0.1", port: 0 }, (info
   console.log(`[fnb-desktop] local API on http://127.0.0.1:${info.port}`);
 });
 
-process.parentPort?.on("message", (e) => {
-  if ((e.data as { type?: string })?.type === "shutdown") {
-    server.close(() => process.exit(0));
-  }
-});
-
-export { app, raw as localDb, dbFile };
+  process.parentPort?.on("message", (e) => {
+    if ((e.data as { type?: string })?.type === "shutdown") {
+      server.close(() => process.exit(0));
+    }
+  });
+}

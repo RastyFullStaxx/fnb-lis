@@ -233,7 +233,17 @@ export const syncRoutes = new Hono<AppEnv>()
           username: true,
           firstName: true,
           lastName: true,
+          email: true,
           role: true,
+          // The mirror re-runs the server's own middleware, and these columns
+          // are NOT NULL in the schema it shares. Sending the real values beats
+          // fabricating them on the device — a user's actual creation date is
+          // audit data, and `status` is what tells an offline machine that
+          // someone has been disabled.
+          status: true,
+          createdAt: true,
+          updatedAt: true,
+          failedLoginCount: true,
           modules: { select: { module: true } },
           devicePin: { select: { pinHash: true, recoveryQuestion: true, recoveryAnswerHash: true } },
         },

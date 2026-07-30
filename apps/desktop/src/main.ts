@@ -1,6 +1,8 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, utilityProcess, type UtilityProcess } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, utilityProcess, type UtilityProcess } from "electron";
+import { initConfig, isProvisioned, readConfig, writeConfig } from "./config";
+import { configFrom, fetchSnapshot, registerDevice, type SetupInput } from "./provision";
 
 /**
  * Electron main: owns the window, forks the server, and does nothing else.
@@ -57,7 +59,105 @@ function startHost(): Promise<number> {
   });
 }
 
+/**
+ * Setup runs in the MAIN process, not the utility process, for one reason: it
+ * must work before the local server exists. On first run there is no mirror
+ * worth serving and no session to serve it with.
+ */
+let pendingRegistration: Awaited<ReturnType<typeof registerDevice>> | null = null;
+
+ipcMain.handle("setup:register", async (_e, input: SetupInput) => {
+  const existing = readConfig();
+  pendingRegistration = await registerDevice(input, existing?.fingerprint);
+  return pendingRegistration.result;
+});
+
+ipcMain.handle("setup:finish", async (_e, { locationId, locationName }: { locationId: string; locationName: string }) => {
+  if (!pendingRegistration) throw new Error("Connect to the server first");
+  const cfg = configFrom(pendingRegistration, locationId, locationName, pendingRegistration.result.deviceId
+    ? (readConfig()?.deviceName ?? "This computer")
+    : "This computer");
+
+  const payload = await fetchSnapshot(
+    pendingRegistration.remoteUrl,
+    pendingRegistration.result.cookie,
+    locationId,
+  );
+
+  // Config is written only AFTER the snapshot downloads. Writing it first would
+  // leave a machine that believes it is provisioned but holds nothing — and the
+  // app would then boot into an empty mirror instead of back into setup.
+  const applied = await applyFirstSnapshot(payload);
+  writeConfig({ ...cfg, lastPullAt: (payload.meta as { generatedAt?: string })?.generatedAt });
+
+  // Relaunch into the app proper. Simpler and more honest than hot-swapping the
+  // window: the server has to start against a mirror that now has content.
+  setTimeout(() => {
+    app.relaunch();
+    app.exit(0);
+  }, 900);
+  return applied;
+});
+
+/**
+ * Applies the first snapshot by asking the utility process to do it — the
+ * mirror is opened there, and two processes writing one SQLite file is the
+ * corruption case WAL does not save you from.
+ */
+async function applyFirstSnapshot(payload: Record<string, unknown>): Promise<{ total: number }> {
+  const proc = utilityProcess.fork(path.join(here, "host.mjs"), ["--apply-snapshot"], {
+    env: {
+      ...process.env,
+      FNB_LOCAL_DB: localDb,
+      FNB_DB_FILE: localDb,
+      FNB_MIGRATIONS_DIR: migrationsDir,
+      FNB_WEB_DIST: webDist,
+      FNB_APPLY_ONLY: "1",
+    },
+    stdio: "inherit",
+  });
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Timed out writing the downloaded data")), 120_000);
+    proc.on("message", (m: { type?: string; total?: number; error?: string }) => {
+      if (m?.type === "applied") {
+        clearTimeout(timer);
+        proc.kill();
+        resolve({ total: m.total ?? 0 });
+      } else if (m?.type === "applyError") {
+        clearTimeout(timer);
+        proc.kill();
+        reject(new Error(m.error ?? "Could not save the downloaded data"));
+      }
+    });
+    proc.on("spawn", () => proc.postMessage({ type: "applySnapshot", payload }));
+  });
+}
+
+/** The setup window — shown when this machine has never been provisioned. */
+async function createSetupWindow(): Promise<void> {
+  if (process.platform !== "darwin") Menu.setApplicationMenu(null);
+  win = new BrowserWindow({
+    width: 720,
+    height: 820,
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(here, "preload.mjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  await win.loadFile(path.join(here, "..", "setup.html"));
+}
+
 async function createWindow(): Promise<void> {
+  initConfig(dataDir);
+  // Unprovisioned: no server yet, because there is nothing worth serving.
+  if (!isProvisioned(readConfig())) {
+    await createSetupWindow();
+    return;
+  }
+
   let port: number;
   try {
     port = await startHost();
@@ -73,10 +173,28 @@ async function createWindow(): Promise<void> {
     return;
   }
 
+  /**
+   * No File/Edit/View/Window/Help bar.
+   *
+   * Those are Electron's stock menu, not ours, and every entry in them is
+   * either irrelevant to an inventory terminal or actively unwanted on one —
+   * "Toggle Developer Tools" and "Force Reload" sitting one click away from a
+   * staff member mid-count. The app is a single full-screen workspace with its
+   * own navigation; a desktop menu bar adds a second, contradictory one.
+   *
+   * Windows/Linux only. macOS requires an application menu for the standard
+   * edit accelerators to work at all, so it keeps the default there. On Windows
+   * Chromium handles Ctrl+C/V/X/A inside text fields natively, so removing the
+   * menu costs nothing.
+   */
+  if (process.platform !== "darwin") Menu.setApplicationMenu(null);
+
   win = new BrowserWindow({
     width: 1280,
     height: 800,
     show: false,
+    // Belt and braces: also stops the bar reappearing on Alt.
+    autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(here, "preload.mjs"),
       // The renderer is the untrusted surface even though we wrote it: it runs

@@ -2086,3 +2086,82 @@ root (server + both harnesses) and Electron ABI 130 under `apps/desktop`.
 Verified distinct by hash, and verified the root one still loads under Node —
 `verify:sync` (79) and `verify:seed` (47, both anchors) still pass after the
 install.
+
+---
+
+## Phase 42 — Provisioning, chrome, and the manual (2026-07-30)
+
+### The menu bar is gone
+
+`Menu.setApplicationMenu(null)` on Windows/Linux. Those File/Edit/View entries
+were Electron's stock menu, not ours, and every one of them is either irrelevant
+to an inventory terminal or unwanted on one — "Toggle Developer Tools" a click
+away from a staff member mid-count. macOS keeps its menu because the standard
+edit accelerators stop working without one; Windows handles Ctrl+C/V natively in
+text fields, so removing it there costs nothing.
+
+### First-run provisioning
+
+Setup window (before any server exists, because on first run there is nothing
+worth serving) → owner signs in → device registers → pick a location → pull the
+first snapshot → relaunch into the app.
+
+Design points worth keeping:
+
+- **The fingerprint is a persisted random id, not hardware-derived.** Serial
+  numbers and MAC addresses look more "real" but change with a NIC swap or a
+  dock, and the server treats a new fingerprint as a NEW device — consuming a
+  licence slot and stranding the old machine's outbox.
+- **The first pull is unbounded.** Bounding it would leave the mirror unable to
+  reconcile any period older than the cutoff, and a device that cannot compute
+  last month's Full Audit offline is not a mirror.
+- **Config is written only AFTER the snapshot lands**, or a machine would
+  believe it is provisioned while holding nothing, and boot into an empty mirror
+  instead of back into setup.
+- **The session is encrypted with `safeStorage`** (DPAPI), so copying
+  config.json to another machine yields nothing. Plaintext fallback warns loudly
+  rather than downgrading silently.
+
+### Four failures found by rehearsing it headlessly
+
+1. **`config.ts` could not be imported outside Electron** — a top-level
+   `import { safeStorage } from "electron"` made the whole provisioning path
+   untestable. Now resolved lazily, which is better design anyway.
+2. **Insert order was wrong**: `Item` is a PARENT of `ItemVariant` but arrives
+   nested inside one, so variants were written first and the FK failed.
+3. **Foreign keys had to come off for the merge** — and this is not laziness. A
+   mirror is a PARTIAL view: a transfer this location dispatched carries receipt
+   lines pointing at the DESTINATION's catalog rows, and that location's catalog
+   is rightly not in this snapshot. Enforcing FKs rejects real, correct data.
+   Restored immediately after.
+4. **`User.passwordHash` is NOT NULL and the snapshot deliberately omits it.**
+   Local users now get a sentinel that `verifyPassword` can never accept — so
+   the LOCAL server cannot authenticate anyone by password at all. That is not a
+   workaround; it is the offline design enforced by construction, with the PIN
+   as the only way in.
+
+### The check that mattered
+
+`npm run verify:mirror -w @fnb/desktop` — registers a device, pulls a real
+snapshot into a throwaway mirror, applies it (515 rows, 26 tables), then
+computes the Full Audit **off the mirror** and asserts both pinned anchors:
+
+```
+  ok   2026-06-01→2026-06-08  cost -330.6857142857142  retail -869.5714285714284
+  ok   2026-07-14→2026-07-20  cost -537.0000000000001  retail -1410.0000000000002
+MIRROR MATCHES THE SERVER
+```
+
+This is what docs §7.5 requires and the only thing that proves the copy is
+faithful — counting rows proves nothing about whether the numbers agree.
+
+Also written: **docs/desktop-manual.md** — install, first-run setup, who signs
+in and how, PIN policy, where the data lives, device management, sync in plain
+terms, troubleshooting (including how to get logs when Electron discards stdout
+on Windows), and an honest list of what is not built.
+
+### Verified
+
+- `verify:mirror` — both anchors reproduce off a device mirror.
+- `verify:sync` 79 · `verify:seed` 47, both anchors · typechecks clean.
+- Dev database restored: rehearsal devices removed, `maxDevices` back to 1.

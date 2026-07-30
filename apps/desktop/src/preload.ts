@@ -12,6 +12,15 @@ import { contextBridge, ipcRenderer } from "electron";
  * IPC. The renderer talks to the local server over HTTP exactly as a browser
  * would, so it needs nothing else.
  */
+/**
+ * First-run setup only. Exposed on every page because the setup HTML is loaded
+ * before the SPA exists; the SPA never calls it.
+ */
+contextBridge.exposeInMainWorld("lisSetup", {
+  register: (input: unknown) => ipcRenderer.invoke("setup:register", input),
+  finish: (input: unknown) => ipcRenderer.invoke("setup:finish", input),
+});
+
 contextBridge.exposeInMainWorld("lis", {
   isDesktop: true,
   /** Sync state for the status banner: last sync, queue depth, conflicts. */

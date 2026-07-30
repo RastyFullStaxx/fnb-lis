@@ -9,6 +9,7 @@
     "build": "npm run build:server && npm run build -w @fnb/web",
     "native": "node native.mjs",
     "dev": "npm run build:server && electron .",
+    "verify:mirror": "node verify-mirror.mjs",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
