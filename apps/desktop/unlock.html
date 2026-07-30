@@ -4,90 +4,188 @@
     <meta charset="utf-8" />
     <title>Sign in — LIS</title>
     <style>
-      /* Served by the LOCAL server, not loaded from disk — the session cookie
-         it sets must belong to the same origin the SPA then runs on. */
+      /* Mirrors apps/web/src/pages/login.tsx, so the desktop sign-in is the same
+         screen people already know — only the credential differs. Values come
+         from that page's own tokens rather than being re-invented:
+         --sidebar oklch(0.28 0.09 264) = #112555, --primary = #1b4ed8. */
       * { box-sizing: border-box; }
+      html, body { height: 100%; }
       body {
-        margin: 0; min-height: 100vh; display: grid; place-items: center;
-        background: #16255c; color: #eef1fa;
-        font: 16px/1.5 "Segoe UI", system-ui, sans-serif;
+        margin: 0; display: grid; grid-template-columns: 7fr 9fr;
+        font: 16px/1.5 "Geist Variable", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+        color: #eef1fa; background: #fff;
       }
-      /* Three sizes: 1.5 / 1 / .75rem. */
-      .card { width: min(26rem, 92vw); text-align: center; }
-      h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
-      .sub { color: #a8b3d8; margin: 0 0 2rem; }
-      .who { display: grid; gap: .5rem; margin-bottom: 1.5rem; }
+      /* The illustration is decoration; on a narrow window the keypad takes the
+         whole width rather than being squeezed beside it. */
+      @media (max-width: 900px) { body { grid-template-columns: 1fr; } .right { display: none; } }
+
+      /* ── Left: brand + keypad ── */
+      .left { background: #112555; display: flex; flex-direction: column; padding: 2rem 3rem; overflow: auto; }
+      .brand { display: flex; align-items: center; gap: .625rem; margin: -.5rem 0 0 -.75rem; }
+      .brand img { width: 84px; height: 84px; object-fit: contain; }
+      .brand span { font-size: .75rem; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: rgba(238,241,250,.6); }
+      .middle { flex: 1; display: flex; align-items: center; padding-bottom: 3rem; }
+      .panel { margin: 0 auto; width: 100%; max-width: 24rem; }
+      h1 { font-size: 1.375rem; font-weight: 600; letter-spacing: -.01em; margin: 0 0 .25rem; }
+      .sub { margin: 0 0 1.75rem; font-size: .875rem; color: rgba(238,241,250,.7); }
+      .foot { font-size: .75rem; color: rgba(238,241,250,.45); }
+
+      /* ── Right: the same illustration and promise as the web login ── */
+      .right { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 3rem; background: #fff; }
+      .right img { width: 100%; max-width: 28rem; margin-top: -1.25rem; }
+      .right h2 { margin: -2rem 0 0; font-size: 1.375rem; font-weight: 600; letter-spacing: -.01em; color: #0d1424; text-align: center; }
+      .right p { margin: .5rem auto 0; max-width: 24rem; font-size: .875rem; color: #5b6478; text-align: center; }
+
+      /* ── People ── */
+      .who { display: grid; gap: .5rem; }
       .person {
         display: flex; align-items: center; gap: .75rem; width: 100%; padding: .75rem 1rem;
         border: 1px solid #3a4a86; border-radius: .625rem; background: #0f1b47; color: #eef1fa;
-        font: inherit; cursor: pointer; text-align: left;
+        font: inherit; font-size: .9375rem; cursor: pointer; text-align: left;
       }
-      .person:hover { border-color: #4f7cff; }
-      .person[aria-pressed="true"] { border-color: #4f7cff; background: #1b2c6b; }
-      .person .role { margin-left: auto; font-size: .75rem; color: #8f9cc6; text-transform: uppercase; letter-spacing: .04em; }
+      .person:hover:not(:disabled) { border-color: #4f7cff; }
+      .person .role { margin-left: auto; font-size: .6875rem; color: #8f9cc6; text-transform: uppercase; letter-spacing: .05em; }
       .person:disabled { opacity: .45; cursor: not-allowed; }
-      .pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; }
+
+      /* ── Keypad ── */
+      .dots { display: flex; gap: .625rem; justify-content: center; align-items: center; margin: 0 0 1.5rem; }
+      .dot { width: .75rem; height: .75rem; border-radius: 50%; background: transparent; border: 1.5px solid #3a4a86; transition: background .12s, border-color .12s; }
+      .dot.on { background: #4f7cff; border-color: #4f7cff; }
+      .pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: .625rem; }
+      /* Fixed height + centring, never padding: a non-digit glyph would
+         otherwise size its key differently from the numbers. */
       .pad button {
-        padding: 1rem; font: inherit; font-size: 1.5rem; border-radius: .625rem;
+        height: 3.5rem; display: grid; place-items: center; padding: 0;
+        font: inherit; font-size: 1.375rem; font-weight: 500; border-radius: .625rem;
         border: 1px solid #3a4a86; background: #0f1b47; color: #eef1fa; cursor: pointer;
       }
+      .pad button:hover { border-color: #4f7cff; }
       .pad button:active { background: #2f6bff; }
-      .dots { display: flex; gap: .5rem; justify-content: center; margin: 1.25rem 0; min-height: 1rem; }
-      .dot { width: .625rem; height: .625rem; border-radius: 50%; background: #3a4a86; }
-      .dot.on { background: #4f7cff; }
-      .msg { min-height: 1.5rem; margin-top: 1rem; font-size: .75rem; color: #ffc9d1; }
-      .hint { font-size: .75rem; color: #8f9cc6; margin-top: 1rem; }
-      .back { background: none; border: 0; color: #8f9cc6; font: inherit; font-size: .75rem; cursor: pointer; margin-top: 1rem; }
+      /* Accent by colour, not fill — a solid background reads as a bigger key. */
+      .pad button.ok { border-color: #4f7cff; color: #7aa2ff; }
+      .pad button.ok:active { background: #1b4ed8; color: #fff; }
+      .hint { font-size: .75rem; color: #8f9cc6; text-align: center; margin-top: 1rem; }
+      .msg { min-height: 1.25rem; margin-top: .75rem; font-size: .8125rem; color: #ffc9d1; text-align: center; }
+      .back { display: block; margin: 1rem auto 0; background: none; border: 0; color: #8f9cc6; font: inherit; font-size: .8125rem; cursor: pointer; }
+      .back:hover { color: #cfd8f5; }
       .step2 { display: none; }
     </style>
   </head>
   <body>
-    <div class="card">
-      <h1 id="title">Who's counting?</h1>
-      <p class="sub" id="sub">Choose your name to sign in on this computer.</p>
-
-      <div class="step1"><div class="who" id="who"></div></div>
-
-      <div class="step2">
-        <div class="dots" id="dots"></div>
-        <div class="pad" id="pad"></div>
-        <button class="back" id="back">← Someone else</button>
+    <div class="left">
+      <div class="brand">
+        <img src="/_desktop/logo.png" alt="" />
+        <span>FNB/LIS</span>
       </div>
 
-      <div class="msg" id="msg"></div>
-      <div class="hint" id="hint"></div>
+      <div class="middle">
+        <div class="panel">
+          <div class="step1">
+            <h1>Welcome back</h1>
+            <p class="sub">Choose your name to sign in on this computer.</p>
+            <div class="who" id="who"></div>
+          </div>
+
+          <div class="step2">
+            <h1 id="title">Enter your PIN</h1>
+            <p class="sub">Six digits.</p>
+            <div class="dots" id="dots"></div>
+            <div class="pad" id="pad"></div>
+            <div class="hint">The number positions change each time.</div>
+            <button class="back" id="back">&larr; Someone else</button>
+          </div>
+
+          <div class="msg" id="msg"></div>
+        </div>
+      </div>
+
+      <div class="foot">&copy; 2026 Liquor Inventory Solution. All rights reserved.<span id="device"></span></div>
+    </div>
+
+    <div class="right">
+      <img src="/_desktop/illustration.svg" alt="" />
+      <h2>Know what changed between counts.</h2>
+      <p>Count, review, reconcile, and trace every variance to its source.</p>
     </div>
 
     <script>
       const $ = (id) => document.getElementById(id);
+      const PIN_LENGTH = 6;
+      const BACKSPACE = "⌫";
+      const CONFIRM = "✓";
       let picked = null;
       let pin = "";
 
       const renderDots = () => {
         $("dots").innerHTML = "";
-        for (let i = 0; i < Math.max(4, pin.length); i++) {
+        for (let i = 0; i < PIN_LENGTH; i++) {
           const d = document.createElement("div");
           d.className = "dot" + (i < pin.length ? " on" : "");
           $("dots").appendChild(d);
         }
       };
 
+      /**
+       * Shuffle the digits every time the keypad is shown.
+       *
+       * The realistic attacker is a coworker watching WHERE the fingers go — a
+       * fixed layout leaks the PIN without them ever seeing the screen.
+       * crypto.getRandomValues because this is a control, not a nicety; and
+       * Fisher-Yates so every arrangement is equally likely.
+       */
+      function shuffledDigits() {
+        const d = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
+        const r = new Uint32Array(d.length);
+        crypto.getRandomValues(r);
+        for (let i = d.length - 1; i > 0; i--) {
+          const j = r[i] % (i + 1);
+          const t = d[i];
+          d[i] = d[j];
+          d[j] = t;
+        }
+        return d;
+      }
+
+      function buildPad() {
+        $("pad").innerHTML = "";
+        const d = shuffledDigits();
+        const keys = d.slice(0, 9).concat([BACKSPACE, d[9], CONFIRM]);
+        for (const k of keys) {
+          const b = document.createElement("button");
+          b.textContent = k;
+          if (k === CONFIRM) b.classList.add("ok");
+          b.addEventListener("click", () => press(k));
+          $("pad").appendChild(b);
+        }
+      }
+
+      function press(k) {
+        if (k === BACKSPACE) { pin = pin.slice(0, -1); renderDots(); return; }
+        if (k === CONFIRM) { void submit(); return; }
+        if (pin.length >= PIN_LENGTH) return;
+        pin += k;
+        renderDots();
+      }
+
       async function load() {
         const r = await fetch("/_desktop/people").then((x) => x.json());
-        $("hint").textContent = r.deviceName ? `This computer: ${r.deviceName}` : "";
+        $("device").textContent = r.deviceName ? " · " + r.deviceName : "";
         for (const p of r.people) {
           const b = document.createElement("button");
           b.className = "person";
           b.disabled = !p.hasPin || p.status !== "ACTIVE";
-          b.innerHTML = `<span>${p.firstName} ${p.lastName}</span><span class="role">${
-            p.status !== "ACTIVE" ? "disabled" : p.hasPin ? p.role : "no PIN"
-          }</span>`;
+          const name = document.createElement("span");
+          name.textContent = p.firstName + " " + p.lastName;
+          const role = document.createElement("span");
+          role.className = "role";
+          role.textContent = p.status !== "ACTIVE" ? "disabled" : p.hasPin ? p.role : "no PIN";
+          b.append(name, role);
           b.addEventListener("click", () => {
             picked = p;
             pin = "";
             renderDots();
-            $("title").textContent = `${p.firstName}, enter your PIN`;
-            $("sub").textContent = "";
+            buildPad();
+            $("title").textContent = p.firstName + ", enter your PIN";
             document.querySelector(".step1").style.display = "none";
             document.querySelector(".step2").style.display = "block";
             $("msg").textContent = "";
@@ -96,64 +194,39 @@
         }
       }
 
-      function buildPad() {
-        const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "⌫"];
-        for (const k of keys) {
-          const b = document.createElement("button");
-          b.textContent = k;
-          if (!k) { b.style.visibility = "hidden"; b.disabled = true; }
-          b.addEventListener("click", () => press(k));
-          $("pad").appendChild(b);
-        }
-      }
-
-      async function press(k) {
-        if (k === "⌫") { pin = pin.slice(0, -1); renderDots(); return; }
-        if (!k) return;
-        pin += k;
-        renderDots();
-        // 4 is the minimum, so submit only once it *could* be complete and the
-        // user pauses — but never auto-submit a longer PIN mid-typing.
-        if (pin.length >= 4) {
-          clearTimeout(press._t);
-          press._t = setTimeout(submit, 550);
-        }
-      }
-
       async function submit() {
-        const attempt = pin;
         const res = await fetch("/_desktop/unlock", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ userId: picked.id, pin: attempt }),
+          body: JSON.stringify({ userId: picked.id, pin: pin }),
         });
         const body = await res.json().catch(() => ({}));
         if (res.ok) {
-          $("msg").textContent = "";
-          location.href = "/";
+          location.href = body.landing || "/";
           return;
         }
+        // Re-shuffle on failure too, or a watcher gets several looks at one layout.
         pin = "";
         renderDots();
+        buildPad();
         $("msg").textContent = body.error || "Could not sign in";
       }
 
       $("back").addEventListener("click", () => {
-        picked = null; pin = ""; $("msg").textContent = "";
-        $("title").textContent = "Who's counting?";
-        $("sub").textContent = "Choose your name to sign in on this computer.";
+        picked = null;
+        pin = "";
+        $("msg").textContent = "";
         document.querySelector(".step2").style.display = "none";
         document.querySelector(".step1").style.display = "block";
       });
 
       document.addEventListener("keydown", (e) => {
         if (!picked) return;
-        if (/^\d$/.test(e.key)) press(e.key);
-        else if (e.key === "Backspace") press("⌫");
-        else if (e.key === "Enter") submit();
+        if (/^[0-9]$/.test(e.key)) press(e.key);
+        else if (e.key === "Backspace") press(BACKSPACE);
+        else if (e.key === "Enter") void submit();
       });
 
-      buildPad();
       renderDots();
       load();
     </script>

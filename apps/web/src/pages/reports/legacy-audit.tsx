@@ -203,7 +203,7 @@ export function LegacyAuditPage() {
           )}
         </div>
 
-        <div className="scrollbar-thin min-h-0 flex-1 overflow-auto">
+        <div className="min-h-0 flex-1 overflow-auto">
           {report.isPending ? (
             <TableLoading rows={10} />
           ) : report.isError ? (

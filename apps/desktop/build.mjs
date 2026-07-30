@@ -16,6 +16,7 @@ import { build } from "esbuild";
  */
 mkdirSync("assets", { recursive: true });
 cpSync("../server/src/assets", "assets", { recursive: true });
+
 // `imports.ts` resolves an uploads dir the same way; AI file imports need
 // somewhere to land, and it is created eagerly by the server at boot.
 mkdirSync("data/uploads", { recursive: true });

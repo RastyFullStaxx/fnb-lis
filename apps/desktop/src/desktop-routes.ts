@@ -153,7 +153,18 @@ export function desktopRoutes(deps: UnlockDeps) {
         path: "/",
         expires: expiresAt,
       });
-      return c.json({ ok: true, user: { id: user.id, firstName: user.firstName, lastName: user.lastName } });
+      return c.json({
+        ok: true,
+        user: { id: user.id, firstName: user.firstName, lastName: user.lastName },
+        /**
+         * Where to go after unlocking: straight to work.
+         *
+         * The landing page is the app's FRONT DOOR — the desktop opens there and
+         * "Open the System" leads here. Returning to it after a successful PIN
+         * would loop someone back to the door they just came through.
+         */
+        landing: `/l/${deps.locationId}/dashboard`,
+      });
     })
 
     /** Everything the status banner shows. */

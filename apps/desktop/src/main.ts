@@ -40,7 +40,6 @@ function startHost(): Promise<number> {
         ...process.env,
         FNB_LOCAL_DB: localDb,
         FNB_MIGRATIONS_DIR: migrationsDir,
-        FNB_UNLOCK_HTML: path.join(here, "..", "unlock.html"),
         // Everything the sync engine and the unlock screen need. The device
         // session is decrypted HERE and handed over in the child's env rather
         // than left on disk in the clear — safeStorage lives in the main
@@ -154,9 +153,14 @@ async function applyFirstSnapshot(payload: Record<string, unknown>): Promise<{ t
 async function createSetupWindow(): Promise<void> {
   if (process.platform !== "darwin") Menu.setApplicationMenu(null);
   win = new BrowserWindow({
-    width: 720,
-    height: 820,
+    width: 760,
+    height: 860,
     autoHideMenuBar: true,
+    // Same caption treatment as the main window — a black OS title bar on the
+    // FIRST screen anyone sees is the worst place to skip it.
+    titleBarStyle: "hidden",
+    titleBarOverlay: { color: TITLE_BAR_COLOR, symbolColor: "#e8ecf8", height: TITLE_BAR_HEIGHT },
+    backgroundColor: TITLE_BAR_COLOR,
     webPreferences: {
       preload: path.join(here, "preload.cjs"),
       contextIsolation: true,
@@ -167,8 +171,33 @@ async function createSetupWindow(): Promise<void> {
   await win.loadFile(path.join(here, "..", "setup.html"));
 }
 
+/**
+ * A one-line startup record in userData.
+ *
+ * Electron discards stdout on Windows, so when a bar PC "opens on the setup
+ * screen again" there is otherwise nothing to look at. This is the file to ask
+ * for first.
+ */
+function logStartup(line: string): void {
+  try {
+    require("node:fs").appendFileSync(
+      path.join(dataDir, "startup.log"),
+      `${new Date().toISOString()}  ${line}
+`,
+    );
+  } catch {
+    /* diagnostics must never be the reason the app fails to start */
+  }
+}
+
 async function createWindow(): Promise<void> {
   initConfig(dataDir);
+  const cfg0 = readConfig();
+  logStartup(
+    `userData=${dataDir} config=${cfg0 ? "found" : "MISSING"} ` +
+      `deviceId=${cfg0?.deviceId ?? "-"} locationId=${cfg0?.locationId ?? "-"} ` +
+      `session=${cfg0?.sessionEnc ? "present" : "MISSING"} provisioned=${isProvisioned(cfg0)}`,
+  );
   // Unprovisioned: no server yet, because there is nothing worth serving.
   if (!isProvisioned(readConfig())) {
     await createSetupWindow();
@@ -244,12 +273,35 @@ async function createWindow(): Promise<void> {
   // Listener BEFORE loadURL: `ready-to-show` fires during the load, so
   // attaching it afterwards means it has already gone and the window never
   // appears — a running app with no UI, which looks exactly like a crash.
+  /**
+   * Ctrl+R / F5 reload, and Ctrl+Shift+I for devtools.
+   *
+   * Removing the menu bar took these with it — they are menu accelerators, not
+   * built-in browser behaviour — leaving no way to reload short of quitting the
+   * app. Re-registered explicitly so the keys people already reach for work,
+   * without putting "Force Reload" and "Toggle Developer Tools" back on screen
+   * one click from a staff member mid-count.
+   */
+  win.webContents.on("before-input-event", (event, input) => {
+    if (input.type !== "keyDown") return;
+    const key = input.key.toLowerCase();
+    if (key === "f5" || (input.control && key === "r")) {
+      win?.webContents.reloadIgnoringCache();
+      event.preventDefault();
+    }
+    if (input.control && input.shift && key === "i") {
+      win?.webContents.toggleDevTools();
+      event.preventDefault();
+    }
+  });
+
   win.once("ready-to-show", () => win?.show());
 
-  // The PIN screen first, not the SPA. It is served by the LOCAL server so the
-  // session cookie it sets belongs to the same origin the app then runs on;
-  // loading it off disk would put it on file:// where no cookie would stick.
-  await win.loadURL(`http://127.0.0.1:${port}/_desktop/unlock.html`);
+  // The landing page, same as the web front door. "Open the System" leads to
+  // /login, which renders the PIN keypad in place of the username/password form
+  // when it detects the desktop — one definition of the sign-in layout, so the
+  // desktop cannot drift from the web on the first thing anyone sees.
+  await win.loadURL(`http://127.0.0.1:${port}/`);
   // Belt and braces: if the event was somehow missed, still show rather than
   // leave the user staring at nothing.
   if (!win.isVisible()) win.show();

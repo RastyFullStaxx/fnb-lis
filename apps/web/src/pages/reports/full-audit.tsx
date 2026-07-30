@@ -316,7 +316,7 @@ export function FullAuditPage() {
           </ToolbarField>
         </div>
 
-        <div className="scrollbar-thin min-h-0 flex-1 overflow-auto [&_[data-slot=table-container]]:overflow-visible print:overflow-visible">
+        <div className="min-h-0 flex-1 overflow-auto [&_[data-slot=table-container]]:overflow-visible print:overflow-visible">
           {/* The verdict scrolls WITH the rows rather than being pinned above
               them. Pinned, it spent ~170px of every viewport permanently — on a
               13" laptop that is most of the visible rows, and the table is what

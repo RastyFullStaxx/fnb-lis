@@ -117,14 +117,6 @@ const { serveStatic } = await import("@hono/node-server/serve-static");
     }),
   );
 
-  // The PIN screen. Served from the local ORIGIN rather than loaded off disk,
-  // because the session cookie it sets has to belong to the origin the SPA then
-  // runs on — a file:// page cannot set one for http://127.0.0.1.
-  app.get("/_desktop/unlock.html", async (c) => {
-    const { readFile } = await import("node:fs/promises");
-    return c.html(await readFile(path.resolve(process.env.FNB_UNLOCK_HTML!), "utf8"));
-  });
-
 // Serve the SPA. `createApp()` deliberately does not do this — on the hosted
 // server it lives in index.ts — so the desktop wires its own, pointed at the
 // packaged bundle. Without it the window loads a 404.

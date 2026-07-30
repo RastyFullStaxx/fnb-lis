@@ -17,12 +17,12 @@ async function seedUsers() {
     { username: "manager", firstName: "Maria", lastName: "Santos", role: "MANAGER" },
     { username: "staff", firstName: "Paolo", lastName: "Reyes", role: "STAFF" },
     { username: "accountant", firstName: "Grace", lastName: "Lim", role: "ACCOUNTANT" },
-    { username: "readonly", firstName: "Vis", lastName: "Itor", role: "AUDIT_VIEWER" },
+    { username: "readonly", firstName: "Elena", lastName: "Cruz", role: "AUDIT_VIEWER" },
   ];
   for (const u of users) {
     await prisma.user.upsert({
       where: { username: u.username },
-      update: { role: u.role, status: "ACTIVE", passwordHash },
+      update: { role: u.role, status: "ACTIVE", passwordHash, firstName: u.firstName, lastName: u.lastName },
       create: { ...u, passwordHash, email: `${u.username}@fnb-lis.local` },
     });
   }

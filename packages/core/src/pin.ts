@@ -7,8 +7,23 @@
  * a credential that stops working the moment the machine reconnects.
  */
 
-export const PIN_MIN_LENGTH = 4;
-export const PIN_MAX_LENGTH = 8;
+/**
+ * Exactly six digits — not a range.
+ *
+ * A variable length (the old 4-8) meant the keypad could never show how many
+ * digits were expected, so it drew placeholder dots that people read as a limit,
+ * and it could never know when entry was finished. Fixing the length removes
+ * both problems: six dots mean six digits, and they fill as you type.
+ *
+ * Six rather than four is also a real gain where it counts. The device PIN is
+ * verified OFFLINE against a hash in the local mirror, so an attacker with the
+ * machine can try every combination; six digits is a million of them instead of
+ * ten thousand.
+ */
+export const PIN_LENGTH = 6;
+/** Kept as aliases so existing callers keep compiling. */
+export const PIN_MIN_LENGTH = PIN_LENGTH;
+export const PIN_MAX_LENGTH = PIN_LENGTH;
 
 /**
  * PINs that a person standing at the bar would guess in three tries. Blocking
@@ -45,8 +60,7 @@ function isRepeated(pin: string): boolean {
  */
 export function validatePin(pin: string): string | null {
   if (!DIGITS_ONLY.test(pin)) return "Use numbers only";
-  if (pin.length < PIN_MIN_LENGTH) return `Use at least ${PIN_MIN_LENGTH} digits`;
-  if (pin.length > PIN_MAX_LENGTH) return `Use at most ${PIN_MAX_LENGTH} digits`;
+  if (pin.length !== PIN_LENGTH) return `Use exactly ${PIN_LENGTH} digits`;
   if (OBVIOUS.has(pin) || isRepeated(pin) || isSequential(pin)) {
     return "That PIN is too easy to guess — avoid runs like 1234 and repeats like 1111";
   }

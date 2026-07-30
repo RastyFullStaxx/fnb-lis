@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate, useSearchParams } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowLeft, Eye, EyeOff, KeyRound } from "lucide-react";
@@ -11,6 +11,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { InventoryIllustration } from "@/components/brand/inventory-illustration";
+import { DesktopPinSignIn } from "./login-pin";
+import { SignInSuccess } from "@/components/sign-in-success";
 import lisLogo from "@/assets/lis-logo.png";
 
 // ── Per-module login flyers (client reqs #6/#7) ──────────────────────────────
@@ -34,21 +36,44 @@ export function LoginPage() {
 
   const [rememberMe, setRememberMe] = useState(false);
 
+  /**
+   * On the offline desktop the credential is a PIN, not a password — so the
+   * left panel swaps its contents and everything else on this page stays put.
+   *
+   * Reusing this page rather than building a second sign-in screen is the whole
+   * point: the brand panel, the illustration and the layout have exactly one
+   * definition, so the desktop cannot drift from the web on the first screen
+   * anyone sees. False in a browser, where `window.lis` does not exist.
+   */
+  const isDesktop = Boolean((window as { lis?: { isDesktop?: boolean } }).lis?.isDesktop);
+
   const form = useForm<LoginRequest>({
     resolver: zodResolver(loginRequest),
     defaultValues: { username: "", password: "" },
   });
+
+  /** Set once the credential is accepted; the overlay then hands off. */
+  const [success, setSuccess] = useState<{ name: string; to: string } | null>(null);
 
   const onSubmit = form.handleSubmit(async (values) => {
     setServerError(null);
     try {
       const me = await login.mutateAsync({ ...values, rememberMe });
       const first = me.clients.flatMap((c) => c.locations)[0];
-      navigate(first ? `/l/${first.id}/dashboard` : "/", { replace: true });
+      // The destination is resolved BEFORE the overlay shows, so the animation
+      // covers work already done rather than adding a wait in front of it.
+      setSuccess({
+        name: me.user.firstName,
+        to: first ? `/l/${first.id}/dashboard` : "/",
+      });
     } catch (err) {
       setServerError(err instanceof ApiError ? err.message : "Something went wrong. Try again.");
     }
   });
+
+  if (success) {
+    return <SignInSuccess name={success.name} onDone={() => navigate(success.to, { replace: true })} />;
+  }
 
   return (
     <div className="grid min-h-dvh lg:grid-cols-[7fr_9fr]">
@@ -59,6 +84,17 @@ export function LoginPage() {
           <span className="text-xs font-medium tracking-wide text-sidebar-foreground/60 uppercase">
             FNB/LIS
           </span>
+          {/* A way back out. Without it the sign-in page is a dead end for
+              anyone who arrived by accident or wants to re-read the landing
+              page — and on the desktop, where this is the first screen after
+              the front door, there was no route back at all. */}
+          <Link
+            to="/"
+            className="ml-auto inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-sidebar-foreground/60 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          >
+            <ArrowLeft className="size-3.5" />
+            Back
+          </Link>
         </div>
 
         <div className="flex flex-1 items-center pb-16">
@@ -82,6 +118,8 @@ export function LoginPage() {
                   Back to Sign In
                 </Button>
               </div>
+            ) : isDesktop ? (
+              <DesktopPinSignIn />
             ) : (
               <>
                 {sessionExpired && (

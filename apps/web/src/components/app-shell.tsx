@@ -125,8 +125,9 @@ function ShellLayout({ me, current }: { me: MeResponse; current: CurrentLocation
         </SidebarHeader>
         {/* gap-0 + tightened groups: the full admin nav (3 groups, 14 items)
             must fit a 13" laptop (~780px of content height at the large font
-            preference) without scrolling. scrollbar-thin is the fallback. */}
-        <SidebarContent className="scrollbar-thin gap-0">
+            preference) without scrolling. If it must scroll, the app-wide thin
+            scrollbar (index.css) keeps it unobtrusive. */}
+        <SidebarContent className="gap-0">
           <NavGroup items={mainNav} current={current} label="Operations" />
           {catalogNav.length > 0 && <NavGroup items={catalogNav} current={current} label="Catalog" />}
           {adminNav.length > 0 && <NavGroup items={adminNav} current={current} label="Administration" />}
@@ -325,7 +326,11 @@ function UserMenu({ me }: { me: MeResponse }) {
 
   const onLogout = async () => {
     await logout.mutateAsync();
-    navigate("/login", { replace: true });
+    // The landing page, not /login. Signing out is a deliberate exit, and
+    // dropping straight back onto a sign-in form reads as "that failed, try
+    // again" rather than "you are out". The front door is the honest place to
+    // land, and Open the System is one click away.
+    navigate("/", { replace: true });
   };
 
   return (

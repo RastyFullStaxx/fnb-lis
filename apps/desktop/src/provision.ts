@@ -50,15 +50,25 @@ export async function registerDevice(
   const remoteUrl = normalizeUrl(input.remoteUrl);
   const fingerprint = fingerprintOf(existingFingerprint);
 
-  const res = await fetch(`${remoteUrl}/api/auth/login`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      username: input.username,
-      password: input.password,
-      device: { fingerprint, name: input.deviceName, clientId: input.clientId },
-    }),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${remoteUrl}/api/auth/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        username: input.username,
+        password: input.password,
+        device: { fingerprint, name: input.deviceName, clientId: input.clientId },
+      }),
+    });
+  } catch {
+    // A raw "TypeError: fetch failed" tells the person installing this nothing.
+    // Every cause is the same actionable thing: the address or the connection.
+    throw new Error(
+      `Couldn't reach ${remoteUrl}. Check the server address and that this computer is online. ` +
+        `If the server runs without HTTPS, include http:// at the front.`,
+    );
+  }
 
   const text = await res.text();
   if (!res.ok) {

@@ -5,7 +5,7 @@ import {
   can,
   COST_BASES,
   COST_BASIS_LABELS,
-  PIN_MAX_LENGTH,
+  PIN_LENGTH,
   validatePin,
   type CostBasis,
   type Role,
@@ -336,9 +336,9 @@ function DevicePinSection() {
                 type="password"
                 inputMode="numeric"
                 autoComplete="off"
-                placeholder="4–8 digits"
+                placeholder="6 digits"
                 value={pin}
-                onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, PIN_MAX_LENGTH))}
+                onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, PIN_LENGTH))}
               />
               {pinProblem && <p className="text-xs text-destructive">{pinProblem}</p>}
             </div>
@@ -350,7 +350,7 @@ function DevicePinSection() {
                 inputMode="numeric"
                 autoComplete="off"
                 value={confirm}
-                onChange={(e) => setConfirm(e.target.value.replace(/\D/g, "").slice(0, PIN_MAX_LENGTH))}
+                onChange={(e) => setConfirm(e.target.value.replace(/\D/g, "").slice(0, PIN_LENGTH))}
               />
             </div>
           </div>

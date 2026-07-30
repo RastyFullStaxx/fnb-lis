@@ -36,19 +36,55 @@ contextBridge.exposeInMainWorld("lis", { isDesktop: true });
  * no privileged bridge at all.
  */
 const CHROME_CSS = `
-#lis-syncbar {
-  position: fixed; bottom: 0; left: 0; right: 0; z-index: 2147483000;
-  display: flex; align-items: center; gap: .75rem; padding: .375rem .75rem;
-  font: 12px/1.4 "Segoe UI", system-ui, sans-serif; color: #e8ecf8;
-  background: #16255c; border-top: 1px solid #2b3c78;
+/**
+ * The sync indicator lives IN the app's header, beside Search.
+ *
+ * It began as a full-width strip that reserved 30px forever, then a corner pill
+ * that floated over the content. Both were the same mistake in different sizes:
+ * treating desktop status as something bolted onto the app rather than part of
+ * it. The header already collects exactly this kind of ambient control — alerts,
+ * Stocky, search — so it belongs there and costs no layout at all.
+ *
+ * Styled with the app's OWN custom properties, not hard-coded colours, so it
+ * tracks the design system and any future theme instead of drifting from it.
+ */
+#lis-syncchip {
+  display: inline-flex; align-items: center; gap: .5rem;
+  height: 2rem; padding: 0 .625rem; border-radius: .375rem;
+  border: 1px solid var(--border); background: var(--background);
+  color: var(--muted-foreground);
+  /* Matched to the sibling buttons by measurement, not by eye: Geist Variable
+     inherited from the app, 0.875rem, and weight 500. The "font" shorthand alone was
+     the bug — the shorthand pulled the BODY's weight (400), so the chip read as
+     a different typeface next to Stocky and Search at 500. */
+  /* No line-height: the chip is a centred flex row, so it changes nothing
+     here, and hard-coding a ratio only invented a 0.0005px mismatch with the
+     buttons beside it. Inheriting matches them exactly. */
+  font-family: inherit; font-size: .875rem; font-weight: 500;
+  cursor: default; white-space: nowrap;
 }
+#lis-syncchip .dot { width: .5rem; height: .5rem; border-radius: 50%; background: #16a34a; flex: none; }
+#lis-syncchip.pending .dot { background: #d97706; }
+#lis-syncchip.bad .dot { background: var(--destructive, #dc2626); }
+#lis-syncchip .label { font-variant-numeric: tabular-nums; }
+/* The action appears only when there is something to do — otherwise the chip is
+   a read-only status, and a permanently-enabled button invites pointless taps. */
+#lis-syncchip button {
+  font-family: inherit; font-size: .8125rem; font-weight: 500; cursor: pointer;
+  border: 0; background: transparent; padding: 0; color: var(--primary);
+  text-decoration: underline; text-underline-offset: 2px; display: none;
+}
+#lis-syncchip.pending button, #lis-syncchip.bad button { display: inline; }
+#lis-syncchip button:disabled { opacity: .6; cursor: default; }
 #lis-syncbar .dot { width: .5rem; height: .5rem; border-radius: 50%; background: #4ac47f; flex: none; }
 #lis-syncbar.pending .dot { background: #e8b23a; }
 #lis-syncbar.bad .dot { background: #ef5a6f; }
 #lis-syncbar .spacer { margin-left: auto; }
 #lis-syncbar button {
-  font: inherit; color: #cfd8f5; background: transparent;
-  border: 1px solid #3a4a86; border-radius: .375rem; padding: .1875rem .5rem; cursor: pointer;
+  /* flex:none — otherwise the button stretches to fill the row. */
+  flex: none; font: inherit; color: #cfd8f5; background: transparent;
+  border: 1px solid #3a4a86; border-radius: .375rem; padding: .125rem .5rem; cursor: pointer;
+  line-height: 1.4;
 }
 #lis-syncbar button:hover { border-color: #6f8bff; }
 
@@ -61,7 +97,8 @@ const CHROME_CSS = `
  * scrolled half out of view. Reducing the height the shell is measured against
  * keeps exactly one scroll container, which is what the SPA was built for.
  */
-:root { --lis-chrome-top: 32px; --lis-chrome-bottom: 30px; }
+/* Only the custom title strip reserves space now. */
+:root { --lis-chrome-top: 32px; --lis-chrome-bottom: 0px; }
 .h-svh { height: calc(100svh - var(--lis-chrome-top) - var(--lis-chrome-bottom)) !important; }
 .min-h-dvh { min-height: calc(100dvh - var(--lis-chrome-top) - var(--lis-chrome-bottom)) !important; }
 /* The fixed sidebar is pinned with inset-y-0, so it would still run under both
@@ -110,34 +147,29 @@ const esc = (v: unknown) =>
   );
 
 function mountChrome(): void {
-  if (document.getElementById("lis-syncbar")) return;
+  if (!document.getElementById("lis-chrome-style")) {
+    const style = document.createElement("style");
+    style.id = "lis-chrome-style";
+    style.textContent = CHROME_CSS;
+    document.head.appendChild(style);
+  }
 
-  const style = document.createElement("style");
-  style.textContent = CHROME_CSS;
-  document.head.appendChild(style);
+  if (!document.getElementById("lis-titlebar")) {
+    const titlebar = document.createElement("div");
+    titlebar.id = "lis-titlebar";
+    const t = document.createElement("span");
+    t.className = "title";
+    t.textContent = "LIS — Inventory Solution";
+    titlebar.appendChild(t);
+    document.body.prepend(titlebar);
+  }
 
-  const titlebar = document.createElement("div");
-  titlebar.id = "lis-titlebar";
-  // textContent, not innerHTML — nothing here is dynamic, so no reason to open
-  // that door at all.
-  const t = document.createElement("span");
-  t.className = "title";
-  t.textContent = "LIS — Inventory Solution";
-  titlebar.appendChild(t);
-  document.body.prepend(titlebar);
-
-  const bar = document.createElement("div");
-  bar.id = "lis-syncbar";
-  bar.innerHTML =
-    '<span class="dot"></span><span id="lis-sync-text">Checking…</span>' +
-    '<span class="spacer"></span>' +
-    '<button id="lis-conflict-btn" style="display:none"></button>' +
-    '<button id="lis-sync-btn">Sync now</button>';
-  document.body.appendChild(bar);
-
-  const panel = document.createElement("div");
-  panel.id = "lis-conflicts";
-  document.body.appendChild(panel);
+  const panel = document.getElementById("lis-conflicts") ?? (() => {
+    const el = document.createElement("div");
+    el.id = "lis-conflicts";
+    document.body.appendChild(el);
+    return el;
+  })();
 
   const ago = (t: number | null) => {
     if (!t) return "not yet";
@@ -148,46 +180,78 @@ function mountChrome(): void {
     return h < 24 ? `${h} hr ago` : `${Math.round(h / 24)} days ago`;
   };
 
+  /** Build the chip once; re-parented rather than rebuilt when React re-renders. */
+  function chip(): HTMLElement {
+    let el = document.getElementById("lis-syncchip");
+    if (el) return el;
+    el = document.createElement("div");
+    el.id = "lis-syncchip";
+    const dot = document.createElement("span");
+    dot.className = "dot";
+    const label = document.createElement("span");
+    label.className = "label";
+    label.textContent = "Checking…";
+    const action = document.createElement("button");
+    action.type = "button";
+    action.textContent = "Sync now";
+    action.addEventListener("click", async () => {
+      action.disabled = true;
+      const was = action.textContent;
+      action.textContent = "Syncing…";
+      await fetch("/_desktop/sync-now", { method: "POST" }).catch(() => {});
+      action.disabled = false;
+      action.textContent = was;
+      void refresh();
+    });
+    el.append(dot, label, action);
+    el.addEventListener("dblclick", () => void openConflicts());
+    return el;
+  }
+
+  /**
+   * Put the chip in the header's action group, beside Search.
+   *
+   * React owns that subtree and re-creates it on navigation, which silently
+   * drops anything injected — so this re-attaches rather than assuming one
+   * insertion sticks. Falls back to doing nothing if the header is absent
+   * (login and landing pages), instead of appending it somewhere arbitrary.
+   */
+  function place(): boolean {
+    const group = document.querySelector("header .ml-auto");
+    if (!group) return false;
+    const el = chip();
+    if (el.parentElement === group) return false;
+    group.appendChild(el);
+    return true; // newly attached — the caller must refresh it
+  }
+
   async function refresh(): Promise<void> {
+    place();
+    const el = document.getElementById("lis-syncchip");
+    if (!el) return;
+    const label = el.querySelector(".label")!;
     try {
       const s = (await fetch("/_desktop/sync").then((r) => r.json())) as {
-        queued: number;
-        conflicts: number;
-        lastPushAt: number | null;
-        deviceName: string;
+        queued: number; conflicts: number; lastPushAt: number | null; deviceName: string;
       };
-      const text = document.getElementById("lis-sync-text")!;
-      // The queue depth is the honest signal, not a green tick: "offline" is
-      // this app's normal state, and what an operator needs to know is how much
-      // work has not reached the server yet.
-      text.textContent =
-        s.queued === 0
-          ? `${s.deviceName} · all work synced · last sent ${ago(s.lastPushAt)}`
-          : `${s.deviceName} · ${s.queued} change${s.queued === 1 ? "" : "s"} waiting to sync · last sent ${ago(s.lastPushAt)}`;
-      bar.className = s.conflicts > 0 ? "bad" : s.queued > 0 ? "pending" : "";
-
-      const cbtn = document.getElementById("lis-conflict-btn")!;
-      cbtn.style.display = s.conflicts > 0 ? "" : "none";
-      cbtn.textContent = `${s.conflicts} need${s.conflicts === 1 ? "s" : ""} attention`;
+      // Short by default: the header is shared with three other controls, and
+      // "all work synced" said nothing an operator needed twice a minute.
+      label.textContent =
+        s.conflicts > 0 ? `${s.conflicts} to review` : s.queued === 0 ? "Synced" : `${s.queued} to sync`;
+      el.className = s.conflicts > 0 ? "bad" : s.queued > 0 ? "pending" : "";
+      el.title =
+        `${s.deviceName} — ` +
+        (s.queued === 0 ? "all work is on the server." : `${s.queued} change(s) not yet sent.`) +
+        ` Last sent ${ago(s.lastPushAt)}.` +
+        (s.conflicts > 0 ? ` Double-click to review ${s.conflicts}.` : "");
     } catch {
-      document.getElementById("lis-sync-text")!.textContent = "Sync service unavailable";
-      bar.className = "bad";
+      label.textContent = "Sync unavailable";
+      el.className = "bad";
     }
   }
 
-  document.getElementById("lis-sync-btn")!.addEventListener("click", async (e) => {
-    const b = e.currentTarget as HTMLButtonElement;
-    b.disabled = true;
-    b.textContent = "Syncing…";
-    await fetch("/_desktop/sync-now", { method: "POST" }).catch(() => {});
-    b.disabled = false;
-    b.textContent = "Sync now";
-    void refresh();
-  });
-
-  document.getElementById("lis-conflict-btn")!.addEventListener("click", async () => {
-    const open = panel.style.display === "block";
-    if (open) {
+  async function openConflicts(): Promise<void> {
+    if (panel.style.display === "block") {
       panel.style.display = "none";
       return;
     }
@@ -197,14 +261,16 @@ function mountChrome(): void {
     panel.innerHTML =
       "<h2>Changes the server wouldn't accept</h2>" +
       '<p class="why">Nothing here has been thrown away. Each one needs a person to decide — usually because someone changed the same record elsewhere, or permissions changed while this computer was offline.</p>' +
-      conflicts
-        .map(
-          (c) =>
-            `<div class="row"><div class="path">${esc(c.method)} ${esc(c.path)}</div>` +
-            `<div class="err">Rejected after ${esc(c.attempts)} attempt${c.attempts === 1 ? "" : "s"}.</div>` +
-            `<button data-seq="${esc(c.seq)}" class="dismiss" style="margin-top:.5rem">Dismiss</button></div>`,
-        )
-        .join("");
+      (conflicts.length === 0
+        ? '<p class="why">Nothing outstanding.</p>'
+        : conflicts
+            .map(
+              (c) =>
+                `<div class="row"><div class="path">${esc(c.method)} ${esc(c.path)}</div>` +
+                `<div class="err">Rejected after ${esc(c.attempts)} attempt${c.attempts === 1 ? "" : "s"}.</div>` +
+                `<button data-seq="${esc(c.seq)}" class="dismiss" style="margin-top:.5rem">Dismiss</button></div>`,
+            )
+            .join(""));
     panel.querySelectorAll<HTMLButtonElement>(".dismiss").forEach((b) =>
       b.addEventListener("click", async () => {
         await fetch(`/_desktop/conflicts/${b.dataset.seq}/dismiss`, { method: "POST" });
@@ -213,14 +279,27 @@ function mountChrome(): void {
       }),
     );
     panel.style.display = "block";
-  });
+  }
+
+  /**
+   * React replaces the header on navigation, so watch for it coming back.
+   *
+   * Refreshing only when the chip is NEWLY attached matters: the header usually
+   * renders after this script runs, so the first `place()` finds nothing and the
+   * chip is inserted by the observer instead — leaving it stuck on "Checking…"
+   * until the 20-second tick. Refreshing on attach fills it immediately, without
+   * firing a fetch on every unrelated DOM mutation.
+   */
+  new MutationObserver(() => {
+    if (place()) void refresh();
+  }).observe(document.body, { childList: true, subtree: true });
 
   void refresh();
   setInterval(() => void refresh(), 20_000);
 }
 
-// Only on the SPA — the setup and unlock pages have their own chrome.
 window.addEventListener("DOMContentLoaded", () => {
+  if (location.protocol === "file:") return;
   if (location.pathname.startsWith("/_desktop/")) return;
   mountChrome();
 });

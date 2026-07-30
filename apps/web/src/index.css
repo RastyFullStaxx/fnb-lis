@@ -192,28 +192,59 @@ html[data-font-size="x-large"] {
   }
 }
 
-/* Ultra-thin scrollbar for data scrollers (table bodies, the sidebar rail).
+/* Ultra-thin scrollbar, applied to EVERY scroller rather than opted into.
    6px, pill thumb in the hairline gray, invisible track — present when you
-   reach for it, silent otherwise. */
-.scrollbar-thin {
-  scrollbar-width: thin;
-  scrollbar-color: oklch(0.85 0.012 264) transparent;
+   reach for it, silent otherwise.
+
+   This began as a `.scrollbar-thin` utility, which meant a scroller only looked
+   right if someone remembered the class. The main page-content scroller never
+   got it, so the one scrollbar people see all day was the fat OS default sitting
+   next to slim styled ones — and every new scroller started out wrong by
+   default. Making it global inverts that: consistent unless deliberately
+   overridden.
+
+   Colours come from tokens so the dark sidebar and the light content area both
+   read correctly, instead of a hard-coded gray that only suits one of them. */
+:root {
+  --sb-size: 6px;
+  --sb-thumb: oklch(0.85 0.012 264);
+  --sb-thumb-hover: oklch(0.72 0.015 264);
 }
-.scrollbar-thin::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+.dark {
+  /* On dark surfaces the light thumb is too loud; step it down to sit at the
+     same visual weight rather than the same colour. */
+  --sb-thumb: oklch(0.42 0.02 264);
+  --sb-thumb-hover: oklch(0.55 0.025 264);
 }
-.scrollbar-thin::-webkit-scrollbar-track {
+
+/* Firefox ONLY, and the guard is load-bearing.
+   Chromium supports BOTH APIs, and `scrollbar-color` wins: the moment it is set,
+   every `::-webkit-scrollbar` rule below is discarded and you get Chromium's own
+   "thin" scrollbar — ~11px, blunt ends, a painted track that reads as a white
+   band. Firefox doesn't recognise the pseudo-element, so this @supports query
+   hands each engine the only API it can actually render well. */
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--sb-thumb) transparent;
+  }
+}
+/* Chromium/WebKit — the real thing on the desktop app and every Chrome browser. */
+*::-webkit-scrollbar {
+  width: var(--sb-size);
+  height: var(--sb-size);
+}
+*::-webkit-scrollbar-track {
   background: transparent;
 }
-.scrollbar-thin::-webkit-scrollbar-thumb {
-  background: oklch(0.85 0.012 264);
+*::-webkit-scrollbar-thumb {
+  background: var(--sb-thumb);
   border-radius: 9999px;
 }
-.scrollbar-thin::-webkit-scrollbar-thumb:hover {
-  background: oklch(0.72 0.015 264);
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--sb-thumb-hover);
 }
-.scrollbar-thin::-webkit-scrollbar-corner {
+*::-webkit-scrollbar-corner {
   background: transparent;
 }
 
@@ -277,5 +308,86 @@ html[data-font-size="x-large"] {
   }
   tr {
     break-inside: avoid;
+  }
+}
+
+/* Sign-in success: the brief beat between "correct credentials" and the
+   dashboard (see components/sign-in-success.tsx).
+
+   Hand-built rather than a Lottie file on purpose. lottie-web is ~250 kB for a
+   decorative flourish, on a bundle already over its size warning and on a
+   desktop that runs on a bar PC — an SVG stroke draw costs about 2 kB and looks
+   the same at this size. Easing matches the app motion token in DESIGN.md.
+
+   Kept SHORT (~1s total). Staff sign in many times a shift, so every extra
+   150ms here is a tax they pay over and over. */
+@keyframes signin-ring {
+  from {
+    stroke-dashoffset: 170;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes signin-check {
+  from {
+    stroke-dashoffset: 40;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes signin-pop {
+  0% {
+    transform: scale(0.94);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.015);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+@keyframes signin-rise {
+  from {
+    transform: translateY(0.5rem);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+.animate-signin-ring {
+  stroke-dasharray: 170;
+  animation: signin-ring 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.animate-signin-check {
+  stroke-dasharray: 40;
+  stroke-dashoffset: 40;
+  animation: signin-check 0.3s cubic-bezier(0.16, 1, 0.3, 1) 0.36s forwards;
+}
+.animate-signin-pop {
+  animation: signin-pop 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.animate-signin-rise {
+  opacity: 0;
+  animation: signin-rise 0.35s cubic-bezier(0.16, 1, 0.3, 1) 0.42s forwards;
+}
+/* Reduced motion: the mark and the greeting are simply present. The overlay
+   still shows and still hands off on the same timer, so the flow is identical —
+   only the movement is removed. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-signin-ring,
+  .animate-signin-check,
+  .animate-signin-pop,
+  .animate-signin-rise {
+    animation: none;
+    stroke-dashoffset: 0;
+    opacity: 1;
+    transform: none;
   }
 }
