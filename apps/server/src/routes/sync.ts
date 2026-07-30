@@ -245,7 +245,17 @@ export const syncRoutes = new Hono<AppEnv>()
           updatedAt: true,
           failedLoginCount: true,
           modules: { select: { module: true } },
-          devicePin: { select: { pinHash: true, recoveryQuestion: true, recoveryAnswerHash: true } },
+          // createdAt/updatedAt included for the same reason as the User ones
+          // above: the mirror shares this schema, and both are NOT NULL there.
+          devicePin: {
+            select: {
+              pinHash: true,
+              recoveryQuestion: true,
+              recoveryAnswerHash: true,
+              createdAt: true,
+              updatedAt: true,
+            },
+          },
         },
       }),
     ]);

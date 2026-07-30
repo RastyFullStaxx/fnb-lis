@@ -226,11 +226,15 @@ the check that proves the desktop and the server agree — row counts do not.
 
 Honest list, so nobody plans around something that does not exist:
 
-- **Installer / packaging.** Runs from source only.
-- **Sync status in the app.** The engine exists; the on-screen banner, the
-  "synced N minutes ago" indicator and the conflict inbox are not wired up.
-- **The PIN unlock screen.** PINs can be set and are delivered to the machine,
-  but the offline unlock UI and its local lockout are not built.
-- **Automatic background sync.** Push/pull/reconcile exist and are tested; they
-  are not yet on a timer.
-- **Licence enforcement at startup** (proposal §20). The server half is done.
+- **Installer / packaging.** Runs from source only. `electron-builder` config,
+  code signing, and unpacking the native module from the asar are outstanding.
+- **Licence enforcement at startup** (proposal §20). The server half is done —
+  registration is capped and revocable — but the app does not check at launch.
+- **Conflict resolution actions.** The inbox lists what the server refused and
+  lets you dismiss an entry; it cannot yet edit-and-retry one.
+
+### A note for developers
+
+`verify:mirror` needs one free licence slot, and a provisioned desktop holds it.
+On a dev machine running both, set `Subscription.maxDevices = 2` for the test
+client. The shipped default stays 1, matching §18.

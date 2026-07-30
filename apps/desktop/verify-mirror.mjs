@@ -20,6 +20,12 @@ import { build } from "esbuild";
  *   npm run dev -w @fnb/server
  *   MIRROR_URL=http://localhost:3001 MIRROR_USER=owner MIRROR_PASS='Fnb!2026' \
  *     npm run verify:mirror -w @fnb/desktop
+ *
+ * It registers under a FIXED fingerprint, so repeat runs reuse one device
+ * rather than burning a licence slot each time — but it still needs ONE free
+ * slot. A dev machine that also has the desktop app provisioned therefore needs
+ * `Subscription.maxDevices >= 2`; the shipped default is 1, matching §18's "one
+ * client computer".
  */
 
 const dir = mkdtempSync(path.join(tmpdir(), "fnb-mirror-"));
@@ -54,6 +60,16 @@ try {
       TEST_PASS: process.env.MIRROR_PASS ?? "Fnb!2026",
     },
   });
+} catch (err) {
+  // The commonest failure by far, and the message alone does not say what to do
+  // about it in a DEV context.
+  if (String(err).includes("licence covers")) {
+    console.error(
+      "\nThis check needs one free licence slot, and the desktop app is probably holding it.\n" +
+        "Raise Subscription.maxDevices to 2 for the test client, or revoke the registered computer.",
+    );
+  }
+  process.exitCode = 1;
 } finally {
   rmSync(dir, { recursive: true, force: true });
   console.log(`\n== cleaned up ${dir}`);

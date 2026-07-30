@@ -84,7 +84,22 @@ const require = __createRequire(import.meta.url);`,
 
 await Promise.all([
   build({ ...common, entryPoints: ["src/main.ts"], outfile: "dist/main.mjs" }),
-  build({ ...common, entryPoints: ["src/preload.ts"], outfile: "dist/preload.mjs" }),
+  /**
+   * The preload is CommonJS, alone among these three.
+   *
+   * Electron only supports ESM preload scripts when `sandbox: false`. With
+   * sandboxing ON — which is what we want, since the renderer runs the same SPA
+   * a browser does and needs no Node — an `.mjs` preload is **silently ignored**:
+   * no error, no warning, the script simply never runs. That failure cost an
+   * hour of "why is the status bar not appearing".
+   */
+  build({
+    ...common,
+    entryPoints: ["src/preload.ts"],
+    outfile: "dist/preload.cjs",
+    format: "cjs",
+    banner: {},
+  }),
   // The server + sync engine, run in a utilityProcess. See src/host.ts for why
   // it cannot live in the renderer.
   build({ ...common, entryPoints: ["src/host.ts"], outfile: "dist/host.mjs" }),

@@ -88,16 +88,17 @@ The mirror lives at `%APPDATA%/@fnb/desktop/mirror.db`.
 127.0.0.1, and the SPA loads and renders against it — `/api/health` OK,
 `/api/auth/me` correctly 401 with no session.
 
+## Gotcha: the preload must be CommonJS
+
+`dist/preload.cjs`, not `.mjs`, and the build treats it differently for that
+reason. **Electron only supports ESM preload scripts when `sandbox: false`.**
+With sandboxing on — which is what we want, since the renderer runs the same SPA
+a browser does — an `.mjs` preload is *silently ignored*: no error, no warning,
+the script simply never runs and the status bar never appears.
+
 ## Still to do before this ships
 
-- IPC handlers for the three `preload.ts` methods, and the renderer-side status
-  banner and conflict inbox that consume them.
-- The PIN unlock screen, with the **local** lockout counter (5 attempts / 1 hour,
-  mirroring the server) and offline events pushed via `/sync/ack`.
-- First-run provisioning flow: register the device, pick the location, pull the
-  first snapshot.
-- `electron-builder` config, code signing, and `asarUnpack` for the rebuilt
-  `better_sqlite3.node`.
-- Run the golden fixtures against a device mirror — docs §7.5 requires the
-  desktop and the server to agree on the numbers, and that comparison is the
-  only thing that proves it.
+- `electron-builder` config, code signing, and `asarUnpack` for the
+  Electron-ABI `better_sqlite3.node`.
+- Licence enforcement at startup (proposal §20).
+- Edit-and-retry in the conflict inbox — it currently lists and dismisses.

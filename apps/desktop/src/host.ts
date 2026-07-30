@@ -68,32 +68,97 @@ const { createApp } = await import("../../server/src/app");
 const { initDb } = await import("../../server/src/db");
 const { serveStatic } = await import("@hono/node-server/serve-static");
 
-const app = createApp();
-// Capture must wrap every route, so it is registered before serving rather
-// than inside createApp — the hosted server must never carry it.
-app.use("*", captureWrites(raw));
+  const { verifyPassword } = await import("../../server/src/auth/password");
+  const { createSession, SESSION_COOKIE } = await import("../../server/src/auth/session");
+  const { desktopRoutes, drainPinEvents, LOCKOUT_DDL } = await import("./desktop-routes");
+  const { cycle } = await import("./sync/engine");
+
+  raw.exec(LOCKOUT_DDL);
+
+  const app = createApp();
+  // Capture must wrap every route, so it is registered before serving rather
+  // than inside createApp — the hosted server must never carry it.
+  app.use("*", captureWrites(raw));
+
+  const remote = {
+    baseUrl: process.env.FNB_REMOTE_URL ?? "",
+    locationId: process.env.FNB_LOCATION_ID ?? "",
+    cookie: process.env.FNB_DEVICE_COOKIE ?? "",
+  };
+
+  /**
+   * One sync cycle: push → reconcile → ack → pull.
+   *
+   * Failures are swallowed on purpose. Being offline is the NORMAL state for
+   * this app, not an error — surfacing a toast every 5 minutes because the bar's
+   * wifi is down would train people to ignore the one that matters. The banner
+   * shows the queue depth instead, which is the honest signal.
+   */
+  const runSync = async () => {
+    if (!remote.baseUrl) return { skipped: "not configured" };
+    const events = drainPinEvents(raw);
+    return cycle(raw, remote, { since: process.env.FNB_LAST_PULL_AT || undefined }, events);
+  };
+
+  // Desktop-only routes, mounted BEFORE the static handlers so /_desktop/* is
+  // never swallowed by the SPA fallback.
+  app.route(
+    "/",
+    desktopRoutes({
+      db: raw,
+      deviceId: process.env.FNB_DEVICE_ID ?? "",
+      deviceName: process.env.FNB_DEVICE_NAME ?? "This computer",
+      clientId: process.env.FNB_CLIENT_ID ?? "",
+      locationId: remote.locationId,
+      verifyPassword,
+      createSession,
+      sessionCookieName: SESSION_COOKIE,
+      onSync: runSync,
+    }),
+  );
+
+  // The PIN screen. Served from the local ORIGIN rather than loaded off disk,
+  // because the session cookie it sets has to belong to the origin the SPA then
+  // runs on — a file:// page cannot set one for http://127.0.0.1.
+  app.get("/_desktop/unlock.html", async (c) => {
+    const { readFile } = await import("node:fs/promises");
+    return c.html(await readFile(path.resolve(process.env.FNB_UNLOCK_HTML!), "utf8"));
+  });
 
 // Serve the SPA. `createApp()` deliberately does not do this — on the hosted
 // server it lives in index.ts — so the desktop wires its own, pointed at the
 // packaged bundle. Without it the window loads a 404.
-const webDist = process.env.FNB_WEB_DIST!;
-const relWeb = path.relative(process.cwd(), webDist).split(path.sep).join("/");
-app.use("*", serveStatic({ root: relWeb }));
+  const webDist = process.env.FNB_WEB_DIST!;
+  const relWeb = path.relative(process.cwd(), webDist).split(path.sep).join("/");
+  app.use("*", serveStatic({ root: relWeb }));
 // SPA fallback: deep links like /l/:id/counts are client-side routes with no
 // file behind them, so anything unmatched returns index.html.
-app.use("*", serveStatic({ root: relWeb, path: "index.html" }));
+  app.use("*", serveStatic({ root: relWeb, path: "index.html" }));
 
-await initDb();
+  await initDb();
 
 // Port 0 = let the OS pick a free one. A fixed port would collide with anything
 // else on the machine, and the renderer is told the real one over IPC.
-const server = serve({ fetch: app.fetch, hostname: "127.0.0.1", port: 0 }, (info) => {
-  // 127.0.0.1, never 0.0.0.0: this serves a full copy of an establishment's
-  // books with no network authentication in front of it beyond the session
-  // cookie, and it must not be reachable from the bar's wifi.
-  process.parentPort?.postMessage({ type: "listening", port: info.port });
-  console.log(`[fnb-desktop] local API on http://127.0.0.1:${info.port}`);
-});
+  const server = serve({ fetch: app.fetch, hostname: "127.0.0.1", port: 0 }, (info) => {
+    // 127.0.0.1, never 0.0.0.0: this serves a full copy of an establishment's
+    // books with no network authentication in front of it beyond the session
+    // cookie, and it must not be reachable from the bar's wifi.
+    process.parentPort?.postMessage({ type: "listening", port: info.port });
+    console.log(`[fnb-desktop] local API on http://127.0.0.1:${info.port}`);
+  });
+
+  /**
+   * Background sync every five minutes.
+   *
+   * Frequent enough that a shift's work is rarely more than one cycle behind,
+   * infrequent enough not to hammer a bar's connection. The first run is
+   * delayed so it never competes with startup — the window opening quickly
+   * matters more than syncing three seconds sooner.
+   */
+  setTimeout(() => {
+    void runSync().catch(() => {});
+    setInterval(() => void runSync().catch(() => {}), 5 * 60 * 1000);
+  }, 15_000);
 
   process.parentPort?.on("message", (e) => {
     if ((e.data as { type?: string })?.type === "shutdown") {

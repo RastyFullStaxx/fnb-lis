@@ -2165,3 +2165,76 @@ on Windows), and an honest list of what is not built.
 - `verify:mirror` — both anchors reproduce off a device mirror.
 - `verify:sync` 79 · `verify:seed` 47, both anchors · typechecks clean.
 - Dev database restored: rehearsal devices removed, `maxDevices` back to 1.
+
+---
+
+## Phase 43 — Desktop chrome: unlock, status bar, conflict inbox (2026-07-30)
+
+### Shipped
+
+- **PIN unlock screen** (`unlock.html`) — pick your name, numeric keypad, local
+  5-attempt/1-hour lockout. Accounts with no PIN are listed but disabled and
+  labelled, rather than failing at the keypad.
+- **Local session minting.** The local server runs the SAME `sessionMiddleware`
+  as the hosted one, so unlocking has to produce a real local `AuthSession`
+  bound to a local `Device` row. The mirror gets neither from a snapshot — a
+  device does not mirror itself — so the machine writes its own from config.
+- **Sync status bar** — device name, queue depth, last push, Sync now.
+- **Conflict inbox** — lists what the server refused, with dismissal. Never
+  auto-resolves; that is the entire point of it.
+- **Background sync** every 5 minutes, first run delayed 15s so it never
+  competes with startup. Failures are swallowed: offline is this app's NORMAL
+  state, and a toast every 5 minutes would train people to ignore the one that
+  matters. The queue depth in the bar is the honest signal instead.
+- **Offline PIN failures reach the audit trail** via the `/sync/ack` events
+  channel added in Phase 40.
+
+### Chrome is injected by the preload, not added to apps/web
+
+It is desktop chrome, not application content — meaningless in a browser, where
+there is no queue and no mirror. Putting it in the SPA would ship dead UI to
+every web user and fork the renderer the desktop exists to reuse verbatim.
+
+### Four failures worth recording
+
+1. **ESM preload scripts are silently ignored when `sandbox: true`.** No error,
+   no warning — the script just never runs, and the status bar never appeared.
+   Electron only supports ESM preloads with sandboxing OFF. The preload is now
+   the one bundle built as CJS (`dist/preload.cjs`); the others stay ESM.
+2. **The unlock POST was being captured into the outbox**, so every sign-in
+   queued a request the server has never heard of, which would 404 straight into
+   the conflict inbox. Capture now skips `/_desktop/*` as well as `/sync/*`.
+3. **`DevicePin.updatedAt` is NOT NULL** and the snapshot omitted it. Never hit
+   during the earlier rehearsal because no PINs existed then — found only by
+   testing with real data.
+4. **Backticks inside a CSS comment** closed the JS template literal holding the
+   stylesheet. Now guarded by an assertion in the patch step.
+
+### The UI fixes
+
+- **Double scrollbars.** The first version added `body { padding-bottom }` to
+  make room for the status bar. Wrong: the shell is sized with `h-svh`, so extra
+  body height made the DOCUMENT taller than the viewport — a second scrollbar
+  beside the app's own, and a header scrolled half out of view. Replaced by
+  reducing the height the shell measures against
+  (`calc(100svh - top - bottom)`), which keeps exactly one scroll container.
+  Verified in the real renderer: `scrollHeight 800 == clientHeight 800`, shell
+  738px = 800 − 32 − 30.
+- **Royal blue title bar** instead of OS black. Electron cannot recolour a
+  native caption, so `titleBarStyle: "hidden"` + `titleBarOverlay` draws real
+  window controls over our colour, and the preload adds a draggable strip. The
+  colour is `--sidebar` converted from `oklch(0.28 0.09 264)` → `#112555` —
+  computed, not eyeballed, because "close enough" is how a product ends up with
+  five brand blues.
+
+### Verified
+
+- Unlock: wrong PIN counts down ("4 attempts left"), correct PIN signs in, and
+  `/api/auth/me` returns `staff / STAFF` from the LOCAL mirror.
+- Status bar mounts in the real renderer: "Front bar PC · all work synced".
+- `verify:mirror` — both anchors still reproduce off a device mirror.
+- `verify:sync` 79 · `verify:seed` 47 · typechecks clean.
+
+Dev-only note: `verify:mirror` needs one free licence slot and a provisioned
+desktop holds it, so the test client's `maxDevices` is now 2. The shipped
+default stays 1, matching §18.

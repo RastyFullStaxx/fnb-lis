@@ -44,6 +44,11 @@ export function captureWrites(db: Database.Database) {
     // Sync endpoints are the transport, not business writes — queueing them
     // would make the device try to replay its own bookkeeping to the server.
     if (c.req.path.includes("/sync/")) return;
+    // Desktop-only routes (unlock, sync-now, conflict dismissal) exist on THIS
+    // server and nowhere else. Queuing them means replaying a POST the server
+    // has never heard of, which 404s straight into the conflict inbox — so
+    // every sign-in would leave a fake "needs attention" for a human to clear.
+    if (c.req.path.startsWith("/_desktop/")) return;
 
     // Clone: reading the response body must not consume it for the renderer.
     let recordIds: string[] = [];

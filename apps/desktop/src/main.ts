@@ -1,7 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, ipcMain, Menu, utilityProcess, type UtilityProcess } from "electron";
-import { initConfig, isProvisioned, readConfig, writeConfig } from "./config";
+import { decryptSession, initConfig, isProvisioned, readConfig, writeConfig } from "./config";
 import { configFrom, fetchSnapshot, registerDevice, type SetupInput } from "./provision";
 
 /**
@@ -25,16 +25,33 @@ const webDist = app.isPackaged
   ? path.join(process.resourcesPath, "web")
   : path.resolve(here, "..", "..", "web", "dist");
 
+/** `--sidebar` from apps/web/src/index.css, converted from oklch(0.28 0.09 264). */
+const TITLE_BAR_COLOR = "#112555";
+const TITLE_BAR_HEIGHT = 32;
+
 let host: UtilityProcess | null = null;
 let win: BrowserWindow | null = null;
 
 function startHost(): Promise<number> {
+  const cfg = readConfig();
   return new Promise((resolve, reject) => {
     host = utilityProcess.fork(path.join(here, "host.mjs"), [], {
       env: {
         ...process.env,
         FNB_LOCAL_DB: localDb,
         FNB_MIGRATIONS_DIR: migrationsDir,
+        FNB_UNLOCK_HTML: path.join(here, "..", "unlock.html"),
+        // Everything the sync engine and the unlock screen need. The device
+        // session is decrypted HERE and handed over in the child's env rather
+        // than left on disk in the clear — safeStorage lives in the main
+        // process, and the utility process has no business reading config.json.
+        FNB_REMOTE_URL: cfg?.remoteUrl ?? "",
+        FNB_DEVICE_COOKIE: decryptSession(cfg?.sessionEnc) ?? "",
+        FNB_DEVICE_ID: cfg?.deviceId ?? "",
+        FNB_DEVICE_NAME: cfg?.deviceName ?? "This computer",
+        FNB_CLIENT_ID: cfg?.clientId ?? "",
+        FNB_LOCATION_ID: cfg?.locationId ?? "",
+        FNB_LAST_PULL_AT: cfg?.lastPullAt ?? "",
         // Set HERE, in the parent, not inside host.ts. The server reads
         // FNB_DB_FILE at module-init time (apps/server/src/db.ts), and esbuild
         // inlines dynamic imports — so an assignment inside the child would be
@@ -141,7 +158,7 @@ async function createSetupWindow(): Promise<void> {
     height: 820,
     autoHideMenuBar: true,
     webPreferences: {
-      preload: path.join(here, "preload.mjs"),
+      preload: path.join(here, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -195,8 +212,23 @@ async function createWindow(): Promise<void> {
     show: false,
     // Belt and braces: also stops the bar reappearing on Alt.
     autoHideMenuBar: true,
+    /**
+     * Royal blue title bar instead of the OS default black.
+     *
+     * Electron gives no way to recolour a NATIVE caption, so this hides it and
+     * draws native window controls as an overlay — the buttons stay real
+     * (snap layouts, tooltips, accessibility) while the strip takes our colour.
+     *
+     * The colours are the design tokens converted from oklch, not eyeballed:
+     * `--sidebar: oklch(0.28 0.09 264)` is #112555. Picking a "close enough"
+     * blue is exactly how a product ends up with five slightly different brand
+     * colours.
+     */
+    titleBarStyle: "hidden",
+    titleBarOverlay: { color: TITLE_BAR_COLOR, symbolColor: "#e8ecf8", height: TITLE_BAR_HEIGHT },
+    backgroundColor: TITLE_BAR_COLOR,
     webPreferences: {
-      preload: path.join(here, "preload.mjs"),
+      preload: path.join(here, "preload.cjs"),
       // The renderer is the untrusted surface even though we wrote it: it runs
       // the same SPA a browser does, and nothing there needs Node.
       contextIsolation: true,
@@ -213,7 +245,11 @@ async function createWindow(): Promise<void> {
   // attaching it afterwards means it has already gone and the window never
   // appears — a running app with no UI, which looks exactly like a crash.
   win.once("ready-to-show", () => win?.show());
-  await win.loadURL(`http://127.0.0.1:${port}/`);
+
+  // The PIN screen first, not the SPA. It is served by the LOCAL server so the
+  // session cookie it sets belongs to the same origin the app then runs on;
+  // loading it off disk would put it on file:// where no cookie would stick.
+  await win.loadURL(`http://127.0.0.1:${port}/_desktop/unlock.html`);
   // Belt and braces: if the event was somehow missed, still show rather than
   // leave the user staring at nothing.
   if (!win.isVisible()) win.show();

@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Sign in — LIS</title>
+    <style>
+      /* Served by the LOCAL server, not loaded from disk — the session cookie
+         it sets must belong to the same origin the SPA then runs on. */
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; min-height: 100vh; display: grid; place-items: center;
+        background: #16255c; color: #eef1fa;
+        font: 16px/1.5 "Segoe UI", system-ui, sans-serif;
+      }
+      /* Three sizes: 1.5 / 1 / .75rem. */
+      .card { width: min(26rem, 92vw); text-align: center; }
+      h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+      .sub { color: #a8b3d8; margin: 0 0 2rem; }
+      .who { display: grid; gap: .5rem; margin-bottom: 1.5rem; }
+      .person {
+        display: flex; align-items: center; gap: .75rem; width: 100%; padding: .75rem 1rem;
+        border: 1px solid #3a4a86; border-radius: .625rem; background: #0f1b47; color: #eef1fa;
+        font: inherit; cursor: pointer; text-align: left;
+      }
+      .person:hover { border-color: #4f7cff; }
+      .person[aria-pressed="true"] { border-color: #4f7cff; background: #1b2c6b; }
+      .person .role { margin-left: auto; font-size: .75rem; color: #8f9cc6; text-transform: uppercase; letter-spacing: .04em; }
+      .person:disabled { opacity: .45; cursor: not-allowed; }
+      .pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; }
+      .pad button {
+        padding: 1rem; font: inherit; font-size: 1.5rem; border-radius: .625rem;
+        border: 1px solid #3a4a86; background: #0f1b47; color: #eef1fa; cursor: pointer;
+      }
+      .pad button:active { background: #2f6bff; }
+      .dots { display: flex; gap: .5rem; justify-content: center; margin: 1.25rem 0; min-height: 1rem; }
+      .dot { width: .625rem; height: .625rem; border-radius: 50%; background: #3a4a86; }
+      .dot.on { background: #4f7cff; }
+      .msg { min-height: 1.5rem; margin-top: 1rem; font-size: .75rem; color: #ffc9d1; }
+      .hint { font-size: .75rem; color: #8f9cc6; margin-top: 1rem; }
+      .back { background: none; border: 0; color: #8f9cc6; font: inherit; font-size: .75rem; cursor: pointer; margin-top: 1rem; }
+      .step2 { display: none; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1 id="title">Who's counting?</h1>
+      <p class="sub" id="sub">Choose your name to sign in on this computer.</p>
+
+      <div class="step1"><div class="who" id="who"></div></div>
+
+      <div class="step2">
+        <div class="dots" id="dots"></div>
+        <div class="pad" id="pad"></div>
+        <button class="back" id="back">← Someone else</button>
+      </div>
+
+      <div class="msg" id="msg"></div>
+      <div class="hint" id="hint"></div>
+    </div>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      let picked = null;
+      let pin = "";
+
+      const renderDots = () => {
+        $("dots").innerHTML = "";
+        for (let i = 0; i < Math.max(4, pin.length); i++) {
+          const d = document.createElement("div");
+          d.className = "dot" + (i < pin.length ? " on" : "");
+          $("dots").appendChild(d);
+        }
+      };
+
+      async function load() {
+        const r = await fetch("/_desktop/people").then((x) => x.json());
+        $("hint").textContent = r.deviceName ? `This computer: ${r.deviceName}` : "";
+        for (const p of r.people) {
+          const b = document.createElement("button");
+          b.className = "person";
+          b.disabled = !p.hasPin || p.status !== "ACTIVE";
+          b.innerHTML = `<span>${p.firstName} ${p.lastName}</span><span class="role">${
+            p.status !== "ACTIVE" ? "disabled" : p.hasPin ? p.role : "no PIN"
+          }</span>`;
+          b.addEventListener("click", () => {
+            picked = p;
+            pin = "";
+            renderDots();
+            $("title").textContent = `${p.firstName}, enter your PIN`;
+            $("sub").textContent = "";
+            document.querySelector(".step1").style.display = "none";
+            document.querySelector(".step2").style.display = "block";
+            $("msg").textContent = "";
+          });
+          $("who").appendChild(b);
+        }
+      }
+
+      function buildPad() {
+        const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "⌫"];
+        for (const k of keys) {
+          const b = document.createElement("button");
+          b.textContent = k;
+          if (!k) { b.style.visibility = "hidden"; b.disabled = true; }
+          b.addEventListener("click", () => press(k));
+          $("pad").appendChild(b);
+        }
+      }
+
+      async function press(k) {
+        if (k === "⌫") { pin = pin.slice(0, -1); renderDots(); return; }
+        if (!k) return;
+        pin += k;
+        renderDots();
+        // 4 is the minimum, so submit only once it *could* be complete and the
+        // user pauses — but never auto-submit a longer PIN mid-typing.
+        if (pin.length >= 4) {
+          clearTimeout(press._t);
+          press._t = setTimeout(submit, 550);
+        }
+      }
+
+      async function submit() {
+        const attempt = pin;
+        const res = await fetch("/_desktop/unlock", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ userId: picked.id, pin: attempt }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (res.ok) {
+          $("msg").textContent = "";
+          location.href = "/";
+          return;
+        }
+        pin = "";
+        renderDots();
+        $("msg").textContent = body.error || "Could not sign in";
+      }
+
+      $("back").addEventListener("click", () => {
+        picked = null; pin = ""; $("msg").textContent = "";
+        $("title").textContent = "Who's counting?";
+        $("sub").textContent = "Choose your name to sign in on this computer.";
+        document.querySelector(".step2").style.display = "none";
+        document.querySelector(".step1").style.display = "block";
+      });
+
+      document.addEventListener("keydown", (e) => {
+        if (!picked) return;
+        if (/^\d$/.test(e.key)) press(e.key);
+        else if (e.key === "Backspace") press("⌫");
+        else if (e.key === "Enter") submit();
+      });
+
+      buildPad();
+      renderDots();
+      load();
+    </script>
+  </body>
+</html>

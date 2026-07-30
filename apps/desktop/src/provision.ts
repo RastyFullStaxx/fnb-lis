@@ -132,7 +132,9 @@ export function configFrom(
   locationName: string,
   deviceName: string,
 ): DesktopConfig {
+  const clientId = reg.result.locations.find((l) => l.id === locationId)?.clientId;
   return {
+    clientId,
     remoteUrl: reg.remoteUrl,
     fingerprint: reg.fingerprint,
     deviceName,

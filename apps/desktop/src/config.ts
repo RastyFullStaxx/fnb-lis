@@ -37,6 +37,8 @@ export interface DesktopConfig {
   deviceId?: string;
   /** Which location this machine mirrors. */
   locationId?: string;
+  /** The establishment. Needed to write the local Device row at PIN unlock. */
+  clientId?: string;
   locationName?: string;
   /** Encrypted device session cookie — see sessionCookie below. */
   sessionEnc?: string;
