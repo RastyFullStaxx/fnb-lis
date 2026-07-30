@@ -130,4 +130,58 @@ export const deviceRoutes = new Hono<AppEnv>()
     });
     const { fingerprint: _fp, ...safe } = revoked;
     return c.json(safe);
+  })
+
+  /**
+   * Bring a revoked machine back.
+   *
+   * Without this, revocation is a one-way door with a data-loss trap behind it.
+   * The licence cap counts only ACTIVE devices, so when a bar PC dies the
+   * registration error tells the admin to "revoke the old one" to free the slot
+   * — and if that machine later boots with a week of unsynced counts in its
+   * outbox, it can never authenticate again. The prescribed recovery action
+   * would be the data-destroying one.
+   *
+   * Re-checks the licence cap, so this cannot be used to slip past `maxDevices`
+   * by revoking and reactivating in a loop.
+   */
+  .post("/devices/:id/reactivate", zValidator("json", z.object({ reason: z.string().trim().min(3) })), async (c) => {
+    const actor = c.get("user")!;
+    const { reason } = c.req.valid("json");
+    const device = await ownedDevice(actor.id, actor.role, c.req.param("id"));
+    if (device.status === "ACTIVE") throw new AppError(409, "Already active");
+
+    const subscription = await prisma.subscription.findUnique({ where: { clientId: device.clientId } });
+    const cap = subscription?.maxDevices ?? 1;
+    if (cap > 0) {
+      const active = await prisma.device.count({ where: { clientId: device.clientId, status: "ACTIVE" } });
+      if (active >= cap) {
+        throw new AppError(
+          409,
+          `This establishment's licence covers ${cap} computer${cap === 1 ? "" : "s"}, and ${active} ${active === 1 ? "is" : "are"} already active. Revoke one first, or widen the licence.`,
+        );
+      }
+    }
+
+    const restored = await prisma.$transaction(async (tx) => {
+      const row = await tx.device.update({ where: { id: device.id }, data: { status: "ACTIVE" } });
+      await logActivity(
+        {
+          user: actor,
+          clientId: device.clientId,
+          action: "device.reactivate",
+          entity: "Device",
+          entityId: device.id,
+          summary: `Reactivated device "${device.name}": ${reason}`,
+          // The gap an admin needs to judge how much is still stranded on it.
+          details: { lastSyncAt: device.lastSyncAt },
+        },
+        tx,
+      );
+      return row;
+    });
+    // Sessions were deleted at revoke, so the machine signs in again — which
+    // re-registers nothing, because the fingerprint row already exists.
+    const { fingerprint: _fp2, ...safe } = restored;
+    return c.json(safe);
   });

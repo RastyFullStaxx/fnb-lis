@@ -1953,3 +1953,81 @@ periods that voids/corrections still mutate, DELETE/PUT not replay-safe,
 device-clock skew baking unrecoverable `occurredAt` into the outbox, offline PIN
 brute-force having no local lockout, and X-Acting-User needing to be part of the
 captured tuple. These are design-level and belong with the sync engine itself.
+
+---
+
+## Phase 40 — Blocker fixes + the desktop foundation (2026-07-30)
+
+Resolved the seven design blockers the Phase 39 critique left open, then wrote
+the Electron app's core.
+
+### The four that needed server support
+
+- **`POST /sync/reconcile`** — the answer to a failure HTTP-layer capture
+  structurally cannot prevent. Capture runs after the route's `$transaction`
+  commits, so a force-quit or full disk in that window writes a record with no
+  outbox entry, and nothing would ever notice. The device now asks "which of
+  these did you never receive?" and re-queues the answer. It also catches every
+  other cause of the same symptom, which a transaction-scoped outbox would not —
+  that is why it beat restructuring the write path of nineteen routes.
+- **`POST /admin/devices/:id/reactivate`** — revocation was a one-way door with a
+  data-loss trap behind it. The licence cap counts only ACTIVE devices, so the
+  registration error tells an admin to "revoke the old one" to free a slot; if
+  that machine later boots holding a week of counts it could never authenticate
+  again. The prescribed recovery action was the destructive one.
+- **`since` cursor on the snapshot** — `from` bounds by BUSINESS date on the
+  premise that committed periods are immutable, and they are not: voiding or
+  correcting a committed count line leaves its countDate in the old period. A
+  June line voided in July would never reach a mirror bounded to July. Also
+  reaches into child lines, because voiding a line does not touch its session's
+  `voidedAt`.
+- **`/sync/ack` accepts local events** — a closed enum, not free-form log lines,
+  so an offline PIN lockout reaches the audit trail without opening a channel a
+  machine could write anything into.
+
+### The three encoded in the engine
+
+- **Attribution in the captured tuple.** Attribution travels in a header; without
+  storing `actingUserId` on the outbox row, every replayed record would be
+  credited to whoever registered the machine — the exact "confident lie" §5b
+  exists to prevent, and invisible afterwards because the rows look well-formed.
+- **`occurredAt` stamped at PUSH time** from a monotonic capture plus the
+  measured server clock offset. A dead CMOS battery would otherwise bake a
+  future timestamp into a frozen body that the server rejects with a 400 forever;
+  the reverse case is worse for being silent.
+- **DELETE-404 treated as convergent.** A delete whose target is already gone
+  means the world is in the state the request wanted. Treating it as a conflict
+  turns one lost response into a stalled causal chain — the commit queued behind
+  it never pushes and a whole count session never lands. Plus outbox collapsing,
+  so a create-then-delete of a never-pushed id cancels out.
+
+Rule 3 also moved its enforcement point: the server guard only rejects edits
+carrying offline markers, and a replayed catalog PUT carries none, so the outbox
+now refuses to enqueue catalog/master paths at all. The server check stays as
+defence in depth.
+
+### apps/desktop
+
+Written: `migrate.ts` (Prisma migrations without the 60 MB CLI — checksums are
+plain hex-sha256 of the raw SQL, so the result is byte-compatible with the
+server's), `host.ts` (the real Hono server in a **utilityProcess**), `main.ts`,
+`preload.ts`, `sync/{outbox,engine,capture}.ts`, esbuild config.
+
+The utility process is a hard constraint, not a preference: Prisma 7.8 compiles
+queries with a ~3.5 MB WASM module via a synchronous `new WebAssembly.Module()`,
+which Chromium forbids above 4 KB on a document thread — so the DB layer cannot
+live in the renderer, and the main process would freeze the window.
+
+**Not yet runnable.** `npm install` has not been run for this workspace, and
+`better-sqlite3` must be rebuilt for Electron's ABI first (it is raw-V8, not
+N-API, and npm hoists it to the repo root where `@electron/rebuild` will
+silently find nothing without `--module-dir ../..`). Remaining: IPC handlers,
+the PIN unlock screen with local lockout, first-run provisioning, electron-builder
+config, and running the golden fixtures against a device mirror.
+
+### Verified
+
+- `verify:sync` — **79 checks** (up from 70), all passing.
+- `verify:seed` — 47 checks, both anchors unchanged.
+- Typecheck clean for @fnb/server and @fnb/web (@fnb/desktop cannot typecheck
+  until its dependencies are installed).

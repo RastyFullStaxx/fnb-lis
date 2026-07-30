@@ -489,6 +489,38 @@ const main = async () => {
   const st = syncStatus.body as { devices: unknown[]; anyStale: boolean };
   ok("and reports the registered machines", st.devices.length > 0, `${st.devices.length} devices`);
 
+  console.log("\nReconcile — catching records the outbox never captured");
+  const realId = "dsyncchk000000000021"; // pushed earlier in this run
+  const ghostId = "dsyncghost0000000001"; // written locally, outbox entry lost
+  const rec = await desk2.call(`/api/locations/${loc.id}/sync/reconcile`, {
+    method: "POST",
+    body: JSON.stringify({ ids: [realId, ghostId] }),
+  });
+  ok("reconcile is served to a device", rec.status === 200, `status ${rec.status}`);
+  const missing = (rec.body as { missing: string[] }).missing;
+  ok("it reports the record the server never received", missing.includes(ghostId));
+  ok("and does NOT report one it already has", !missing.includes(realId), JSON.stringify(missing));
+  // Another location's id must look identical to one that does not exist, or
+  // this becomes a cross-tenant existence oracle.
+  const foreignProbe = await desk2.call(`/api/locations/${loc.id}/sync/reconcile`, {
+    method: "POST",
+    body: JSON.stringify({ ids: [saleId, "dsyncchk000000000009"] }),
+  });
+  ok("reconcile is scoped to this location", foreignProbe.status === 200);
+
+  console.log("\nAck events — an offline lockout still reaches the audit trail");
+  const ackWithEvents = await desk2.call(`/api/locations/${loc.id}/sync/ack`, {
+    method: "POST",
+    body: JSON.stringify({
+      events: [{ kind: "pinLockout", summary: "5 failed PIN attempts for staff", occurredAt: "2026-07-29T18:04:00.000Z" }],
+    }),
+  });
+  ok("ack accepts offline events", ackWithEvents.status === 200, `status ${ackWithEvents.status}`);
+  const lockRow = await prisma.activityLog.findFirst({ where: { action: "device.pinLockout" } });
+  ok("and they land in the activity trail", Boolean(lockRow), lockRow?.summary ?? "");
+  const ackBare = await desk2.call(`/api/locations/${loc.id}/sync/ack`, { method: "POST" });
+  ok("ack still works with no body", ackBare.status === 200, `status ${ackBare.status}`);
+
   // ── Revocation ──
   console.log("\nRevocation — the counterweight to a year-long token");
   const adminAgent = agent();
@@ -503,6 +535,17 @@ const main = async () => {
   ok("admin can revoke the machine", revoke.status === 200, `status ${revoke.status}`);
   const afterRevoke = await desktop.call(`/api/locations/${loc.id}/sync/snapshot`);
   ok("the revoked machine is locked out immediately", afterRevoke.status === 401, `status ${afterRevoke.status}`);
+
+  // Revocation must not be a one-way door: the admin is TOLD to revoke a dead
+  // machine to free the licence slot, and that machine may later boot holding a
+  // week of unsynced counts.
+  const reactivate = await adminAgent.call(`/api/admin/devices/${device!.id}/reactivate`, {
+    method: "POST",
+    body: JSON.stringify({ reason: "PSU replaced, machine has unsynced counts" }),
+  });
+  ok("a revoked machine can be brought back", reactivate.status === 200, `status ${reactivate.status}`);
+  const back = await prisma.device.findUnique({ where: { id: device!.id } });
+  ok("and is ACTIVE again", back?.status === "ACTIVE", back?.status ?? "");
 
   console.log(`\n${failures === 0 ? "PASS" : `FAIL — ${failures} check(s) failed`}`);
   process.exit(failures === 0 ? 0 : 1);

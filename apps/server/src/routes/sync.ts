@@ -32,6 +32,33 @@ import { requirePermission, type AppEnv } from "../middleware/auth";
  */
 const SYNC_OP_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 
+/**
+ * Ids the device believes it has pushed, so the server can say which it has
+ * never seen. Capped because this is a "did anything fall on the floor?" probe,
+ * not a bulk transfer — the device asks about its open period, not its history.
+ */
+const reconcileBody = z.object({
+  ids: z.array(z.string().min(1)).min(1).max(2000),
+});
+
+/**
+ * Events the device recorded while offline. Deliberately a closed enum rather
+ * than free-form log lines: this is a channel into the audit trail, and an
+ * open one would let a machine write whatever it liked into it.
+ */
+const ackBody = z.object({
+  events: z
+    .array(
+      z.object({
+        kind: z.enum(["pinFailed", "pinLockout", "pinRecovered"]),
+        summary: z.string().trim().min(1).max(200),
+        occurredAt: z.coerce.date(),
+      }),
+    )
+    .max(200)
+    .optional(),
+});
+
 const snapshotQuery = z.object({
   /**
    * Business date floor for transactional data, YYYY-MM-DD. Master data is
@@ -39,6 +66,22 @@ const snapshotQuery = z.object({
    * count unpostable.
    */
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  /**
+   * Server RECEIPT time of the device's last successful pull (the previous
+   * response's `meta.generatedAt`).
+   *
+   * `from` alone is not enough, and the original reasoning for it was wrong.
+   * It bounds by BUSINESS date on the premise that committed periods are
+   * immutable — but they are not: voiding a committed count line, or
+   * correcting one, mutates a record whose countDate stays in the old period.
+   * A June line voided in July would never be re-sent to a device pulling with
+   * `from=2026-07-01`, so its June Full Audit would keep counting a line the
+   * server has dropped, permanently and with no drift signal.
+   *
+   * With `since`, anything whose server-side state changed after that instant
+   * comes back regardless of how old its business date is.
+   */
+  since: z.string().datetime().optional(),
 });
 
 export const syncRoutes = new Hono<AppEnv>()
@@ -67,8 +110,32 @@ export const syncRoutes = new Hono<AppEnv>()
       throw new AppError(404, "Location not found");
     }
 
-    const { from } = c.req.valid("query");
-    const onOrAfter = from ? { gte: from } : undefined;
+    const { from, since } = c.req.valid("query");
+    const changedSince = since ? new Date(since) : undefined;
+
+    /**
+     * "In the requested business window, OR changed since the device last
+     * pulled." The second arm is what carries a void or a correction applied to
+     * an old period back to a mirror that has already scrolled past it.
+     */
+    const scoped = (dateField: string, linesRelation?: "lines") => {
+      if (!from) return {};
+      const arms: Record<string, unknown>[] = [{ [dateField]: { gte: from } }];
+      if (changedSince) {
+        arms.push({ createdAt: { gte: changedSince } }, { voidedAt: { gte: changedSince } });
+        // A voided or corrected LINE does not touch its parent's voidedAt, so a
+        // header-only test would leave the mirror holding a line the server has
+        // dropped. Reach into the children explicitly.
+        if (linesRelation) {
+          arms.push({
+            [linesRelation]: {
+              some: { OR: [{ createdAt: { gte: changedSince } }, { voidedAt: { gte: changedSince } }] },
+            },
+          });
+        }
+      }
+      return { OR: arms };
+    };
 
     const [
       units,
@@ -107,21 +174,26 @@ export const syncRoutes = new Hono<AppEnv>()
         include: { versions: { include: { lines: true } } },
       }),
       prisma.countSession.findMany({
-        where: { locationId: location.id, countDate: onOrAfter },
+        where: { locationId: location.id, ...scoped("countDate", "lines") },
         include: { lines: true },
       }),
       prisma.purchase.findMany({
-        where: { locationId: location.id, purchaseDate: onOrAfter },
+        where: { locationId: location.id, ...scoped("purchaseDate", "lines") },
         include: { lines: true },
       }),
-      prisma.saleRecord.findMany({ where: { locationId: location.id, saleDate: onOrAfter } }),
-      prisma.forfeit.findMany({ where: { locationId: location.id, forfeitDate: onOrAfter } }),
+      prisma.saleRecord.findMany({ where: { locationId: location.id, ...scoped("saleDate") } }),
+      prisma.forfeit.findMany({ where: { locationId: location.id, ...scoped("forfeitDate") } }),
       // Both directions: this location's books move when it dispatches AND when
       // it receives, so a snapshot holding only transfersOut would reconcile short.
       prisma.transfer.findMany({
+        // AND, because both halves are OR-shaped: "this location is either end"
+        // and "in the window, or changed since the last pull". Flattening them
+        // into one object would silently drop the location scoping.
         where: {
-          businessDate: onOrAfter,
-          OR: [{ fromLocationId: location.id }, { toLocationId: location.id }],
+          AND: [
+            { OR: [{ fromLocationId: location.id }, { toLocationId: location.id }] },
+            scoped("businessDate", "lines"),
+          ],
         },
         include: { lines: { include: { receipts: true } } },
       }),
@@ -175,6 +247,9 @@ export const syncRoutes = new Hono<AppEnv>()
         generatedAt: new Date().toISOString(),
         locationId: location.id,
         from: from ?? null,
+        // Echoed so the device can store it and send it back as `since` on the
+        // next pull. That round-trip is what makes a bounded snapshot safe.
+        since: since ?? null,
       },
       // Full rows, not a display subset: the mirror re-runs the same middleware
       // the server does, and that middleware reads status flags and the
@@ -199,6 +274,63 @@ export const syncRoutes = new Hono<AppEnv>()
       transfers,
       people,
     });
+  })
+
+  /**
+   * "Which of these did you never receive?"
+   *
+   * The answer to a failure the outbox structurally cannot prevent. Capture
+   * happens at the HTTP layer, which runs AFTER the route's `$transaction` has
+   * committed — so a force-quit, a power cut or a full disk in that window
+   * leaves a record written locally with no outbox entry to push it. Nothing
+   * would ever notice: the device would report a clean sync while a night's
+   * counts sat locally forever.
+   *
+   * This lets the device audit itself. It sends the ids it holds for the open
+   * period; anything the server has never seen gets re-queued. It also catches
+   * every OTHER cause of the same symptom, which a transaction-scoped outbox
+   * would not — that is why this is the fix rather than restructuring the write
+   * path of nineteen routes.
+   *
+   * The device must not let `/sync/ack` advance `lastSyncAt` while this returns
+   * anything, or the admin dashboard reports "synced" over missing work.
+   */
+  .post("/sync/reconcile", zValidator("json", reconcileBody), async (c) => {
+    const location = c.get("location");
+    const me = c.get("user")!;
+    if (!me.deviceId) throw new AppError(400, "Not a registered device session");
+    const { ids } = c.req.valid("json");
+
+    // Every table a device can originate. Scoped to this location so the probe
+    // cannot be used to test for the existence of another establishment's ids.
+    const [counts, countLines, purchases, purchaseLines, sales, forfeits, transfers, transferLines] =
+      await Promise.all([
+        prisma.countSession.findMany({ where: { id: { in: ids }, locationId: location.id }, select: { id: true } }),
+        prisma.countLine.findMany({
+          where: { id: { in: ids }, countSession: { locationId: location.id } },
+          select: { id: true },
+        }),
+        prisma.purchase.findMany({ where: { id: { in: ids }, locationId: location.id }, select: { id: true } }),
+        prisma.purchaseLine.findMany({
+          where: { id: { in: ids }, purchase: { locationId: location.id } },
+          select: { id: true },
+        }),
+        prisma.saleRecord.findMany({ where: { id: { in: ids }, locationId: location.id }, select: { id: true } }),
+        prisma.forfeit.findMany({ where: { id: { in: ids }, locationId: location.id }, select: { id: true } }),
+        prisma.transfer.findMany({ where: { id: { in: ids }, fromLocationId: location.id }, select: { id: true } }),
+        prisma.transferLine.findMany({
+          where: { id: { in: ids }, transfer: { fromLocationId: location.id } },
+          select: { id: true },
+        }),
+      ]);
+
+    const present = new Set(
+      [counts, countLines, purchases, purchaseLines, sales, forfeits, transfers, transferLines]
+        .flat()
+        .map((r) => r.id),
+    );
+    const missing = ids.filter((id) => !present.has(id));
+    return c.json({ missing, checked: ids.length });
   })
 
   /**
@@ -318,12 +450,35 @@ export const syncRoutes = new Hono<AppEnv>()
    */
   .post("/sync/ack", async (c) => {
     const location = c.get("location");
-    const deviceId = c.get("user")!.deviceId;
+    const me = c.get("user")!;
+    const deviceId = me.deviceId;
     if (!deviceId) throw new AppError(400, "Not a registered device session");
+
+    // Lenient: an ack with nothing to report sends no body at all.
+    const parsed = ackBody.safeParse(await c.req.json().catch(() => ({})));
+    if (!parsed.success) throw new AppError(400, "Invalid ack payload");
     const device = await prisma.device.findUnique({ where: { id: deviceId } });
     // Scoping: a device may only ack for the establishment it belongs to.
     if (!device || device.clientId !== location.clientId) throw new AppError(404, "Device not found");
     await prisma.device.update({ where: { id: deviceId }, data: { lastSyncAt: new Date() } });
+
+    // Things that happened on the machine with no network to record them —
+    // principally failed PIN attempts and offline lockouts. A lockout nobody
+    // can see is half a control, and this is the only channel a device has to
+    // report an event that produced no record. Bounded and typed, so it cannot
+    // become an open write into the audit trail.
+    for (const e of parsed.data.events ?? []) {
+      await logActivity({
+        user: me,
+        clientId: location.clientId,
+        locationId: location.id,
+        action: `device.${e.kind}`,
+        entity: "Device",
+        entityId: deviceId,
+        summary: `${device.name}: ${e.summary}`,
+        details: { occurredAt: e.occurredAt, offline: true },
+      });
+    }
 
     // Housekeeping for the one table in this schema that is NOT kept forever
     // (docs §7.6). A completed sync is the natural moment: it happens roughly

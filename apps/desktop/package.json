@@ -1,0 +1,19 @@
+{
+  "name": "@fnb/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/main.mjs",
+  "scripts": {
+    "build:server": "node build.mjs",
+    "build": "npm run build:server && npm run build -w @fnb/web",
+    "rebuild-native": "electron-rebuild -f -w better-sqlite3 --module-dir ../..",
+    "dev": "npm run build:server && electron .",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.7.1",
+    "electron": "^33.2.0",
+    "esbuild": "^0.24.0"
+  }
+}
