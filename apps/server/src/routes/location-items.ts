@@ -3,6 +3,7 @@ import { zValidator } from "@hono/zod-validator";
 import { allowedProductTypes, locationItemAttach, locationItemUpdate, resolveBottleWeights, supplierUpsert, toCsv, type CsvValue } from "@fnb/core";
 import { prisma } from "../db";
 import { AppError } from "../lib/errors";
+import { assertNotQueuedEdit } from "../lib/two-way";
 import { logActivity } from "../services/activity";
 import { generateAssetCode } from "../services/asset-supplier";
 import { requirePermission, type AppEnv } from "../middleware/auth";
@@ -168,6 +169,10 @@ export const locationItemRoutes = new Hono<AppEnv>()
     const user = c.get("user")!;
     const itemId = c.req.param("id");
     const body = c.req.valid("json");
+    // Rule 3 (docs §7.2): cost and retail are the inputs to every valuation, so
+    // a stale offline edit applying last-write-wins is how an establishment's
+    // stated inventory value changes without anyone deciding to change it.
+    await assertNotQueuedEdit(c, "Prices and weights");
     const existing = await prisma.locationItem.findUnique({
       where: { id: itemId },
       include: { itemVariant: { include: { unit: true, item: true } } },
@@ -376,6 +381,7 @@ export const locationItemRoutes = new Hono<AppEnv>()
     const user = c.get("user")!;
     const supplierId = c.req.param("id");
     const body = c.req.valid("json");
+    await assertNotQueuedEdit(c, "Suppliers");
     const existing = await prisma.supplier.findUnique({ where: { id: supplierId } });
     if (!existing || existing.clientId !== location.clientId) throw new AppError(404, "Supplier not found");
     const supplier = await prisma.$transaction(async (tx) => {

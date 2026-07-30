@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import {
+  commitRequest,
   forfeitCreate,
   lineTotal,
   purchaseCreate,
@@ -13,6 +14,13 @@ import {
 import { prisma } from "../db";
 import { AppError } from "../lib/errors";
 import { replay } from "../lib/idempotency";
+import {
+  assertExpectedStatus,
+  assertMayEditDraft,
+  opAlreadyApplied,
+  originOf,
+  recordOp,
+} from "../lib/two-way";
 import { logActivity } from "../services/activity";
 import { effectiveWeighMode, netRemaining } from "./counts";
 import { requirePermission, type AppEnv } from "../middleware/auth";
@@ -66,6 +74,7 @@ export const purchaseRoutes = new Hono<AppEnv>()
           // undefined on every browser request — Prisma's cuid() default applies.
           id: body.id,
           occurredAt: body.occurredAt,
+          originDeviceId: originOf(user), // owns the draft until commit
           locationId: location.id,
           purchaseDate: body.purchaseDate,
           supplierId: body.supplierId ?? null,
@@ -102,6 +111,7 @@ export const purchaseRoutes = new Hono<AppEnv>()
     const location = c.get("location");
     const purchase = await getOwnedPurchase(location.id, c.req.param("id"));
     if (purchase.status !== "DRAFT") throw new AppError(409, "Only drafts can be edited");
+    assertMayEditDraft(purchase, c.get("user")!, "delivery");
     const body = c.req.valid("json");
     const updated = await prisma.purchase.update({ where: { id: purchase.id }, data: body });
     return c.json(updated);
@@ -113,6 +123,7 @@ export const purchaseRoutes = new Hono<AppEnv>()
     const purchase = await getOwnedPurchase(location.id, c.req.param("id"));
     if (purchase.status !== "DRAFT")
       throw new AppError(409, "This delivery is committed — correct an existing line, or record a missed item as a new delivery");
+    assertMayEditDraft(purchase, user, "delivery");
     const body = c.req.valid("json");
 
     const already = await replay(
@@ -145,6 +156,7 @@ export const purchaseRoutes = new Hono<AppEnv>()
     const location = c.get("location");
     const purchase = await getOwnedPurchase(location.id, c.req.param("id"));
     if (purchase.status !== "DRAFT") throw new AppError(409, "Committed lines cannot be removed — void instead");
+    assertMayEditDraft(purchase, c.get("user")!, "delivery");
     // The line must belong to THIS draft — a raw delete by id would reach any
     // PurchaseLine in the database, including other clients'.
     const line = await prisma.purchaseLine.findUnique({ where: { id: c.req.param("lineId") } });
@@ -157,6 +169,13 @@ export const purchaseRoutes = new Hono<AppEnv>()
     const location = c.get("location");
     const user = c.get("user")!;
     const purchase = await getOwnedPurchase(location.id, c.req.param("id"));
+
+    const op = commitRequest.safeParse(await c.req.json().catch(() => ({})));
+    if (!op.success) throw new AppError(400, "Invalid commit request");
+    if (await opAlreadyApplied(op.data.opId)) return c.json(purchase, 200);
+    assertExpectedStatus(purchase.status, op.data.expectedStatus, "delivery");
+    assertMayEditDraft(purchase, user, "delivery");
+
     if (purchase.status !== "DRAFT") throw new AppError(409, "Already committed");
     const lineCount = await prisma.purchaseLine.count({ where: { purchaseId: purchase.id } });
     if (lineCount === 0) throw new AppError(400, "Add at least one line before committing");
@@ -165,6 +184,7 @@ export const purchaseRoutes = new Hono<AppEnv>()
         where: { id: purchase.id },
         data: { status: "COMMITTED", committedAt: new Date(), committedById: user.id },
       });
+      await recordOp(tx, op.data.opId, user, "Purchase", purchase.id, "commit");
       await logActivity(
         { user, clientId: location.clientId, locationId: location.id, action: "purchase.commit", entity: "Purchase", entityId: purchase.id, summary: `Committed purchase for ${purchase.purchaseDate} (${lineCount} lines)` },
         tx,
@@ -177,14 +197,19 @@ export const purchaseRoutes = new Hono<AppEnv>()
   .post("/purchases/:id/void", voidGuard, zValidator("json", voidRequest), async (c) => {
     const location = c.get("location");
     const user = c.get("user")!;
-    const { reason } = c.req.valid("json");
+    const { reason, opId, expectedStatus } = c.req.valid("json");
     const purchase = await getOwnedPurchase(location.id, c.req.param("id"));
+
+    if (await opAlreadyApplied(opId)) return c.json(purchase, 200);
+    assertExpectedStatus(purchase.status, expectedStatus, "delivery");
+
     if (purchase.status === "VOID") throw new AppError(409, "Already voided");
     const voided = await prisma.$transaction(async (tx) => {
       const updated = await tx.purchase.update({
         where: { id: purchase.id },
         data: { status: "VOID", voidedAt: new Date(), voidedById: user.id, voidReason: reason },
       });
+      await recordOp(tx, opId, user, "Purchase", purchase.id, "void");
       await logActivity(
         { user, clientId: location.clientId, locationId: location.id, action: "purchase.void", entity: "Purchase", entityId: purchase.id, summary: `Voided purchase for ${purchase.purchaseDate}: ${reason}` },
         tx,
@@ -344,6 +369,7 @@ export const purchaseRoutes = new Hono<AppEnv>()
         data: {
           id: body.id,
           occurredAt: body.occurredAt,
+          originDeviceId: originOf(user), // provenance only — a forfeit has no draft state
           locationId: location.id,
           forfeitDate: body.forfeitDate,
           locationItemId: body.locationItemId,

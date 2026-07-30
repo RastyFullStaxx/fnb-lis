@@ -28,6 +28,34 @@ export const deviceLogin = z.object({
 });
 export type DeviceLogin = z.infer<typeof deviceLogin>;
 
+/**
+ * Set or replace my device PIN.
+ *
+ * Authorised by ONE of two proofs, never by the PIN itself. `currentPassword`
+ * is the ordinary path. `recoveryAnswer` is the break-glass: no network, PIN
+ * forgotten, and the closing count still has to happen — which is exactly the
+ * situation the desktop exists for, so refusing to plan for it just means the
+ * count does not get done.
+ *
+ * Every use of the recovery path is logged and syncs to the LIS admin. A
+ * break-glass with an alarm on it is a different thing from a back door.
+ */
+export const setDevicePin = z
+  .object({
+    pin: z.string(),
+    /** Free text the user writes themselves — see DevicePin in the schema. */
+    recoveryQuestion: z.string().trim().min(5, "Write a question only you can answer").max(160),
+    recoveryAnswer: z.string().trim().min(2, "Answer is too short").max(120),
+    currentPassword: z.string().min(1).optional(),
+    /** Answer to the question already on file, for the forgot-PIN path. */
+    currentRecoveryAnswer: z.string().min(1).optional(),
+  })
+  .refine((v) => Boolean(v.currentPassword) !== Boolean(v.currentRecoveryAnswer), {
+    message: "Confirm with either your password or your recovery answer",
+    path: ["currentPassword"],
+  });
+export type SetDevicePin = z.infer<typeof setDevicePin>;
+
 export const loginRequest = z.object({
   username: z.string().trim().min(1, "Username is required"),
   password: z.string().min(1, "Password is required"),

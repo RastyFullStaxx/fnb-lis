@@ -45,8 +45,16 @@ that could not be completed at all) are fixed at the primitives.
 is done — device registration and revocation, year-long device-bound sessions, idempotent pushes on
 every create route, `occurredAt` for device time, and a whole-location snapshot endpoint. The
 architecture (a **local mirror**, not a write buffer) and the long-term retention/backup policy are
-in [sync-and-data-lifecycle.md](sync-and-data-lifecycle.md). **One decision blocks the desktop:** how
-staff authenticate with no network — see §5 of that doc.
+in [sync-and-data-lifecycle.md](sync-and-data-lifecycle.md).
+
+Offline authentication is settled (§5a): a **device PIN**, a separate credential the server never
+accepts as a login — so a stolen bar PC cannot become remote access to the web app. Set from
+Settings, recovered online with your password, by a manager, or as a last resort via a self-written
+recovery question that is rate-limited and logged. Attribution came with it (§5b): the desktop names
+the acting staff member, resolved once in middleware, so permissions and `createdById` both follow
+the real person rather than whoever registered the machine. Physical Count Sheets (§3.11) shipped
+too — deliberately blind. **Nothing now blocks starting the Electron app** beyond licence
+enforcement at startup.
 
 **Verification stance:** no automated test framework (explicit instruction). Correctness rests on
 [golden-fixtures.md](golden-fixtures.md) plus live checks. Re-verify the relevant fixture after any

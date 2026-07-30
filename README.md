@@ -79,11 +79,13 @@ These are not style preferences — breaking one produces wrong numbers or a bro
 8. **New seed data goes after the last committed count** (2026-07-20), never inside a
    count-anchored period. Landing inside one moves that period's variance while the golden
    window stays byte-perfect, which is exactly how it hides.
-9. **One writer per row.** The offline desktop mirror is only correct because master data flows
-   server → device and transactions flow device → server, with no row written from both ends.
-   Before making a device-writable table server-writable (or vice versa), read
-   [docs/sync-and-data-lifecycle.md §2](docs/sync-and-data-lifecycle.md) — that table is the
-   design, not a description of it.
+9. **Appends are safe; mutations need a sync decision.** The browser and the offline desktop both
+   write. That works because nearly every write here is an INSERT with a globally-unique id, so two
+   writers have nothing to merge. Adding an insert route needs no sync thought. Adding a `PUT`, a
+   `DELETE`, or a new status transition to a shared table does — the non-append surface is
+   deliberately small and enumerated in
+   [docs/sync-and-data-lifecycle.md §7](docs/sync-and-data-lifecycle.md). Master data stays
+   server-authoritative.
 
 ## Documentation
 

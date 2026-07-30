@@ -142,6 +142,13 @@ const SECTIONS: Array<{ title: string; blurb: string; reports: Report[] }> = [
         description: "Computed current stock with cost and retail valuation.",
       },
       {
+        path: "count-sheet",
+        icon: ClipboardList,
+        title: "Physical Count Sheet",
+        description:
+          "Printable blind sheet for counting the shelf — no expected figures, so what's written down is what's there.",
+      },
+      {
         path: "par-level",
         icon: ClipboardList,
         title: "Par Level",

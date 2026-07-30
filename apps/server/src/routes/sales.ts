@@ -4,6 +4,7 @@ import { saleCorrect, saleCreate, voidRequest } from "@fnb/core";
 import { prisma } from "../db";
 import { AppError } from "../lib/errors";
 import { replay } from "../lib/idempotency";
+import { assertExpectedStatus, opAlreadyApplied, originOf, recordOp } from "../lib/two-way";
 import { logActivity } from "../services/activity";
 import { requirePermission, type AppEnv } from "../middleware/auth";
 
@@ -101,6 +102,7 @@ export const saleRoutes = new Hono<AppEnv>()
           // undefined on every browser request, so Prisma's cuid() default applies.
           id: body.id,
           occurredAt: body.occurredAt,
+          originDeviceId: originOf(user), // provenance — see SaleRecord.originDeviceId
           locationId: location.id,
           saleDate: body.saleDate,
           kind: body.kind,
@@ -131,9 +133,13 @@ export const saleRoutes = new Hono<AppEnv>()
   .post("/sales/:id/void", voidGuard, zValidator("json", voidRequest), async (c) => {
     const location = c.get("location");
     const user = c.get("user")!;
-    const { reason } = c.req.valid("json");
+    const { reason, opId, expectedStatus } = c.req.valid("json");
     const sale = await prisma.saleRecord.findUnique({ where: { id: c.req.param("id") }, include: SALE_INCLUDE });
     if (!sale || sale.locationId !== location.id) throw new AppError(404, "Record not found");
+
+    if (await opAlreadyApplied(opId)) return c.json(sale, 200);
+    assertExpectedStatus(sale.status, expectedStatus, "record");
+
     if (sale.status === "VOID") throw new AppError(409, "Already voided");
     const voided = await prisma.$transaction(async (tx) => {
       const updated = await tx.saleRecord.update({
@@ -141,6 +147,7 @@ export const saleRoutes = new Hono<AppEnv>()
         data: { status: "VOID", voidedAt: new Date(), voidedById: user.id, voidReason: reason },
         include: SALE_INCLUDE,
       });
+      await recordOp(tx, opId, user, "SaleRecord", sale.id, "void");
       const what = sale.locationItem?.itemVariant.item.name ?? sale.menuItem?.name ?? "item";
       await logActivity(
         { user, clientId: location.clientId, locationId: location.id, action: "sale.void", entity: "SaleRecord", entityId: sale.id, summary: `Voided ${KIND_LABEL[sale.kind] ?? "record"} (${what} ×${sale.qty}): ${reason}` },
@@ -184,6 +191,7 @@ export const saleRoutes = new Hono<AppEnv>()
         data: {
           id: body.id,
           occurredAt: body.occurredAt,
+          originDeviceId: originOf(user), // provenance — see SaleRecord.originDeviceId
           locationId: location.id,
           saleDate: body.saleDate,
           kind: body.kind,

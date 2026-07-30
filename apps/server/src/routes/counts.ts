@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import {
+  commitRequest,
   countLineCreate,
   countSessionCreate,
   netQuantity,
@@ -13,6 +14,13 @@ import {
 import { prisma, type Tx } from "../db";
 import { AppError } from "../lib/errors";
 import { replay } from "../lib/idempotency";
+import {
+  assertExpectedStatus,
+  assertMayEditDraft,
+  opAlreadyApplied,
+  originOf,
+  recordOp,
+} from "../lib/two-way";
 import { logActivity } from "../services/activity";
 import { requirePermission, type AppEnv } from "../middleware/auth";
 
@@ -190,6 +198,8 @@ export const countRoutes = new Hono<AppEnv>()
           // undefined on every browser request — Prisma's cuid() default applies.
           id: body.id,
           occurredAt: body.occurredAt,
+          // Which source started this count — it owns the session until commit.
+          originDeviceId: originOf(user),
           locationId: location.id,
           countDate: body.countDate,
           name: body.name ?? null,
@@ -222,6 +232,7 @@ export const countRoutes = new Hono<AppEnv>()
     const user = c.get("user")!;
     const session = await getOwnedSession(location.id, c.req.param("id"));
     if (session.status !== "OPEN") throw new AppError(409, "This count session is committed — void or correct lines instead");
+    assertMayEditDraft(session, user, "count");
 
     const body = c.req.valid("json");
 
@@ -255,6 +266,7 @@ export const countRoutes = new Hono<AppEnv>()
     const location = c.get("location");
     const session = await getOwnedSession(location.id, c.req.param("id"));
     if (session.status !== "OPEN") throw new AppError(409, "Committed count lines cannot be edited — void or correct instead");
+    assertMayEditDraft(session, c.get("user")!, "count");
     // The line must belong to THIS session — a raw update by id would reach
     // any CountLine in the database, including committed ones elsewhere.
     const existing = await prisma.countLine.findUnique({ where: { id: c.req.param("lineId") } });
@@ -273,6 +285,7 @@ export const countRoutes = new Hono<AppEnv>()
     const location = c.get("location");
     const session = await getOwnedSession(location.id, c.req.param("id"));
     if (session.status !== "OPEN") throw new AppError(409, "Committed count lines cannot be removed — void instead");
+    assertMayEditDraft(session, c.get("user")!, "count");
     const existing = await prisma.countLine.findUnique({ where: { id: c.req.param("lineId") } });
     if (!existing || existing.countSessionId !== session.id) throw new AppError(404, "Count line not found");
     await prisma.countLine.delete({ where: { id: existing.id } });
@@ -283,6 +296,19 @@ export const countRoutes = new Hono<AppEnv>()
     const location = c.get("location");
     const user = c.get("user")!;
     const session = await getOwnedSession(location.id, c.req.param("id"));
+
+    // Optional body: commit historically took none, and the browser still sends
+    // none. Parsed leniently so an empty request stays valid.
+    const op = commitRequest.safeParse(await c.req.json().catch(() => ({})));
+    if (!op.success) throw new AppError(400, "Invalid commit request");
+
+    // Replay before every other check: a device retrying its own commit finds
+    // the session already COMMITTED and would otherwise be told "already
+    // committed" forever, unable to tell that apart from someone else's commit.
+    if (await opAlreadyApplied(op.data.opId)) return c.json(session, 200);
+    assertExpectedStatus(session.status, op.data.expectedStatus, "count");
+    assertMayEditDraft(session, user, "count");
+
     if (session.status !== "OPEN") throw new AppError(409, "Already committed");
     const lineCount = await prisma.countLine.count({ where: { countSessionId: session.id } });
     if (lineCount === 0) throw new AppError(400, "Add at least one count line before committing");
@@ -292,6 +318,7 @@ export const countRoutes = new Hono<AppEnv>()
         where: { id: session.id },
         data: { status: "COMMITTED", committedAt: new Date(), committedById: user.id },
       });
+      await recordOp(tx, op.data.opId, user, "CountSession", session.id, "commit");
       await logActivity(
         { user, clientId: location.clientId, locationId: location.id, action: "count.commit", entity: "CountSession", entityId: session.id, summary: `Committed count for ${session.countDate} (${lineCount} lines)` },
         tx,
@@ -304,14 +331,19 @@ export const countRoutes = new Hono<AppEnv>()
   .post("/counts/:id/void", voidGuard, zValidator("json", voidRequest), async (c) => {
     const location = c.get("location");
     const user = c.get("user")!;
-    const { reason } = c.req.valid("json");
+    const { reason, opId, expectedStatus } = c.req.valid("json");
     const session = await getOwnedSession(location.id, c.req.param("id"));
+
+    if (await opAlreadyApplied(opId)) return c.json(session, 200);
+    assertExpectedStatus(session.status, expectedStatus, "count");
+
     if (session.status === "VOID") throw new AppError(409, "Already voided");
     const voided = await prisma.$transaction(async (tx) => {
       const updated = await tx.countSession.update({
         where: { id: session.id },
         data: { status: "VOID", voidedAt: new Date(), voidedById: user.id, voidReason: reason },
       });
+      await recordOp(tx, opId, user, "CountSession", session.id, "void");
       await logActivity(
         { user, clientId: location.clientId, locationId: location.id, action: "count.void", entity: "CountSession", entityId: session.id, summary: `Voided count for ${session.countDate}: ${reason}` },
         tx,

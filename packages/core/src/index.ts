@@ -7,5 +7,6 @@ export * from "./pricing";
 export * from "./reconciliation";
 export * from "./csv";
 export * from "./matching";
+export * from "./pin";
 export * from "./constants";
 export * from "./schemas/index";

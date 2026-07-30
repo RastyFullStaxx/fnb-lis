@@ -46,8 +46,39 @@ export const syncFields = {
     .optional(),
 };
 
+/**
+ * Fields that make a NON-creating mutation (commit, void, correct) safe to
+ * replay and safe to reject. Absent on every browser request.
+ *
+ * `opId` — a create carries its own primary key, which answers "did this already
+ * apply?" for free. A void changes an existing row, so there is no key to
+ * collide: without a token, a device replaying its own void is
+ * indistinguishable from someone else having voided the same record in the
+ * browser meanwhile, and those two need opposite handling.
+ *
+ * `expectedStatus` — what the caller believed the record's status to be. A
+ * mismatch means the record moved while this device was offline; that is a
+ * genuine conflict and the server answers with the real state rather than
+ * silently applying or returning a bare "already voided".
+ */
+export const syncMutation = {
+  opId: z
+    .string()
+    .regex(/^[a-z][a-z0-9]{7,31}$/, "Invalid operation id")
+    .optional(),
+  expectedStatus: z.string().trim().min(1).max(20).optional(),
+};
+
 export const voidRequest = z.object({
+  ...syncMutation,
   reason: z.string().trim().min(3, "A reason is required"),
 });
+
+/**
+ * Body for commit endpoints, which historically took none. Every field is
+ * optional so existing callers that send nothing at all still work.
+ */
+export const commitRequest = z.object(syncMutation);
+export type CommitRequest = z.infer<typeof commitRequest>;
 
 export type VoidRequest = z.infer<typeof voidRequest>;

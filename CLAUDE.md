@@ -13,7 +13,7 @@ client trusts one thing above all: the **Full Audit reconciliation report** — 
 - **[docs/golden-fixtures.md](docs/golden-fixtures.md)** — the numbers that must never change
 - **[docs/architecture.md](docs/architecture.md)** — data model, **formula appendix §6**, deviation log
 - **[docs/sync-and-data-lifecycle.md](docs/sync-and-data-lifecycle.md)** — offline desktop mirror:
-  ownership table (one writer per row), the two flows, retention/backup
+  the two flows, retention/backup, and **§7 two-way operation** (browser + desktop, conflict rules)
 - [docs/PRODUCT.md](docs/PRODUCT.md) · [docs/DESIGN.md](docs/DESIGN.md) — personas/workflows · design system
 - [docs/build-log.md](docs/build-log.md) — what shipped when · [docs/reference/](docs/reference/) — legacy answer key
 
@@ -29,8 +29,9 @@ client trusts one thing above all: the **Full Audit reconciliation report** — 
 - Role + client scoping server-side on every route.
 - No automated tests during the build — verify via golden fixtures + live checks. The two `verify:*`
   harnesses are the exception: `verify:seed` (fixtures) and `verify:sync` (offline-mirror guarantees).
-- **One writer per row.** Master data flows server → device, transactions device → server. Don't
-  make a table writable from both ends without reading the sync doc's ownership table first.
+- **Appends are safe, mutations are not.** Browser and desktop both write (sync doc §7). Adding a
+  new *insert* route needs no sync thought; adding a `PUT`, `DELETE`, or status transition to a
+  shared table does — read §7.1–7.2 first. Master data stays server-authoritative.
 - Imports/AI never mutate inventory without human review; Stocky stays read-only.
 
 ## Skills & tooling — reach for these on every task

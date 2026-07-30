@@ -204,6 +204,268 @@ const main = async () => {
   const ack = await desktop.call(`/api/locations/${loc.id}/sync/ack`, { method: "POST" });
   ok("device can ack a completed push", ack.status === 200, `status ${ack.status}`);
 
+  // ── 5. Device PIN — offline authentication ──
+  console.log("\nDevice PIN — the offline credential, and why it isn't the password");
+  const staffWeb = agent();
+  await staffWeb.call("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ username: "staff", password: PASSWORD }),
+  });
+
+  const weak = await staffWeb.call("/api/auth/pin", {
+    method: "POST",
+    body: JSON.stringify({
+      pin: "1234",
+      recoveryQuestion: "What was my first bar called?",
+      recoveryAnswer: "Kubo",
+      currentPassword: PASSWORD,
+    }),
+  });
+  ok("a guessable PIN is refused", weak.status === 400, `status ${weak.status}`);
+
+  const wrongPw = await staffWeb.call("/api/auth/pin", {
+    method: "POST",
+    body: JSON.stringify({
+      pin: "947213",
+      recoveryQuestion: "What was my first bar called?",
+      recoveryAnswer: "Kubo",
+      currentPassword: "not-my-password",
+    }),
+  });
+  ok("setting a PIN needs the real password", wrongPw.status === 401, `status ${wrongPw.status}`);
+
+  const setPin = await staffWeb.call("/api/auth/pin", {
+    method: "POST",
+    body: JSON.stringify({
+      pin: "947213",
+      recoveryQuestion: "What was my first bar called?",
+      recoveryAnswer: "  KUBO  ",
+      currentPassword: PASSWORD,
+    }),
+  });
+  ok("staff can set a PIN", setPin.status === 200, `status ${setPin.status}`);
+
+  // The break-glass: no network, PIN forgotten. Normalisation must make
+  // "  KUBO  " and "kubo" the same answer, or recovery is welded shut.
+  const recovered = await staffWeb.call("/api/auth/pin", {
+    method: "POST",
+    body: JSON.stringify({
+      pin: "550284",
+      recoveryQuestion: "What was my first bar called?",
+      recoveryAnswer: "Kubo",
+      currentRecoveryAnswer: "kubo",
+    }),
+  });
+  ok("recovery answer resets the PIN, case/space-insensitively", recovered.status === 200, `status ${recovered.status}`);
+  ok("and is recorded as the recovery path", (recovered.body as { via?: string }).via === "recovery");
+  const alarm = await prisma.activityLog.findFirst({ where: { action: "pin.recover" } });
+  ok("a recovery leaves an entry the admin can see", Boolean(alarm), alarm?.summary ?? "");
+  const staffUserId = (await prisma.user.findUnique({ where: { username: "staff" } }))!.id;
+  const afterRecovery = await prisma.devicePin.findUnique({ where: { userId: staffUserId } });
+
+  // Every field here must be independently VALID, or zod rejects the body at the
+  // door and this asserts nothing about the answer check. (It did exactly that
+  // on the first run: a 3-character question failed the schema and the 400 was
+  // mistaken for a refused answer.)
+  const badAnswer = await staffWeb.call("/api/auth/pin", {
+    method: "POST",
+    body: JSON.stringify({
+      pin: "661923",
+      recoveryQuestion: "What was my first bar called?",
+      recoveryAnswer: "Kubo",
+      currentRecoveryAnswer: "definitely wrong",
+    }),
+  });
+  ok("a wrong recovery answer is refused", badAnswer.status === 401, `status ${badAnswer.status}`);
+  const unchanged = await prisma.devicePin.findUnique({ where: { userId: staffUserId } });
+  ok("and the PIN is left alone", unchanged?.pinHash === afterRecovery?.pinHash);
+
+  // ── 6. Attribution on a device session ──
+  console.log("\nAttribution — one machine, many people");
+  const desk2 = agent();
+  await desk2.call("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({
+      username: "owner",
+      password: PASSWORD,
+      device: { fingerprint: "MACHINE-FRONT-BAR-01", name: "Front bar PC" },
+    }),
+  });
+  const staffUser = await prisma.user.findUnique({ where: { username: "staff" } });
+  const attributed = await desk2.call(`/api/locations/${loc.id}/sales`, {
+    method: "POST",
+    headers: { "x-acting-user": staffUser!.id },
+    body: JSON.stringify({
+      id: "dsyncchk000000000021",
+      saleDate: "2026-07-28",
+      kind: "SALE",
+      locationItemId: item.id,
+      qty: 1,
+    }),
+  });
+  ok("a device push is accepted for the acting staff member", attributed.status === 201, `status ${attributed.status}`);
+  const row = await prisma.saleRecord.findUnique({ where: { id: "dsyncchk000000000021" } });
+  ok(
+    "and is credited to the staff member, NOT the owner who registered the machine",
+    row?.createdById === staffUser!.id,
+    `createdByName=${row?.createdByName}`,
+  );
+
+  // Permissions must follow the real actor, not the session holder.
+  const staffVoid = await desk2.call(`/api/locations/${loc.id}/sales/dsyncchk000000000021/void`, {
+    method: "POST",
+    headers: { "x-acting-user": staffUser!.id },
+    body: JSON.stringify({ reason: "Attribution check" }),
+  });
+  ok("staff still cannot void, even on the owner's device session", staffVoid.status === 403, `status ${staffVoid.status}`);
+
+  const outsider = await prisma.user.findUnique({ where: { username: "admin" } });
+  const foreignActor = await desk2.call(`/api/locations/${loc.id}/sales`, {
+    method: "POST",
+    headers: { "x-acting-user": "not-a-real-user-id" },
+    body: JSON.stringify({ saleDate: "2026-07-28", kind: "SALE", locationItemId: item.id, qty: 1 }),
+  });
+  ok("an unknown acting user is refused, not silently ignored", foreignActor.status === 403, `status ${foreignActor.status}`);
+  void outsider;
+
+  // A browser session must not be able to impersonate anyone.
+  const spoof = await browser.call(`/api/locations/${loc.id}/sales`, {
+    method: "POST",
+    headers: { "x-acting-user": staffUser!.id },
+    body: JSON.stringify({
+      id: "dsyncchk000000000022",
+      saleDate: "2026-07-28",
+      kind: "SALE",
+      locationItemId: item.id,
+      qty: 1,
+    }),
+  });
+  const spoofed = await prisma.saleRecord.findUnique({ where: { id: "dsyncchk000000000022" } });
+  ok(
+    "a browser session cannot impersonate via the header",
+    spoof.status === 201 && spoofed?.createdById !== staffUser!.id,
+    `createdByName=${spoofed?.createdByName}`,
+  );
+
+  // ── Snapshot now carries the offline credential ──
+  console.log("\nSnapshot credentials — the PIN travels, the password never does");
+  const snap2 = await desk2.call(`/api/locations/${loc.id}/sync/snapshot`);
+  const text = JSON.stringify(snap2.body);
+  ok("snapshot still carries no password hashes", !text.includes("passwordHash"));
+  ok("snapshot carries the device PIN hash, so offline login can work", text.includes("pinHash"));
+
+  // ── 7. Two-way operation (docs §7) ──
+  const adminAgentEarly = agent();
+  await adminAgentEarly.call("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ username: "admin", password: PASSWORD }),
+  });
+
+  console.log("\nRule 1 — open work belongs to where it started");
+  // Manager (browser) opens a count; the desktop must not be able to touch it.
+  const webCount = await browser.call(`/api/locations/${loc.id}/counts`, {
+    method: "POST",
+    body: JSON.stringify({ countDate: "2026-07-29", name: "Browser-owned count" }),
+  });
+  ok("browser opens a count", webCount.status === 201, `status ${webCount.status}`);
+  const webCountId = (webCount.body as { id: string }).id;
+  const deskIntrudes = await desk2.call(`/api/locations/${loc.id}/counts/${webCountId}/lines`, {
+    method: "POST",
+    headers: { "x-acting-user": staffUser!.id },
+    body: JSON.stringify({ locationItemId: item.id, countType: "FULL", qtyFull: 3 }),
+  });
+  ok("the desktop cannot add lines to a browser-owned count", deskIntrudes.status === 409, `status ${deskIntrudes.status}`);
+
+  // And the reverse: a desktop-owned count is read-only in the browser.
+  const deskCount = await desk2.call(`/api/locations/${loc.id}/counts`, {
+    method: "POST",
+    headers: { "x-acting-user": staffUser!.id },
+    body: JSON.stringify({ countDate: "2026-07-29", name: "Desktop-owned count" }),
+  });
+  const deskCountId = (deskCount.body as { id: string }).id;
+  ok("desktop opens a count", deskCount.status === 201, `status ${deskCount.status}`);
+  const storedOrigin = await prisma.countSession.findUnique({ where: { id: deskCountId } });
+  ok("and it records which machine owns it", storedOrigin?.originDeviceId === device!.id);
+  const webIntrudes = await browser.call(`/api/locations/${loc.id}/counts/${deskCountId}/lines`, {
+    method: "POST",
+    body: JSON.stringify({ locationItemId: item.id, countType: "FULL", qtyFull: 3 }),
+  });
+  ok("the browser cannot add lines to a desktop-owned count", webIntrudes.status === 409, `status ${webIntrudes.status}`);
+
+  // Escape hatch: a dead machine must not freeze a count open forever.
+  const release = await adminAgentEarly.call(
+    `/api/locations/${loc.id}/drafts/CountSession/${deskCountId}/release`,
+    { method: "POST", body: JSON.stringify({ reason: "Bar PC died mid-count" }) },
+  );
+  ok("an owner can release a stranded draft", release.status === 200, `status ${release.status}`);
+  const afterRelease = await browser.call(`/api/locations/${loc.id}/counts/${deskCountId}/lines`, {
+    method: "POST",
+    body: JSON.stringify({ locationItemId: item.id, countType: "FULL", qtyFull: 3 }),
+  });
+  ok("and the browser can then work on it", afterRelease.status === 201, `status ${afterRelease.status}`);
+
+  console.log("\nRule 2 — status transitions are replay-safe and conflict-aware");
+  const commitOp = "dsyncop00000000000001";
+  const c1 = await browser.call(`/api/locations/${loc.id}/counts/${deskCountId}/commit`, {
+    method: "POST",
+    body: JSON.stringify({ opId: commitOp, expectedStatus: "OPEN" }),
+  });
+  ok("commit with an op id succeeds", c1.status === 200, `status ${c1.status}`);
+  const c2 = await browser.call(`/api/locations/${loc.id}/counts/${deskCountId}/commit`, {
+    method: "POST",
+    body: JSON.stringify({ opId: commitOp, expectedStatus: "OPEN" }),
+  });
+  // Without opId this would be an indistinguishable "already committed" 409.
+  ok("replaying the SAME op is a success, not a conflict", c2.status === 200, `status ${c2.status}`);
+  const c3 = await browser.call(`/api/locations/${loc.id}/counts/${deskCountId}/commit`, {
+    method: "POST",
+    body: JSON.stringify({ opId: "dsyncop00000000000002", expectedStatus: "OPEN" }),
+  });
+  ok("a DIFFERENT op against stale state is a conflict", c3.status === 409, `status ${c3.status}`);
+  const opRows = await prisma.syncOp.count({ where: { opId: commitOp } });
+  ok("the applied op is recorded exactly once", opRows === 1, `${opRows} rows`);
+
+  // Commit with no body at all — the browser has always sent none.
+  const bare = await browser.call(`/api/locations/${loc.id}/counts/${webCountId}/lines`, {
+    method: "POST",
+    body: JSON.stringify({ locationItemId: item.id, countType: "FULL", qtyFull: 1 }),
+  });
+  ok("browser can add a line to its own count", bare.status === 201, `status ${bare.status}`);
+  const bareCommit = await browser.call(`/api/locations/${loc.id}/counts/${webCountId}/commit`, {
+    method: "POST",
+  });
+  ok("commit still works with no body (unchanged browser behaviour)", bareCommit.status === 200, `status ${bareCommit.status}`);
+
+  console.log("\nRule 3 — catalog edits cannot be queued offline");
+  // NO acting-user header: the actor is the owner, who HAS prices.edit. With a
+  // STAFF acting user this returned 403 from the permission guard and never
+  // reached Rule 3 at all — a green check that proved nothing. The assertion is
+  // exact (400) for the same reason.
+  const queuedPrice = await desk2.call(`/api/locations/${loc.id}/location-items/${item.id}`, {
+    method: "PUT",
+    body: JSON.stringify({ cost: 999, occurredAt: "2026-07-29T02:00:00.000Z" }),
+  });
+  ok("a price edit carrying offline sync fields is refused", queuedPrice.status === 400, `status ${queuedPrice.status}`);
+  const priceNow = await prisma.locationItem.findUnique({ where: { id: item.id } });
+  ok("and the price is unchanged", priceNow?.cost !== 999, `cost=${priceNow?.cost}`);
+
+  // The control: the SAME edit without the offline markers must succeed, or the
+  // guard is just breaking price edits from the desktop entirely.
+  const livePrice = await desk2.call(`/api/locations/${loc.id}/location-items/${item.id}`, {
+    method: "PUT",
+    body: JSON.stringify({ cost: 621 }),
+  });
+  ok("but a live price edit from the same desktop succeeds", livePrice.status === 200, `status ${livePrice.status}`);
+
+  console.log("\nRule 4 — the risks sync cannot resolve are surfaced");
+  const dupes = await browser.call(`/api/locations/${loc.id}/sync/duplicates`);
+  ok("duplicate review is served", dupes.status === 200, `status ${dupes.status}`);
+  ok("and returns groups", Array.isArray((dupes.body as { groups: unknown[] }).groups));
+  const syncStatus = await browser.call(`/api/locations/${loc.id}/sync/status`);
+  ok("sync status is served", syncStatus.status === 200, `status ${syncStatus.status}`);
+  const st = syncStatus.body as { devices: unknown[]; anyStale: boolean };
+  ok("and reports the registered machines", st.devices.length > 0, `${st.devices.length} devices`);
+
   // ── Revocation ──
   console.log("\nRevocation — the counterweight to a year-long token");
   const adminAgent = agent();

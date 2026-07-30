@@ -1603,3 +1603,258 @@ The migration also finally drops the stray `LocationItem.industry` column that
 `20260724070711` added to the wrong table. `20260728060000` chose to leave it;
 the gain has since appeared, because Prisma regenerated that drop on every
 `migrate dev`. Verified empty first — 172 rows, 0 non-null.
+
+---
+
+## Phase 36 — Offline login, attribution, and count sheets (2026-07-30)
+
+Closing the one decision Phase 35 left open, plus the two things that turned out
+to be inseparable from it.
+
+### The decision: a device PIN, not the password
+
+The client's instinct ("just a device pin with forgot password function") was
+right, and for a sharper reason than convenience. The obvious alternative —
+ship `User.passwordHash` in the snapshot and verify the ordinary password
+locally — needs no new concepts and is wrong: the secret sitting on the bar PC
+would be **the same secret** that logs into the web application. Stealing one
+computer would become remote access to the establishment's books.
+
+A PIN is a credential the **server never accepts as a login**. Cracking it buys
+access to a machine the thief already physically holds. That asymmetry is the
+entire design.
+
+What it is not: four digits will not survive an offline attack on the file, and
+it is not meant to. Whoever holds the machine holds the mirror; encryption at
+rest answers that, not a longer PIN. The PIN buys casual-access control,
+attribution, and a blast radius of one revocable device. Written down plainly in
+the doc rather than left as an implied claim.
+
+**Recovery, ordered by what actually happens** rather than by what is easiest to
+build: online reset with your password (the network is usually up) -> a manager
+clears it, which is stronger than any question because it needs a second human
+who is present -> a self-written recovery question as the offline break-glass.
+Self-written because shipping a canned "mother's maiden name" list is how that
+becomes the weakest link. Rate-limited on the same 5-attempt/1-hour lockout as
+login, and every use writes a `pin.recover` row that syncs to the admin — a
+break-glass with an alarm on it.
+
+Policy lives in `@fnb/core` (`validatePin`), so the Electron app enforces the
+identical rule. A PIN the desktop accepted but the server would reject is a
+credential that stops working the moment the machine reconnects.
+
+### What the PIN surfaced: attribution was broken
+
+Chasing "who is signing in offline" exposed a bug that had nothing to do with
+PINs. A desktop holds **one** session — the one opened when the owner registered
+it — while a whole shift uses the machine. Nineteen routes read the session user
+for `createdById`. Every count line pushed from that computer would have carried
+the owner's name. An audit trail that credits one person for everyone's work is
+worse than no audit trail; it is a confident lie.
+
+Fixed in `sessionMiddleware`, not in nineteen routes: the desktop sends
+`X-Acting-User` and the middleware swaps the person in once. Because it happens
+at the session layer, **permissions follow the real actor too** — verified that
+STAFF still cannot void from the owner's device session. A browser session
+cannot use the header at all, and an unrecognised claim is a 403 rather than a
+silent fallback to the session user, which would have re-created the exact bug.
+
+### Physical Count Sheets (§3.11)
+
+Zero server code — the catalog hook already existed, so this is one page. The
+only real decision was making it **blind**: no expected quantity, no par level,
+no cost or retail. Printing the expected figure beside an empty box is how you
+get counters copying the system's number instead of counting the shelf, and the
+gap between those two numbers is the whole product. Every other report exists to
+show expected-vs-actual; this one exists to collect the actual.
+
+### Verified
+
+- `npm run verify:sync -w @fnb/server` — **45 checks** (up from 30), all passing:
+  guessable PIN refused, wrong password refused, recovery works
+  case/space-insensitively and is logged, a wrong answer leaves the PIN alone,
+  a device push is credited to the acting staff member rather than the owner,
+  STAFF still cannot void on a device session, unknown actor 403, a browser
+  session cannot impersonate, snapshot carries `pinHash` but never
+  `passwordHash`.
+- `npm run verify:seed -w @fnb/server` — 47 checks, both anchors unchanged.
+- Typecheck clean in both workspaces; PIN set end-to-end through the real UI
+  (weak-PIN rejection inline, POST 200, badge and forgot-link appear).
+
+### Two notes from the run
+
+- **A harness check that passed for the wrong reason.** "A wrong recovery answer
+  is refused" returned 400 — but only because the throwaway question in the test
+  body was 3 characters and failed zod's `min(5)` before the answer was ever
+  checked. Every field in a negative test has to be independently valid or the
+  test asserts nothing. Now asserts 401 specifically, and that the stored PIN is
+  untouched.
+- **A browser click that "failed" and hadn't.** The Set PIN button appeared not
+  to fire; the fields were populated and the button enabled. The cause was the
+  Browser pane not compositing frames, so synthetic clicks never reached React —
+  not a bug in the form. Dispatching the click directly completed the flow.
+
+---
+
+## Phase 37 — Two-way operation: the plan (2026-07-30)
+
+Client request: make the desktop a full replica of the web app, both usable at
+the same establishment, changes flowing each way. This retires the
+single-writer assumption Phase 35 was built on. **Planning only — no code.**
+Design lives in docs/sync-and-data-lifecycle.md §7.
+
+### Why this is cheap rather than a rewrite
+
+Phase 35 justified the mirror with §18's "one (1) client computer" — one writer,
+so no merge. That justification is gone, but the design survives, because the
+real reason it works was never the single writer:
+
+**Almost every write in this system is an append.** Sales, forfeits, count
+lines, purchase lines, transfer lines, receipts — all INSERTs with globally
+unique ids. Two sources inserting different rows have nothing to merge.
+Corrections are already void-plus-replacement rather than edits, so even
+"changing" a committed record is an append. That is the ledger discipline the
+project has enforced since day one, now paying for itself.
+
+Auditing every mutating route, the non-append surface is exactly **19 routes**:
+3 hard deletes of draft lines, 3 draft/open mutations, ~10 status transitions,
+3 catalog/master edits. That is the entire conflict surface, and it is small
+enough to close case by case rather than with a merge engine.
+
+### The four rules
+
+1. **Open work belongs to where it started.** `originDeviceId` on CountSession /
+   Purchase / Transfer; while OPEN or DRAFT only the origin may touch it, the
+   other side sees it read-only. This *deletes* the draft-merge problem instead
+   of solving it, and matches reality — one person is walking round with the
+   scale. Needs a force-release escape hatch or a dead bar PC freezes an open
+   count forever.
+2. **The server decides status.** Commit/void become compare-and-set with the
+   expected status; a mismatch is a 409 that goes to a human, never auto-applied.
+   This is the one place a genuine idempotency-TOKEN table is unavoidable: for
+   creates the primary key answers "did this apply?" for free, but a void is not
+   a new row, so a replayed void is indistinguishable from someone else's
+   without an `opId`. Hence `SyncOp` — and it is the first table in the project
+   with a retention policy (90 days), which is why §7.6 exists.
+3. **Catalog and master data stay server-authoritative.** Offline you can count,
+   sell, receive, forfeit — you cannot re-price. `LocationItem` carries cost and
+   retail, and last-write-wins on a price is how a client's stated inventory
+   value changes without anyone deciding to change it.
+4. **Nothing is silently dropped.** Rejected pushes land in a conflict inbox. A
+   sync that quietly discards work is worse than one that fails loudly, because
+   the count still balances — against the wrong numbers.
+
+### The two things flagged as genuine costs
+
+- **Duplicate human entry is unfixable by sync.** Staff records a delivery on the
+  desktop, the manager records the same delivery in the browser: two records,
+  different ids, both valid, indistinguishable from a genuine repeat delivery.
+  The single-writer rule prevented this structurally. Mitigation is product-level
+  (detect same item+date+qty from a different source, show provenance on every
+  record), not algorithmic — and the client should be told before it happens.
+- **A stale Full Audit is the most dangerous artefact this feature can produce.**
+  The desktop can compute the one report the client trusts above all from a
+  mirror that is hours old. Decided: every screen shows "synced <time>", and the
+  Full Audit refuses to print or export while unsynced changes exist or the last
+  sync predates the reported period — overridable only as an explicitly
+  watermarked draft.
+
+### Also decided
+
+Stale-authorisation cases were worked through rather than left implicit. The
+governing principle: **never destroy real audit records to enforce an
+access state.** A user disabled mid-offline-stretch keeps working locally; their
+pushed records are accepted and flagged, not discarded, because the work actually
+happened. Same for a subscription that lapses mid-stretch — accept what was
+recorded before the lockout, block what comes after. Permission changes are
+re-checked at push time, so a demoted user's void is rejected into the inbox,
+which is the correct outcome and the reason permissions are enforced at push and
+not only in the UI.
+
+Suggested build order is in §7.7. Steps 1–5 are all server-side and verifiable
+through `verify:sync` before any Electron code exists; only step 6 (outbox,
+merge-on-pull, conflict inbox) lives in the desktop.
+
+---
+
+## Phase 38 — Two-way operation, server half (2026-07-30)
+
+Building the §7 plan from Phase 37: browser and desktop both writing, changes
+flowing each way. Everything here is server-side and verified before any
+Electron code exists.
+
+### Shipped
+
+- **Migration `two_way_sync`** — purely additive, no table rebuilds:
+  `originDeviceId` on CountSession / Purchase / Transfer (ownership) and on
+  SaleRecord / Forfeit (provenance), plus the `SyncOp` table.
+- **Rule 1, draft ownership** (`assertMayEditDraft`): while a document is
+  OPEN/DRAFT only the source that started it may add, edit, delete or commit.
+  Wired into all six draft-mutating routes across counts, purchases and
+  transfers. Plus `POST /drafts/:entity/:id/release` — an owner can free a draft
+  stranded on a dead machine, because without it a bar PC that dies mid-count
+  freezes that count open forever.
+- **Rule 2, replay-safe status transitions**: `opId` + `expectedStatus` on
+  commit/void. This is the one place a genuine idempotency-TOKEN table is
+  unavoidable — a create carries its own primary key, but a void changes an
+  existing row, so without a token a replayed void is indistinguishable from
+  someone else's void, and those need opposite handling. `recordOp` writes in
+  the same transaction as the mutation.
+- **Rule 3, catalog stays server-authoritative** (`assertNotQueuedEdit`) on
+  price/weight and supplier edits.
+- **Rule 4 surfacing**: `GET /sync/duplicates` (double-entry review) and
+  `GET /sync/status` (which machines hold unpushed work).
+- **`SyncOp` pruning on `/sync/ack`** — 90 days. The only table in this schema
+  that is not kept forever, so it is the only one needing this. Done at ack
+  because there is no scheduler in this project, and a retention policy that
+  lives only in a document is not a retention policy.
+
+### Two corrections to my own Phase 37 plan
+
+- **`updatedAt` on the three headers was specced and then dropped.** `status` is
+  already the version for these documents, and Rule 1 means an open draft has no
+  concurrent editor. It would have been a column nothing read.
+- **Rule 3 was nearly a no-op.** The plan claimed catalog edits "cannot be
+  queued, structurally, because the catalog schemas never carried syncFields".
+  Half true: no idempotency key means no *replay* — but `locationItemUpdate` is
+  not `.strict()`, so zod silently STRIPS an `occurredAt` and a queued price edit
+  would have sailed through validation and applied last-write-wins. The guard has
+  to read the RAW body to see the marker. Caught by writing the test.
+
+### Two harness checks that passed for the wrong reason
+
+Both found by reading the status codes rather than the green ticks.
+
+- **Rule 3** returned **403, not 400** — the acting user was STAFF, so the
+  `prices.edit` permission guard rejected it and the new guard never ran. Fixed
+  by dropping the acting-user header (the owner has `prices.edit`), asserting
+  exactly 400, and adding a **control**: the same edit *without* the offline
+  markers must still succeed, or the guard is just breaking desktop price edits
+  entirely.
+- Earlier in the same session, the PIN recovery check returned 400 because a
+  3-character test question failed zod before the answer was ever checked.
+
+Same lesson twice: a negative test whose fields are not independently valid
+asserts nothing, and an assertion loose enough to accept two status codes will
+eventually accept the wrong one.
+
+### Deliberately deferred
+
+The browser-side UI for all of it. With no registered device, `originDeviceId`
+is null everywhere, `anyStale` is always false and the duplicate report is always
+empty — there is nothing to render. Server rules are enforced and verified now
+because they are migrations and route logic; the screens come with the desktop,
+when there is state to show.
+
+### Verified
+
+- `npm run verify:sync -w @fnb/server` — **65 checks** (up from 45): the desktop
+  cannot touch a browser-owned count and vice versa, ownership is recorded, an
+  owner can release a stranded draft and the browser can then work on it,
+  replaying the same op is a success while a different op against stale state is
+  a conflict, the op is recorded exactly once, commit still works with no body at
+  all, a queued price edit is refused while a live one succeeds, and both review
+  endpoints serve.
+- `npm run verify:seed -w @fnb/server` — 47 checks, **both anchors unchanged**:
+  −₱330.69 / −₱869.57 and −₱537 / −₱1,410.
+- Typecheck clean in both workspaces.

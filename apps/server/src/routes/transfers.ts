@@ -3,6 +3,7 @@ import { zValidator } from "@hono/zod-validator";
 import {
   allowedProductTypes,
   can,
+  commitRequest,
   lineTotal,
   transferCreate,
   transferLineCreate,
@@ -13,6 +14,13 @@ import {
 import { prisma } from "../db";
 import { AppError } from "../lib/errors";
 import { replay } from "../lib/idempotency";
+import {
+  assertExpectedStatus,
+  assertMayEditDraft,
+  opAlreadyApplied,
+  originOf,
+  recordOp,
+} from "../lib/two-way";
 import { logActivity } from "../services/activity";
 import { requirePermission, type AppEnv } from "../middleware/auth";
 
@@ -144,6 +152,7 @@ export const transferRoutes = new Hono<AppEnv>()
           // undefined on every browser request — Prisma's cuid() default applies.
           id: body.id,
           occurredAt: body.occurredAt,
+          originDeviceId: originOf(user), // owns the draft until dispatch
           fromLocationId: location.id,
           toLocationId: toLocation.id,
           businessDate: body.businessDate,
@@ -195,6 +204,7 @@ export const transferRoutes = new Hono<AppEnv>()
     const transfer = await getOwnedTransfer(location.id, c.req.param("id"));
     requireSourceSide(transfer, location.id);
     if (transfer.status !== "DRAFT") throw new AppError(409, "Only drafts can be edited");
+    assertMayEditDraft(transfer, c.get("user")!, "transfer");
     const body = c.req.valid("json");
     if (body.toLocationId !== undefined) {
       if (body.toLocationId === location.id) throw new AppError(400, "A location can't transfer stock to itself");
@@ -214,6 +224,7 @@ export const transferRoutes = new Hono<AppEnv>()
     const transfer = await getOwnedTransfer(location.id, c.req.param("id"));
     requireSourceSide(transfer, location.id);
     if (transfer.status !== "DRAFT") throw new AppError(409, "Committed transfers take corrections, not new draft lines");
+    assertMayEditDraft(transfer, user, "transfer");
     const body = c.req.valid("json");
 
     const already = await replay(
@@ -248,6 +259,7 @@ export const transferRoutes = new Hono<AppEnv>()
     const transfer = await getOwnedTransfer(location.id, c.req.param("id"));
     requireSourceSide(transfer, location.id);
     if (transfer.status !== "DRAFT") throw new AppError(409, "Committed lines cannot be removed — void instead");
+    assertMayEditDraft(transfer, c.get("user")!, "transfer");
     // The line must actually belong to THIS draft — a raw delete by id would
     // reach any TransferLine in the database, including other clients'.
     const line = await prisma.transferLine.findUnique({ where: { id: c.req.param("lineId") } });
@@ -261,6 +273,13 @@ export const transferRoutes = new Hono<AppEnv>()
     const user = c.get("user")!;
     const transfer = await getOwnedTransfer(location.id, c.req.param("id"));
     requireSourceSide(transfer, location.id);
+
+    const op = commitRequest.safeParse(await c.req.json().catch(() => ({})));
+    if (!op.success) throw new AppError(400, "Invalid commit request");
+    if (await opAlreadyApplied(op.data.opId)) return c.json(transfer, 200);
+    assertExpectedStatus(transfer.status, op.data.expectedStatus, "transfer");
+    assertMayEditDraft(transfer, user, "transfer");
+
     if (transfer.status !== "DRAFT") throw new AppError(409, "Already committed");
 
     const lines = await prisma.transferLine.findMany({
@@ -288,6 +307,7 @@ export const transferRoutes = new Hono<AppEnv>()
         where: { id: transfer.id },
         data: { status: "COMMITTED", committedAt: new Date(), committedById: user.id },
       });
+      await recordOp(tx, op.data.opId, user, "Transfer", transfer.id, "commit");
       await logActivity(
         {
           user, clientId: location.clientId, locationId: location.id,
@@ -523,9 +543,13 @@ export const transferRoutes = new Hono<AppEnv>()
   .post("/transfers/:id/void", createGuard, zValidator("json", voidRequest), async (c) => {
     const location = c.get("location");
     const user = c.get("user")!;
-    const { reason } = c.req.valid("json");
+    const { reason, opId, expectedStatus } = c.req.valid("json");
     const transfer = await getOwnedTransfer(location.id, c.req.param("id"));
     requireSourceSide(transfer, location.id);
+
+    if (await opAlreadyApplied(opId)) return c.json(transfer, 200);
+    assertExpectedStatus(transfer.status, expectedStatus, "transfer");
+
     if (transfer.status === "VOID") throw new AppError(409, "Already voided");
     if (transfer.status !== "DRAFT" && !can(user.role as Role, "entries.void")) {
       throw new AppError(403, "You don't have permission for this action");
@@ -538,6 +562,7 @@ export const transferRoutes = new Hono<AppEnv>()
         where: { id: transfer.id },
         data: { status: "VOID", voidedAt: new Date(), voidedById: user.id, voidReason: reason },
       });
+      await recordOp(tx, opId, user, "Transfer", transfer.id, "void");
       await logActivity(
         {
           user, clientId: location.clientId, locationId: location.id,

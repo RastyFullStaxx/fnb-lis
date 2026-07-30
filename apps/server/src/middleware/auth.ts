@@ -1,3 +1,4 @@
+import type { Context } from "hono";
 import { createMiddleware } from "hono/factory";
 import { getCookie } from "hono/cookie";
 import type { Client, Location } from "../generated/prisma/client";
@@ -21,12 +22,72 @@ export type AppEnv = {
   };
 };
 
+/**
+ * Header the offline desktop sends to say WHICH of its staff is acting.
+ * See ACTING_USER below.
+ */
+export const ACTING_USER_HEADER = "x-acting-user";
+
 /** Resolves the session cookie to a user (or null) on every request. */
 export const sessionMiddleware = createMiddleware<AppEnv>(async (c, next) => {
   const token = getCookie(c, SESSION_COOKIE);
-  c.set("user", token ? await getSessionUser(token) : null);
+  const user = token ? await getSessionUser(token) : null;
+  c.set("user", user && (await resolveActingUser(c, user)));
   await next();
 });
+
+/**
+ * On a DEVICE session, swap in the staff member the desktop says is acting.
+ *
+ * The offline desktop holds ONE long-lived session — the one opened when the
+ * owner registered the machine — but many people use it across a shift. Without
+ * this, every count line pushed from that machine would carry the owner's name
+ * in `createdById`, and an audit trail that credits one person for everyone's
+ * work is worse than no audit trail: it is a confident lie. Nineteen routes read
+ * `c.get("user")` for attribution, so the substitution belongs here, once,
+ * rather than as nineteen chances to get it wrong.
+ *
+ * Doing it at the session layer also means PERMISSIONS follow the real actor:
+ * `requirePermission` now sees the STAFF member, so a staff login on the desktop
+ * cannot void records just because the machine was registered by an owner.
+ *
+ * The trust boundary, stated plainly: a registered device is trusted to assert
+ * which of ITS OWN client's users is acting, because offline there is nobody
+ * else to ask — the PIN check happens on the machine, against hashes it was
+ * given. That trust is bounded three ways: the claim is rejected unless the
+ * session is device-bound, the named user must be active and belong to that
+ * device's establishment, and the machine is revocable. A browser session
+ * cannot use this header at all.
+ */
+async function resolveActingUser(c: Context, session: SessionUser): Promise<SessionUser> {
+  const claimed = c.req.header(ACTING_USER_HEADER);
+  if (!claimed || !session.deviceId || claimed === session.id) return session;
+
+  const device = await prisma.device.findUnique({ where: { id: session.deviceId } });
+  if (!device) return session;
+
+  const actor = await prisma.user.findFirst({
+    where: {
+      id: claimed,
+      status: "ACTIVE",
+      clientAccess: { some: { clientId: device.clientId } },
+    },
+    include: { modules: true },
+  });
+  // Silently falling back to the session user would attribute the work to the
+  // wrong person, which is the exact failure this exists to prevent. Refuse.
+  if (!actor) throw new AppError(403, "That user cannot act on this device");
+
+  return {
+    id: actor.id,
+    username: actor.username,
+    firstName: actor.firstName,
+    lastName: actor.lastName,
+    role: actor.role as Role,
+    modules: actor.role === "ADMIN" || actor.modules.length === 0 ? null : actor.modules.map((m) => m.module),
+    deviceId: session.deviceId,
+  };
+}
 
 /**
  * CSRF guard for a same-origin cookie SPA: browsers attach Origin on

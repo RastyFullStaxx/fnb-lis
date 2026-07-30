@@ -8,6 +8,7 @@ import {
   type AppEnv,
 } from "./middleware/auth";
 import { authRoutes } from "./routes/auth";
+import { pinRoutes, pinAdminRoutes } from "./routes/pin";
 import { adminRoutes, userAdminRoutes } from "./routes/admin";
 import { deviceRoutes } from "./routes/devices";
 import { masterRoutes } from "./routes/master";
@@ -34,6 +35,7 @@ export function createApp() {
 
   app.get("/api/health", (c) => c.json({ ok: true }));
   app.route("/api/auth", authRoutes);
+  app.route("/api/auth", pinRoutes);
   app.route("/api/admin", adminRoutes);
   // Same prefix, softer guard: user accounts are managed by the LIS ADMIN and
   // by each establishment's OWNER (client req 2026-07-25).
@@ -41,6 +43,7 @@ export function createApp() {
   // Same prefix again, its own guard: registered desktops are managed by the
   // LIS ADMIN and by each establishment's OWNER (devices.manage).
   app.route("/api/admin", deviceRoutes);
+  app.route("/api/admin", pinAdminRoutes);
   app.route("/api/master", masterRoutes);
   app.route("/api/activity", activityRoutes);
   app.route("/api/settings", settingsRoutes);

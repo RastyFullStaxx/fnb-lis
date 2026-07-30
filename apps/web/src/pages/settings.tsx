@@ -1,8 +1,16 @@
 import { useEffect, useState } from "react";
 import { Download, Plus, X } from "lucide-react";
 import { toast } from "sonner";
-import { can, COST_BASES, COST_BASIS_LABELS, type CostBasis, type Role } from "@fnb/core";
-import { useMe } from "@/api/auth";
+import {
+  can,
+  COST_BASES,
+  COST_BASIS_LABELS,
+  PIN_MAX_LENGTH,
+  validatePin,
+  type CostBasis,
+  type Role,
+} from "@fnb/core";
+import { useClearDevicePin, useDevicePin, useMe, useSetDevicePin } from "@/api/auth";
 import { useCurrentClient, useLocationId } from "@/api/location";
 import { useProductTypes } from "@/api/master";
 import {
@@ -42,6 +50,7 @@ export function SettingsPage() {
       {/* Flat sections split by hairlines — one surface, never stacked cards. */}
       <div className="divide-y">
         <DisplayPreferencesSection />
+        <DevicePinSection />
         <CompanySection />
         <CostBasisSection />
         <VarianceThresholdSection />
@@ -235,6 +244,178 @@ function SettingsSection({
       ) : null}
       <div className="mt-4">{children}</div>
     </section>
+  );
+}
+
+/**
+ * The PIN a person uses to sign in on the offline desktop, set from the browser
+ * because that is where there is a keyboard and a network.
+ *
+ * Everyone sees this section — a STAFF member is precisely who stands at the bar
+ * PC at 2am, so gating it by role would lock out its main audience.
+ *
+ * It is deliberately NOT presented as "a shorter password". The copy says where
+ * it works and where it does not, because a person told to "set a PIN" will
+ * otherwise reuse their password digits and assume it protects the same things.
+ */
+function DevicePinSection() {
+  const status = useDevicePin();
+  const save = useSetDevicePin();
+  const clear = useClearDevicePin();
+
+  const [pin, setPin] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [question, setQuestion] = useState("");
+  const [answer, setAnswer] = useState("");
+  // Which proof authorises the change: the password normally, the recovery
+  // answer when the PIN has been forgotten.
+  const [mode, setMode] = useState<"password" | "recovery">("password");
+  const [proof, setProof] = useState("");
+
+  const hasPin = status.data?.hasPin ?? false;
+  const pinProblem = pin ? validatePin(pin) : null;
+
+  const reset = () => {
+    setPin("");
+    setConfirm("");
+    setQuestion("");
+    setAnswer("");
+    setProof("");
+    setMode("password");
+  };
+
+  const submit = async () => {
+    if (pinProblem) return toast.error(pinProblem);
+    if (pin !== confirm) return toast.error("The two PINs don't match");
+    try {
+      const res = await save.mutateAsync({
+        pin,
+        recoveryQuestion: question.trim(),
+        recoveryAnswer: answer.trim(),
+        ...(mode === "password" ? { currentPassword: proof } : { currentRecoveryAnswer: proof }),
+      });
+      toast.success(res.via === "recovery" ? "PIN reset — your administrator has been notified" : "Device PIN saved");
+      reset();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not save the PIN");
+    }
+  };
+
+  const remove = async () => {
+    try {
+      await clear.mutateAsync();
+      toast.success("Device PIN removed — you can no longer sign in offline");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not remove the PIN");
+    }
+  };
+
+  return (
+    <SettingsSection
+      title="Offline desktop PIN"
+      description="Signs you in on the bar computer when there's no internet. It works on that computer only — it is not your password, and it can't be used to sign in here."
+    >
+      {status.isPending ? (
+        <Skeleton className="h-9 w-56" />
+      ) : (
+        <div className="max-w-md space-y-4">
+          {hasPin && (
+            <div className="flex items-center gap-2">
+              <Badge variant="success">PIN set</Badge>
+              <span className="text-sm text-muted-foreground">
+                Recovery question: “{status.data?.recoveryQuestion}”
+              </span>
+            </div>
+          )}
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="pin-new">{hasPin ? "New PIN" : "PIN"}</Label>
+              <Input
+                id="pin-new"
+                type="password"
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="4–8 digits"
+                value={pin}
+                onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, PIN_MAX_LENGTH))}
+              />
+              {pinProblem && <p className="text-xs text-destructive">{pinProblem}</p>}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="pin-confirm">Confirm PIN</Label>
+              <Input
+                id="pin-confirm"
+                type="password"
+                inputMode="numeric"
+                autoComplete="off"
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value.replace(/\D/g, "").slice(0, PIN_MAX_LENGTH))}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="pin-question">Recovery question</Label>
+            <Input
+              id="pin-question"
+              placeholder="e.g. What was the name of my first bar?"
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+            />
+            {/* Write-your-own rather than a canned list: "mother's maiden name"
+                is the weakest link in every design that ships one. */}
+            <p className="text-xs text-muted-foreground">
+              Only used if you forget your PIN with no internet. Pick something nobody at work could guess.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="pin-answer">Answer</Label>
+            <Input id="pin-answer" autoComplete="off" value={answer} onChange={(e) => setAnswer(e.target.value)} />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="pin-proof">
+              {mode === "password" ? "Confirm with your password" : "Answer your current recovery question"}
+            </Label>
+            {mode === "recovery" && status.data?.recoveryQuestion && (
+              <p className="text-sm text-muted-foreground">“{status.data.recoveryQuestion}”</p>
+            )}
+            <Input
+              id="pin-proof"
+              type="password"
+              autoComplete="off"
+              value={proof}
+              onChange={(e) => setProof(e.target.value)}
+            />
+            {hasPin && (
+              <button
+                type="button"
+                className="text-xs text-muted-foreground underline underline-offset-2"
+                onClick={() => {
+                  setMode(mode === "password" ? "recovery" : "password");
+                  setProof("");
+                }}
+              >
+                {mode === "password" ? "I forgot my password — use my recovery question" : "Use my password instead"}
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button onClick={() => void submit()} disabled={save.isPending || !pin || !proof}>
+              {hasPin ? "Change PIN" : "Set PIN"}
+            </Button>
+            {hasPin && (
+              <Button variant="ghost" onClick={() => void remove()} disabled={clear.isPending}>
+                Remove
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+    </SettingsSection>
   );
 }
 

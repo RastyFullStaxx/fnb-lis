@@ -34,6 +34,47 @@ model User {
   sessions     AuthSession[]
   clientAccess UserClientAccess[]
   modules      UserModule[]
+  devicePin    DevicePin?
+}
+
+/**
+ * How a person signs in on the offline desktop when there is no network to ask.
+ *
+ * A SEPARATE credential from the password, and that separation is the whole
+ * point. The obvious design — ship `User.passwordHash` to the device and verify
+ * it locally — turns the theft of one bar PC into remote compromise of the web
+ * application, because the cracked secret is the same secret. A PIN is accepted
+ * ONLY by a registered desktop and never by the server, so the same theft yields
+ * something that unlocks a machine the thief already physically holds.
+ *
+ * Be clear about what this does and does not do. Four to eight digits will not
+ * survive an offline attack on the file, and it is not meant to: whoever holds
+ * the machine holds the mirror, and encryption at rest is the answer to that,
+ * not a longer PIN. What the PIN buys is (a) casual-access control at the bar,
+ * (b) attribution — which member of staff recorded this count — and (c) a blast
+ * radius that stops at one revocable device.
+ *
+ * Failure counts and lockouts are deliberately NOT here: they are device-local
+ * state, since a device that cannot reach the server cannot increment a counter
+ * on it. The device tracks them in its own mirror and pushes an ActivityLog row
+ * on the next sync.
+ */
+model DevicePin {
+  userId String @id
+  user   User   @relation(fields: [userId], references: [id])
+  // Same scrypt format as passwordHash (auth/password.ts).
+  pinHash String
+  /**
+   * Break-glass for "no network, forgot the PIN, and the closing count still has
+   * to happen". Free text the user writes themselves rather than a canned list —
+   * "mother's maiden name" is the weakest link in every design that ships one.
+   * The answer is normalised then hashed, never stored readable.
+   */
+  recoveryQuestion   String
+  recoveryAnswerHash String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // Per-user module restriction (client req #9): which of BAR/KITCHEN/ASSET
@@ -458,6 +499,12 @@ model CountSession {
   // Null on everything written through the browser, where the two are the same
   // instant. Read it as `occurredAt ?? createdAt`.
   occurredAt    DateTime?
+  // Which source created this document: a registered desktop, or null for the
+  // browser. Two jobs (docs/sync-and-data-lifecycle.md §7.2): while the document
+  // is OPEN/DRAFT it is the OWNER — only that source may edit or commit it, which
+  // removes the whole draft-merge problem instead of solving it. Afterwards it is
+  // PROVENANCE, the thing an auditor needs when chasing a double-entered delivery.
+  originDeviceId String?
   committedAt   DateTime?
   committedById String?
   voidedAt      DateTime?
@@ -514,6 +561,12 @@ model Purchase {
   createdByName String
   createdAt     DateTime  @default(now())
   occurredAt    DateTime? // device time — see CountSession.occurredAt
+  // Which source created this document: a registered desktop, or null for the
+  // browser. Two jobs (docs/sync-and-data-lifecycle.md §7.2): while the document
+  // is OPEN/DRAFT it is the OWNER — only that source may edit or commit it, which
+  // removes the whole draft-merge problem instead of solving it. Afterwards it is
+  // PROVENANCE, the thing an auditor needs when chasing a double-entered delivery.
+  originDeviceId String?
   committedAt   DateTime?
   committedById String?
   voidedAt      DateTime?
@@ -580,6 +633,10 @@ model SaleRecord {
   createdByName   String
   createdAt       DateTime       @default(now())
   occurredAt      DateTime? // device time — see CountSession.occurredAt
+  // Provenance only — a sale has no draft state to own. This is what answers
+  // "was this delivery entered twice, once here and once on the bar PC?", the
+  // one risk two-way sync cannot resolve for us (§7.4).
+  originDeviceId  String?
 
   @@index([locationId, saleDate, kind])
   @@index([locationItemId])
@@ -610,6 +667,7 @@ model Forfeit {
   createdByName    String
   createdAt        DateTime     @default(now())
   occurredAt       DateTime? // device time — see CountSession.occurredAt
+  originDeviceId   String? // provenance — see SaleRecord.originDeviceId
 
   @@index([locationId, forfeitDate])
 }
@@ -641,6 +699,12 @@ model Transfer {
   createdByName  String
   createdAt      DateTime  @default(now())
   occurredAt     DateTime? // device time — see CountSession.occurredAt
+  // Which source created this document: a registered desktop, or null for the
+  // browser. Two jobs (docs/sync-and-data-lifecycle.md §7.2): while the document
+  // is OPEN/DRAFT it is the OWNER — only that source may edit or commit it, which
+  // removes the whole draft-merge problem instead of solving it. Afterwards it is
+  // PROVENANCE, the thing an auditor needs when chasing a double-entered delivery.
+  originDeviceId String?
   committedAt    DateTime?
   committedById  String?
   voidedAt       DateTime?
@@ -831,6 +895,38 @@ model ActivityLog {
   deviceId    String?
 
   @@index([ts])
+  @@index([entity, entityId])
+}
+
+/**
+ * Applied sync operations — the ONE genuine idempotency-token table here, and
+ * worth explaining because everything else deliberately avoids being one.
+ *
+ * For a CREATE, the record's own primary key answers "did this already apply?"
+ * for free (see `syncFields` in @fnb/core), so no token is needed. A VOID or a
+ * COMMIT is not a new row: there is no key to collide, and a replayed void is
+ * therefore indistinguishable from someone ELSE having voided the same record
+ * in the browser meanwhile. Those two cases need opposite handling — one is a
+ * success, the other is a conflict a human must see — so the distinction cannot
+ * be guessed. `opId` is the client-minted key that makes it decidable.
+ *
+ * Written in the SAME transaction as the mutation it records, or a crash between
+ * the two would let the operation apply twice.
+ *
+ * Unlike every other table in this schema, this one is pruned: an operation is
+ * never replayed once its device has synced past it. See
+ * docs/sync-and-data-lifecycle.md §7.6 — 90 days.
+ */
+model SyncOp {
+  opId       String   @id
+  userId     String
+  deviceId   String?
+  entity     String // CountSession | SaleRecord | ...
+  entityId   String
+  action     String // commit | void | correct
+  appliedAt  DateTime @default(now())
+
+  @@index([appliedAt])
   @@index([entity, entityId])
 }
 
