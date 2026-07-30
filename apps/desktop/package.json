@@ -7,13 +7,17 @@
   "scripts": {
     "build:server": "node build.mjs",
     "build": "npm run build:server && npm run build -w @fnb/web",
-    "rebuild-native": "electron-rebuild -f -w better-sqlite3 --module-dir ../..",
+    "native": "node native.mjs",
     "dev": "npm run build:server && electron .",
     "typecheck": "tsc -p tsconfig.json"
   },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "pdfmake": "^0.2.23"
+  },
   "devDependencies": {
     "@electron/rebuild": "^3.7.1",
-    "electron": "^33.2.0",
-    "esbuild": "^0.24.0"
+    "electron": "^33.4.11",
+    "esbuild": "^0.28.1"
   }
 }

@@ -30,29 +30,44 @@ Not a preference — two hard constraints:
 Main process would technically work, but the same 3.5 MB compile plus every
 SQLite query would block the UI thread and freeze the window during a Full Audit.
 
-## Before this runs: rebuild the native module
-
-`better-sqlite3` 12.11.1 is compiled against raw V8, **not** Node-API, so it is
-locked to one `NODE_MODULE_VERSION` and must be rebuilt for Electron's ABI:
+## Run this after every `npm install`
 
 ```bash
-npm run rebuild-native -w @fnb/desktop
+npm run native -w @fnb/desktop
 ```
 
-Note the `--module-dir ../..`: npm workspaces hoist `better-sqlite3` to the
-**repo root**, and `@electron/rebuild` defaults to scanning the app directory —
-so without that flag it finds nothing and silently rebuilds zero modules. Re-run
-it after every Electron version bump.
+`better-sqlite3` 12.11.1 is compiled against raw V8, **not** Node-API, so one
+build works under exactly one ABI — and this repo needs two: Node's for the
+hosted server and both verify harnesses, Electron's for this app. Rebuilding the
+shared copy in place would silently break `npm run dev` and `verify:seed`.
+
+So `native.mjs` gives the desktop its own private copy under
+`apps/desktop/node_modules` and fetches the Electron prebuild into it (a
+download, not a compile — no build tools needed). It then asserts the two
+binaries differ, because a silent no-op there fails much later with an
+unhelpful `NODE_MODULE_VERSION` error.
+
+**It must be re-run after every `npm install`**: npm owns workspace
+`node_modules` and prunes anything it did not install, so the copy disappears.
 
 ## Dev loop
 
 ```bash
-npm run dev -w @fnb/desktop
+npm run build -w @fnb/web     # the renderer is served from apps/web/dist
+npm run dev  -w @fnb/desktop  # bundles the server, then launches Electron
 ```
 
-Bundles the server with esbuild, then launches Electron. It serves the SPA from
-`apps/web/dist`, so run `npm run build -w @fnb/web` first (or point the window at
-the Vite dev server while iterating on UI).
+### Debugging startup
+
+Electron detaches stdout on Windows, so a crash in the utility process leaves
+**no output at all** — you get the "LIS could not start" dialog and nothing else.
+Run the bundle directly under Electron's own Node to see the real error:
+
+```bash
+ELECTRON_RUN_AS_NODE=1 FNB_DB_FILE=<mirror.db> FNB_LOCAL_DB=<mirror.db> FNB_MIGRATIONS_DIR=../server/prisma/migrations FNB_WEB_DIST=../web/dist npx electron dist/host.mjs
+```
+
+The mirror lives at `%APPDATA%/@fnb/desktop/mirror.db`.
 
 ## What is deliberately NOT here
 
@@ -65,6 +80,13 @@ the Vite dev server while iterating on UI).
 - **No Prisma CLI.** See `migrate.ts` — shipping 60 MB of tooling to run some
   `CREATE TABLE` statements is not defensible, and the checksums it writes are
   byte-compatible with the CLI's.
+
+## Status
+
+**It launches.** The window opens, the utility process migrates a fresh mirror
+(22 migrations, 38 tables, no Prisma CLI), the embedded Hono server listens on
+127.0.0.1, and the SPA loads and renders against it — `/api/health` OK,
+`/api/auth/me` correctly 401 with no session.
 
 ## Still to do before this ships
 

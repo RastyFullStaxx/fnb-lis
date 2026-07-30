@@ -2031,3 +2031,58 @@ config, and running the golden fixtures against a device mirror.
 - `verify:seed` — 47 checks, both anchors unchanged.
 - Typecheck clean for @fnb/server and @fnb/web (@fnb/desktop cannot typecheck
   until its dependencies are installed).
+
+---
+
+## Phase 41 — The desktop launches (2026-07-30)
+
+Installed Electron 33.4.11 and got `apps/desktop` running end to end. Five real
+failures on the way, each a genuine bundling/runtime constraint rather than a
+typo.
+
+### What works
+
+Window opens ("LIS — Inventory Solution"), the utility process migrates a fresh
+mirror at `%APPDATA%/@fnb/desktop/mirror.db` (**22 migrations, 38 tables,
+`_outbox` created — with no Prisma CLI**), the embedded Hono server listens on
+127.0.0.1, and the SPA loads and renders against it: `/api/health` OK, `/` 200,
+`/api/auth/me` correctly 401.
+
+### The five failures
+
+1. **`npm install` pruned the hand-copied native module.** npm owns workspace
+   `node_modules` and removes anything it did not install. Replaced the manual
+   copy with `native.mjs`, which recreates it, fetches the Electron prebuild, and
+   **asserts the two binaries differ** — a silent no-op there would surface much
+   later as an unhelpful `NODE_MODULE_VERSION` error.
+2. **`Dynamic require of "crypto" is not supported`** — exceljs is CJS and calls
+   `require` lazily at module scope, which esbuild's ESM output shims with a
+   throwing stub. Fixed with a `createRequire(import.meta.url)` banner rather
+   than abandoning ESM, which the generated Prisma client and the server's
+   top-level `await` both need.
+3. **ENOENT on `lis-logo.png`** — `exports.ts` and `pdf.ts` resolve assets from
+   `import.meta.url` at MODULE scope, which points at the bundle once built. The
+   build now copies the assets next to `dist/`; patching the server would have
+   put desktop concerns into shared code, and those paths are correct there.
+4. **ENOENT on `data.trie`** — fontkit reads its own data files off `__dirname`.
+   Chasing each file was a losing game, so pdfmake/exceljs/@foliojs-fork are now
+   **external**, which also cut the bundle 7.4 MB → 2.0 MB. pdfmake had to be
+   declared a dependency of `@fnb/desktop` first: it is not hoisted, it lives in
+   `apps/server/node_modules` where a desktop bundle could never resolve it.
+5. **A window that never appeared.** `ready-to-show` was attached AFTER
+   `await loadURL()`, by which point it had already fired — a running app with no
+   UI, which looks exactly like a crash. Listener moved before the load, plus an
+   `isVisible()` fallback.
+
+Also worth recording: **Electron detaches stdout on Windows**, so the first
+crash produced no output whatsoever — only the startup-timeout dialog. Running
+`dist/host.mjs` under `ELECTRON_RUN_AS_NODE=1` is what surfaced every error
+above; that recipe is now in the desktop README.
+
+### Two-ABI note
+
+The repo now holds two `better-sqlite3` builds on purpose: Node ABI 137 at the
+root (server + both harnesses) and Electron ABI 130 under `apps/desktop`.
+Verified distinct by hash, and verified the root one still loads under Node —
+`verify:sync` (79) and `verify:seed` (47, both anchors) still pass after the
+install.

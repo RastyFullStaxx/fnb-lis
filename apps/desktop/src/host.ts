@@ -35,18 +35,27 @@ if (result.applied.length > 0) {
 const raw = new Database(dbFile);
 raw.exec(OUTBOX_DDL);
 
-// FNB_DB_FILE is the same override the seed-verification harness uses — the
-// server reads it in src/db.ts, so pointing the embedded instance at a local
-// mirror needs no change to shared code at all.
-process.env.FNB_DB_FILE = dbFile;
-
+// FNB_DB_FILE is set by the PARENT (main.ts), not here — the server reads it at
+// module-init time and esbuild inlines dynamic imports, so assigning it in this
+// file would race its own bundle's initialisation order.
 const { createApp } = await import("../../server/src/app");
 const { initDb } = await import("../../server/src/db");
+const { serveStatic } = await import("@hono/node-server/serve-static");
 
 const app = createApp();
 // Capture must wrap every route, so it is registered before serving rather
 // than inside createApp — the hosted server must never carry it.
 app.use("*", captureWrites(raw));
+
+// Serve the SPA. `createApp()` deliberately does not do this — on the hosted
+// server it lives in index.ts — so the desktop wires its own, pointed at the
+// packaged bundle. Without it the window loads a 404.
+const webDist = process.env.FNB_WEB_DIST!;
+const relWeb = path.relative(process.cwd(), webDist).split(path.sep).join("/");
+app.use("*", serveStatic({ root: relWeb }));
+// SPA fallback: deep links like /l/:id/counts are client-side routes with no
+// file behind them, so anything unmatched returns index.html.
+app.use("*", serveStatic({ root: relWeb, path: "index.html" }));
 
 await initDb();
 

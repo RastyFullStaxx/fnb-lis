@@ -18,6 +18,10 @@ const localDb = path.join(dataDir, "mirror.db");
 const migrationsDir = app.isPackaged
   ? path.join(process.resourcesPath, "migrations")
   : path.resolve(here, "..", "..", "server", "prisma", "migrations");
+/** The built SPA — the same bundle the hosted server serves in production. */
+const webDist = app.isPackaged
+  ? path.join(process.resourcesPath, "web")
+  : path.resolve(here, "..", "..", "web", "dist");
 
 let host: UtilityProcess | null = null;
 let win: BrowserWindow | null = null;
@@ -25,7 +29,18 @@ let win: BrowserWindow | null = null;
 function startHost(): Promise<number> {
   return new Promise((resolve, reject) => {
     host = utilityProcess.fork(path.join(here, "host.mjs"), [], {
-      env: { ...process.env, FNB_LOCAL_DB: localDb, FNB_MIGRATIONS_DIR: migrationsDir },
+      env: {
+        ...process.env,
+        FNB_LOCAL_DB: localDb,
+        FNB_MIGRATIONS_DIR: migrationsDir,
+        // Set HERE, in the parent, not inside host.ts. The server reads
+        // FNB_DB_FILE at module-init time (apps/server/src/db.ts), and esbuild
+        // inlines dynamic imports — so an assignment inside the child would be
+        // racing its own bundle's initialisation order. Getting that wrong
+        // points the desktop at the DEVELOPER'S database, silently.
+        FNB_DB_FILE: localDb,
+        FNB_WEB_DIST: webDist,
+      },
       stdio: "inherit",
     });
     const timer = setTimeout(() => reject(new Error("Local server did not start in time")), 30_000);
@@ -76,8 +91,14 @@ async function createWindow(): Promise<void> {
   // API calls are root-relative, so a real origin makes them resolve with no
   // code change; and the session cookie needs an http origin — cookies are not
   // set on file://.
-  await win.loadURL(`http://127.0.0.1:${port}/`);
+  // Listener BEFORE loadURL: `ready-to-show` fires during the load, so
+  // attaching it afterwards means it has already gone and the window never
+  // appears — a running app with no UI, which looks exactly like a crash.
   win.once("ready-to-show", () => win?.show());
+  await win.loadURL(`http://127.0.0.1:${port}/`);
+  // Belt and braces: if the event was somehow missed, still show rather than
+  // leave the user staring at nothing.
+  if (!win.isVisible()) win.show();
 }
 
 app.whenReady().then(createWindow);
