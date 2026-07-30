@@ -18,7 +18,17 @@ const commitGuard = requirePermission("imports.commit");
 const MAX_BYTES = 20 * 1024 * 1024;
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const uploadsDir = path.resolve(here, "..", "..", "data", "uploads");
+/**
+ * Beside the code on the hosted server; overridden on the desktop.
+ *
+ * A packaged install lives in Program Files, which is read-only for the account
+ * running it — resolving uploads relative to the bundle would put every AI
+ * import one permission error away from failing. The desktop points this at the
+ * per-user data directory instead.
+ */
+const uploadsDir = process.env.FNB_UPLOADS_DIR
+  ? path.resolve(process.env.FNB_UPLOADS_DIR)
+  : path.resolve(here, "..", "..", "data", "uploads");
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);

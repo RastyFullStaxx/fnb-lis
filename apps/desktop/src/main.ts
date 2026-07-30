@@ -1,3 +1,4 @@
+import { appendFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, ipcMain, Menu, utilityProcess, type UtilityProcess } from "electron";
@@ -58,9 +59,34 @@ function startHost(): Promise<number> {
         // points the desktop at the DEVELOPER'S database, silently.
         FNB_DB_FILE: localDb,
         FNB_WEB_DIST: webDist,
+        // See host.ts — serve-static resolves its root against cwd, which a
+        // packaged app inherits from whatever launched it.
+        FNB_CWD: app.isPackaged ? process.resourcesPath : path.resolve(here, ".."),
+        // Program Files is read-only for the account running the app, so
+        // uploads go to the per-user data directory instead of beside the code.
+        FNB_UPLOADS_DIR: path.join(dataDir, "uploads"),
       },
-      stdio: "inherit",
+      /**
+       * Piped to a file, not inherited.
+       *
+       * Windows gives a packaged GUI app no console, so "inherit" sends every
+       * line the server prints — including the stack trace of whatever killed
+       * it — straight to nowhere. When the host dies the user sees "exited with
+       * code 1" and there is nothing else to look at, on a machine that is
+       * usually behind a bar. This is the file to ask for.
+       */
+      stdio: "pipe",
     });
+    const hostLog = path.join(dataDir, "host.log");
+    const capture = (chunk: Buffer | string) => {
+      try {
+        appendFileSync(hostLog, chunk);
+      } catch {
+        /* diagnostics must never be the reason the app fails to start */
+      }
+    };
+    host.stdout?.on("data", capture);
+    host.stderr?.on("data", capture);
     const timer = setTimeout(() => reject(new Error("Local server did not start in time")), 30_000);
     host.on("message", (msg: { type?: string; port?: number }) => {
       if (msg?.type === "listening" && msg.port) {

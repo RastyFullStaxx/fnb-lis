@@ -1,0 +1,96 @@
+# Packaging for the bar-PC installer.
+#
+# Everything here is downstream of one fact: this app is NOT self-contained
+# JavaScript. It carries a native addon, a WASM query compiler, and three
+# document libraries that read their own data files off disk — each of which
+# breaks in a different way if it is packed naively. The comments say which.
+#
+# Build with `npm run dist -w @fnb/desktop`. Output lands in apps/desktop/release.
+
+appId: com.liquorinventorysolution.lis
+productName: LIS
+copyright: © 2026 Liquor Inventory Solution
+
+directories:
+  output: release
+  buildResources: build
+
+# Do NOT let electron-builder rebuild native modules.
+#
+# Left on, it runs @electron/rebuild against the ROOT better-sqlite3 — the
+# Node-ABI copy the hosted server and both verify harnesses use — and rebuilds
+# it for Electron from source. That needs a C++ toolchain nobody has installed,
+# and if it ever succeeded it would silently break `npm run dev` and
+# `verify:seed` with a NODE_MODULE_VERSION mismatch.
+#
+# `npm run native` already solved this: it keeps a private Electron-ABI copy at
+# apps/desktop/node_modules/better-sqlite3, which resolves first from here and
+# is what gets packed. Re-run it after every `npm install`.
+npmRebuild: false
+
+# Explicit rather than inherited. The default globs would also sweep in the
+# 300 MB of devDependencies this workspace carries (electron, electron-builder,
+# esbuild) — they resolve from the workspace root, so "it's a devDependency"
+# is not by itself protection.
+files:
+  - dist/**/*.mjs
+  - dist/**/*.cjs
+  - setup.html
+  # Read at module scope by exports.ts and pdf.ts via `new URL("../assets/…")`.
+  # Missing, the server dies on first import with an ENOENT nobody connects
+  # to a logo.
+  - assets/**
+  - package.json
+  # Source maps are ~4.3 MB for host.mjs alone and are of no use on a bar PC.
+  - "!**/*.map"
+  # Prisma ships a WASM query compiler PER DATABASE — sqlite, mysql, postgresql,
+  # cockroachdb and sqlserver, each in a `fast` and a `small` build, each again
+  # as .js and .mjs. That is 75 MB of runtime for an app that opens exactly one
+  # SQLite file. The generated client imports
+  # `query_compiler_fast_bg.sqlite.mjs` and nothing else
+  # (apps/server/src/generated/prisma/internal/class.ts), so the other four
+  # engines are dead weight worth ~57 MB of installer.
+  - "!node_modules/@prisma/client/runtime/*{mysql,postgresql,cockroachdb,sqlserver}*"
+
+# Files that must exist as REAL files on disk, not entries in the archive.
+#
+# better-sqlite3 is a native addon: Windows cannot load a .dll/.node from
+# inside an asar, so leaving it packed produces a "cannot open shared library"
+# crash at the first database call — i.e. instantly.
+asarUnpack:
+  - "**/node_modules/better-sqlite3/**"
+
+extraResources:
+  # main.ts resolves both of these under `process.resourcesPath` when packaged.
+  # They stay outside the asar deliberately: migrate.ts hashes the raw bytes of
+  # every migration.sql to compare against the CLI's checksums, and the SPA is
+  # served by a static handler that takes a filesystem root.
+  - from: ../server/prisma/migrations
+    to: migrations
+  - from: ../web/dist
+    to: web
+
+win:
+  target: nsis
+  icon: build/icon.png
+  # No signing configured. Unsigned, SmartScreen shows a full-screen
+  # "Windows protected your PC" warning on first run — expected, and the reason
+  # a certificate is a real decision rather than a nicety. Drop `certificateFile`
+  # + `certificatePassword` here (or the CSC_* env vars) and nothing else moves.
+
+nsis:
+  # Not one-click: an inventory terminal gets installed once, deliberately, by
+  # someone who should see where it is going.
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  # Per-user, so installing needs no administrator password. It also keeps the
+  # install out of Program Files, which matters because the app writes its
+  # mirror and uploads under the user profile anyway.
+  perMachine: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: LIS
+  # Leaves the mirror, device identity and PIN lockouts in %APPDATA% on
+  # uninstall. Deleting an establishment's un-synced counts because someone
+  # reinstalled is not a recoverable mistake.
+  deleteAppDataOnUninstall: false

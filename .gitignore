@@ -12,3 +12,7 @@ apps/server/src/generated/
 # Anything the project actually needs lives in docs/ or README.md.
 CLAUDE.md
 AGENTS.md
+# Desktop packaging output — installers are ~90 MB and rebuilt from source.
+apps/desktop/release/
+apps/desktop/release-installer/
+# NOT apps/desktop/build/ — that holds icon.png, a build INPUT.

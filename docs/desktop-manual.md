@@ -46,8 +46,43 @@ npm removes the desktop's private copy each time.
 
 ### Packaged (for a real bar)
 
-Not yet built — `electron-builder` config is outstanding. When it exists, the
-installer will be a single `.exe`; nothing else needs installing on the machine.
+```bash
+npm run dist -w @fnb/desktop
+```
+
+Produces `apps/desktop/release/LIS Setup <version>.exe` (~90 MB). That single
+file is everything — the bar PC needs no Node, no database, nothing pre-installed.
+
+Installing it:
+
+1. Double-click the setup file and choose a folder (the default is fine).
+2. It installs **per user**, so no administrator password is needed.
+3. You get an **LIS** icon on the desktop and in the Start Menu. Staff click that.
+
+**Windows will warn you the first time.** The installer is not code-signed, so
+SmartScreen shows "Windows protected your PC". Click *More info* → *Run anyway*.
+This is expected and will keep happening until a signing certificate is bought;
+see §9.
+
+To uninstall: Settings → Apps → LIS, or `Uninstall LIS.exe` in the install
+folder. **The mirror, device identity and PINs survive an uninstall** — deleting
+an establishment's un-synced counts because someone reinstalled is not a
+recoverable mistake. To wipe a machine completely, delete
+`%APPDATA%\@fnb\desktop` as well.
+
+> Build notes for whoever maintains this:
+>
+> - `npm run native` must have been run since the last `npm install`, otherwise
+>   the packaged app ships a Node-ABI driver and dies at the first query.
+>   `npmRebuild: false` is set deliberately — letting electron-builder rebuild
+>   would clobber the root copy that `verify:seed` and the dev server use.
+> - electron-builder **26+** is required. v25's dependency collector mishandles
+>   npm workspace hoisting and silently omits `call-bind-apply-helpers`, which
+>   only shows up as the local server dying at launch.
+> - If a rebuild fails with `EBUSY` on `release\...\app.asar`, an antivirus or
+>   file-sync client is holding the previous build. Delete `apps/desktop/release`
+>   (a reboot releases it) or build elsewhere with
+>   `npx electron-builder -c.directories.output=<path>`.
 
 ---
 
@@ -203,8 +238,18 @@ Agree who records what. Suspected pairs are listed for review.
 
 ### Getting logs on Windows
 
-Electron discards console output on Windows, so a startup failure shows **only**
-the error dialog. To see the real error, run the server bundle directly:
+Two files in `%APPDATA%\@fnb\desktop`, and they are the first thing to ask for:
+
+| File | What it tells you |
+|---|---|
+| `startup.log` | One line per launch: where the data is, whether this machine is provisioned, which device and location it thinks it is. |
+| `host.log` | Everything the local server printed, including the stack trace of whatever killed it. |
+
+`host.log` exists because Windows gives a packaged app no console — without it a
+failed launch shows "exited with code 1" and nothing else, on a machine that is
+usually behind a bar.
+
+If both are silent, run the server bundle directly:
 
 ```bash
 ELECTRON_RUN_AS_NODE=1 FNB_DB_FILE=%APPDATA%\@fnb\desktop\mirror.db FNB_LOCAL_DB=%APPDATA%\@fnb\desktop\mirror.db FNB_MIGRATIONS_DIR=../server/prisma/migrations FNB_WEB_DIST=../web/dist npx electron dist/host.mjs
@@ -226,8 +271,12 @@ the check that proves the desktop and the server agree — row counts do not.
 
 Honest list, so nobody plans around something that does not exist:
 
-- **Installer / packaging.** Runs from source only. `electron-builder` config,
-  code signing, and unpacking the native module from the asar are outstanding.
+- **Code signing.** The installer works but is unsigned, so every machine shows
+  SmartScreen's "Windows protected your PC" on first run. A certificate is
+  ~$100–400/year and is a commercial decision, not a technical one. Once bought,
+  add `certificateFile` + `certificatePassword` under `win:` in
+  `apps/desktop/electron-builder.yml` — nothing else changes.
+- **Auto-update.** Each new version is a fresh installer someone has to run.
 - **Licence enforcement at startup** (proposal §20). The server half is done —
   registration is capped and revocable — but the app does not check at launch.
 - **Conflict resolution actions.** The inbox lists what the server refused and

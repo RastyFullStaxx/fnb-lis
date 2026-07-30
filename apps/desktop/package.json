@@ -2,6 +2,8 @@
   "name": "@fnb/desktop",
   "version": "0.1.0",
   "private": true,
+  "description": "LIS — offline inventory terminal",
+  "author": "Liquor Inventory Solution",
   "type": "module",
   "main": "dist/main.mjs",
   "scripts": {
@@ -10,15 +12,19 @@
     "native": "node native.mjs",
     "dev": "npm run build:server && electron .",
     "verify:mirror": "node verify-mirror.mjs",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "dist": "npm run build && electron-builder --config electron-builder.yml"
   },
   "dependencies": {
+    "@prisma/client": "^7.8.0",
+    "better-sqlite3": "^12.11.1",
     "exceljs": "^4.4.0",
     "pdfmake": "^0.2.23"
   },
   "devDependencies": {
-    "@electron/rebuild": "^3.7.1",
-    "electron": "^33.4.11",
+    "@types/better-sqlite3": "^7.6.13",
+    "electron": "33.4.11",
+    "electron-builder": "^26.15.3",
     "esbuild": "^0.28.1"
   }
 }

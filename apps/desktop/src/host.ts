@@ -23,6 +23,18 @@ import { captureWrites } from "./sync/capture";
 const dbFile = process.env.FNB_LOCAL_DB!;
 const migrationsDir = process.env.FNB_MIGRATIONS_DIR!;
 
+/**
+ * Pin the working directory before anything reads it.
+ *
+ * `serve-static` takes a RELATIVE root and resolves it against `process.cwd()`
+ * at request time. In dev that is apps/desktop and everything lines up, but a
+ * packaged app inherits cwd from whatever launched it — a Start Menu shortcut
+ * with a different "Start in", or a terminal in another folder, and every
+ * request for the SPA 404s while the API keeps working. That failure looks like
+ * a blank window, not a path bug.
+ */
+if (process.env.FNB_CWD) process.chdir(process.env.FNB_CWD);
+
 // Migrate BEFORE the Prisma client opens the file, so the schema the client
 // introspects is the one it expects.
 const result = migrateLocal(dbFile, migrationsDir);
