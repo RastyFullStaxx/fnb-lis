@@ -66,10 +66,18 @@ async function resolveActingUser(c: Context, session: SessionUser): Promise<Sess
   const device = await prisma.device.findUnique({ where: { id: session.deviceId } });
   if (!device) return session;
 
+  // NOT filtered on status: "ACTIVE". A device can be offline for weeks, and a
+  // user disabled in the browser during that window has still really done the
+  // work sitting in that machine's outbox. Rejecting it would delete a week of
+  // counts to enforce an access decision made after the fact — and the audit
+  // trail would then be missing entries for stock that genuinely moved.
+  // docs/sync-and-data-lifecycle.md §7.5 says accept and flag; this is that.
+  //
+  // The real trust boundary is client scoping, which is enforced below: a
+  // device may only name users of its OWN establishment.
   const actor = await prisma.user.findFirst({
     where: {
       id: claimed,
-      status: "ACTIVE",
       clientAccess: { some: { clientId: device.clientId } },
     },
     include: { modules: true },
@@ -86,6 +94,7 @@ async function resolveActingUser(c: Context, session: SessionUser): Promise<Sess
     role: actor.role as Role,
     modules: actor.role === "ADMIN" || actor.modules.length === 0 ? null : actor.modules.map((m) => m.module),
     deviceId: session.deviceId,
+    actorDisabled: actor.status !== "ACTIVE" || undefined,
   };
 }
 

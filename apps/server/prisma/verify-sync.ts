@@ -186,8 +186,15 @@ const main = async () => {
 
   // ── 4. Snapshot ──
   console.log("\nSnapshot — everything a mirror needs to reconcile offline");
+
+  // The snapshot carries every colleague's PIN and recovery-answer hash, so it
+  // is device-only. A browser session — even a manager's — must not be able to
+  // pull the establishment's offline credentials and brute-force them at leisure.
+  const browserSnap = await browser.call(`/api/locations/${loc.id}/sync/snapshot`);
+  ok("a browser session cannot download a snapshot", browserSnap.status === 403, `status ${browserSnap.status}`);
+
   const snap = await desktop.call(`/api/locations/${loc.id}/sync/snapshot`);
-  ok("snapshot is served", snap.status === 200, `status ${snap.status}`);
+  ok("snapshot is served to a registered device", snap.status === 200, `status ${snap.status}`);
   const s = snap.body as Record<string, unknown[] | Record<string, unknown>>;
   for (const key of ["catalog", "suppliers", "counts", "purchases", "sales", "forfeits", "transfers", "people"]) {
     const v = s[key];
@@ -200,6 +207,22 @@ const main = async () => {
   ok(
     "snapshot carries no password hashes",
     !JSON.stringify(snap.body).includes("passwordHash"),
+  );
+
+  // Without these the mirror boots and then 404s every request, because the
+  // server's own requireLocationAccess re-reads them on each call.
+  const identity = (snap.body as { identity?: Record<string, unknown[]> }).identity;
+  ok("snapshot carries client access rows (or the mirror 404s offline)", (identity?.clientAccess?.length ?? 0) > 0);
+  const loc2 = (snap.body as { location?: { status?: string; clientId?: string } }).location;
+  ok("snapshot carries the FULL location row, not a display subset", Boolean(loc2?.status && loc2?.clientId));
+  const cli = (snap.body as { client?: { status?: string } }).client;
+  ok("snapshot carries the full client row", Boolean(cli?.status));
+  // Missing modules read as "unrestricted", so this one widens the offline Full
+  // Audit silently rather than throwing — exactly the divergence §7.5 forbids.
+  ok(
+    "snapshot carries the location's module set",
+    Array.isArray(identity?.locationModules) && identity!.locationModules.length > 0,
+    `${identity?.locationModules?.length ?? 0} modules`,
   );
   const ack = await desktop.call(`/api/locations/${loc.id}/sync/ack`, { method: "POST" });
   ok("device can ack a completed push", ack.status === 200, `status ${ack.status}`);

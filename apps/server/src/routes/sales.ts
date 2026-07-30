@@ -91,6 +91,21 @@ export const saleRoutes = new Hono<AppEnv>()
       const activeVersion = menu.versions[0];
       if (!activeVersion) throw new AppError(400, "This menu has no published recipe yet");
       recipeVersionId = activeVersion.id; // snapshot: history is immune to future recipe edits
+      // A device replaying an offline sale sends the version that was live when
+      // the drink was actually poured. Resolving "latest" at push time instead
+      // would deplete the wrong recipe's ingredients for anything sold before a
+      // recipe edit. Verified to belong to THIS menu so it cannot point at
+      // another item's recipe. Device sessions only.
+      if (user.deviceId && body.recipeVersionId) {
+        const claimed = menu.versions.find((v) => v.id === body.recipeVersionId)
+          ? body.recipeVersionId
+          : (await prisma.recipeVersion.findFirst({
+              where: { id: body.recipeVersionId, menuItemId: menu.id },
+              select: { id: true },
+            }))?.id;
+        if (!claimed) throw new AppError(400, "That recipe version doesn't belong to this menu item");
+        recipeVersionId = claimed;
+      }
       if (body.unitPrice === undefined) unitPrice = body.kind === "SALE" ? activeVersion.srp : 0;
     }
 

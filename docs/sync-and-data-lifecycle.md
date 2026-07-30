@@ -345,6 +345,18 @@ worse than one that fails loudly, because the count still balances — against t
 for these documents, and Rule 1 means an open draft has no concurrent editor. It would have been a
 column nothing read.
 
+> **Phase 39 (adversarial review) changed four things above.** The snapshot is
+> now **device-sessions-only** — it carries PIN hashes, and ordinary location
+> access was not a sufficient gate. It now ships **full** Location/Client rows
+> plus an `identity` block (subscription, clientAccess, userModules,
+> **locationModules**) — without those the mirror boots and then 404s every
+> call, and a missing module set reads as *unrestricted*, which would have made
+> the offline Full Audit disagree with the server's. `unitCost`/`unitRetail` on
+> count lines and `recipeVersionId` on sales are now sent by the device, because
+> the server was minting them at PUSH time — restating a Monday count with
+> Wednesday's prices. And `resolveActingUser` no longer rejects disabled users,
+> which had silently contradicted §7.5.
+
 **The browser-side UI for all of this is deliberately deferred** to the Electron phase. With no
 registered device, `originDeviceId` is null everywhere, `anyStale` is always false and the duplicate
 report is always empty — there is nothing to render yet. The server rules are enforced and

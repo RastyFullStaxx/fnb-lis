@@ -123,6 +123,12 @@ export interface CountSession {
   createdAt: string;
   committedAt: string | null;
   voidReason: string | null;
+  /**
+   * The machine that opened this count, or null for the web app. While the
+   * session is OPEN this is also its OWNER — the server refuses edits from
+   * anywhere else (docs/sync-and-data-lifecycle.md §7.2, Rule 1).
+   */
+  originDeviceId: string | null;
   _count?: { lines: number };
 }
 

@@ -10,6 +10,7 @@ import {
   resolveDensityFactor,
   voidRequest,
   type CountLineCreate,
+  type SessionUser,
 } from "@fnb/core";
 import { prisma, type Tx } from "../db";
 import { AppError } from "../lib/errors";
@@ -162,6 +163,27 @@ async function buildLineData(locationId: string, body: CountLineCreate) {
   };
 }
 
+/**
+ * The unit cost/retail to freeze onto a count line.
+ *
+ * The catalog's CURRENT price is right for a browser entry, where "now" and
+ * "when it was counted" are the same instant. It is wrong for an offline
+ * desktop: a count taken Monday and pushed Wednesday would be stamped with
+ * Wednesday's price, so a repricing in between restates a finished count's
+ * valuation — and `report-assembly` reads these as "snapshot from count time".
+ */
+function snapshotPrices(
+  user: SessionUser,
+  body: { unitCost?: number; unitRetail?: number },
+  locationItem: { cost: number; retail: number },
+): { unitCost: number; unitRetail: number } {
+  const fromDevice = Boolean(user.deviceId);
+  return {
+    unitCost: fromDevice && body.unitCost !== undefined ? body.unitCost : locationItem.cost,
+    unitRetail: fromDevice && body.unitRetail !== undefined ? body.unitRetail : locationItem.retail,
+  };
+}
+
 async function getOwnedSession(locationId: string, sessionId: string) {
   const session = await prisma.countSession.findUnique({ where: { id: sessionId } });
   if (!session || session.locationId !== locationId) throw new AppError(404, "Count session not found");
@@ -252,8 +274,12 @@ export const countRoutes = new Hono<AppEnv>()
         countSessionId: session.id,
         locationItemId: locationItem.id,
         ...data,
-        unitCost: locationItem.cost, // price snapshots at entry time
-        unitRetail: locationItem.retail,
+        // Price snapshots at ENTRY time. A device replaying an offline count
+        // sends what the price was when the bottle was actually counted; the
+        // browser sends nothing and the live catalog is the same instant.
+        // Only a device session may override, so this is not a way to post
+        // arbitrary prices from a browser.
+        ...snapshotPrices(user, body, locationItem),
         createdById: user.id,
         createdByName: `${user.firstName} ${user.lastName}`,
       },
@@ -275,7 +301,11 @@ export const countRoutes = new Hono<AppEnv>()
     const { locationItem, data } = await buildLineData(location.id, body);
     const line = await prisma.countLine.update({
       where: { id: existing.id },
-      data: { locationItemId: locationItem.id, ...data, unitCost: locationItem.cost, unitRetail: locationItem.retail },
+      data: {
+        locationItemId: locationItem.id,
+        ...data,
+        ...snapshotPrices(c.get("user")!, body, locationItem),
+      },
       include: LINE_INCLUDE,
     });
     return c.json(line);

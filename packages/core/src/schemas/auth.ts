@@ -85,6 +85,13 @@ export interface SessionUser {
    * SessionUser without one, and a browser session legitimately has none.
    */
   deviceId?: string | null;
+  /**
+   * Set when a device session named an acting user whose account has since been
+   * DISABLED. Their queued work is still accepted — it really happened, and
+   * discarding it would falsify the audit — but every entry it produces is
+   * flagged for review (docs/sync-and-data-lifecycle.md §7.5).
+   */
+  actorDisabled?: boolean;
 }
 
 export interface MeLocation {

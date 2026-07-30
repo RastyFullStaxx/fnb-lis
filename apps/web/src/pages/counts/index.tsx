@@ -4,10 +4,14 @@ import { Link, useNavigate } from "react-router";
 import { ClipboardList, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { statusVariant } from "@/lib/status";
+import { can, type Role } from "@fnb/core";
 import { useLocationId } from "@/api/location";
+import { useMe } from "@/api/auth";
 import { useCountMutations, useCountSessions } from "@/api/ops";
+import { useDeviceNames } from "@/api/sync";
 import { ApiError } from "@/api/http";
 import { PageHeader } from "@/components/page-header";
+import { ReleaseDraftButton } from "@/components/release-draft-button";
 import {
   TableSurface,
   TableLoading,
@@ -46,6 +50,10 @@ import {
 
 export function CountsPage() {
   const sessions = useCountSessions();
+  const deviceName = useDeviceNames();
+  const me = useMe();
+  // Same permission the server enforces on the release route.
+  const canRelease = can((me.data?.user.role ?? "AUDIT_VIEWER_LIMITED") as Role, "devices.manage");
   const locationId = useLocationId();
   const [createOpen, setCreateOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -149,6 +157,14 @@ export function CountsPage() {
                     <Badge variant={statusVariant(s.status)}>
                       {s.status === "OPEN" ? "Counting" : s.status === "COMMITTED" ? "Committed" : "Cancelled"}
                     </Badge>
+                    {/* An open count started on a bar PC can't be edited here —
+                        say so on the row, rather than letting someone open it
+                        and meet a 409 after typing. */}
+                    {s.status === "OPEN" && s.originDeviceId && (
+                      <Badge variant="outline" className="ml-2 font-normal">
+                        On {deviceName(s.originDeviceId)}
+                      </Badge>
+                    )}
                     {s.voidReason && (
                       <span className="ml-2 text-xs text-muted-foreground">{s.voidReason}</span>
                     )}
@@ -156,11 +172,16 @@ export function CountsPage() {
                   <TableCell className="tnum text-right">{s._count?.lines ?? 0}</TableCell>
                   <TableCell className="text-muted-foreground">{s.createdByName}</TableCell>
                   <TableCell className="text-right">
-                    <Button asChild variant="ghost" size="sm">
-                      <Link to={`/l/${locationId}/counts/${s.id}`}>
-                        {s.status === "OPEN" ? "Continue" : "View"}
-                      </Link>
-                    </Button>
+                    <div className="flex items-center justify-end gap-1">
+                      {s.status === "OPEN" && s.originDeviceId && canRelease && (
+                        <ReleaseDraftButton entity="CountSession" id={s.id} machine={deviceName(s.originDeviceId)} />
+                      )}
+                      <Button asChild variant="ghost" size="sm">
+                        <Link to={`/l/${locationId}/counts/${s.id}`}>
+                          {s.status === "OPEN" && !s.originDeviceId ? "Continue" : "View"}
+                        </Link>
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}

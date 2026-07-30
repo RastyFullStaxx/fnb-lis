@@ -481,3 +481,46 @@ export function useSubscriptionCheck(clientId: string | null) {
     enabled: !!clientId,
   });
 }
+
+/**
+ * Registered offline desktops (docs/sync-and-data-lifecycle.md §5).
+ *
+ * Server-side these carry a year-long session, so the ability to SEE and REVOKE
+ * them is not administrative polish — it is the counterweight that makes the
+ * long token acceptable. The API never returns a device's fingerprint.
+ */
+export interface AdminDevice {
+  id: string;
+  name: string;
+  status: "ACTIVE" | "REVOKED";
+  registeredAt: string;
+  lastSeenAt: string | null;
+  lastSyncAt: string | null;
+  client: { id: string; name: string };
+  location: { id: string; name: string } | null;
+}
+
+export function useAdminDevices() {
+  return useQuery({
+    queryKey: ["admin", "devices"],
+    queryFn: () => api<AdminDevice[]>("/api/admin/devices"),
+  });
+}
+
+export function useRevokeDevice() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      post<AdminDevice>(`/api/admin/devices/${id}/revoke`, { reason }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "devices"] }),
+  });
+}
+
+export function useUpdateDevice() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: string; name?: string; locationId?: string | null }) =>
+      put<AdminDevice>(`/api/admin/devices/${id}`, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "devices"] }),
+  });
+}

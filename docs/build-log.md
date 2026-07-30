@@ -1858,3 +1858,98 @@ when there is state to show.
 - `npm run verify:seed -w @fnb/server` — 47 checks, **both anchors unchanged**:
   −₱330.69 / −₱869.57 and −₱537 / −₱1,410.
 - Typecheck clean in both workspaces.
+
+---
+
+## Phase 39 — Adversarial review of the desktop design (2026-07-30)
+
+Before writing any Electron code, ran a multi-agent investigation and an
+adversarial critique of the proposed sync design across four lenses
+(correctness, audit integrity, security, 2am bar operations). Three of the four
+returned **broken**. 18 blockers. Several were bugs in ALREADY-SHIPPED code, not
+just in the plan — which is the entire argument for doing this before building
+on top of it.
+
+### Fixed this phase
+
+**A live security hole in Phase 36's snapshot.** `GET /sync/snapshot` had NO
+permission gate beyond ordinary location access. Phase 36 added device-PIN and
+recovery-answer hashes to that payload, so any authenticated user of the
+establishment — a STAFF member, or a third-party AUDIT_VIEWER whose entire role
+is "read the reconciliation" — could pull every colleague's offline credentials,
+including the owner's, and brute-force a 4-digit PIN at leisure with no network
+and no trace. Now device-sessions-only, scoped to the device's own client. A
+browser has no use for a snapshot; restricting to the one caller that needs it
+closes the hole rather than narrowing it.
+
+**The snapshot could not boot the app it serves.** It returned display subsets —
+`location: {id,name,kind}`, `client: {id,name,costBasis,varianceThresholdPct}` —
+but `requireLocationAccess` re-reads `Location.status`, `Client.status` and a
+`UserClientAccess` row on every request. Offline, every API call would have
+404'd for every non-ADMIN. Now ships full rows plus an `identity` block
+(subscription, clientAccess, userModules).
+
+**LocationModule was missing, and that one does not throw.** Every report route
+filters on the location's module set, and an ABSENT set reads as *unrestricted*
+rather than *none*. So a BAR-only location would have produced an offline Full
+Audit including KITCHEN stock while the server's excluded it — two different
+totals on the one report the client trusts absolutely, with nothing to signal
+it. This is the failure mode §7.5 exists to forbid, and it would have survived
+the obvious fix for the 404s above.
+
+**Count-line valuation was minted at PUSH time, not count time.** `unitCost`/
+`unitRetail` were stamped from whichever catalog the request landed on. A count
+taken Monday 2am and pushed Wednesday would carry Wednesday's prices — so a
+repricing in between silently restated a finished count, while
+`report-assembly` reads those fields as "snapshot from count time". Same class
+for `recipeVersionId`, which resolved to the LATEST recipe at push time, so an
+offline menu sale would deplete the wrong version's ingredients. Both are now
+accepted from the request and honoured for device sessions only.
+
+**Code contradicted the doc on disabled users.** `resolveActingUser` filtered on
+`status: "ACTIVE"`, so a user disabled while their machine was offline would
+have had a week of real counts rejected at the middleware. §7.5 states the
+opposite decision explicitly — accept and flag, because the work really happened
+and discarding it falsifies the audit. The filter is gone; client scoping (the
+actual trust boundary) stays. `logActivity` now folds `deviceId` and a
+`disabledActor` flag into every entry, in one place rather than at nineteen call
+sites, so "accept" comes with the "flag" the doc promised.
+
+### Runtime findings that reshape the Electron build
+
+- **better-sqlite3 12.11.1 is raw-V8, not N-API** (zero napi refs in its .cpp),
+  so it is ABI-locked and must be rebuilt for Electron — and it is hoisted to
+  the monorepo ROOT, where electron-builder's default app-dir rebuild will
+  silently miss it.
+- **Prisma 7.8 has no Rust query engine.** It compiles queries with a ~3.5 MB
+  WASM module instantiated via a SYNCHRONOUS `new WebAssembly.Module()`.
+  Chromium forbids sync compile above 4 KB on a document thread, so the DB layer
+  physically cannot live in the renderer — it belongs in a `utilityProcess`.
+  This is a hard constraint, not a preference.
+- **The server has never been compiled** (`noEmit: true`, run via tsx) and the
+  generated client is ~3.5 MB of TypeScript. An esbuild → ESM bundle step is
+  mandatory before packaging.
+- **`prisma migrate deploy` cannot ship** (41 MB CLI + 21 MB schema-engine.exe).
+  The alternative is a small runner using better-sqlite3 directly — Prisma's
+  `_prisma_migrations.checksum` is plain hex-sha256 of the raw migration.sql
+  bytes, so hand-written rows stay byte-compatible with the server's database.
+
+### Verified
+
+- `verify:sync` — **70 checks** (up from 65), including the new gate: a browser
+  session cannot download a snapshot (403), and the snapshot carries the full
+  location/client rows, the client-access rows and the module set.
+- `verify:seed` — 47 checks, **both anchors unchanged** after touching count-line
+  price snapshotting: −₱330.69 / −₱869.57 and −₱537 / −₱1,410. That is the
+  load-bearing check, since that code feeds reconciliation.
+- Typecheck clean in both workspaces; production web build succeeds.
+
+### Still open (from the critique, not yet fixed)
+
+Outbox atomicity (HTTP-layer capture cannot write in the mutation's
+transaction), no un-revoke/retire route so freeing a licence slot bricks a
+machine's queue, `?from=` bounding by business date freezes stale copies of
+periods that voids/corrections still mutate, DELETE/PUT not replay-safe,
+device-clock skew baking unrecoverable `occurredAt` into the outbox, offline PIN
+brute-force having no local lockout, and X-Acting-User needing to be part of the
+captured tuple. These are design-level and belong with the sync engine itself.

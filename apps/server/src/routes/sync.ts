@@ -45,6 +45,28 @@ export const syncRoutes = new Hono<AppEnv>()
   .get("/sync/snapshot", zValidator("query", snapshotQuery), async (c) => {
     const location = c.get("location");
     const client = c.get("client");
+    const me = c.get("user")!;
+
+    // DEVICE SESSIONS ONLY. This payload carries every colleague's device-PIN
+    // hash and recovery-answer hash, so without this gate any authenticated
+    // user of the establishment — a STAFF member, or a third-party
+    // AUDIT_VIEWER whose whole role is "read the reconciliation" — could pull
+    // the offline credentials of everyone including the owner, then brute-force
+    // a 4-digit PIN offline at their leisure.
+    //
+    // A browser has no use for a snapshot: it is talking to the authoritative
+    // database already. Restricting to the one caller that needs it closes the
+    // hole completely rather than narrowing it by role.
+    if (!me.deviceId) {
+      throw new AppError(403, "Only a registered offline computer can download a snapshot");
+    }
+    const device = await prisma.device.findUnique({ where: { id: me.deviceId } });
+    // And only for ITS OWN establishment — a device registered to one client
+    // must not be able to mirror another's books by changing the URL.
+    if (!device || device.clientId !== location.clientId) {
+      throw new AppError(404, "Location not found");
+    }
+
     const { from } = c.req.valid("query");
     const onOrAfter = from ? { gte: from } : undefined;
 
@@ -60,6 +82,12 @@ export const syncRoutes = new Hono<AppEnv>()
       sales,
       forfeits,
       transfers,
+      fullLocation,
+      fullClient,
+      subscription,
+      locationModules,
+      clientAccess,
+      userModules,
       people,
     ] = await Promise.all([
       prisma.unit.findMany(),
@@ -97,6 +125,26 @@ export const syncRoutes = new Hono<AppEnv>()
         },
         include: { lines: { include: { receipts: true } } },
       }),
+      // ── Identity: the rows the SERVER'S OWN middleware needs to answer a
+      // request. Without these the mirror boots and then 404s every call:
+      // requireLocationAccess re-reads Location.status, Client.status and a
+      // UserClientAccess row for any non-ADMIN, and none of them were in the
+      // original payload. "Zero routing changes to the SPA" is only true if the
+      // snapshot can actually boot the app it serves.
+      prisma.location.findUnique({ where: { id: location.id } }),
+      prisma.client.findUnique({ where: { id: location.clientId } }),
+      prisma.subscription.findUnique({ where: { clientId: location.clientId } }),
+      // The module ceiling. Every report route filters on this, and a MISSING
+      // set means "unrestricted" rather than "none" — so omitting it does not
+      // throw, it silently widens the offline Full Audit to include stock the
+      // online one excludes. Two different totals on the one report the client
+      // trusts absolutely, with nothing to signal the divergence.
+      prisma.locationModule.findMany({ where: { locationId: location.id } }),
+      prisma.userClientAccess.findMany({ where: { clientId: location.clientId } }),
+      prisma.userModule.findMany({
+        where: { user: { clientAccess: { some: { clientId: location.clientId } } } },
+      }),
+
       // Who may sign in on this machine, and the ONLY credential that travels:
       // the device PIN hash and the recovery-answer hash.
       //
@@ -128,13 +176,18 @@ export const syncRoutes = new Hono<AppEnv>()
         locationId: location.id,
         from: from ?? null,
       },
-      client: {
-        id: client.id,
-        name: client.name,
-        costBasis: client.costBasis,
-        varianceThresholdPct: client.varianceThresholdPct,
+      // Full rows, not a display subset: the mirror re-runs the same middleware
+      // the server does, and that middleware reads status flags and the
+      // subscription. Trimming these to "what a screen shows" is what made the
+      // first version unbootable offline.
+      client: fullClient,
+      location: fullLocation,
+      identity: {
+        subscription,
+        locationModules,
+        clientAccess,
+        userModules,
       },
-      location: { id: location.id, name: location.name, kind: location.kind },
       master: { units, categories, variants },
       catalog: locationItems,
       suppliers,

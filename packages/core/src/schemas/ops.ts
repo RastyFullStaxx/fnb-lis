@@ -29,6 +29,21 @@ export const countLineCreate = z
      * replaces the scale/tare calculation; reconciliation reads it identically.
      */
     remainingContent: nonNegative.optional(),
+    /**
+     * The prices as they stood WHEN THE BOTTLE WAS COUNTED.
+     *
+     * Normally the server stamps these from the catalog at write time, and on
+     * the browser that is the same instant. From an offline desktop it is not:
+     * a count taken Monday at 2am and pushed Wednesday would be stamped with
+     * Wednesday's prices, so a repricing in between silently restates a
+     * finished count's valuation. `report-assembly` reads these as
+     * "snapshot from count time" — they have to actually be that.
+     *
+     * Honoured only for a device session; a browser cannot use them to post
+     * arbitrary prices.
+     */
+    unitCost: nonNegative.optional(),
+    unitRetail: nonNegative.optional(),
   })
   .superRefine((val, ctx) => {
     if (val.countType === "FULL") {
@@ -112,6 +127,14 @@ export const saleCreate = z
     contentOverride: positive.optional(),
     reason: z.enum(NON_REVENUE_REASONS).optional(),
     note: z.string().trim().max(500).optional(),
+    /**
+     * The recipe version live when the sale was rung up. Same reason as
+     * countLineCreate's prices: the server otherwise resolves the LATEST
+     * version at write time, so a menu sale recorded offline against v3 and
+     * pushed after a recipe edit would deplete v4's ingredients. Device
+     * sessions only.
+     */
+    recipeVersionId: id.optional(),
   })
   .superRefine((val, ctx) => {
     const hasItem = Boolean(val.locationItemId);

@@ -5,6 +5,7 @@ import {
   Boxes,
   ClipboardList,
   FileInput,
+  Laptop,
   LayoutDashboard,
   Martini,
   Package,
@@ -69,6 +70,7 @@ export const CATALOG_NAV: NavItem[] = [
 export const ADMIN_NAV: NavItem[] = [
   { title: "Clients", path: "admin/clients", icon: Building2, permission: "admin.manage" },
   { title: "Users", path: "admin/users", icon: UserCog, permission: "users.manage" },
+  { title: "Offline Computers", path: "admin/devices", icon: Laptop, permission: "devices.manage" },
   { title: "Activity", path: "admin/activity", icon: Activity, permission: "activity.view" },
 ];
 
