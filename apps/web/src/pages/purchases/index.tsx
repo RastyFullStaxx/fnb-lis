@@ -11,7 +11,7 @@ import { variantLabel, type Forfeit, type LocationItem } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { formatMoney, formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
-import { TableSurface, TableLoading, TableEmpty, ToolbarField, ToolbarSearch } from "@/components/table-surface";
+import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarField, ToolbarSearch, queryFailed } from "@/components/table-surface";
 import { EntryActions, EntryFact, EntryFacts } from "@/components/entry-fact";
 import { ItemCombobox } from "@/components/item-combobox";
 import { VoidDialog } from "@/components/void-dialog";
@@ -166,7 +166,9 @@ function PurchasesTab({
 
   return (
     <>
-      {purchases.isPending ? (
+      {queryFailed(purchases) ? (
+        <TableFailure query={purchases} title="Couldn't load deliveries" />
+      ) : purchases.isPending ? (
         <TableLoading />
       ) : filtered.length === 0 ? (
         <TableEmpty

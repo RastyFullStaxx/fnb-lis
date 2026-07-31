@@ -10,7 +10,7 @@ import { variantLabel, type Transfer } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { formatMoney, formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
-import { TableSurface, TableLoading, TableEmpty, ToolbarField } from "@/components/table-surface";
+import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarField, queryFailed } from "@/components/table-surface";
 import { QuantityInput } from "@/components/quantity-input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -136,7 +136,9 @@ function OutgoingTab({ createOpen, setCreateOpen }: { createOpen: boolean; setCr
 
   return (
     <>
-      {transfers.isPending ? (
+      {queryFailed(transfers) ? (
+        <TableFailure query={transfers} title="Couldn't load transfers" />
+      ) : transfers.isPending ? (
         <TableLoading />
       ) : (transfers.data ?? []).length === 0 ? (
         <TableEmpty
@@ -267,7 +269,9 @@ function IncomingTab() {
 
   return (
     <>
-      {transfers.isPending ? (
+      {queryFailed(transfers) ? (
+        <TableFailure query={transfers} title="Couldn't load transfers" />
+      ) : transfers.isPending ? (
         <TableLoading />
       ) : (transfers.data ?? []).length === 0 ? (
         <TableEmpty
@@ -388,7 +392,9 @@ function ReceiveDialog({ transferId, onClose }: { transferId: string; onClose: (
           </DialogDescription>
         </DialogHeader>
 
-        {transfer.isPending ? (
+        {queryFailed(transfer) ? (
+          <TableFailure query={transfer} title="Couldn't load transfers" />
+        ) : transfer.isPending ? (
           <TableLoading />
         ) : pending.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">Every line is already received.</p>

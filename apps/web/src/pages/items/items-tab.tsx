@@ -12,7 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { TableLoading, TableEmpty } from "@/components/table-surface";
+import { TableEmpty, TableFailure, TableLoading, queryFailed } from "@/components/table-surface";
 import { ItemFormSheet, ItemEditSheet } from "./item-form";
 
 const ALL = "__all__";
@@ -37,7 +37,9 @@ export function ItemsTab({
 
   return (
     <>
-      {items.isPending ? (
+      {queryFailed(items) ? (
+        <TableFailure query={items} title="Couldn't load the master catalog" />
+      ) : items.isPending ? (
         <TableLoading rows={6} />
       ) : (items.data ?? []).length === 0 ? (
         <TableEmpty

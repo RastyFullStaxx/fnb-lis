@@ -8,7 +8,7 @@ import { useImportBatch, useImportRowMutations, type ImportRow } from "@/api/imp
 import { variantLabel } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { formatMoney } from "@/lib/utils";
-import { TableSurface, TableLoading } from "@/components/table-surface";
+import { TableFailure, TableLoading, TableSurface } from "@/components/table-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -80,6 +80,26 @@ export function ImportReviewPage() {
   // the header actions so a large batch doesn't look dead mid-run.
   const [bulk, setBulk] = useState<{ verb: string; done: number; total: number } | null>(null);
 
+  // Before the pending check, and separate from the isError branch below.
+  // A paused query is still `pending`, so the skeleton would run forever;
+  // and "it may have been removed" is the wrong story for an unreachable
+  // service — it blames the record for a network problem.
+  if (batch.fetchStatus === "paused") {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="mb-4 flex items-center gap-3">
+          <Button asChild variant="ghost" size="icon" aria-label="Back to Imports">
+            <Link to={`/l/${locationId}/imports`}>
+              <ArrowLeft className="size-4" />
+            </Link>
+          </Button>
+        </div>
+        <TableSurface>
+          <TableFailure query={batch} title="Couldn't load this import" />
+        </TableSurface>
+      </div>
+    );
+  }
   if (batch.isPending) {
     // Skeleton shaped like the final layout: back-button header + review surface.
     return (

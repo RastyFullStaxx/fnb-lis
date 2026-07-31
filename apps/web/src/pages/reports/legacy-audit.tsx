@@ -9,7 +9,7 @@ import { exportUrl, useLegacyAuditReport, type LegacyAuditRow } from "@/api/repo
 import { formatMoney, cn, formatNumber, formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
-import { TableLoading, TableError, ToolbarField } from "@/components/table-surface";
+import { TableFailure, TableLoading, ToolbarField, queryFailed } from "@/components/table-surface";
 import { ExportButtons } from "@/components/report-toolbar";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -204,10 +204,10 @@ export function LegacyAuditPage() {
         </div>
 
         <div className="min-h-0 flex-1 overflow-auto">
-          {report.isPending ? (
+          {queryFailed(report) ? (
+            <TableFailure query={report} />
+          ) : report.isPending ? (
             <TableLoading rows={10} />
-          ) : report.isError ? (
-            <TableError onRetry={() => void report.refetch()} retrying={report.isRefetching} />
           ) : !report.data || report.data.groups.length === 0 ? (
             <EmptyState
               icon={BarChart3}

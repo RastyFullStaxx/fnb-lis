@@ -10,7 +10,7 @@ import {
 } from "@/api/admin";
 import { ApiError } from "@/api/http";
 import { PageHeader } from "@/components/page-header";
-import { TableSurface, TableLoading, TableEmpty } from "@/components/table-surface";
+import { TableEmpty, TableFailure, TableLoading, TableSurface, queryFailed } from "@/components/table-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -104,7 +104,9 @@ export function AdminDevicesPage() {
       </p>
 
       <TableSurface>
-        {devices.isPending ? (
+        {queryFailed(devices) ? (
+          <TableFailure query={devices} title="Couldn't load computers" />
+        ) : devices.isPending ? (
           <TableLoading />
         ) : rows.length === 0 ? (
           <TableEmpty

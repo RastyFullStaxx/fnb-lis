@@ -5,7 +5,7 @@ import { useLocationId } from "@/api/location";
 import { exportUrl, useParLevelReport } from "@/api/reports";
 import { formatMoney, formatNumber, formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
-import { TableSurface, TableLoading, TableEmpty, TableError, ToolbarSearch } from "@/components/table-surface";
+import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarSearch, queryFailed } from "@/components/table-surface";
 import { ExportButtons } from "@/components/report-toolbar";
 import { ChartBlock } from "@/components/charts/chart-block";
 import { MagnitudeBars } from "@/components/charts/magnitude-bars";
@@ -89,10 +89,10 @@ export function ParLevelReportPage() {
           </>
         }
       >
-        {report.isPending ? (
+        {queryFailed(report) ? (
+          <TableFailure query={report} />
+        ) : report.isPending ? (
           <TableLoading />
-        ) : report.isError ? (
-          <TableError onRetry={() => void report.refetch()} retrying={report.isRefetching} />
         ) : !report.data || report.data.rows.length === 0 ? (
           <TableEmpty
             icon={ClipboardList}

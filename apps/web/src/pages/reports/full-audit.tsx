@@ -13,7 +13,7 @@ import { ApiError, downloadFile } from "@/api/http";
 import { formatMoney, formatNumber, formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
-import { TableLoading, TableEmpty, TableError, ToolbarField, ToolbarSearch } from "@/components/table-surface";
+import { TableEmpty, TableFailure, TableLoading, ToolbarField, ToolbarSearch, queryFailed } from "@/components/table-surface";
 import { ExportButtons } from "@/components/report-toolbar";
 import { Toggle } from "@/components/toggle-chip";
 import { MagnitudeBars } from "@/components/charts/magnitude-bars";
@@ -166,6 +166,19 @@ export function FullAuditPage() {
 
   const filteredOut =
     report.data ? report.data.rows.length - visibleGroups.reduce((n, g) => n + g.rows.length, 0) : 0;
+
+  // Paused before pending: a paused query is still `pending`, so the skeleton
+  // below would otherwise run forever with no message and no way out.
+  if (queryFailed(countDates)) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <PageHeader title="Full Audit" />
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border">
+          <TableFailure query={countDates} title="Couldn't load the count dates" />
+        </div>
+      </div>
+    );
+  }
 
   if (countDates.isPending) {
     return (
@@ -326,10 +339,10 @@ export function FullAuditPage() {
           {report.data && report.data.rows.length > 0 && effectiveBegin && effectiveEnd ? (
             <VerdictStrip report={report.data} begin={effectiveBegin} end={effectiveEnd} />
           ) : null}
-          {report.isPending && effectiveBegin && effectiveEnd ? (
+          {queryFailed(report) ? (
+            <TableFailure query={report} title="Couldn't load the Full Audit" />
+          ) : report.isPending && effectiveBegin && effectiveEnd ? (
             <TableLoading rows={10} />
-          ) : report.isError ? (
-            <TableError onRetry={() => void report.refetch()} retrying={report.isRefetching} />
           ) : !report.data ? (
             <div className="px-4 py-16 text-center text-sm text-muted-foreground">
               Pick a beginning and ending count to run the reconciliation.

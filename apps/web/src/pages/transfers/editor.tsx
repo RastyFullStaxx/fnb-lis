@@ -13,7 +13,7 @@ import { formatMoney } from "@/lib/utils";
 import { EntryActions } from "@/components/entry-fact";
 import { ItemCombobox } from "@/components/item-combobox";
 import { VoidDialog } from "@/components/void-dialog";
-import { TableSurface, TableLoading } from "@/components/table-surface";
+import { TableFailure, TableLoading, TableSurface } from "@/components/table-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { QuantityInput } from "@/components/quantity-input";
@@ -65,6 +65,26 @@ export function TransferEditorPage() {
   const [voidingReceipt, setVoidingReceipt] = useState<{ receiptId: string; label: string } | null>(null);
   const comboRef = useRef<HTMLButtonElement>(null);
 
+  // Before the pending check, and separate from the isError branch below.
+  // A paused query is still `pending`, so the skeleton would run forever;
+  // and "it may have been removed" is the wrong story for an unreachable
+  // service — it blames the record for a network problem.
+  if (transfer.fetchStatus === "paused") {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="mb-4 flex items-center gap-3">
+          <Button asChild variant="ghost" size="icon" aria-label="Back to Transfers">
+            <Link to={`/l/${locationId}/transfers`}>
+              <ArrowLeft className="size-4" />
+            </Link>
+          </Button>
+        </div>
+        <TableSurface>
+          <TableFailure query={transfer} title="Couldn't load this transfer" />
+        </TableSurface>
+      </div>
+    );
+  }
   if (transfer.isPending) {
     // Skeleton shaped like the final layout: back-button header + lines surface.
     return (

@@ -8,14 +8,7 @@ import { exportUrl, useCostSnapshotReport } from "@/api/reports";
 import { formatMoney, formatNumber, formatDate, formatUnitPrice } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
-import {
-  TableSurface,
-  TableLoading,
-  TableEmpty,
-  TableError,
-  ToolbarField,
-  ToolbarSearch,
-} from "@/components/table-surface";
+import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarField, ToolbarSearch, queryFailed } from "@/components/table-surface";
 import { ExportButtons } from "@/components/report-toolbar";
 import { ChartBlock } from "@/components/charts/chart-block";
 import { MagnitudeBars } from "@/components/charts/magnitude-bars";
@@ -150,10 +143,10 @@ export function CostSnapshotPage() {
           </>
         }
       >
-        {countDates.isPending || (report.isPending && anchor) ? (
+        {queryFailed(countDates) || queryFailed(report) ? (
+          <TableFailure query={[countDates, report]} title="Couldn't load the cost snapshot" />
+        ) : countDates.isPending || (report.isPending && anchor) ? (
           <TableLoading />
-        ) : report.isError ? (
-          <TableError onRetry={() => void report.refetch()} retrying={report.isRefetching} />
         ) : !report.data || report.data.rows.length === 0 ? (
           <TableEmpty
             icon={Coins}

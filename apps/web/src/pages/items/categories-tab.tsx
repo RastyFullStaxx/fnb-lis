@@ -34,7 +34,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { TableLoading, TableEmpty, ToolbarSearch } from "@/components/table-surface";
+import { TableEmpty, TableFailure, TableLoading, ToolbarSearch, queryFailed } from "@/components/table-surface";
 
 /** Sentinel for the "Other" branch in the Industry select — same convention as AssetDetailsEdit. */
 const OTHER = "__other__";
@@ -64,7 +64,9 @@ export function CategoriesTab({
           <ToolbarSearch value={query} onChange={setQuery} placeholder="Find a category…" label="Search" />
         </div>
       )}
-      {categories.isPending ? (
+      {queryFailed(categories) ? (
+        <TableFailure query={categories} title="Couldn't load categories" />
+      ) : categories.isPending ? (
         <TableLoading />
       ) : (categories.data ?? []).length === 0 ? (
         <TableEmpty

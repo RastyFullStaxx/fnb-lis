@@ -6,7 +6,7 @@ import { useCountDates } from "@/api/ops";
 import { exportUrl, useNonRevenueReport, useTransferReport } from "@/api/reports";
 import { formatMoney, formatNumber, formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
-import { TableSurface, TableLoading, TableEmpty, TableError, ToolbarField } from "@/components/table-surface";
+import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarField, queryFailed } from "@/components/table-surface";
 import { DateRangeControl, ExportButtons } from "@/components/report-toolbar";
 import { ChartBlock } from "@/components/charts/chart-block";
 import { MagnitudeBars } from "@/components/charts/magnitude-bars";
@@ -113,10 +113,10 @@ export function NonRevenueReportPage() {
         }
       >
         {transferTab ? (
-          transfers.isPending ? (
+          queryFailed(transfers) ? (
+            <TableFailure query={transfers} title="Couldn't load stock transfers" />
+          ) : transfers.isPending ? (
             <TableLoading />
-          ) : transfers.isError ? (
-            <TableError onRetry={() => void transfers.refetch()} retrying={transfers.isRefetching} />
           ) : !transfers.data || transfers.data.rows.length === 0 ? (
             <TableEmpty
               icon={ArrowLeftRight}
@@ -159,10 +159,10 @@ export function NonRevenueReportPage() {
               </TableFooter>
             </Table>
           )
+        ) : queryFailed(report) ? (
+          <TableFailure query={report} />
         ) : report.isPending ? (
           <TableLoading />
-        ) : report.isError ? (
-          <TableError onRetry={() => void report.refetch()} retrying={report.isRefetching} />
         ) : !report.data || report.data.rows.length === 0 ? (
           <TableEmpty icon={Wine} title="No non-revenue use in this range" description="Adjust the dates to find recorded entries." />
         ) : (

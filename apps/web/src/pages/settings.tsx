@@ -692,6 +692,9 @@ function ProductTypesSection() {
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), add())}
               placeholder="Add a product type…"
+              // The only input on the page with no visible label — a placeholder
+              // is not one, and it disappears the moment anyone types.
+              aria-label="Add a product type"
               className="max-w-xs"
             />
             <Button type="button" variant="outline" onClick={add}>

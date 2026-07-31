@@ -11,7 +11,7 @@ import { ApiError } from "@/api/http";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { TableSurface, TableLoading, TableEmpty, ToolbarSearch } from "@/components/table-surface";
+import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarSearch, queryFailed } from "@/components/table-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -168,7 +168,9 @@ export function StockPage() {
           ) : undefined
         }
       >
-        {rows.isPending ? (
+        {queryFailed(rows) ? (
+          <TableFailure query={rows} title="Couldn't load this location's catalog" />
+        ) : rows.isPending ? (
           <TableLoading />
         ) : (rows.data ?? []).length === 0 ? (
           <TableEmpty

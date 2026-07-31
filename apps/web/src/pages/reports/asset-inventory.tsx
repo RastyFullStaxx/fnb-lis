@@ -6,7 +6,7 @@ import { useLocationId } from "@/api/location";
 import { exportUrl, useAssetInventoryReport } from "@/api/reports";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
-import { TableSurface, TableLoading, TableEmpty, TableError, ToolbarField } from "@/components/table-surface";
+import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarField, queryFailed } from "@/components/table-surface";
 import { ExportButtons } from "@/components/report-toolbar";
 import {
   Select,
@@ -105,10 +105,13 @@ export function AssetInventoryReportPage() {
           </>
         }
       >
-        {countDates.isPending || report.isPending ? (
+        {/* Both queries: this screen needs the count dates too, and a failure
+            there used to fall through to "No asset counts on these dates" —
+            which reads as an answer rather than a failure. */}
+        {queryFailed(countDates) || queryFailed(report) ? (
+          <TableFailure query={[countDates, report]} />
+        ) : countDates.isPending || report.isPending ? (
           <TableLoading />
-        ) : report.isError ? (
-          <TableError onRetry={() => void report.refetch()} retrying={report.isRefetching} />
         ) : !report.data || report.data.rows.length === 0 ? (
           <TableEmpty
             icon={ClipboardList}

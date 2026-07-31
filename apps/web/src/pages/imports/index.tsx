@@ -7,7 +7,7 @@ import { useLocationId } from "@/api/location";
 import { useImportBatches, useUploadImport, type ImportKind } from "@/api/imports";
 import { ApiError } from "@/api/http";
 import { PageHeader } from "@/components/page-header";
-import { TableSurface, TableLoading, TableEmpty, ToolbarField, ToolbarSearch } from "@/components/table-surface";
+import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarField, ToolbarSearch, queryFailed } from "@/components/table-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -108,7 +108,9 @@ export function ImportsPage() {
           </>
         }
       >
-        {batches.isPending ? (
+        {queryFailed(batches) ? (
+          <TableFailure query={batches} title="Couldn't load imports" />
+        ) : batches.isPending ? (
           <TableLoading />
         ) : filtered.length === 0 ? (
           <TableEmpty

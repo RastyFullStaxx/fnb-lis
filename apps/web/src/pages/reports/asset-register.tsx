@@ -4,7 +4,7 @@ import { useLocationId } from "@/api/location";
 import { exportUrl, useAssetRegisterReport } from "@/api/reports";
 import { formatMoney, formatDate, formatNumber } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
-import { TableSurface, TableLoading, TableEmpty, TableError, ToolbarSearch } from "@/components/table-surface";
+import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarSearch, queryFailed } from "@/components/table-surface";
 import { ExportButtons } from "@/components/report-toolbar";
 import { Toggle } from "@/components/toggle-chip";
 import { Badge } from "@/components/ui/badge";
@@ -86,10 +86,10 @@ export function AssetRegisterReportPage() {
           </>
         }
       >
-        {report.isPending ? (
+        {queryFailed(report) ? (
+          <TableFailure query={report} />
+        ) : report.isPending ? (
           <TableLoading />
-        ) : report.isError ? (
-          <TableError onRetry={() => void report.refetch()} retrying={report.isRefetching} />
         ) : !report.data || report.data.rows.length === 0 ? (
           <TableEmpty
             icon={Wrench}

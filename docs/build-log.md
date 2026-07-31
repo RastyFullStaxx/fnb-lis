@@ -2401,3 +2401,79 @@ npm run dist   -w @fnb/desktop
 
 Nothing desktop-specific needs changing for these; `setup.html` is the only
 desktop-owned screen and it was already title-cased.
+
+---
+
+## 2026-07-31 (third pass) — failed loads stopped lying
+
+Web only; desktop still pending one `npm run dist` (see the previous entry).
+
+### The bug
+
+A list query that cannot reach the API does **not** error — it sits at
+`status: "pending"`, `fetchStatus: "paused"`, `failureCount: 0`. No attempt, no
+error. Measured on @tanstack/react-query 5.101.2 with `networkMode: "always"`
+set on the query and `navigator.onLine === true`, which by React Query's own
+`canFetch()` rule should never pause. `main.tsx` had already recorded this for
+the boot query; it turns out to affect every query.
+
+Two consequences, both live:
+
+1. **Every list and report rendered a skeleton forever** on a failed load — no
+   message, no retry, indefinitely. The standard `isPending ? <TableLoading/> :
+   isError ? <TableError/>` order can never reach the error arm, because a
+   paused query is still pending. That included the Dashboard (the landing
+   page) and the Full Audit.
+2. **`TableError` existed and no list page used it.** `stock/index.tsx` branched
+   `isPending` then `length === 0`, so had the query ever errored outright the
+   Local Database would have announced *"This location's catalog is empty"* and
+   offered to copy another location's catalog — inviting someone to duplicate a
+   catalog that already exists. `TableError`'s own doc comment had warned about
+   exactly this ("a load failure must never render as an empty state").
+
+### The fix
+
+`queryFailed()` + `TableFailure` in `table-surface.tsx`, and **failure checked
+before pending** at every site.
+
+- `queryFailed(q)` = `isError || fetchStatus === "paused"`. The doc comment
+  states the ordering requirement, because getting it wrong is silent.
+- `TableFailure` picks the recovery that works: a paused query stays paused
+  through `refetch()` (measured — AppShell hit this first), so paused offers a
+  reload and an ordinary error retries in place. Accepts an array when a screen
+  needs several queries.
+- 34 pages with a loading state now all have a failure state; every title names
+  what failed ("Couldn't load this location's catalog"), never the generic
+  "Couldn't load this report" on a user list.
+- Dashboard, Full Audit, Cost Snapshot, Sales by Item, Usage Cost, Non-Revenue's
+  transfer tab, the transfer editor and the import review each needed their own
+  shape — the last two said *"it may have been removed"* on any failure, blaming
+  the record for a network problem.
+
+### Also
+
+- Settings: the one input without a label got an `aria-label` (a placeholder is
+  not a label and vanishes on first keystroke).
+
+### Audited, no change needed
+
+- **Weigh screen asks for the unit the bottle was actually weighed in** (oz here)
+  even when the user's preference is metric. Correct and deliberate —
+  `tareWeightUnit` records a physical measurement, and only the fallback follows
+  the preference. **Noted for the client:** if a bar's scale reads grams and the
+  item's tare was recorded in ounces, staff must convert. Worth asking Lourd
+  whether input-side conversion is wanted; it would touch weighing math, so it
+  is a decision, not a tweak.
+- Accessibility otherwise clean across six screens: no unnamed buttons, no
+  missing alt, all other inputs labelled.
+- Imports review shows the raw file value beside its match, so a human verifies
+  rather than trusts. Command palette, responsive layout: already covered.
+
+### Verified
+
+- Paused catalog load now renders "Couldn't load this location's catalog / Can't
+  reach the inventory service. Check your connection, then reload. / Try again"
+  — 0 skeletons, no empty state. Same for the Dashboard.
+- 8 screens re-checked with the network restored: real rows, no stuck skeletons.
+- Golden anchors unchanged: −330.6857142857142 / −869.5714285714284 and
+  −537 / −1410. Typechecks and production build clean.

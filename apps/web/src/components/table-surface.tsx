@@ -189,6 +189,67 @@ export function TableError({
   );
 }
 
+/** The slice of a React Query result these helpers need. */
+interface FailableQuery {
+  isError: boolean;
+  fetchStatus: string;
+  isRefetching: boolean;
+  refetch: () => unknown;
+}
+
+/**
+ * Can this query not currently produce data?
+ *
+ * **Check this BEFORE `isPending`.** A paused query is still `pending`, so the
+ * usual `isPending ? <TableLoading/> : isError ? …` order never reaches the
+ * error arm — the page shows a skeleton for as long as the pause lasts, with no
+ * message and no retry. That is not hypothetical: with the API stopped, a list
+ * query sits at `status: "pending"`, `fetchStatus: "paused"`, `failureCount: 0`
+ * — no attempt, no error — measured on @tanstack/react-query 5.101.2 with
+ * `networkMode: "always"` and `navigator.onLine === true`, which by its own
+ * `canFetch()` rule should never pause. `AppShell` already had to special-case
+ * exactly this for the boot query; every list needs the same guard.
+ */
+export function queryFailed(q: FailableQuery): boolean {
+  return q.isError || q.fetchStatus === "paused";
+}
+
+/**
+ * The failure fill for a list or report, picking the recovery that works.
+ *
+ * A paused query stays paused through `refetch()` — measured, see AppShell — so
+ * the only honest offer there is a reload. An ordinary error retries in place.
+ */
+export function TableFailure({
+  query,
+  title,
+  description,
+}: {
+  /** One query, or every query the screen needs — retry hits all of them. */
+  query: FailableQuery | FailableQuery[];
+  title?: string;
+  description?: string;
+}) {
+  const queries = Array.isArray(query) ? query : [query];
+  const paused = queries.some((q) => q.fetchStatus === "paused");
+  return (
+    <TableError
+      title={title}
+      description={
+        paused
+          ? "Can't reach the inventory service. Check your connection, then reload."
+          : description
+      }
+      onRetry={
+        paused
+          ? () => window.location.reload()
+          : () => queries.forEach((q) => void q.refetch())
+      }
+      retrying={!paused && queries.some((q) => q.isRefetching)}
+    />
+  );
+}
+
 /** Empty fill for inside a TableSurface — no second border, so the surface reads as one card. */
 export function TableEmpty({
   icon: Icon,

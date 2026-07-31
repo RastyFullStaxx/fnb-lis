@@ -40,7 +40,7 @@ import {
 } from "@/api/admin";
 import { ApiError } from "@/api/http";
 import { PageHeader } from "@/components/page-header";
-import { TableEmpty, TableLoading, TableSurface } from "@/components/table-surface";
+import { TableEmpty, TableFailure, TableLoading, TableSurface, queryFailed } from "@/components/table-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -145,7 +145,9 @@ export function AdminClientsPage() {
       />
 
       <TableSurface>
-        {clients.isPending ? (
+        {queryFailed(clients) ? (
+          <TableFailure query={clients} title="Couldn't load clients" />
+        ) : clients.isPending ? (
           <TableLoading rows={4} />
         ) : (clients.data ?? []).length === 0 ? (
           <TableEmpty
