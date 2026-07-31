@@ -243,6 +243,26 @@ function OpenSession({ session }: { session: SessionWithLines }) {
 
   const save = async () => {
     if (!item) return;
+    // Guard against a second line for an item that already has one in this
+    // session (client-reported issue 2026-08-01): two ACTIVE lines for the
+    // same item don't merge, they land on whatever the last write happened
+    // to produce (e.g. End Full 0 / End Open 1.85 out of a 10.7 combined
+    // total plus a separate 5.2 direct entry) and the report shows
+    // impossible negative usage with no indication why. Block the add and
+    // send the counter to edit the existing line instead — the one legal
+    // way to change what was already counted for this item.
+    if (!editingLineId) {
+      const existing = session.lines.find(
+        (l) => l.locationItemId === item.id && l.status === "ACTIVE",
+      );
+      if (existing) {
+        toast.error(
+          `${item.itemVariant.item.name} already has a count in this session — edit that line instead of adding a new one.`,
+        );
+        startEdit(existing);
+        return;
+      }
+    }
     try {
       // Edits go through the atomic PUT — one request updates the line in
       // place. Add-then-remove (or the reverse) leaves either a lost count or
