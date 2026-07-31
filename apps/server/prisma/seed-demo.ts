@@ -1358,6 +1358,54 @@ async function seedFeatureShowcase() {
     });
   }
 
+  // Phase 46 showcase: a real locationItem.priceChange row WITH details, so
+  // 46.1 (Activity page), 46.2 (price-edit popover), and 46.4 (bell) all have
+  // something to render. seed.ts's own seedActivity() already logs a
+  // `priceChange` row for this same item, but with no `details` at all — a
+  // deliberate near-miss that exercises 46.1's null-details fallback, not a
+  // gap to fill. This is a second, separate row, WITH details, so both paths
+  // (has details / doesn't) are demonstrated side by side on the same item.
+  // Manager, not staff — cost changes go through Prices, which staff cannot
+  // reach (see permissions.ts: prices.edit is ADMIN/OWNER/MANAGER only).
+  const manager = await prisma.user.findUniqueOrThrow({ where: { username: "manager" } });
+  const priceChangeSummary = "Updated Absolut Vodka 700 ml";
+  const existingPriceChange = await prisma.activityLog.findFirst({
+    where: { locationId: bar.id, action: "locationItem.priceChange", summary: priceChangeSummary },
+  });
+  if (!existingPriceChange) {
+    const barItems = await resolveItems(bar.id, BAR_ITEMS);
+    const absolut = barItems.absolut700;
+    const oldCost = absolut.cost; // 620 as seeded by MAIN_BAR_PRICES (seed.ts)
+    // 649 is not an arbitrary demo bump — it's the same unit cost
+    // seedOpenPeriod() already recorded on the 2026-07-20 purchase line for
+    // this exact item (BAR-0721-1, see line ~949 above). Using it here means
+    // the price-change log, the item's live cost, and its own purchase
+    // history all agree on the same number instead of telling three stories.
+    const newCost = 649;
+    // Keep the catalog's live cost in sync with what the log claims changed
+    // TO — otherwise the item screen (46.2) shows a "last change" line that
+    // disagrees with the price currently sitting on the row.
+    await prisma.locationItem.update({ where: { id: absolut.id }, data: { cost: newCost } });
+    await prisma.activityLog.create({
+      data: {
+        userId: manager.id, userName: `${manager.firstName} ${manager.lastName}`,
+        clientId: bar.clientId, locationId: bar.id,
+        action: "locationItem.priceChange", entity: "LocationItem", entityId: absolut.id,
+        summary: priceChangeSummary,
+        // Shape matches location-items.ts exactly: `old` is a full
+        // before-snapshot, `new` is the raw PUT body (cost-only here, so
+        // retail/parLevel/isActive are absent from `new`, same as a real
+        // cost-only edit — this is what makes the 46.1/46.2/46.4 guard
+        // (`new.cost !== undefined`) meaningful to seed against).
+        detailsJson: JSON.stringify({
+          old: { cost: oldCost, retail: absolut.retail, parLevel: 10, isActive: true },
+          new: { cost: newCost },
+        }),
+        ts: new Date("2026-07-21T09:15:00Z"),
+      },
+    });
+  }
+
   for (const [clientName, locationName] of [
     ["Prime Hospitality Group", "Kitchen"],
     ["Casa Verde Restaurant", "Main"],
