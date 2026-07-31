@@ -128,6 +128,9 @@ export function splitTotalAmount(total: number, size: number): SplitTotalAmountR
     return { ok: false, code: "INVALID_SIZE", message: "Item has no size set, cannot split a total amount." };
   }
   const fullCount = Math.floor(total / size);
-  const openRemainder = phpRound(total - fullCount * size);
+  // Two decimal places, not phpRound's default whole-number precision — the
+  // remainder is in the item's own counting unit (L, kg), not a base unit
+  // like ml/g, so rounding it to an integer collapsed 5.2 L down to 5 L.
+  const openRemainder = phpRound(total - fullCount * size, 2);
   return { ok: true, fullCount, openRemainder };
 }
