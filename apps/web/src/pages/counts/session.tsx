@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useParams } from "react-router";
 import { ArrowLeft, Check, Pencil } from "lucide-react";
 import { toast } from "sonner";
-import { can, type Role } from "@fnb/core";
+import { can, convert, type Role } from "@fnb/core";
 import { statusVariant } from "@/lib/status";
 import { useMe } from "@/api/auth";
+import { usePreferredUnit } from "@/lib/preferences";
 import { useLocationId, useLocationItems } from "@/api/location";
 import { useCountMutations, useCountSession } from "@/api/ops";
 import { variantLabel, type CountLine, type LocationItem } from "@/api/types";
@@ -29,6 +30,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   AlertDialog,
@@ -150,6 +152,10 @@ function OpenSession({ session }: { session: SessionWithLines }) {
   const [scale, setScale] = useState("");
   // Direct open-amount entry — remaining content typed in, no weighing.
   const [openAmount, setOpenAmount] = useState("");
+  // Combined total entry (client req 2026-07-31): opt in next to Open
+  // Amount, off by default. Off, Open Amount behaves exactly as before.
+  const [useTotalAmount, setUseTotalAmount] = useState(false);
+  const [totalAmount, setTotalAmount] = useState("");
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
   const [pane, setPane] = useState<"entered" | "remaining">("entered");
   const comboRef = useRef<HTMLButtonElement>(null);
@@ -157,6 +163,19 @@ function OpenSession({ session }: { session: SessionWithLines }) {
   const weighable = (item?.itemVariant.contentTracked || item?.itemVariant.weighMode === "NET") ?? false;
   const activeMode = weighable ? mode : "FULL";
   const preview = useWeighPreview(item, scale);
+
+  // Client req 2026-07-31: show and accept Open Amount / total in the
+  // user's own preferred unit, convert to the item's stored unit right at
+  // submit. The item's own unit stays the source of truth for storage —
+  // this only changes what the counter sees and types. Both kinds are
+  // fetched up front (not just the selected item's kind) so startEdit can
+  // resolve the right one for the LINE being opened without waiting on a
+  // render — item state has not updated yet at that point in the function.
+  const preferredVolume = usePreferredUnit("VOLUME");
+  const preferredMass = usePreferredUnit("MASS");
+  const itemUnit = item?.itemVariant.unit ?? null;
+  const preferredUnit = itemUnit?.kind === "MASS" ? preferredMass : itemUnit?.kind === "VOLUME" ? preferredVolume : null;
+  const displayUnit = preferredUnit ?? itemUnit;
 
   /**
    * Focus the entry field for the current mode. Picking an item left focus on
@@ -175,6 +194,8 @@ function OpenSession({ session }: { session: SessionWithLines }) {
     setQty("");
     setScale("");
     setOpenAmount("");
+    setUseTotalAmount(false);
+    setTotalAmount("");
     setItem(null);
     setEditingLineId(null);
   };
@@ -192,10 +213,22 @@ function OpenSession({ session }: { session: SessionWithLines }) {
       setScale("");
       setOpenAmount("");
     } else if (line.scaleWeight == null) {
-      // Weigh line entered as a direct amount (no scale/tare).
+      // Weigh line entered as a direct amount (no scale/tare). Stored lines
+      // never carry totalAmount — the server already split it on save — so
+      // editing always lands on plain Open Amount, toggle off. Stored value
+      // is in the item's own unit; show it converted to displayUnit, same
+      // as a fresh entry would expect to type in.
       target = "OPEN";
       setMode("OPEN");
-      setOpenAmount(String(line.remainingContent));
+      const lineUnit = line.locationItem.itemVariant.unit;
+      const linePreferred = lineUnit.kind === "MASS" ? preferredMass : lineUnit.kind === "VOLUME" ? preferredVolume : null;
+      const shown =
+        linePreferred && linePreferred.kind === lineUnit.kind
+          ? convert(line.remainingContent, lineUnit, linePreferred)
+          : line.remainingContent;
+      setOpenAmount(String(shown));
+      setUseTotalAmount(false);
+      setTotalAmount("");
       setScale("");
       setQty("");
     } else {
@@ -221,13 +254,31 @@ function OpenSession({ session }: { session: SessionWithLines }) {
         if (editingLineId) await mutations.updateLine.mutateAsync({ lineId: editingLineId, ...body });
         else await mutations.addLine.mutateAsync(body);
       } else if (activeMode === "OPEN") {
-        // Direct amount — no weighing. Stored as a weigh line with the content
-        // set straight from what the counter typed.
-        const n = Number(openAmount);
-        if (openAmount === "" || !Number.isFinite(n) || n < 0) return toast.error("Enter the remaining amount");
-        const body = { locationItemId: item.id, countType: "WEIGH" as const, remainingContent: n };
-        if (editingLineId) await mutations.updateLine.mutateAsync({ lineId: editingLineId, ...body });
-        else await mutations.addLine.mutateAsync(body);
+        // Counter types in displayUnit (their preference); convert to the
+        // item's own stored unit right here, at the edge, before it goes
+        // anywhere near the server. Storage and reconciliation never see
+        // anything but the item's own unit.
+        const toStoredUnit = (typed: number): number => {
+          if (!itemUnit || !displayUnit || displayUnit.kind !== itemUnit.kind) return typed;
+          return convert(typed, displayUnit, itemUnit);
+        };
+        if (useTotalAmount) {
+          // Combined total — server runs the split (splitTotalAmount) and
+          // stores the result as ordinary qtyFull / remainingContent.
+          const n = Number(totalAmount);
+          if (totalAmount === "" || !Number.isFinite(n) || n < 0) return toast.error("Enter the total amount");
+          const body = { locationItemId: item.id, countType: "WEIGH" as const, totalAmount: toStoredUnit(n) };
+          if (editingLineId) await mutations.updateLine.mutateAsync({ lineId: editingLineId, ...body });
+          else await mutations.addLine.mutateAsync(body);
+        } else {
+          // Direct amount — no weighing. Stored as a weigh line with the
+          // content set straight from what the counter typed.
+          const n = Number(openAmount);
+          if (openAmount === "" || !Number.isFinite(n) || n < 0) return toast.error("Enter the remaining amount");
+          const body = { locationItemId: item.id, countType: "WEIGH" as const, remainingContent: toStoredUnit(n) };
+          if (editingLineId) await mutations.updateLine.mutateAsync({ lineId: editingLineId, ...body });
+          else await mutations.addLine.mutateAsync(body);
+        }
       } else {
         if (!preview || !preview.ready || !preview.entered || preview.blocking) {
           return toast.error("Fix the scale reading first");
@@ -340,21 +391,55 @@ function OpenSession({ session }: { session: SessionWithLines }) {
               />
             </div>
           ) : activeMode === "OPEN" ? (
-            <div className="space-y-2">
-              <Label htmlFor="count-open">
-                Remaining {item?.itemVariant.unit.name ?? "content"}
-              </Label>
-              <QuantityInput
-                id="count-open"
-                className="tnum h-11 text-lg"
-                placeholder={item?.itemVariant.size ? `e.g. ${item.itemVariant.size} = a full one` : "Amount left"}
-                value={openAmount}
-                onChange={(e) => setOpenAmount(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && save()}
-              />
-              <p className="text-xs text-muted-foreground">
-                Type the amount left in the open container — no scale or empty weight needed.
-              </p>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between rounded-md border px-3 py-2">
+                <Label htmlFor="count-use-total" className="text-sm font-normal">
+                  I have a total amount, not a per bottle split
+                </Label>
+                <Switch
+                  id="count-use-total"
+                  checked={useTotalAmount}
+                  onCheckedChange={(checked) => setUseTotalAmount(checked === true)}
+                />
+              </div>
+              {useTotalAmount ? (
+                <div className="space-y-2">
+                  <Label htmlFor="count-total">
+                    Total {displayUnit?.name ?? "content"} on hand
+                  </Label>
+                  <QuantityInput
+                    id="count-total"
+                    className="tnum h-11 text-lg"
+                    placeholder={
+                      item?.itemVariant.size ? `e.g. full units plus what's left in the open one` : "Total on hand"
+                    }
+                    value={totalAmount}
+                    onChange={(e) => setTotalAmount(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && save()}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Covers full units plus the one open container. The system works out how many are full and
+                    what's left open.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Label htmlFor="count-open">
+                    Remaining {displayUnit?.name ?? "content"}
+                  </Label>
+                  <QuantityInput
+                    id="count-open"
+                    className="tnum h-11 text-lg"
+                    placeholder={item?.itemVariant.size ? `e.g. ${item.itemVariant.size} = a full one` : "Amount left"}
+                    value={openAmount}
+                    onChange={(e) => setOpenAmount(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && save()}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Type the amount left in the open container — no scale or empty weight needed.
+                  </p>
+                </div>
+              )}
             </div>
           ) : (
             <div className="space-y-2">

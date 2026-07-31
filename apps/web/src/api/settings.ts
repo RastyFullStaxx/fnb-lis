@@ -82,10 +82,22 @@ export function useUpdateVarianceThreshold(clientId: string) {
 export interface UserPreferences {
   fontSize: "default" | "large" | "x-large";
   unitSystem: "metric" | "imperial";
+  /**
+   * Client req 2026-07-31: per-user display unit, independent of anyone
+   * else's. Mirrors the server's userPreferences (routes/settings.ts).
+   * Values match the units already seeded in seed.ts.
+   */
+  preferredVolumeUnit: "ml" | "L" | "fl oz" | "gal";
+  preferredMassUnit: "g" | "kg" | "oz" | "lb";
 }
 
 // "large" (18px) is the starting size per client req #1 — mirrors the server default.
-export const DEFAULT_PREFERENCES: UserPreferences = { fontSize: "large", unitSystem: "metric" };
+export const DEFAULT_PREFERENCES: UserPreferences = {
+  fontSize: "large",
+  unitSystem: "metric",
+  preferredVolumeUnit: "ml",
+  preferredMassUnit: "g",
+};
 
 export function usePreferences(enabled = true) {
   return useQuery({

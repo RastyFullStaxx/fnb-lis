@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { recipeCost } from "@fnb/core";
+import { convert, recipeCost } from "@fnb/core";
 import { useMenu, useMenuMutations, type MenuSummary } from "@/api/menus";
 import { variantLabel, type LocationItem } from "@/api/types";
 import { ApiError } from "@/api/http";
+import { usePreferredUnit } from "@/lib/preferences";
 import { cn, formatMoney } from "@/lib/utils";
 import { ItemCombobox } from "@/components/item-combobox";
 import { Button } from "@/components/ui/button";
@@ -43,6 +44,26 @@ export function RecipeBuilderSheet({
   const [lines, setLines] = useState<BuilderLine[]>([]);
   const [picking, setPicking] = useState<LocationItem | null>(null);
 
+  // Client req 2026-07-31: Serving shows and accepts the user's own
+  // preferred unit, same as Open Amount / Weigh Partial in Counts
+  // (session.tsx). The item's own unit stays the source of truth for
+  // recipeCost and for what gets submitted — this only changes what the
+  // person building the recipe sees and types.
+  const preferredVolume = usePreferredUnit("VOLUME");
+  const preferredMass = usePreferredUnit("MASS");
+  const displayUnitFor = (variant: LocationItem["itemVariant"]) => {
+    if (!variant.contentTracked) return null;
+    const preferred = variant.unit.kind === "MASS" ? preferredMass : variant.unit.kind === "VOLUME" ? preferredVolume : null;
+    return preferred && preferred.kind === variant.unit.kind ? preferred : variant.unit;
+  };
+  // Typed in displayUnit, converted to the item's own stored unit at the
+  // edge — same toStoredUnit shape session.tsx uses for Open Amount.
+  const toStoredUnit = (typed: number, variant: LocationItem["itemVariant"]): number => {
+    const displayUnit = displayUnitFor(variant);
+    if (!displayUnit || displayUnit.kind !== variant.unit.kind) return typed;
+    return convert(typed, displayUnit, variant.unit);
+  };
+
   // Prefill from the current version when creating a new version of an existing
   // menu — exactly once per open, so a detail response landing after the sheet
   // opened can never wipe SRP/lines the user has already started editing.
@@ -71,7 +92,15 @@ export function RecipeBuilderSheet({
       if (!awaitedDetail.current || (srp === "" && lines.length === 0)) {
         setSrp(String(current.srp));
         setLines(
-          current.lines.map((l) => ({ item: l.locationItem, servingQty: String(l.servingQty) })),
+          current.lines.map((l) => {
+            const variant = l.locationItem.itemVariant;
+            const displayUnit = displayUnitFor(variant);
+            const shown =
+              displayUnit && displayUnit.kind === variant.unit.kind
+                ? convert(l.servingQty, variant.unit, displayUnit)
+                : l.servingQty;
+            return { item: l.locationItem, servingQty: String(shown) };
+          }),
         );
       }
     } else {
@@ -87,13 +116,18 @@ export function RecipeBuilderSheet({
         lines
           .filter((l) => Number(l.servingQty) > 0)
           .map((l) => ({
-            servingQty: Number(l.servingQty),
+            // Typed value is in displayUnit; recipeCost divides by the
+            // item's own size, so it needs the stored-unit value here, not
+            // the raw typed number. Converted on every recalculation, not
+            // just at submit — this runs inside a useMemo keyed off `lines`.
+            servingQty: toStoredUnit(Number(l.servingQty), l.item.itemVariant),
             size: l.item.itemVariant.size,
             contentTracked: l.item.itemVariant.contentTracked,
             ingredientCost: l.item.cost,
           })),
       ),
-    [lines],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [lines, preferredVolume, preferredMass],
   );
   const srpNum = Number(srp) || 0;
   const margin = srpNum > 0 ? ((srpNum - cost) / srpNum) * 100 : null;
@@ -123,7 +157,10 @@ export function RecipeBuilderSheet({
     }
     const cleanLines = lines.map((l, i) => ({
       locationItemId: l.item.id,
-      servingQty: Number(l.servingQty),
+      // Typed in displayUnit; stored and everything downstream (cost at
+      // publish, reconciliation-adjacent reads) stays in the item's own
+      // unit, same edge-conversion Counts does at save.
+      servingQty: toStoredUnit(Number(l.servingQty), l.item.itemVariant),
       sortOrder: i,
     }));
     if (cleanLines.length === 0) return toast.error("Add at least one ingredient with a serving amount");
@@ -176,7 +213,7 @@ export function RecipeBuilderSheet({
                   </div>
                   <div className="w-32 space-y-1">
                     <Label className="text-xs" htmlFor={`serv-${i}`}>
-                      Serving{variant.contentTracked ? ` (${variant.unit.name})` : " (units)"}
+                      Serving{variant.contentTracked ? ` (${displayUnitFor(variant)?.name ?? variant.unit.name})` : " (units)"}
                     </Label>
                     <QuantityInput
                       id={`serv-${i}`}

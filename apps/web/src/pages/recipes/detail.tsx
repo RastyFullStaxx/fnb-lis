@@ -1,5 +1,7 @@
+import { convert } from "@fnb/core";
 import { useMenu, type MenuSummary } from "@/api/menus";
 import { variantLabel } from "@/api/types";
+import { usePreferredUnit } from "@/lib/preferences";
 import { formatMoney } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -29,6 +31,13 @@ export function MenuDetailSheet({
   onOpenChange: (open: boolean) => void;
 }) {
   const detail = useMenu(menu?.id ?? null);
+
+  // Client req 2026-07-31: display only, same as any other report showing a
+  // raw quantity with a unit label (45.3). Stored servingQty and every
+  // frozen costAtPublish value are untouched — only how the number renders
+  // for the person currently viewing it.
+  const preferredVolume = usePreferredUnit("VOLUME");
+  const preferredMass = usePreferredUnit("MASS");
 
   return (
     <Sheet open={menu !== null} onOpenChange={onOpenChange}>
@@ -77,6 +86,13 @@ export function MenuDetailSheet({
                 <div className="divide-y rounded-lg border">
                   {version.lines.map((line) => {
                     const variant = line.locationItem.itemVariant;
+                    const preferred =
+                      variant.unit.kind === "MASS" ? preferredMass : variant.unit.kind === "VOLUME" ? preferredVolume : null;
+                    const displayUnit = preferred && preferred.kind === variant.unit.kind ? preferred : variant.unit;
+                    const shownQty =
+                      variant.contentTracked && displayUnit.kind === variant.unit.kind
+                        ? convert(line.servingQty, variant.unit, displayUnit)
+                        : line.servingQty;
                     return (
                       <div key={line.id} className="flex items-center justify-between px-3 py-2 text-sm">
                         <span>
@@ -84,9 +100,9 @@ export function MenuDetailSheet({
                           <span className="ml-1.5 text-muted-foreground">{variantLabel(variant)}</span>
                         </span>
                         <span className="tnum">
-                          {line.servingQty}{" "}
+                          {shownQty}{" "}
                           {variant.contentTracked
-                            ? variant.unit.name
+                            ? displayUnit.name
                             : line.servingQty === 1
                               ? "unit"
                               : "units"}

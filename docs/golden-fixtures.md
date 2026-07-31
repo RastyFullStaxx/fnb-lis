@@ -201,6 +201,31 @@ both enforced on create and on merged update state.
 
 ---
 
+## 5b. Open amount, combined total split
+
+`splitTotalAmount` (client req 2026-07-31, Mayonnaise scenario) turns one combined total into
+full units plus a true open remainder, so a counter does not have to split by hand.
+
+Example: item size 5.5L, 1 full jug plus one open jug at 5.2L, so the counter has 10.7L on hand
+and types that one number → fullCount = floor(10.7 / 5.5) = **1**, openRemainder =
+phpRound(10.7 - 1 × 5.5) = phpRound(5.2) = **5.2L**. Same result as splitting by hand: 1 full
+line, one open line at 5.2L.
+
+Edge case: total exactly a multiple of size, e.g. 11.0L on a 5.5L item → fullCount = **2**,
+openRemainder = **0**. The route must not write an open line for a zero remainder.
+
+Edge case: total under one size, e.g. 3.0L on a 5.5L item → fullCount = **0**, openRemainder =
+**3.0L**. Same as typing 3.0 straight into Open Amount with the toggle off.
+
+Edge case: item has no size configured (`size <= 0`) → `splitTotalAmount` returns
+`{ ok: false }`, route responds 400, no line written.
+
+Uses the same `phpRound` as the rest of `weighing.ts`, and the output is written through the
+existing `qtyFull` / `remainingContent` fields, so `reconciliation.ts` reads it exactly like a
+hand split entry. No reconciliation formula changes for this case.
+
+---
+
 ## 6. Top Sellers
 
 Replaces the legacy Graph report. Verified 2026-07-20 against `services/top-sellers.ts`.

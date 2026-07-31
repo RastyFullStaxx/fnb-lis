@@ -8,6 +8,7 @@ import {
   remainingContent,
   resolveBottleWeights,
   resolveDensityFactor,
+  splitTotalAmount,
   voidRequest,
   type CountLineCreate,
   type SessionUser,
@@ -89,6 +90,27 @@ async function buildLineData(locationId: string, body: CountLineCreate) {
     const mode = effectiveWeighMode(variant);
     if (!mode) {
       throw new AppError(400, "This item is counted whole — enable Liquid Weight or Net Weight on the variant to weigh it");
+    }
+
+    // Combined total entry (client req 2026-07-31, Mayonnaise scenario): the
+    // counter typed one number covering full units plus one open container.
+    // Server runs the split, not the browser, since remainingContent /
+    // qtyFull are the trusted fields everywhere else in this file.
+    if (body.totalAmount !== undefined) {
+      const split = splitTotalAmount(body.totalAmount, variant.size);
+      if (!split.ok) throw new AppError(400, split.message);
+      return {
+        locationItem,
+        data: {
+          countType: "WEIGH",
+          qtyFull: split.fullCount,
+          scaleWeight: null,
+          scaleUnit: null,
+          tareWeight: null,
+          densityFactor: null,
+          remainingContent: split.openRemainder,
+        },
+      };
     }
 
     // Direct open-amount entry (client req 2026-07-21): the counter typed the

@@ -106,3 +106,28 @@ export function openEquivalent(
   if (size <= 0) return 0;
   return content / size;
 }
+
+export type SplitTotalAmountResult =
+  | { ok: true; fullCount: number; openRemainder: number }
+  | { ok: false; code: "INVALID_SIZE"; message: string };
+
+/**
+ * Client req 2026-07-31 (Mayonnaise scenario): a counter types one combined
+ * total for full units plus one open container, instead of splitting by
+ * hand. 5.5L size, 5.2L on the shelf across 1 full jug and one open jug
+ * would otherwise get typed straight into Open Amount as if it were all
+ * open content, overstating cost.
+ *
+ * fullCount = floor(total / size), openRemainder = what is left over.
+ * Uses phpRound on the remainder for the same integer/rounding parity as
+ * the rest of this file. A remainder that rounds down to 0 is reported as
+ * exactly 0, so the caller can skip creating an empty open line.
+ */
+export function splitTotalAmount(total: number, size: number): SplitTotalAmountResult {
+  if (!size || size <= 0) {
+    return { ok: false, code: "INVALID_SIZE", message: "Item has no size set, cannot split a total amount." };
+  }
+  const fullCount = Math.floor(total / size);
+  const openRemainder = phpRound(total - fullCount * size);
+  return { ok: true, fullCount, openRemainder };
+}

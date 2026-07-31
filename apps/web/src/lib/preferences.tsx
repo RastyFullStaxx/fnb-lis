@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, type ReactNode } from "react";
+import { preferredUnitDef, type UnitDef, type UnitKind } from "@fnb/core";
 import {
   DEFAULT_PREFERENCES,
   usePreferences,
@@ -58,4 +59,18 @@ export function useUnitSystem(): "metric" | "imperial" {
 /** Given the unit system, the natural weigh unit for scale readings. */
 export function defaultWeighUnit(unitSystem: "metric" | "imperial"): "g" | "oz" {
   return unitSystem === "imperial" ? "oz" : "g";
+}
+
+/**
+ * Client req 2026-07-31: the signed-in user's own display unit for a given
+ * kind, as a ready UnitDef for `convert()`. Returns null for COUNT (no
+ * display preference applies — count items stay raw counts, same as
+ * `openEquivalent` treats `contentTracked = false` items) or if the stored
+ * preference string is somehow not one of the known units.
+ */
+export function usePreferredUnit(kind: UnitKind): UnitDef | null {
+  const { preferences } = usePreferencesContext();
+  if (kind === "COUNT") return null;
+  const name = kind === "VOLUME" ? preferences.preferredVolumeUnit : preferences.preferredMassUnit;
+  return preferredUnitDef(name);
 }

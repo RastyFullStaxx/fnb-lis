@@ -67,10 +67,27 @@ const userPreferences = z.object({
   // (including "default"/16px) keeps their choice.
   fontSize: z.enum(["default", "large", "x-large"]).default("large"),
   unitSystem: z.enum(["metric", "imperial"]).default("metric"),
+  /**
+   * Client req 2026-07-31: each signed-in user picks their own display unit
+   * for volume and mass items, independent of anyone else's choice — same
+   * per-user row as fontSize/unitSystem, nothing shared. Values are the
+   * units already seeded in seed.ts (see VOLUME/MASS lists there); default
+   * is the base unit of each kind, matching how unitSystem already
+   * defaults to "metric" until a user saves their own pick. Conversion for
+   * display uses `convert()` from packages/core/src/units.ts — the item's
+   * own configured unit stays the source of truth for storage.
+   */
+  preferredVolumeUnit: z.enum(["ml", "L", "fl oz", "gal"]).default("ml"),
+  preferredMassUnit: z.enum(["g", "kg", "oz", "lb"]).default("g"),
 });
 export type UserPreferences = z.infer<typeof userPreferences>;
 
-const DEFAULT_PREFERENCES: UserPreferences = { fontSize: "large", unitSystem: "metric" };
+const DEFAULT_PREFERENCES: UserPreferences = {
+  fontSize: "large",
+  unitSystem: "metric",
+  preferredVolumeUnit: "ml",
+  preferredMassUnit: "g",
+};
 
 export const preferencesRoutes = new Hono<AppEnv>()
   .use(requireAuth)

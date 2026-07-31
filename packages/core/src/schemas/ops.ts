@@ -30,6 +30,15 @@ export const countLineCreate = z
      */
     remainingContent: nonNegative.optional(),
     /**
+     * Combined total entry (client req 2026-07-31, Mayonnaise scenario): the
+     * counter has one combined number for full units plus one open
+     * container, instead of splitting by hand. Server runs `splitTotalAmount`
+     * (packages/core/src/weighing.ts) and writes the result as ordinary
+     * `qtyFull` / `remainingContent` — this field never reaches storage or
+     * reconciliation on its own.
+     */
+    totalAmount: nonNegative.optional(),
+    /**
      * The prices as they stood WHEN THE BOTTLE WAS COUNTED.
      *
      * Normally the server stamps these from the catalog at write time, and on

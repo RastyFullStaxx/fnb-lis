@@ -462,6 +462,52 @@ function DisplayPreferencesSection() {
             </SelectContent>
           </Select>
         </div>
+        <div className="space-y-2">
+          <Label htmlFor="pref-volume-unit">Volume Display Unit</Label>
+          <Select
+            value={preferences.preferredVolumeUnit}
+            onValueChange={(v) =>
+              setPreferences({ ...preferences, preferredVolumeUnit: v as typeof preferences.preferredVolumeUnit })
+            }
+            disabled={isSaving}
+          >
+            <SelectTrigger id="pref-volume-unit">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ml">mL</SelectItem>
+              <SelectItem value="L">L</SelectItem>
+              <SelectItem value="fl oz">fl oz</SelectItem>
+              <SelectItem value="gal">gal</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Only changes how you see it. Storage and calculations keep the item's own unit.
+          </p>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="pref-mass-unit">Mass Display Unit</Label>
+          <Select
+            value={preferences.preferredMassUnit}
+            onValueChange={(v) =>
+              setPreferences({ ...preferences, preferredMassUnit: v as typeof preferences.preferredMassUnit })
+            }
+            disabled={isSaving}
+          >
+            <SelectTrigger id="pref-mass-unit">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="g">g</SelectItem>
+              <SelectItem value="kg">kg</SelectItem>
+              <SelectItem value="oz">oz</SelectItem>
+              <SelectItem value="lb">lb</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Only changes how you see it. Storage and calculations keep the item's own unit.
+          </p>
+        </div>
       </div>
     </SettingsSection>
   );
