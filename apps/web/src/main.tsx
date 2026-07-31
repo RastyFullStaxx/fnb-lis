@@ -4,43 +4,84 @@ import "./index.css";
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "react-router/dom";
 import { router } from "./router";
 import { captureError, initAnalytics } from "./lib/analytics";
+import { ApiError } from "./api/http";
 import { PreferencesProvider } from "./lib/preferences";
 
 void initAnalytics();
 
-const queryClient = new QueryClient({
+/**
+ * Any 401 means the session is gone — get the user to the sign-in page.
+ *
+ * Only `AppShell`'s `me` query knew how to react to a 401 (→ /login?expired=1).
+ * Every other request surfaced its error where it stood, so an expired session
+ * read as a failed load: an audit viewer, whose session is 20 minutes
+ * (READONLY_SESSION_TTL_MS) against `me`'s 5-minute staleTime and
+ * `refetchOnWindowFocus: false`, sat on a report being told to "check your
+ * connection" beside a Try again that could never succeed.
+ *
+ * Invalidating `me` and letting AppShell redirect was the first attempt and it
+ * does not work: React Query keeps `status: "success"` when a BACKGROUND
+ * refetch fails on a query that already holds data, so `me.isError` never
+ * becomes true and the redirect never fires.
+ *
+ * A hard navigation, not the router: every cached query belongs to a session
+ * that no longer exists, and a full load is the only thing that reliably drops
+ * all of it. `?expired=1` is the same URL AppShell uses, so the login page
+ * still shows the calm "session ended" notice rather than looking like a
+ * silent kick-out.
+ */
+const onApiError = (error: unknown) => {
+  if (!(error instanceof ApiError) || error.status !== 401) return;
+  // Already there — a failed sign-in is a 401 too, and must not bounce.
+  if (window.location.pathname.startsWith("/login")) return;
+  window.location.assign("/login?expired=1");
+};
+
+const queryClient: QueryClient = new QueryClient({
+  queryCache: new QueryCache({
+    onError: (error) => onApiError(error),
+  }),
+  mutationCache: new MutationCache({
+    onError: (error) => {
+      captureError(error);
+      onApiError(error);
+    },
+  }),
   defaultOptions: {
     queries: {
       refetchOnWindowFocus: false,
       /**
-       * Defensive, not a proven cure — see the note below.
+       * Right policy, but NOT the fix for the pause this once chased.
        *
-       * With the API stopped, the boot query `["me"]` sits at
+       * The symptom was: with the API stopped, `["me"]` sat at
        * `fetchStatus: "paused"`, `status: "pending"`, `failureCount: 0` — never
-       * attempted, no error — so `AppShell` renders its skeleton forever and
-       * never reaches `BootError`. `["settings","preferences"]` errors normally
-       * in the same load, so it is specific to the paused query.
+       * attempted, no error — so the shell showed a skeleton forever. Setting
+       * "always" did not stop it, and the cause was recorded as unknown.
        *
-       * "online" (the default) pauses when offline, which fit the symptom, so
-       * this is set to "always". It did NOT stop the pause: measured on
-       * @tanstack/react-query 5.101.2 with `networkMode: "always"` applied
-       * (confirmed on the query's own options), `onlineManager.isOnline()` true
-       * and `navigator.onLine` true, the query still paused — and stayed paused
-       * through an explicit `refetchQueries`. By React Query's own `canFetch`
-       * rule that combination should never pause.
+       * It is not unknown. query-core's retryer:
        *
-       * Kept because "always" is the right policy regardless: this API is
+       *   const canContinue = () =>
+       *     focusManager.isFocused() &&
+       *     (config.networkMode === "always" || onlineManager.isOnline()) &&
+       *     config.canRun()
+       *
+       * `focusManager.isFocused()` is required REGARDLESS of networkMode, and
+       * it gates the first attempt — hence `failureCount: 0`. The window was
+       * simply in the background (watching a terminal for the stopped API does
+       * that), so the query paused by design and would have resumed on focus.
+       *
+       * "always" stays because it is correct on its own terms: this API is
        * same-origin, and the online heuristic answers "is a network interface
-       * up", not "is my server reachable". `AppShell` handles the paused state
-       * explicitly so the user is never stranded either way.
+       * up", not "is my server reachable". Code that treats `paused` as a
+       * failure must pair it with `document.hasFocus()` — see `queryFailed()`
+       * in table-surface.tsx.
        */
       networkMode: "always",
     },
-    mutations: { onError: (err) => captureError(err) },
   },
 });
 

@@ -62,7 +62,9 @@ export function DashboardPage() {
   const role = (me.data?.user.role ?? "AUDIT_VIEWER_LIMITED") as Role;
   const firstName = me.data?.user.firstName ?? "";
   const to = (path: string) => `/l/${locationId}/${path}`;
-  const dashPaused = dash.fetchStatus === "paused";
+  // See queryFailed() in table-surface: a pause while the window is in the
+  // background is normal and self-healing; only a focused pause is a fault.
+  const dashPaused = dash.fetchStatus === "paused" && document.hasFocus();
 
   return (
     <div>

@@ -84,7 +84,7 @@ export function ImportReviewPage() {
   // A paused query is still `pending`, so the skeleton would run forever;
   // and "it may have been removed" is the wrong story for an unreachable
   // service — it blames the record for a network problem.
-  if (batch.fetchStatus === "paused") {
+  if (batch.fetchStatus === "paused" && document.hasFocus()) {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="mb-4 flex items-center gap-3">

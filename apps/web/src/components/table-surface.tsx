@@ -202,16 +202,31 @@ interface FailableQuery {
  *
  * **Check this BEFORE `isPending`.** A paused query is still `pending`, so the
  * usual `isPending ? <TableLoading/> : isError ? …` order never reaches the
- * error arm — the page shows a skeleton for as long as the pause lasts, with no
- * message and no retry. That is not hypothetical: with the API stopped, a list
- * query sits at `status: "pending"`, `fetchStatus: "paused"`, `failureCount: 0`
- * — no attempt, no error — measured on @tanstack/react-query 5.101.2 with
- * `networkMode: "always"` and `navigator.onLine === true`, which by its own
- * `canFetch()` rule should never pause. `AppShell` already had to special-case
- * exactly this for the boot query; every list needs the same guard.
+ * error arm and the page shows a skeleton with no message and no retry.
+ *
+ * The pause is not mysterious, though it was long recorded as such. From
+ * query-core's `retryer`:
+ *
+ * ```js
+ * const canContinue = () =>
+ *   focusManager.isFocused() &&
+ *   (config.networkMode === "always" || onlineManager.isOnline()) &&
+ *   config.canRun()
+ * ```
+ *
+ * `focusManager.isFocused()` is required **regardless of `networkMode`**, and
+ * it is checked before the first attempt — which is why a paused query reports
+ * `failureCount: 0`, having never tried. So a query started while the window is
+ * in the background pauses by design, and resumes when focus returns.
+ *
+ * Hence the `document.hasFocus()` guard: a pause while the user is looking
+ * elsewhere is normal and self-healing, and calling it "can't reach the
+ * service" would be a false alarm they'd see flash on their way back. A pause
+ * while the window IS focused means something is genuinely wrong — offline, or
+ * a retryer that never resumed — and that deserves saying out loud.
  */
 export function queryFailed(q: FailableQuery): boolean {
-  return q.isError || q.fetchStatus === "paused";
+  return q.isError || (q.fetchStatus === "paused" && document.hasFocus());
 }
 
 /**

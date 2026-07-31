@@ -2408,28 +2408,54 @@ desktop-owned screen and it was already title-cased.
 
 Web only; desktop still pending one `npm run dist` (see the previous entry).
 
-### The bug
+### The long-standing pause mystery, solved
 
-A list query that cannot reach the API does **not** error — it sits at
-`status: "pending"`, `fetchStatus: "paused"`, `failureCount: 0`. No attempt, no
-error. Measured on @tanstack/react-query 5.101.2 with `networkMode: "always"`
-set on the query and `navigator.onLine === true`, which by React Query's own
-`canFetch()` rule should never pause. `main.tsx` had already recorded this for
-the boot query; it turns out to affect every query.
+`main.tsx` and `AppShell` both carried a note that a query with
+`networkMode: "always"` and `navigator.onLine === true` still sat at
+`fetchStatus: "paused"`, `status: "pending"`, `failureCount: 0` — "which by its
+own `canFetch()` rule should never pause", cause unknown.
 
-Two consequences, both live:
+It was looking at the wrong function. From query-core's `retryer`:
 
-1. **Every list and report rendered a skeleton forever** on a failed load — no
-   message, no retry, indefinitely. The standard `isPending ? <TableLoading/> :
-   isError ? <TableError/>` order can never reach the error arm, because a
-   paused query is still pending. That included the Dashboard (the landing
-   page) and the Full Audit.
-2. **`TableError` existed and no list page used it.** `stock/index.tsx` branched
-   `isPending` then `length === 0`, so had the query ever errored outright the
-   Local Database would have announced *"This location's catalog is empty"* and
-   offered to copy another location's catalog — inviting someone to duplicate a
-   catalog that already exists. `TableError`'s own doc comment had warned about
-   exactly this ("a load failure must never render as an empty state").
+```js
+const canContinue = () =>
+  focusManager.isFocused() &&
+  (config.networkMode === "always" || onlineManager.isOnline()) &&
+  config.canRun()
+```
+
+`focusManager.isFocused()` is required **regardless of networkMode**, and it
+gates the first attempt — hence `failureCount: 0`, never tried. The window was
+simply in the background (watching a terminal for the stopped API does exactly
+that). Both notes are corrected in place.
+
+This also corrects a claim made earlier in this session: the "skeleton forever"
+reproduction was substantially an artifact of testing in a hidden browser pane
+(`visibilityState: "hidden"`). A real user with a focused window gets a normal
+error. Anything treating `paused` as failure must pair it with
+`document.hasFocus()`, or it false-alarms at everyone who tabs away mid-load —
+`queryFailed()`, the Dashboard, the two detail pages and `AppShell` all now do.
+
+### The real bug
+
+1. **`TableError` existed and no list page used it.** `stock/index.tsx` branched
+   `isPending` then `length === 0`, so on a failed load the Local Database
+   announced *"This location's catalog is empty"* and offered to copy another
+   location's catalog — inviting someone to duplicate a catalog that already
+   exists. `TableError`'s own doc comment had warned about exactly this ("a load
+   failure must never render as an empty state"). Thirteen list pages had no
+   error arm at all.
+2. **An expired session read as a network fault.** Only `AppShell`'s `me` query
+   reacted to a 401. Every other request surfaced its error in place, so an
+   audit viewer — 20-minute session (`READONLY_SESSION_TTL_MS`) against `me`'s
+   5-minute `staleTime` and `refetchOnWindowFocus: false` — sat on a report
+   being told to "check your connection" beside a Try again that could never
+   succeed. A `QueryCache`/`MutationCache` `onError` now sends any 401 to
+   `/login?expired=1`, the same URL AppShell uses, so the calm "session ended"
+   notice still shows. Invalidating `me` and letting AppShell redirect was tried
+   first and does not work: React Query keeps `status: "success"` when a
+   *background* refetch fails on a query that already holds data, so
+   `me.isError` never becomes true.
 
 ### The fix
 
@@ -2471,9 +2497,19 @@ before pending** at every site.
 
 ### Verified
 
-- Paused catalog load now renders "Couldn't load this location's catalog / Can't
-  reach the inventory service. Check your connection, then reload. / Try again"
-  — 0 skeletons, no empty state. Same for the Dashboard.
+- Failed catalog load renders "Couldn't load this location's catalog / Can't
+  reach the inventory service…/ Try again" — 0 skeletons, no empty state. Same
+  for the Dashboard.
+- 401 → `/login?expired=1` showing "Your session ended — sign in again to
+  continue."; a 500 does not navigate. (Two false negatives along the way: a
+  synthetic `.click()` that Radix ignores, and `window.location.assign`, which
+  is non-configurable and cannot be spied on — the redirect had been working
+  both times.)
+- **Not verifiable in this environment:** driving a query to a genuine `isError`
+  state. The automation pane never composites, so `visibilityState` is `hidden`,
+  retries pause, and no error handler runs. The `isError` paths are verified by
+  reading the code and by exercising the handlers directly at their wiring
+  points.
 - 8 screens re-checked with the network restored: real rows, no stuck skeletons.
 - Golden anchors unchanged: −330.6857142857142 / −869.5714285714284 and
   −537 / −1410. Typechecks and production build clean.

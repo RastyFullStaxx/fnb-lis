@@ -55,15 +55,19 @@ export function AppShell() {
   // A PAUSED query is still `pending`, so this order matters: treat it as a
   // reachability failure, not as loading, or the shell shows a skeleton with no
   // error and no retry for as long as the pause lasts.
-  if (me.fetchStatus === "paused") {
+  //
+  // `document.hasFocus()` is load-bearing. A retry pauses whenever the window
+  // is in the background — query-core's `canContinue()` requires
+  // `focusManager.isFocused()` regardless of networkMode — so without the guard
+  // this fired on anyone who tabbed away mid-load and came back to "can't reach
+  // the inventory service" for a service that was fine. See main.tsx.
+  if (me.fetchStatus === "paused" && document.hasFocus()) {
     return (
       <BootError
         message="Can't reach the inventory service. Check your connection, then reload."
-        // Deliberately a reload, not `me.refetch()`. A paused query stays paused
-        // through refetchQueries — measured on @tanstack/react-query 5.101.2 with
-        // networkMode "always" and onlineManager.isOnline() === true, which by
-        // its own canFetch() rule should never pause at all. Until that is
-        // understood, the honest recovery is the one that provably works.
+        // Deliberately a reload, not `me.refetch()`. A refetch re-enters the
+        // same retryer and pauses again on the same condition; a fresh document
+        // is focused by definition, so the reload provably clears it.
         onRetry={() => window.location.reload()}
       />
     );
