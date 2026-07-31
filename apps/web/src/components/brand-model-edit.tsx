@@ -111,7 +111,7 @@ export function BrandModelEditDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
+            Go Back
           </Button>
           <Button onClick={save} disabled={updateVariant.isPending}>
             {updateVariant.isPending ? "Saving…" : "Save Brand/Model"}

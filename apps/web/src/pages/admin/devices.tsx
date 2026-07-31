@@ -210,7 +210,7 @@ export function AdminDevicesPage() {
 
           <DialogFooter>
             <Button variant="ghost" onClick={() => setRevoking(null)}>
-              Cancel
+              Go Back
             </Button>
             <Button variant="destructive" onClick={() => void submitRevoke()} disabled={revoke.isPending}>
               Revoke

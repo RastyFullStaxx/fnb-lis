@@ -2287,10 +2287,17 @@ and "Not counted" is tappable to jump to the item. Two real defects:
   Cancel→Edit, Transfers Correct→Void, Purchases editor Void→Edit. The same row
   teaching three muscle memories is Jakob's Law broken *inside* the product.
   Now one component taking **data, not markup**, so a caller cannot express a
-  different order. Safe actions first, destructive last, 12px apart —
-  Fitts's Law inverted for a button that cancels someone's count line, where
-  distance is the safeguard. `xs`→`sm`: 27px → 36px tall (the 18px root scales
-  `sm` up 12.5%), +76% target area on Edit, and the Edit→Remove gap went 5px → 21px.
+  different order: safe actions first, destructive last, everywhere.
+
+  The first pass also enlarged these to `sm` with 12px of separation, arguing
+  Fitts's Law in reverse — distance guards a destructive button. **Reverted on
+  sight of the rendered screen.** These rows are dense fact lists, and two
+  chunky buttons held apart stopped reading as one row's controls and started
+  competing with the entry itself. Every action here is already behind a confirm
+  dialog, so a mis-tap costs a dismissed dialog, not a lost line, and the row
+  does not need to carry the safeguard twice. Back to `xs` at a 4px gap; only
+  the ordering changed. A law correctly applied to the wrong surface is still
+  the wrong call.
 - **Recent Activity folds runs** of the same action by the same person. Four
   failed PIN attempts from one terminal filled four of five slots and pushed a
   voided sale off the bottom. Only *consecutive* entries fold, so the feed stays
@@ -2322,3 +2329,75 @@ and "Not counted" is tappable to jump to the item. Two real defects:
   hidden events surfaced.
 - Typechecks clean across server, web, desktop. `@types/better-sqlite3` added —
   the desktop typecheck had been failing at HEAD too.
+
+---
+
+## 2026-07-31 (later) — second UX pass, web only
+
+Desktop deliberately **not** rebuilt; see "Pending for the desktop" below.
+
+### Changed
+
+- **Row action density reverted.** See the corrected entry above. `xs`, 4px gap,
+  ordering kept. The quick-entry primary buttons (Save Sale, Save line, and both
+  editors' Add line) went default → `sm`: 41px → 36px with tighter padding, so
+  they stop looking bulky beside a compact fact list.
+- **Settings grouped into "Your preferences" and "Establishment settings."**
+  Seven sections ran down one hairline-divided list as visual peers, and they
+  are not peers: Inventory Cost Basis restates every valuation figure and
+  Variance Highlight Threshold changes what the Full Audit flags in every
+  download — for the whole client — while Text Size changes nothing but your own
+  browser. Proximity now carries the distinction, and each group's subhead says
+  the consequence in words. Section headings dropped h2 → h3 so the hierarchy is
+  real for screen readers, not just visual.
+- **"Save" → "Save Threshold."** The one unscoped save on a page where every
+  other one names its target ("Save Company Info", "Save Product Types").
+- **Dismiss buttons say "Go Back", not "Cancel" — 11 dialogs.** `ConfirmDialog`
+  already documented this rule ("so it can't be confused with the Cancel action
+  that voids a record") and every hand-rolled dialog ignored it. Worst case was
+  `sales/index.tsx`, where a row button "Cancel" voids the sale and a dialog in
+  the same file used "Cancel" to mean *don't*. Same drift pattern as the button
+  ordering: a rule set in one place, unenforced everywhere else.
+  `counts/session.tsx` gets "Stop editing" instead — it aborts an in-progress
+  edit rather than dismissing a dialog, on the screen where rows also say
+  "Cancel".
+
+### Audited and deliberately left alone
+
+- **Toolbar search widths** (459–909px across screens) are `grow`-to-fill by
+  design, with a measured 9rem floor already reasoned about in
+  `table-surface.tsx`. Pinning a max-width would leave dead space on screens
+  with few filters. Not a defect.
+- **Full Audit's Print / Excel / CSV / PDF** stay four buttons — recognised
+  labels, near-zero Hick's cost, and a menu would add a click to a daily task.
+- **Device Revoke** looked unguarded to a grep (no `ConfirmDialog`) but uses a
+  plain `Dialog` that also warns when the machine has unsynced work. Correct
+  as-is.
+- **Void flow** already reads "Keep Record" / "Cancel Entry" — better than the
+  "Go Back" convention and no collision. Untouched.
+- **Command palette**: 49 items in 5 groups with type-ahead, focus lands in the
+  input. Hick's already handled.
+- **Responsive**: zero horizontal body overflow across nine screens at 820px.
+
+### Verified
+
+- Row geometry back to the original: Edit 44×27, Remove 69×27, 4px gap, order
+  Edit → Remove. Save line/Save Sale 36px.
+- Settings headings: H1 Settings → H2 group → H3 section. All four saves scoped.
+- "Edit Entry" dialog reads "Go Back" / "Save Changes"; the five destructive row
+  "Cancel" actions and `VoidDialog`'s "Cancel Entry" are untouched.
+- Golden anchors unchanged: −330.6857142857142 / −869.5714285714284 and
+  −537 / −1410. Typechecks clean; production build clean.
+
+### Pending for the desktop
+
+None of the above is in the packaged app yet — it ships the web bundle built at
+package time. When the web work is settled, one rebuild picks all of it up:
+
+```
+npm run native -w @fnb/desktop   # if npm install ran since the last build
+npm run dist   -w @fnb/desktop
+```
+
+Nothing desktop-specific needs changing for these; `setup.html` is the only
+desktop-owned screen and it was already title-cased.

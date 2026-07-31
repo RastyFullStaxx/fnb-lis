@@ -371,7 +371,7 @@ function CreateClientDialog({ open, onOpenChange }: { open: boolean; onOpenChang
 
         <DialogFooter>
           <Button variant="ghost" onClick={close}>
-            Cancel
+            Go Back
           </Button>
           <Button onClick={submit} disabled={!name.trim() || createFull.isPending}>
             Create Client

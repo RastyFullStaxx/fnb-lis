@@ -190,7 +190,7 @@ export function PurchaseEditorPage() {
                   <Label htmlFor="pl-cost">Unit Cost</Label>
                   <QuantityInput id="pl-cost" className="tnum bg-background" value={cost} onChange={(e) => setCost(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addLine()} />
                 </div>
-                <Button onClick={addLine} disabled={!item || mutations.addLine.isPending}>
+                <Button size="sm" onClick={addLine} disabled={!item || mutations.addLine.isPending}>
                   Add
                 </Button>
               </div>

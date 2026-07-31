@@ -819,7 +819,7 @@ function EditUserDialog({
 
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>
-            Cancel
+            Go Back
           </Button>
           <Button onClick={saveRole} disabled={update.isPending || updateAccess.isPending}>
             Save Changes

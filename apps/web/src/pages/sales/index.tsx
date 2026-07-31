@@ -441,7 +441,7 @@ function EditSaleDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
+            Go Back
           </Button>
           <Button onClick={submit} disabled={mutations.correct.isPending}>
             {mutations.correct.isPending ? "Saving…" : "Save Changes"}
@@ -666,7 +666,7 @@ function QuickEntry({ kind }: { kind: SaleKind }) {
       )}
 
       <div className="flex justify-end">
-        <Button onClick={save} disabled={!target || mutations.create.isPending}>
+        <Button size="sm" onClick={save} disabled={!target || mutations.create.isPending}>
           {mutations.create.isPending ? "Saving…" : copy.button}
         </Button>
       </div>

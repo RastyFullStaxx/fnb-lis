@@ -244,7 +244,7 @@ export function AssetDetailsEdit({ row, canEdit }: { row: LocationItem; canEdit:
 
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>
-            Cancel
+            Go Back
           </Button>
           <Button onClick={save} disabled={update.isPending}>
             {update.isPending ? "Saving…" : "Save Asset Details"}

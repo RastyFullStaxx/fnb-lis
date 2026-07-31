@@ -205,7 +205,7 @@ export function TransferEditorPage() {
                 <Label htmlFor="tl-qty">Qty</Label>
                 <QuantityInput id="tl-qty" className="tnum" value={qty} onChange={(e) => setQty(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addLine()} />
               </div>
-              <Button onClick={addLine} disabled={!item || mutations.addLine.isPending}>
+              <Button size="sm" onClick={addLine} disabled={!item || mutations.addLine.isPending}>
                 Add
               </Button>
             </div>
@@ -475,7 +475,7 @@ function CorrectLineDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
+            Go Back
           </Button>
           <Button onClick={submit} disabled={mutations.correctLine.isPending}>
             {mutations.correctLine.isPending ? "Saving…" : "Save Changes"}
