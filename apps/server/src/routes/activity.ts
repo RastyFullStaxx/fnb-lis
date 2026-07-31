@@ -6,8 +6,9 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * Activity trail viewer. ADMIN sees everything; MANAGER is scoped to the
- * clients they're assigned to. Filters: client, user, entity, action prefix,
- * free-text summary, and an inclusive [from, to] day range on the timestamp.
+ * clients they're assigned to. Filters: client, user, entity, entityId,
+ * action prefix, free-text summary, and an inclusive [from, to] day range
+ * on the timestamp.
  */
 export const activityRoutes = new Hono<AppEnv>()
   .use(requireAuth, requirePermission("activity.view"))
@@ -42,6 +43,7 @@ export const activityRoutes = new Hono<AppEnv>()
         clientId: clientFilter ? { in: clientFilter } : undefined,
         userId: q.userId || undefined,
         entity: q.entity || undefined,
+        entityId: q.entityId || undefined,
         action: q.action ? { startsWith: q.action } : undefined,
         summary: q.search ? { contains: q.search } : undefined,
         ts: ts.gte || ts.lte ? ts : undefined,

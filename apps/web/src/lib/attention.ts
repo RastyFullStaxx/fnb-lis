@@ -1,6 +1,7 @@
 import {
   ClipboardList,
   FileInput,
+  History,
   Scale,
   ShoppingCart,
   Tags,
@@ -20,7 +21,7 @@ import type { DashboardData } from "@/api/dashboard";
  * the topbar bell — so the two can never disagree about what is outstanding.
  */
 
-export type AttentionKind = "prices" | "weights" | "weightReview" | "import" | "purchase" | "count";
+export type AttentionKind = "prices" | "weights" | "weightReview" | "import" | "purchase" | "count" | "priceChange";
 
 export interface AttentionItem {
   kind: AttentionKind;
@@ -38,7 +39,7 @@ export type AttentionGroup = "Missing data" | "Needs review" | "Open work";
 export const ATTENTION_GROUPS: AttentionGroup[] = ["Missing data", "Needs review", "Open work"];
 
 export function attentionItems(data: DashboardData, role: Role): AttentionItem[] {
-  const { missingPrices, missingWeights, weightReviews, unmatchedRows, draftPurchases, openCounts } = data.attention;
+  const { missingPrices, missingWeights, weightReviews, unmatchedRows, draftPurchases, openCounts, recentPriceChanges } = data.attention;
   const items: Array<AttentionItem | null> = [
     missingPrices > 0 && can(role, "prices.edit")
       ? {
@@ -104,6 +105,22 @@ export function attentionItems(data: DashboardData, role: Role): AttentionItem[]
           path: "counts",
           icon: ClipboardList,
           group: "Open work",
+        }
+      : null,
+    // Not outstanding work like the rest of this list — a price change is a
+    // completed event, nothing resolves it the way setting a price resolves
+    // "missing price." Closer to "unread" than "unresolved": count is since
+    // this user's own activityViewedAt preference (46.4.2), zeroed out the
+    // moment they open Activity again, not by any action on the price
+    // itself (client req 2026-07-31, Phase 46.4).
+    recentPriceChanges > 0 && can(role, "prices.edit")
+      ? {
+          kind: "priceChange",
+          count: recentPriceChanges,
+          label: `${recentPriceChanges} price ${recentPriceChanges === 1 ? "change" : "changes"} since you last checked`,
+          path: "activity?action=locationItem.priceChange",
+          icon: History,
+          group: "Needs review",
         }
       : null,
   ];

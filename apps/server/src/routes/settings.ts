@@ -79,6 +79,17 @@ const userPreferences = z.object({
    */
   preferredVolumeUnit: z.enum(["ml", "L", "fl oz", "gal"]).default("ml"),
   preferredMassUnit: z.enum(["g", "kg", "oz", "lb"]).default("g"),
+  /**
+   * Phase 46.4.2: when this user last opened Activity, ISO string. Not a
+   * business record — same shape of write as fontSize/unitSystem, just
+   * timestamped by a page visit instead of a menu choice. Optional/undefined
+   * for anyone who hasn't opened Activity since this field shipped; the
+   * dashboard treats that as "count nothing yet" rather than "count
+   * everything" (see services/dashboard.ts). Full-object PUT still applies
+   * here like every other Setting row — see apps/web/src/pages/admin/activity.tsx
+   * for the read-full-object-then-write-full-object flow this relies on.
+   */
+  activityViewedAt: z.string().optional(),
 });
 export type UserPreferences = z.infer<typeof userPreferences>;
 

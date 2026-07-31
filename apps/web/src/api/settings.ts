@@ -89,6 +89,16 @@ export interface UserPreferences {
    */
   preferredVolumeUnit: "ml" | "L" | "fl oz" | "gal";
   preferredMassUnit: "g" | "kg" | "oz" | "lb";
+  /**
+   * Phase 46.4.2: ISO timestamp of this user's last Activity page visit.
+   * Optional — undefined until they've opened Activity at least once since
+   * this field shipped. Written from apps/web/src/pages/admin/activity.tsx
+   * by reading the full object out of usePreferencesContext() and writing
+   * it back with only this field changed, the same pattern settings.tsx
+   * already uses for fontSize/unitSystem — PUT /settings/preferences
+   * replaces the whole row, there is no partial-update path.
+   */
+  activityViewedAt?: string;
 }
 
 // "large" (18px) is the starting size per client req #1 — mirrors the server default.

@@ -36,6 +36,9 @@ export interface DashboardData {
     unmatchedRows: number;
     draftPurchases: number;
     openCounts: number;
+    /** locationItem.priceChange rows since this user's own activityViewedAt
+        preference (Phase 46.4.2). 0 for a user who hasn't opened Activity yet. */
+    recentPriceChanges: number;
   };
   varianceLeaders: Array<{
     locationItemId: string;

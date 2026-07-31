@@ -28,6 +28,11 @@ export interface DashboardData {
     unmatchedRows: number; // PENDING rows in batches awaiting review
     draftPurchases: number; // uncommitted purchases
     openCounts: number; // count sessions still open
+    /** locationItem.priceChange rows (cost actually changed, see 46.1's
+        guard) at this location since `since` was passed to buildDashboard —
+        this user's own activityViewedAt preference, not a global count
+        (client req 2026-07-31, Phase 46.4). 0 when `since` is not supplied. */
+    recentPriceChanges: number;
   };
   readiness: {
     activeItems: number;
@@ -82,6 +87,13 @@ export async function buildDashboard(
    * that could load it. One gate, honoured in both places.
    */
   canSeeActivity = true,
+  /**
+   * This signed-in user's `prefs.activityViewedAt` (Phase 46.4.2) — count
+   * price changes at this location since then. `undefined` when the caller
+   * has never opened Activity, in which case `recentPriceChanges` is just 0
+   * rather than "everything ever," since there is no natural start point.
+   */
+  recentPriceChangesSince?: Date,
 ): Promise<DashboardData> {
   const [
     dates,
@@ -92,6 +104,7 @@ export async function buildDashboard(
     latestCount,
     latestPurchase,
     recent,
+    priceChangeRows,
   ] = await Promise.all([
     committedCountDates(locationId),
     prisma.locationItem.findMany({
@@ -172,6 +185,22 @@ export async function buildDashboard(
         summary: true,
       },
     }),
+    // Guard applied in JS below (old.cost !== new.cost, both defined) rather
+    // than in the query, same reasoning as 46.1: `detailsJson` is opaque JSON
+    // text to Prisma/SQLite, there is no column to filter on. Skipped
+    // entirely (empty array, no query sent) when the caller has no
+    // recentPriceChangesSince — matches recentPriceChanges defaulting to 0
+    // for a user who has never opened Activity.
+    recentPriceChangesSince
+      ? prisma.activityLog.findMany({
+          where: {
+            locationId,
+            action: "locationItem.priceChange",
+            ts: { gt: recentPriceChangesSince },
+          },
+          select: { detailsJson: true },
+        })
+      : Promise.resolve([]),
   ]);
 
   const lastCountDate = dates.at(-1) ?? null;
@@ -206,6 +235,23 @@ export async function buildDashboard(
 
   const weightReviews = priceItems.filter((p) => p.itemVariant.weightReviewNote !== null).length;
 
+  // Same guard as 46.1 (`activity.tsx`) and 46.2 (`price-edit.tsx`):
+  // `locationItem.priceChange` is a fallback tag that also covers
+  // retail/parLevel/isActive-only edits, where `new.cost` is undefined
+  // because `new` is the raw PUT body, not a full record. Only count rows
+  // where cost is present on both sides and actually differs.
+  const recentPriceChanges = priceChangeRows.filter((r) => {
+    if (!r.detailsJson) return false;
+    try {
+      const parsed = JSON.parse(r.detailsJson) as { old?: { cost?: number }; new?: { cost?: number } };
+      const oldCost = parsed.old?.cost;
+      const newCost = parsed.new?.cost;
+      return oldCost !== undefined && newCost !== undefined && oldCost !== newCost;
+    } catch {
+      return false;
+    }
+  }).length;
+
   let varianceLeaders: DashboardData["varianceLeaders"] = [];
   if (latest) {
     const report = await buildFullAudit(locationId, latest.begin, latest.end, undefined, allowedProductTypes);
@@ -235,7 +281,7 @@ export async function buildDashboard(
       canAudit,
       latest,
     },
-    attention: { missingPrices, missingWeights, weightReviews, unmatchedRows, draftPurchases, openCounts },
+    attention: { missingPrices, missingWeights, weightReviews, unmatchedRows, draftPurchases, openCounts, recentPriceChanges },
     readiness: { activeItems: priceItems.length },
     openWork: {
       latestCount: latestCount
