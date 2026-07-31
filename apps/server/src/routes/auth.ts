@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
-import { zValidator } from "@hono/zod-validator";
+import { zValidator } from "../lib/validate";
 import {
   deriveAccessState,
   loginRequest,
@@ -77,23 +77,31 @@ export const authRoutes = new Hono<AppEnv>()
         select: { id: true },
       });
       if (priorSessions.length > 0) {
-        await prisma.authSession.deleteMany({
-          where: { id: { in: priorSessions.map((s) => s.id) } },
-        });
-        await logActivity({
-          user: {
-            id: user.id,
-            username: user.username,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            role: user.role,
-            modules: null,
-          } as MeResponse["user"],
-          action: "auth.autoLogout",
-          entity: "User",
-          entityId: user.id,
-          summary: `${user.username}'s prior session was ended by a new login`,
-          details: { ip, userAgent: c.req.header("user-agent") ?? null, endedSessionCount: priorSessions.length },
+        // Atomic, like every other mutation-plus-log: this ends a session the
+        // person holding it did not ask to end — someone mid-count gets thrown
+        // out — so "it happened but nothing recorded it" must not be reachable.
+        await prisma.$transaction(async (tx) => {
+          await tx.authSession.deleteMany({
+            where: { id: { in: priorSessions.map((s) => s.id) } },
+          });
+          await logActivity(
+            {
+              user: {
+                id: user.id,
+                username: user.username,
+                firstName: user.firstName,
+                lastName: user.lastName,
+                role: user.role,
+                modules: null,
+              } as MeResponse["user"],
+              action: "auth.autoLogout",
+              entity: "User",
+              entityId: user.id,
+              summary: `${user.username}'s prior session was ended by a new login`,
+              details: { ip, userAgent: c.req.header("user-agent") ?? null, endedSessionCount: priorSessions.length },
+            },
+            tx,
+          );
         });
       }
     }

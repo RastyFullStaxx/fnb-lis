@@ -1,8 +1,9 @@
 import ExcelJS from "exceljs";
 import {
   COST_BASIS_LABELS,
-  hasVariance,
   MATERIAL_VARIANCE_PCT,
+  hasVariance,
+  phpRound,
   round2,
   toCsv,
   varianceSeverity,
@@ -102,7 +103,11 @@ function legacyRowCells(r: LegacyAuditRow, thresholdPct: number = MATERIAL_VARIA
     round2(r.usage), round2(r.costOfUsage),
     round2(r.shot), round2(r.bottle), round2(r.costOfSold), round2(r.revenue),
     round2(r.usedVsSales), round2(r.nonRevUsage), round2(r.nonRevCost),
-    round2(r.overallVariance), r.variancePct === null ? "" : `${Math.round(r.variancePct)}%`,
+    round2(r.overallVariance), // phpRound, like every other number in this row. A variance percent is
+    // routinely negative, and that is exactly where the two disagree —
+    // Math.round(-2.5) is -2, PHP gives -3 — in the export whose whole
+    // purpose is matching the client's legacy 24-column sheet.
+    r.variancePct === null ? "" : `${phpRound(r.variancePct)}%`,
     round2(r.varianceCost), round2(r.varianceRetail),
     varianceFlagLabel(legacyRowSeverity(r, thresholdPct)),
   ];

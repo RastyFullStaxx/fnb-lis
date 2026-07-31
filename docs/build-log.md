@@ -2580,3 +2580,99 @@ Two desktop-only faults:
 packaged app was declined, so they are confirmed present in the installed
 `app.asar` and follow the identical, working `before-input-event` binding beside
 them — but no one has pressed Ctrl+0.
+
+---
+
+## 2026-07-31 (fifth pass) — backend audit
+
+Audited against this repo's own stated invariants, which are the ones worth
+checking because a violation is a defect by definition rather than by opinion.
+
+### Every validation failure said "[object Object]"
+
+`@hono/zod-validator`'s default failure body is
+`{ success: false, error: <serialized ZodError> }`. The web client reads
+`{ error: string }` — the shape every other error on this server sends — so
+`body.error` arrived as an OBJECT, `new ApiError(400, thatObject)` stringified
+it, and the toast read **"[object Object]"**. On every form in the app, for as
+long as validation has existed. `errorHandler` could not catch it either: the
+validator returns its own Response rather than throwing.
+
+`lib/validate.ts` now wraps the validator with a failure hook that speaks the
+server's own error shape, and all 15 route files import from there instead.
+Field names are included because a form with a dozen inputs needs to say which
+one, and the missing-value case is reworded — "Invalid input: expected string,
+received undefined" is a sentence for whoever wrote the schema.
+
+Measured, before → after:
+
+| request | before | after |
+|---|---|---|
+| `POST /counts {}` | `[object Object]` | `Count date: is required` |
+| `POST /counts {countDate:"07/30/2026"}` | `[object Object]` | `Count date: Expected YYYY-MM-DD` |
+| `POST /sales {qty:-5}` | `[object Object]` | `Sale date: is required` |
+
+Schema-authored messages pass through untouched — the humaniser only rewrites
+`invalid_type` with a missing value, so a deliberate message like
+"Expected YYYY-MM-DD" survives.
+
+### Two mutations logged outside their transaction
+
+README: "every mutation writes ActivityLog **in the same `$transaction`**".
+76 of 85 call sites did. The exceptions that mattered both destroy a session
+its owner did not ask to end:
+
+- `POST /admin/users/:id/sessions/:sessionId/revoke` — an administrator forcing
+  someone off a machine, which takes a `reason` precisely because it is meant to
+  be auditable. Delete and log were separate awaits, so "revoked with no record"
+  was reachable.
+- The STAFF single-session eviction in `POST /auth/login` — throws whoever holds
+  the prior session out, potentially mid-count.
+
+Both wrapped. `logActivity` already accepted a `tx` and its own doc comment asks
+callers to pass one; these two just didn't. Plain self-service logout is left
+alone: the actor is the person affected, and the record is not evidence about
+anyone else.
+
+### One rounding escape in the legacy-parity export
+
+`exports-suite.ts` rounded every cell of the 24-column legacy row with `round2`
+(phpRound) except the variance percent, which used `Math.round`. `rounding.ts`
+states the stakes itself: "JS Math.round(-2.5) gives -2, PHP gives -3. Negative
+variances are routine in audit reports, so this difference is load-bearing." A
+−2.5% variance exported as −2% where the client's legacy sheet says −3% — in the
+export whose entire purpose is matching that sheet. Now `phpRound`.
+
+### Audited, no change needed
+
+- **Route scoping.** Location-scoped routers get `requireAuth` +
+  `requireLocationAccess` once at the mount point, so it cannot be forgotten
+  per-route. The audit trail is tenancy-correct: empty client access
+  short-circuits to `[]`, an out-of-scope `clientId` maps to `__none__`, and the
+  unfiltered branch is reachable only for ADMIN.
+- **Input validation coverage.** Zero routes read a body without a schema.
+- **Login.** Same message for unknown user, wrong password and disabled account;
+  lockout at 5 attempts per hour, matching legacy. The 423 lockout reply is
+  technically a user-enumeration oracle, but telling a locked-out staffer why
+  they cannot get in is the right trade for a ten-account internal tool.
+- **CSRF**: `originCheck` runs before everything.
+
+### Desktop
+
+Rebuilt and reinstalled — it bundles this server, so all three fixes ship with
+it (confirmed in `dist/host.mjs`). Launches clean, serves the SPA and
+`/_desktop/people`.
+
+### Verified
+
+- New messages measured against the running server, four cases.
+- `verify:seed` PASS — anchors unchanged after touching an export service.
+- `verify:sync` PASS, including "admin can revoke the machine" / "the revoked
+  machine is locked out immediately", which exercises the now-transactional
+  revoke.
+- Typechecks clean across server, web, desktop.
+
+**Housekeeping:** probing the validator created a real count session in the dev
+database. There is no hard delete for a count — correctly — so it was voided
+with the reason "Created accidentally while testing validation messages", and
+sits in the trail as a VOID row on 2026-07-30 at Main Bar.
