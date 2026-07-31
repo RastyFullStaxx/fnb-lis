@@ -88,7 +88,7 @@ export function ReleaseDraftButton({
 
           <DialogFooter>
             <Button variant="ghost" onClick={() => setOpen(false)}>
-              Cancel
+              Go Back
             </Button>
             <Button onClick={() => void submit()} disabled={release.isPending}>
               Release

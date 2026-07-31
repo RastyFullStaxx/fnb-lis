@@ -189,6 +189,82 @@ export function TableError({
   );
 }
 
+/** The slice of a React Query result these helpers need. */
+interface FailableQuery {
+  isError: boolean;
+  fetchStatus: string;
+  isRefetching: boolean;
+  refetch: () => unknown;
+}
+
+/**
+ * Can this query not currently produce data?
+ *
+ * **Check this BEFORE `isPending`.** A paused query is still `pending`, so the
+ * usual `isPending ? <TableLoading/> : isError ? …` order never reaches the
+ * error arm and the page shows a skeleton with no message and no retry.
+ *
+ * The pause is not mysterious, though it was long recorded as such. From
+ * query-core's `retryer`:
+ *
+ * ```js
+ * const canContinue = () =>
+ *   focusManager.isFocused() &&
+ *   (config.networkMode === "always" || onlineManager.isOnline()) &&
+ *   config.canRun()
+ * ```
+ *
+ * `focusManager.isFocused()` is required **regardless of `networkMode`**, and
+ * it is checked before the first attempt — which is why a paused query reports
+ * `failureCount: 0`, having never tried. So a query started while the window is
+ * in the background pauses by design, and resumes when focus returns.
+ *
+ * Hence the `document.hasFocus()` guard: a pause while the user is looking
+ * elsewhere is normal and self-healing, and calling it "can't reach the
+ * service" would be a false alarm they'd see flash on their way back. A pause
+ * while the window IS focused means something is genuinely wrong — offline, or
+ * a retryer that never resumed — and that deserves saying out loud.
+ */
+export function queryFailed(q: FailableQuery): boolean {
+  return q.isError || (q.fetchStatus === "paused" && document.hasFocus());
+}
+
+/**
+ * The failure fill for a list or report, picking the recovery that works.
+ *
+ * A paused query stays paused through `refetch()` — measured, see AppShell — so
+ * the only honest offer there is a reload. An ordinary error retries in place.
+ */
+export function TableFailure({
+  query,
+  title,
+  description,
+}: {
+  /** One query, or every query the screen needs — retry hits all of them. */
+  query: FailableQuery | FailableQuery[];
+  title?: string;
+  description?: string;
+}) {
+  const queries = Array.isArray(query) ? query : [query];
+  const paused = queries.some((q) => q.fetchStatus === "paused");
+  return (
+    <TableError
+      title={title}
+      description={
+        paused
+          ? "Can't reach the inventory service. Check your connection, then reload."
+          : description
+      }
+      onRetry={
+        paused
+          ? () => window.location.reload()
+          : () => queries.forEach((q) => void q.refetch())
+      }
+      retrying={!paused && queries.some((q) => q.isRefetching)}
+    />
+  );
+}
+
 /** Empty fill for inside a TableSurface — no second border, so the surface reads as one card. */
 export function TableEmpty({
   icon: Icon,

@@ -46,19 +46,18 @@ export interface EntryAction {
  * left that free to drift again, so the ordering lives here and callers cannot
  * express a different one.
  *
- * Two rules, both about the destructive button:
+ * The rule that survived: **safe actions first, destructive last, everywhere.**
+ * Consistent order costs nothing visually and is the part that was actually
+ * broken.
  *
- * - **Safe actions first, destructive last.** One order everywhere.
- * - **A real gap before it.** Fitts's Law is usually about making targets
- *   easier to hit; for a button that cancels someone's count line it runs the
- *   other way, and distance is the safeguard. The old cluster left 4px between
- *   Edit and Remove.
- *
- * Size is `sm` (32px) rather than `xs` (24px) — a third more target for a
- * control people reach for one-handed, mid-count, often on a touchscreen. Still
- * short of the 44px ideal, which would visibly inflate every row in a list
- * whose whole job is density; the gap does the safety work that the extra
- * height would have.
+ * Sizing stays `xs` and the gap stays tight. An earlier pass enlarged these to
+ * `sm` with 12px of separation, reasoning from Fitts's Law that distance guards
+ * a destructive button. On screen that was wrong: these rows are dense fact
+ * lists, and two chunky buttons held apart stopped reading as one row's
+ * controls and started competing with the entry itself. Every action here is
+ * already behind a confirm dialog, so the row does not need to carry the
+ * safeguard as well — a mis-tap costs a dismissed dialog, not a lost line.
+ * Density is the right trade at this size.
  */
 export function EntryActions({ actions }: { actions: EntryAction[] }) {
   const live = actions.filter(Boolean);
@@ -69,7 +68,7 @@ export function EntryActions({ actions }: { actions: EntryAction[] }) {
   const render = (a: EntryAction) => (
     <Button
       key={a.label}
-      size="sm"
+      size="xs"
       variant={a.destructive ? "destructive" : "outline"}
       disabled={a.disabled}
       onClick={a.onClick}
@@ -79,14 +78,8 @@ export function EntryActions({ actions }: { actions: EntryAction[] }) {
   );
 
   return (
-    <div className="mt-auto flex items-center gap-1.5">
+    <div className="mt-auto flex items-center gap-1">
       {safe.map(render)}
-      {safe.length > 0 && risky.length > 0 && (
-        // The separation, stated once. `ml-1.5` on top of the flex gap puts
-        // 12px between the safe cluster and the destructive one — enough that a
-        // thumb aiming at Edit does not land on Cancel.
-        <span aria-hidden="true" className="ml-1.5" />
-      )}
       {risky.map(render)}
     </div>
   );

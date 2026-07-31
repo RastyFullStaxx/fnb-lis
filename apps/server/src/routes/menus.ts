@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { zValidator } from "@hono/zod-validator";
+import { zValidator } from "../lib/validate";
 import { menuCreate, recipeCost, recipePublish } from "@fnb/core";
 import { prisma } from "../db";
 import { AppError } from "../lib/errors";

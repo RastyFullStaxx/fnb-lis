@@ -15,13 +15,7 @@ import { useCreateSupplier, useSuppliers, useUpdateSupplier } from "@/api/locati
 import type { Supplier } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { PageHeader } from "@/components/page-header";
-import {
-  TableSurface,
-  TableLoading,
-  TableEmpty,
-  ToolbarField,
-  ToolbarSearch,
-} from "@/components/table-surface";
+import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarField, ToolbarSearch, queryFailed } from "@/components/table-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -107,7 +101,9 @@ export function SuppliersPage() {
           </>
         }
       >
-        {suppliers.isPending ? (
+        {queryFailed(suppliers) ? (
+          <TableFailure query={suppliers} title="Couldn't load suppliers" />
+        ) : suppliers.isPending ? (
           <TableLoading />
         ) : filtered.length === 0 ? (
           <TableEmpty

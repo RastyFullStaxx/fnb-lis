@@ -7,7 +7,7 @@ import { exportUrl, useCostAnalysisReport } from "@/api/reports";
 import { cn, formatMoney, formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
-import { TableSurface, ToolbarField, TableLoading, TableError } from "@/components/table-surface";
+import { TableFailure, TableLoading, TableSurface, ToolbarField, queryFailed } from "@/components/table-surface";
 import { ExportButtons } from "@/components/report-toolbar";
 import { ChartBlock } from "@/components/charts/chart-block";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -150,10 +150,10 @@ export function CostAnalysisPage() {
           <p className="px-4 py-12 text-center text-sm text-muted-foreground">
             Pick a beginning count and a later ending count to run the analysis.
           </p>
+        ) : queryFailed(report) ? (
+          <TableFailure query={report} />
         ) : report.isPending ? (
           <TableLoading rows={5} />
-        ) : report.isError ? (
-          <TableError onRetry={() => void report.refetch()} retrying={report.isRefetching} />
         ) : !report.data ? (
           <p className="px-4 py-12 text-center text-sm text-muted-foreground">
             Could not build the report for this period — pick a different pair of count dates.

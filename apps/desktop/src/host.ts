@@ -109,7 +109,11 @@ const { serveStatic } = await import("@hono/node-server/serve-static");
   const runSync = async () => {
     if (!remote.baseUrl) return { skipped: "not configured" };
     const events = drainPinEvents(raw);
-    return cycle(raw, remote, { since: process.env.FNB_LAST_PULL_AT || undefined }, events);
+    // No cursor from the environment any more. It was read once at boot and
+    // never written back, so `since` stayed at whatever first-run setup saw for
+    // the life of the install. The engine now keeps it in the mirror, next to
+    // the outbox, and advances it only after a merge actually lands.
+    return cycle(raw, remote, {}, events);
   };
 
   // Desktop-only routes, mounted BEFORE the static handlers so /_desktop/* is

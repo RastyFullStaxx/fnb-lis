@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Hono } from "hono";
-import { zValidator } from "@hono/zod-validator";
+import { zValidator } from "../lib/validate";
 import { importRowUpdate, normalizeAlias } from "@fnb/core";
 import { prisma, type Tx } from "../db";
 import { AppError } from "../lib/errors";

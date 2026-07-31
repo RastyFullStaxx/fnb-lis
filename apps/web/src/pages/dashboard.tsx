@@ -62,33 +62,43 @@ export function DashboardPage() {
   const role = (me.data?.user.role ?? "AUDIT_VIEWER_LIMITED") as Role;
   const firstName = me.data?.user.firstName ?? "";
   const to = (path: string) => `/l/${locationId}/${path}`;
+  // See queryFailed() in table-surface: a pause while the window is in the
+  // background is normal and self-healing; only a focused pause is a fault.
+  const dashPaused = dash.fetchStatus === "paused" && document.hasFocus();
 
   return (
     <div>
       <PageHeader title={`${greeting()}${firstName ? `, ${firstName}` : ""}`} />
 
-      {dash.isPending ? (
-        <DashboardSkeleton />
-      ) : dash.isError ? (
+      {/* Failure BEFORE pending, and paused counts as failure. A paused query is
+          still `pending`, so the old order left the app's landing page showing a
+          skeleton forever with no message and no way out — see queryFailed(). */}
+      {dashPaused || dash.isError ? (
         <Card>
           <CardContent className="flex flex-col items-start gap-3">
             <div>
               <h2 className="text-base font-semibold">Could not load the dashboard</h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                We could not reach the inventory service. Check your connection and try again.
+                {dashPaused
+                  ? "Can't reach the inventory service. Check your connection, then reload."
+                  : "We could not reach the inventory service. Check your connection and try again."}
               </p>
             </div>
             <Button
               size="sm"
               variant="outline"
-              onClick={() => void dash.refetch()}
-              disabled={dash.isRefetching}
+              // A paused query stays paused through refetch — measured, see
+              // AppShell — so the only recovery that works there is a reload.
+              onClick={dashPaused ? () => window.location.reload() : () => void dash.refetch()}
+              disabled={!dashPaused && dash.isRefetching}
             >
-              <RefreshCw className={dash.isRefetching ? "size-4 animate-spin" : "size-4"} />
-              {dash.isRefetching ? "Retrying…" : "Try again"}
+              <RefreshCw className={!dashPaused && dash.isRefetching ? "size-4 animate-spin" : "size-4"} />
+              {!dashPaused && dash.isRefetching ? "Retrying…" : "Try again"}
             </Button>
           </CardContent>
         </Card>
+      ) : dash.isPending ? (
+        <DashboardSkeleton />
       ) : dash.data ? (
         <DashboardContent data={dash.data} role={role} to={to} />
       ) : null}

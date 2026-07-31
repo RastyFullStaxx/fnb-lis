@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { zValidator } from "@hono/zod-validator";
+import { zValidator } from "../lib/validate";
 import { saleCorrect, saleCreate, voidRequest } from "@fnb/core";
 import { prisma } from "../db";
 import { AppError } from "../lib/errors";

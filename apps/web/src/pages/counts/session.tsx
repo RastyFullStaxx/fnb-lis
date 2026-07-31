@@ -339,7 +339,7 @@ function OpenSession({ session }: { session: SessionWithLines }) {
                 <Pencil className="size-3.5" /> Editing this line — save to replace it.
               </span>
               <Button variant="ghost" size="sm" onClick={resetForm}>
-                Cancel
+                Stop editing
               </Button>
             </div>
           )}
@@ -468,7 +468,7 @@ function OpenSession({ session }: { session: SessionWithLines }) {
             <p className="text-xs text-muted-foreground">
               {editingLineId ? "Enter saves the change." : "Enter saves and jumps back to the item picker."}
             </p>
-            <Button onClick={save} disabled={!item || mutations.addLine.isPending || mutations.removeLine.isPending}>
+            <Button size="sm" onClick={save} disabled={!item || mutations.addLine.isPending || mutations.removeLine.isPending}>
               {mutations.addLine.isPending || mutations.removeLine.isPending
                 ? "Saving…"
                 : editingLineId

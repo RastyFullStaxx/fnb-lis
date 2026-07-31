@@ -6,7 +6,7 @@ import { useCountDates } from "@/api/ops";
 import { exportUrl, useSalesReport, type SalesReportView } from "@/api/reports";
 import { formatMoney, formatNumber, formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
-import { TableSurface, TableLoading, TableEmpty, TableError, ToolbarField, ToolbarSearch } from "@/components/table-surface";
+import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarField, ToolbarSearch, queryFailed } from "@/components/table-surface";
 import { DateRangeControl, ExportButtons } from "@/components/report-toolbar";
 import { ChartBlock } from "@/components/charts/chart-block";
 import { PeriodColumns } from "@/components/charts/period-columns";
@@ -90,10 +90,10 @@ export function SalesReportPage() {
           </>
         }
       >
-        {report.isPending ? (
+        {queryFailed(report) ? (
+          <TableFailure query={report} />
+        ) : report.isPending ? (
           <TableLoading />
-        ) : report.isError ? (
-          <TableError onRetry={() => void report.refetch()} retrying={report.isRefetching} />
         ) : !report.data || report.data.rows.length === 0 ? (
           <TableEmpty icon={Receipt} title={VIEW_COPY[view].empty} description={VIEW_COPY[view].hint} />
         ) : (

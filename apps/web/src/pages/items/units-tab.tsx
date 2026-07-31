@@ -33,7 +33,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { TableLoading, TableEmpty } from "@/components/table-surface";
+import { TableEmpty, TableFailure, TableLoading, queryFailed } from "@/components/table-surface";
 
 const KIND_LABELS: Record<string, { label: string; base: string }> = {
   VOLUME: { label: "Volume", base: "ml" },
@@ -52,7 +52,9 @@ export function UnitsTab({
 
   return (
     <>
-      {units.isPending ? (
+      {queryFailed(units) ? (
+        <TableFailure query={units} title="Couldn't load units" />
+      ) : units.isPending ? (
         <TableLoading />
       ) : (units.data ?? []).length === 0 ? (
         <TableEmpty

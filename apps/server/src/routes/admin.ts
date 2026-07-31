@@ -1,6 +1,6 @@
 import { Hono, type Context } from "hono";
 import { z } from "zod";
-import { zValidator } from "@hono/zod-validator";
+import { zValidator } from "../lib/validate";
 import {
   role as roleSchema,
   derivePackageType,
@@ -954,14 +954,22 @@ export const userAdminRoutes = new Hono<AppEnv>()
     await assertActorMayTouchUser(c, userId);
     const session = await prisma.authSession.findUnique({ where: { id: sessionId } });
     if (!session || session.userId !== userId) throw new AppError(404, "Session not found");
-    await prisma.authSession.delete({ where: { id: sessionId } });
-    await logActivity({
-      user: actor,
-      action: "auth.revoke",
-      entity: "User",
-      entityId: userId,
-      summary: `Signed out ${deviceLabel(session.userAgent)}`,
-      details: { reason, ip: session.ip, userAgent: session.userAgent },
+    // One transaction: an administrator forcing another user off a machine is
+    // exactly the event the trail exists for, and it carries a reason for that
+    // reason. Revoked-with-no-record is not a state this should be able to reach.
+    await prisma.$transaction(async (tx) => {
+      await tx.authSession.delete({ where: { id: sessionId } });
+      await logActivity(
+        {
+          user: actor,
+          action: "auth.revoke",
+          entity: "User",
+          entityId: userId,
+          summary: `Signed out ${deviceLabel(session.userAgent)}`,
+          details: { reason, ip: session.ip, userAgent: session.userAgent },
+        },
+        tx,
+      );
     });
     return c.json({ ok: true });
   });

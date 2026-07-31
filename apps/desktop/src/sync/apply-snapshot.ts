@@ -74,6 +74,17 @@ const LOCAL_DEFAULTS: Record<string, Record<string, unknown>> = {
   User: { passwordHash: NO_LOCAL_PASSWORD },
 };
 
+/**
+ * Ids the merge must leave alone for the duration of one applySnapshot call.
+ *
+ * Module-scoped rather than threaded through every call site: `upsertRows` is
+ * invoked from a dozen places inside the merge transaction, and an extra
+ * argument on each is more surface to forget than one value set at the entry
+ * point and cleared in a finally.
+ */
+let protectedIds: Set<string> | null = null;
+let skipped = 0;
+
 function upsertRows(db: Database.Database, table: string, rows: unknown[]): number {
   if (!Array.isArray(rows) || rows.length === 0) return 0;
   const cols = columnsOf(db, table);
@@ -82,6 +93,14 @@ function upsertRows(db: Database.Database, table: string, rows: unknown[]): numb
   let written = 0;
   for (const row of rows) {
     if (!row || typeof row !== "object") continue;
+    // Never overwrite a row this device is still holding. The server's copy is
+    // by definition older than the local edit that has not been pushed yet, and
+    // INSERT OR REPLACE would discard it without a trace.
+    const rowId = (row as Record<string, unknown>).id;
+    if (protectedIds && typeof rowId === "string" && protectedIds.has(rowId)) {
+      skipped++;
+      continue;
+    }
     const withDefaults = { ...(LOCAL_DEFAULTS[table] ?? {}), ...(row as Record<string, unknown>) };
     const entries = Object.entries(withDefaults).filter(
       // `typeof null === "object"`, so nulls would be dropped — keep them, they
@@ -103,10 +122,18 @@ function upsertRows(db: Database.Database, table: string, rows: unknown[]): numb
 export interface ApplyResult {
   tables: Record<string, number>;
   total: number;
+  /** Rows left untouched because this device still holds unpushed work on them. */
+  skipped: number;
 }
 
-export function applySnapshot(db: Database.Database, payload: Record<string, unknown>): ApplyResult {
+export function applySnapshot(
+  db: Database.Database,
+  payload: Record<string, unknown>,
+  keepLocal?: Set<string>,
+): ApplyResult {
   const tables: Record<string, number> = {};
+  protectedIds = keepLocal && keepLocal.size > 0 ? keepLocal : null;
+  skipped = 0;
 
   /**
    * Foreign keys OFF for the merge, and this is not laziness.
@@ -194,7 +221,8 @@ export function applySnapshot(db: Database.Database, payload: Record<string, unk
     run();
   } finally {
     db.pragma("foreign_keys = ON");
+    protectedIds = null;
   }
 
-  return { tables, total: Object.values(tables).reduce((a, b) => a + b, 0) };
+  return { tables, total: Object.values(tables).reduce((a, b) => a + b, 0), skipped };
 }

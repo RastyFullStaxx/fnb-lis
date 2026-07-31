@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
-import { zValidator } from "@hono/zod-validator";
+import { zValidator } from "../lib/validate";
 import Anthropic from "@anthropic-ai/sdk";
 import { isCostBasis, type CostBasis } from "@fnb/core";
 import { AppError } from "../lib/errors";

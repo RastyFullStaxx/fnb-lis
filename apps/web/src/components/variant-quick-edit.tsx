@@ -175,7 +175,7 @@ export function VariantQuickEditDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
+            Go Back
           </Button>
           <Button onClick={save} disabled={!canSave || updateVariant.isPending}>
             {updateVariant.isPending ? "Saving…" : "Save bottle weight"}

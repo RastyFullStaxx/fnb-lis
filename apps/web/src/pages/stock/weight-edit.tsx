@@ -171,7 +171,7 @@ export function WeightEdit({ row }: { row: LocationItem }) {
           <DialogFooter>
             <WeightReport row={row} />
             <Button variant="ghost" onClick={() => setOpen(false)}>
-              Cancel
+              Go Back
             </Button>
             <Button onClick={() => void save()} disabled={update.isPending}>
               Save weights

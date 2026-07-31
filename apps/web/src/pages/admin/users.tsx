@@ -25,13 +25,7 @@ import { ApiError } from "@/api/http";
 import { PageHeader } from "@/components/page-header";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { UserSessionsDialog } from "@/components/user-sessions-dialog";
-import {
-  TableSurface,
-  TableLoading,
-  TableEmpty,
-  ToolbarField,
-  ToolbarSearch,
-} from "@/components/table-surface";
+import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarField, ToolbarSearch, queryFailed } from "@/components/table-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -224,7 +218,9 @@ export function AdminUsersPage() {
           </>
         }
       >
-        {users.isPending ? (
+        {queryFailed(users) ? (
+          <TableFailure query={users} title="Couldn't load users" />
+        ) : users.isPending ? (
           <TableLoading />
         ) : filtered.length === 0 ? (
           <TableEmpty
@@ -819,7 +815,7 @@ function EditUserDialog({
 
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>
-            Cancel
+            Go Back
           </Button>
           <Button onClick={saveRole} disabled={update.isPending || updateAccess.isPending}>
             Save Changes

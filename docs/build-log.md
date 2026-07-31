@@ -2287,10 +2287,17 @@ and "Not counted" is tappable to jump to the item. Two real defects:
   Cancel→Edit, Transfers Correct→Void, Purchases editor Void→Edit. The same row
   teaching three muscle memories is Jakob's Law broken *inside* the product.
   Now one component taking **data, not markup**, so a caller cannot express a
-  different order. Safe actions first, destructive last, 12px apart —
-  Fitts's Law inverted for a button that cancels someone's count line, where
-  distance is the safeguard. `xs`→`sm`: 27px → 36px tall (the 18px root scales
-  `sm` up 12.5%), +76% target area on Edit, and the Edit→Remove gap went 5px → 21px.
+  different order: safe actions first, destructive last, everywhere.
+
+  The first pass also enlarged these to `sm` with 12px of separation, arguing
+  Fitts's Law in reverse — distance guards a destructive button. **Reverted on
+  sight of the rendered screen.** These rows are dense fact lists, and two
+  chunky buttons held apart stopped reading as one row's controls and started
+  competing with the entry itself. Every action here is already behind a confirm
+  dialog, so a mis-tap costs a dismissed dialog, not a lost line, and the row
+  does not need to carry the safeguard twice. Back to `xs` at a 4px gap; only
+  the ordering changed. A law correctly applied to the wrong surface is still
+  the wrong call.
 - **Recent Activity folds runs** of the same action by the same person. Four
   failed PIN attempts from one terminal filled four of five slots and pushed a
   voided sale off the bottom. Only *consecutive* entries fold, so the feed stays
@@ -2322,3 +2329,416 @@ and "Not counted" is tappable to jump to the item. Two real defects:
   hidden events surfaced.
 - Typechecks clean across server, web, desktop. `@types/better-sqlite3` added —
   the desktop typecheck had been failing at HEAD too.
+
+---
+
+## 2026-07-31 (later) — second UX pass, web only
+
+Desktop deliberately **not** rebuilt; see "Pending for the desktop" below.
+
+### Changed
+
+- **Row action density reverted.** See the corrected entry above. `xs`, 4px gap,
+  ordering kept. The quick-entry primary buttons (Save Sale, Save line, and both
+  editors' Add line) went default → `sm`: 41px → 36px with tighter padding, so
+  they stop looking bulky beside a compact fact list.
+- **Settings grouped into "Your preferences" and "Establishment settings."**
+  Seven sections ran down one hairline-divided list as visual peers, and they
+  are not peers: Inventory Cost Basis restates every valuation figure and
+  Variance Highlight Threshold changes what the Full Audit flags in every
+  download — for the whole client — while Text Size changes nothing but your own
+  browser. Proximity now carries the distinction, and each group's subhead says
+  the consequence in words. Section headings dropped h2 → h3 so the hierarchy is
+  real for screen readers, not just visual.
+- **"Save" → "Save Threshold."** The one unscoped save on a page where every
+  other one names its target ("Save Company Info", "Save Product Types").
+- **Dismiss buttons say "Go Back", not "Cancel" — 11 dialogs.** `ConfirmDialog`
+  already documented this rule ("so it can't be confused with the Cancel action
+  that voids a record") and every hand-rolled dialog ignored it. Worst case was
+  `sales/index.tsx`, where a row button "Cancel" voids the sale and a dialog in
+  the same file used "Cancel" to mean *don't*. Same drift pattern as the button
+  ordering: a rule set in one place, unenforced everywhere else.
+  `counts/session.tsx` gets "Stop editing" instead — it aborts an in-progress
+  edit rather than dismissing a dialog, on the screen where rows also say
+  "Cancel".
+
+### Audited and deliberately left alone
+
+- **Toolbar search widths** (459–909px across screens) are `grow`-to-fill by
+  design, with a measured 9rem floor already reasoned about in
+  `table-surface.tsx`. Pinning a max-width would leave dead space on screens
+  with few filters. Not a defect.
+- **Full Audit's Print / Excel / CSV / PDF** stay four buttons — recognised
+  labels, near-zero Hick's cost, and a menu would add a click to a daily task.
+- **Device Revoke** looked unguarded to a grep (no `ConfirmDialog`) but uses a
+  plain `Dialog` that also warns when the machine has unsynced work. Correct
+  as-is.
+- **Void flow** already reads "Keep Record" / "Cancel Entry" — better than the
+  "Go Back" convention and no collision. Untouched.
+- **Command palette**: 49 items in 5 groups with type-ahead, focus lands in the
+  input. Hick's already handled.
+- **Responsive**: zero horizontal body overflow across nine screens at 820px.
+
+### Verified
+
+- Row geometry back to the original: Edit 44×27, Remove 69×27, 4px gap, order
+  Edit → Remove. Save line/Save Sale 36px.
+- Settings headings: H1 Settings → H2 group → H3 section. All four saves scoped.
+- "Edit Entry" dialog reads "Go Back" / "Save Changes"; the five destructive row
+  "Cancel" actions and `VoidDialog`'s "Cancel Entry" are untouched.
+- Golden anchors unchanged: −330.6857142857142 / −869.5714285714284 and
+  −537 / −1410. Typechecks clean; production build clean.
+
+### Pending for the desktop
+
+None of the above is in the packaged app yet — it ships the web bundle built at
+package time. When the web work is settled, one rebuild picks all of it up:
+
+```
+npm run native -w @fnb/desktop   # if npm install ran since the last build
+npm run dist   -w @fnb/desktop
+```
+
+Nothing desktop-specific needs changing for these; `setup.html` is the only
+desktop-owned screen and it was already title-cased.
+
+---
+
+## 2026-07-31 (third pass) — failed loads stopped lying
+
+Web only at the time; the desktop caught up in the pass below.
+
+### The long-standing pause mystery, solved
+
+`main.tsx` and `AppShell` both carried a note that a query with
+`networkMode: "always"` and `navigator.onLine === true` still sat at
+`fetchStatus: "paused"`, `status: "pending"`, `failureCount: 0` — "which by its
+own `canFetch()` rule should never pause", cause unknown.
+
+It was looking at the wrong function. From query-core's `retryer`:
+
+```js
+const canContinue = () =>
+  focusManager.isFocused() &&
+  (config.networkMode === "always" || onlineManager.isOnline()) &&
+  config.canRun()
+```
+
+`focusManager.isFocused()` is required **regardless of networkMode**, and it
+gates the first attempt — hence `failureCount: 0`, never tried. The window was
+simply in the background (watching a terminal for the stopped API does exactly
+that). Both notes are corrected in place.
+
+This also corrects a claim made earlier in this session: the "skeleton forever"
+reproduction was substantially an artifact of testing in a hidden browser pane
+(`visibilityState: "hidden"`). A real user with a focused window gets a normal
+error. Anything treating `paused` as failure must pair it with
+`document.hasFocus()`, or it false-alarms at everyone who tabs away mid-load —
+`queryFailed()`, the Dashboard, the two detail pages and `AppShell` all now do.
+
+### The real bug
+
+1. **`TableError` existed and no list page used it.** `stock/index.tsx` branched
+   `isPending` then `length === 0`, so on a failed load the Local Database
+   announced *"This location's catalog is empty"* and offered to copy another
+   location's catalog — inviting someone to duplicate a catalog that already
+   exists. `TableError`'s own doc comment had warned about exactly this ("a load
+   failure must never render as an empty state"). Thirteen list pages had no
+   error arm at all.
+2. **An expired session read as a network fault.** Only `AppShell`'s `me` query
+   reacted to a 401. Every other request surfaced its error in place, so an
+   audit viewer — 20-minute session (`READONLY_SESSION_TTL_MS`) against `me`'s
+   5-minute `staleTime` and `refetchOnWindowFocus: false` — sat on a report
+   being told to "check your connection" beside a Try again that could never
+   succeed. A `QueryCache`/`MutationCache` `onError` now sends any 401 to
+   `/login?expired=1`, the same URL AppShell uses, so the calm "session ended"
+   notice still shows. Invalidating `me` and letting AppShell redirect was tried
+   first and does not work: React Query keeps `status: "success"` when a
+   *background* refetch fails on a query that already holds data, so
+   `me.isError` never becomes true.
+
+### The fix
+
+`queryFailed()` + `TableFailure` in `table-surface.tsx`, and **failure checked
+before pending** at every site.
+
+- `queryFailed(q)` = `isError || fetchStatus === "paused"`. The doc comment
+  states the ordering requirement, because getting it wrong is silent.
+- `TableFailure` picks the recovery that works: a paused query stays paused
+  through `refetch()` (measured — AppShell hit this first), so paused offers a
+  reload and an ordinary error retries in place. Accepts an array when a screen
+  needs several queries.
+- 34 pages with a loading state now all have a failure state; every title names
+  what failed ("Couldn't load this location's catalog"), never the generic
+  "Couldn't load this report" on a user list.
+- Dashboard, Full Audit, Cost Snapshot, Sales by Item, Usage Cost, Non-Revenue's
+  transfer tab, the transfer editor and the import review each needed their own
+  shape — the last two said *"it may have been removed"* on any failure, blaming
+  the record for a network problem.
+
+### Also
+
+- Settings: the one input without a label got an `aria-label` (a placeholder is
+  not a label and vanishes on first keystroke).
+
+### Audited, no change needed
+
+- **Weigh screen asks for the unit the bottle was actually weighed in** (oz here)
+  even when the user's preference is metric. Correct and deliberate —
+  `tareWeightUnit` records a physical measurement, and only the fallback follows
+  the preference. **Noted for the client:** if a bar's scale reads grams and the
+  item's tare was recorded in ounces, staff must convert. Worth asking Lourd
+  whether input-side conversion is wanted; it would touch weighing math, so it
+  is a decision, not a tweak.
+- Accessibility otherwise clean across six screens: no unnamed buttons, no
+  missing alt, all other inputs labelled.
+- Imports review shows the raw file value beside its match, so a human verifies
+  rather than trusts. Command palette, responsive layout: already covered.
+
+### Verified
+
+- Failed catalog load renders "Couldn't load this location's catalog / Can't
+  reach the inventory service…/ Try again" — 0 skeletons, no empty state. Same
+  for the Dashboard.
+- 401 → `/login?expired=1` showing "Your session ended — sign in again to
+  continue."; a 500 does not navigate. (Two false negatives along the way: a
+  synthetic `.click()` that Radix ignores, and `window.location.assign`, which
+  is non-configurable and cannot be spied on — the redirect had been working
+  both times.)
+- **Not verifiable in this environment:** driving a query to a genuine `isError`
+  state. The automation pane never composites, so `visibilityState` is `hidden`,
+  retries pause, and no error handler runs. The `isError` paths are verified by
+  reading the code and by exercising the handlers directly at their wiring
+  points.
+- 8 screens re-checked with the network restored: real rows, no stuck skeletons.
+- Golden anchors unchanged: −330.6857142857142 / −869.5714285714284 and
+  −537 / −1410. Typechecks and production build clean.
+
+---
+
+## 2026-07-31 (fourth pass) — printing, and the desktop catches up
+
+### Printing dropped two thirds of the Full Audit
+
+The print stylesheet was thoughtful — A4 landscape, sidebar hidden, `thead`
+repeated across sheets, `break-inside: avoid` on rows, `print:hidden` on the
+filter bar. It never reset a scroll container.
+
+The app is a viewport-height shell (`h-svh`) whose page content and table
+surface both scroll. Correct on screen; on paper `overflow: auto` clips to the
+box. Measured on the Full Audit: **a 463px box around a 1337px table — 874px,
+about two thirds of the rows, absent from the output** with nothing saying so.
+On the one report the client trusts above all, whose value is that its numbers
+are complete, that is the worst available failure.
+
+Fixed by unbinding height on the shell chain and overflow on everything inside
+`[data-slot="page-content"]`, in that order. `.sr-only` is excluded on purpose —
+it relies on clipping to stay invisible, and unclipping it would print the
+screen-reader text. Verified by applying the same rules at `media="all"`:
+874px clipped → **0**, `.sr-only` still hidden.
+
+### Session-expired notice reached only half the users
+
+`?expired=1` renders "Your session ended — sign in again to continue." — inside
+the password branch only. The desktop signs in with a PIN, so a device booted by
+the new 401 redirect landed on the keypad with no word about why. Hoisted above
+the branch; both credentials now explain it. Same drift as the button ordering
+and the "Go Back" convention: a rule written once, into one of two paths.
+
+### Desktop
+
+Rebuilt and reinstalled — the app now carries all four passes (verified against
+the running local server: print fix, scrollbar guard, sign-in animation,
+`queryFailed`/`hasFocus`, the 401 redirect, activity folding, Settings grouping,
+"Go Back").
+
+Two desktop-only faults:
+
+- **No way to undo an accidental zoom.** Removing the File/Edit menu took
+  Ctrl+0/+/− with it — the same loss that had already been noticed and repaired
+  for reload and devtools, but zoom was missed. Ctrl+scroll, and pinch on a
+  touchscreen bar PC, still zoom the renderer, so someone who knocks the wheel
+  mid-count is stuck at 150% with no menu and no shortcut for the rest of the
+  session. It clears on restart only by accident: the local server takes a new
+  port each launch, so the origin Electron remembers zoom against differs.
+  Now re-registered beside the reload binding.
+- **No minimum window size.** An Electron window has none unless given one, so
+  it could be dragged to a sliver. `minWidth: 880` / `minHeight: 600` — the web
+  app is clean to ~820px, and 880 keeps the icon rail plus a readable table.
+  Verified: a `MoveWindow` to 400×300 clamps to 880×600.
+
+### Verified
+
+- Print: 874px clipped → 0 clipped, `.sr-only` still hidden.
+- Expired notice on both the password and PIN paths.
+- Desktop installs, launches, serves the SPA (200) and `/_desktop/people`
+  (5 users, "Front bar PC"); `host.log` clean.
+- Window minimum enforced at the OS level.
+- Golden anchors unchanged. Typechecks clean across server, web and desktop.
+
+**Not verified by keypress:** the zoom accelerators. Screen access to the
+packaged app was declined, so they are confirmed present in the installed
+`app.asar` and follow the identical, working `before-input-event` binding beside
+them — but no one has pressed Ctrl+0.
+
+---
+
+## 2026-07-31 (fifth pass) — backend audit
+
+Audited against this repo's own stated invariants, which are the ones worth
+checking because a violation is a defect by definition rather than by opinion.
+
+### Every validation failure said "[object Object]"
+
+`@hono/zod-validator`'s default failure body is
+`{ success: false, error: <serialized ZodError> }`. The web client reads
+`{ error: string }` — the shape every other error on this server sends — so
+`body.error` arrived as an OBJECT, `new ApiError(400, thatObject)` stringified
+it, and the toast read **"[object Object]"**. On every form in the app, for as
+long as validation has existed. `errorHandler` could not catch it either: the
+validator returns its own Response rather than throwing.
+
+`lib/validate.ts` now wraps the validator with a failure hook that speaks the
+server's own error shape, and all 15 route files import from there instead.
+Field names are included because a form with a dozen inputs needs to say which
+one, and the missing-value case is reworded — "Invalid input: expected string,
+received undefined" is a sentence for whoever wrote the schema.
+
+Measured, before → after:
+
+| request | before | after |
+|---|---|---|
+| `POST /counts {}` | `[object Object]` | `Count date: is required` |
+| `POST /counts {countDate:"07/30/2026"}` | `[object Object]` | `Count date: Expected YYYY-MM-DD` |
+| `POST /sales {qty:-5}` | `[object Object]` | `Sale date: is required` |
+
+Schema-authored messages pass through untouched — the humaniser only rewrites
+`invalid_type` with a missing value, so a deliberate message like
+"Expected YYYY-MM-DD" survives.
+
+### Two mutations logged outside their transaction
+
+README: "every mutation writes ActivityLog **in the same `$transaction`**".
+76 of 85 call sites did. The exceptions that mattered both destroy a session
+its owner did not ask to end:
+
+- `POST /admin/users/:id/sessions/:sessionId/revoke` — an administrator forcing
+  someone off a machine, which takes a `reason` precisely because it is meant to
+  be auditable. Delete and log were separate awaits, so "revoked with no record"
+  was reachable.
+- The STAFF single-session eviction in `POST /auth/login` — throws whoever holds
+  the prior session out, potentially mid-count.
+
+Both wrapped. `logActivity` already accepted a `tx` and its own doc comment asks
+callers to pass one; these two just didn't. Plain self-service logout is left
+alone: the actor is the person affected, and the record is not evidence about
+anyone else.
+
+### One rounding escape in the legacy-parity export
+
+`exports-suite.ts` rounded every cell of the 24-column legacy row with `round2`
+(phpRound) except the variance percent, which used `Math.round`. `rounding.ts`
+states the stakes itself: "JS Math.round(-2.5) gives -2, PHP gives -3. Negative
+variances are routine in audit reports, so this difference is load-bearing." A
+−2.5% variance exported as −2% where the client's legacy sheet says −3% — in the
+export whose entire purpose is matching that sheet. Now `phpRound`.
+
+### Audited, no change needed
+
+- **Route scoping.** Location-scoped routers get `requireAuth` +
+  `requireLocationAccess` once at the mount point, so it cannot be forgotten
+  per-route. The audit trail is tenancy-correct: empty client access
+  short-circuits to `[]`, an out-of-scope `clientId` maps to `__none__`, and the
+  unfiltered branch is reachable only for ADMIN.
+- **Input validation coverage.** Zero routes read a body without a schema.
+- **Login.** Same message for unknown user, wrong password and disabled account;
+  lockout at 5 attempts per hour, matching legacy. The 423 lockout reply is
+  technically a user-enumeration oracle, but telling a locked-out staffer why
+  they cannot get in is the right trade for a ten-account internal tool.
+- **CSRF**: `originCheck` runs before everything.
+
+### Desktop
+
+Rebuilt and reinstalled — it bundles this server, so all three fixes ship with
+it (confirmed in `dist/host.mjs`). Launches clean, serves the SPA and
+`/_desktop/people`.
+
+### Verified
+
+- New messages measured against the running server, four cases.
+- `verify:seed` PASS — anchors unchanged after touching an export service.
+- `verify:sync` PASS, including "admin can revoke the machine" / "the revoked
+  machine is locked out immediately", which exercises the now-transactional
+  revoke.
+- Typechecks clean across server, web, desktop.
+
+**Housekeeping:** probing the validator created a real count session in the dev
+database. There is no hard delete for a count — correctly — so it was voided
+with the reason "Created accidentally while testing validation messages", and
+sits in the trail as a VOID row on 2026-07-30 at Main Bar.
+
+---
+
+## 2026-07-31 (sixth pass) — the desktop was not syncing inbound at all
+
+Asked to harden sync edge cases. The edge cases were fine; the main path was
+not. Three steps of the cycle existed only in comments — the code shipped, ran
+without error, and reported `synced: true` while doing none of them.
+
+### 1. Pulled snapshots were thrown away
+
+`cycle()` called `pull()` and discarded the result. `applySnapshot` was reachable
+only from first-run provisioning and the test harness. **After setup, the mirror
+never received another byte from the server** — a void entered in the browser, a
+corrected line, a new price, a new item: none of it reached the bar PC, while the
+desktop's own Full Audit kept reporting the numbers it was provisioned with. The
+inbound half of two-way sync, which is most of why the desktop exists, was never
+wired up.
+
+Proven end to end: supplier created in the browser → one `/_desktop/sync-now` →
+present in `mirror.db`. Before the fix a cycle applied 0 rows; now 520.
+
+### 2. Reconciliation detected missing records and did nothing
+
+`reconcile()`'s own doc says "and re-queue them… This closes it". It returned
+`{ missing }` and `cycle` counted the length. Nothing re-queued, and the entries
+were already marked pushed so `pending()` would never look at them again — a
+device that lost a request in flight stayed permanently un-synced with no route
+back. `requeue()` clears `pushedAt`; replay is safe because every create route is
+idempotent on the client-supplied id.
+
+### 3. The pull cursor never advanced
+
+`FNB_LAST_PULL_AT` was read from the environment once at process start.
+`writeConfig({ lastPullAt })` only ever ran during first-run setup, and the
+utility process cannot write config anyway — safeStorage lives in the main
+process. So `since` was frozen at whatever provisioning saw, for the life of the
+install. The cursor now lives in `_sync_state` inside the mirror, beside the
+outbox, and advances only after a merge actually lands.
+
+### 4. The merge could have destroyed unpushed work
+
+`pull`'s doc promised "rows referenced by unpushed outbox entries are left
+alone"; `applySnapshot` did a blanket `INSERT OR REPLACE`. Harmless while pull
+was inert — and a data-loss bug the moment it wasn't, since the server's copy of
+a locally-edited draft is older than the edit waiting in the queue.
+`applySnapshot` now takes the protected id set and reports what it skipped.
+
+### Verified
+
+- End-to-end inbound sync, browser → mirror (above).
+- Cursor persists and advances across cycles (08:12:26 → 08:12:54).
+- Focused checks on the new primitives, run once against a throwaway DB: re-queue
+  targets only the entry owning a missing id, preserves causal replay order, is a
+  no-op for ids the server has; protected ids include unpushed and exclude
+  pushed; cursor round-trips and overwrites in place. 10/10.
+- `verify:seed` PASS · `verify:sync` PASS · `verify:mirror` MIRROR MATCHES THE
+  SERVER. Typechecks clean across all three workspaces.
+
+### Notes
+
+- A SQL comment containing backticks closed the surrounding JS template literal
+  again — **third time this session**. The comment in `outbox.ts` now says so.
+- Housekeeping: verification created supplier `SYNCTEST-4421` on Main Bar. There
+  is no delete route for suppliers, so it is renamed
+  "SYNCTEST-4421 (test, safe to delete)" and deactivated.

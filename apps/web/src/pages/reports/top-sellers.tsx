@@ -6,7 +6,7 @@ import { useCountDates } from "@/api/ops";
 import { exportUrl, useTopSellersReport } from "@/api/reports";
 import { formatMoney } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
-import { TableSurface, TableLoading, TableEmpty, ToolbarField } from "@/components/table-surface";
+import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarField, queryFailed } from "@/components/table-surface";
 import { DateRangeControl, ExportButtons } from "@/components/report-toolbar";
 import { ChartBlock } from "@/components/charts/chart-block";
 import { MagnitudeBars } from "@/components/charts/magnitude-bars";
@@ -87,7 +87,9 @@ export function TopSellersPage() {
           </>
         }
       >
-        {report.isPending ? (
+        {queryFailed(report) ? (
+          <TableFailure query={report} />
+        ) : report.isPending ? (
           <TableLoading />
         ) : !hasData ? (
           <TableEmpty

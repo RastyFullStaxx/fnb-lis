@@ -47,17 +47,66 @@ export function SettingsPage() {
   return (
     <div>
       <PageHeader title="Settings" />
-      {/* Flat sections split by hairlines — one surface, never stacked cards. */}
-      <div className="divide-y">
-        <DisplayPreferencesSection />
-        <DevicePinSection />
-        <CompanySection />
-        <CostBasisSection />
-        <VarianceThresholdSection />
-        {can(role, "master.write") && <CatalogExportSection />}
-        {can(role, "admin.manage") && <ProductTypesSection />}
+      {/* Flat sections split by hairlines — one surface, never stacked cards.
+          Grouped, because the two halves are not peers: see SettingsGroup. */}
+      <div className="space-y-10">
+        <SettingsGroup
+          title="Your preferences"
+          description="Only affect your own account. Nobody else sees a difference."
+        >
+          <DisplayPreferencesSection />
+          <DevicePinSection />
+        </SettingsGroup>
+
+        <SettingsGroup
+          title="Establishment settings"
+          description="Shared by everyone at this establishment. Changes here move the figures in reports and exports."
+        >
+          <CompanySection />
+          <CostBasisSection />
+          <VarianceThresholdSection />
+          {can(role, "master.write") && <CatalogExportSection />}
+          {can(role, "admin.manage") && <ProductTypesSection />}
+        </SettingsGroup>
       </div>
     </div>
+  );
+}
+
+/**
+ * The two halves of this page, told apart.
+ *
+ * Seven sections used to run down one hairline-divided list as visual peers,
+ * and two of them are not peers with the rest: **Inventory Cost Basis restates
+ * every valuation figure** and **Variance Highlight Threshold changes what the
+ * Full Audit flags on screen and in every download** — for the whole client.
+ * Text Size changes nothing but your own browser. Rendering an accounting
+ * policy and a font control identically invites exactly the wrong click.
+ *
+ * Proximity carries the distinction that identical styling erased, and the
+ * subheads say the consequence in words rather than relying on someone
+ * inferring it from position. It also chunks seven sections into two groups,
+ * which is the difference between scanning a list and reading one.
+ *
+ * Personal first: far more people change their text size than an establishment's
+ * cost basis, and the section that should be reached by accident least often
+ * should not be the one nearest the top.
+ */
+function SettingsGroup({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section>
+      <h2 className="text-base font-semibold tracking-tight">{title}</h2>
+      <p className="mt-1 max-w-prose text-sm text-muted-foreground">{description}</p>
+      <div className="mt-5 divide-y border-t pt-1">{children}</div>
+    </section>
   );
 }
 
@@ -186,7 +235,7 @@ function VarianceThresholdSection() {
             />
             <span className="text-sm text-muted-foreground">%</span>
             <Button onClick={() => void save()} disabled={!canEdit || !isDirty || update.isPending}>
-              Save
+              Save Threshold
             </Button>
           </div>
         )}
@@ -238,7 +287,7 @@ function SettingsSection({
 }) {
   return (
     <section className="py-6 first:pt-0 last:pb-0">
-      <h2 className="text-sm font-semibold">{title}</h2>
+      <h3 className="text-sm font-semibold">{title}</h3>
       {description ? (
         <p className="mt-1 max-w-prose text-sm text-muted-foreground">{description}</p>
       ) : null}
@@ -689,6 +738,9 @@ function ProductTypesSection() {
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), add())}
               placeholder="Add a product type…"
+              // The only input on the page with no visible label — a placeholder
+              // is not one, and it disappears the moment anyone types.
+              aria-label="Add a product type"
               className="max-w-xs"
             />
             <Button type="button" variant="outline" onClick={add}>

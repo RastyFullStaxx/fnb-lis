@@ -139,7 +139,7 @@ export function WeightReport({
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setOpen(false)}>
-              Cancel
+              Go Back
             </Button>
             <Button onClick={() => void submit()} disabled={report.isPending}>
               Send report

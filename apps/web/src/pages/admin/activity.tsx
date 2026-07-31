@@ -6,7 +6,7 @@ import { useActivity, type ActivityFilters, type ActivityRow } from "@/api/activ
 import { useCurrentClient } from "@/api/location";
 import { usePreferencesContext } from "@/lib/preferences";
 import { PageHeader } from "@/components/page-header";
-import { TableSurface, TableLoading, TableEmpty, ToolbarField, ToolbarSearch } from "@/components/table-surface";
+import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarField, ToolbarSearch, queryFailed } from "@/components/table-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -138,7 +138,9 @@ export function AdminActivityPage() {
           </>
         }
       >
-        {activity.isPending ? (
+        {queryFailed(activity) ? (
+          <TableFailure query={activity} title="Couldn't load the activity log" />
+        ) : activity.isPending ? (
           <TableLoading rows={10} />
         ) : (activity.data?.rows ?? []).length === 0 ? (
           !applied.search && !applied.from && !applied.to && !applied.action ? (
