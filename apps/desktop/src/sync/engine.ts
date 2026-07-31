@@ -1,13 +1,21 @@
 import type Database from "better-sqlite3";
+import { applySnapshot } from "./apply-snapshot";
 import {
   collapse,
+  getState,
   markAttempt,
   markConflict,
   markPushed,
   pending,
+  pendingRecordIds,
   pushedRecordIds,
+  requeue,
+  setState,
   stampOccurredAt,
 } from "./outbox";
+
+/** Cursor key in `_sync_state`: the `generatedAt` of the last applied snapshot. */
+const LAST_PULL_KEY = "lastPullAt";
 
 /**
  * Push, reconcile, pull. Runs in the utility process alongside the local server.
@@ -196,22 +204,42 @@ export async function pull(
 }
 
 /**
- * One full cycle. Push before pull, always: pulling first would overwrite local
- * rows with a server view that does not yet contain them.
+ * One full cycle: push → reconcile (and re-queue) → ack → pull and MERGE.
+ *
+ * Push before pull, always: pulling first would overwrite local rows with a
+ * server view that does not yet contain them.
  *
  * `/sync/ack` is only called when the queue drained AND reconciliation found
  * nothing missing — otherwise `Device.lastSyncAt` would advance while work sat
  * locally, and the admin's device list would report "synced" over a night of
  * stranded counts.
+ *
+ * The merge still runs on a stalled cycle. Inbound truth does not depend on
+ * outbound success, and a device that cannot push is precisely the one whose
+ * operator most needs to see what the office changed.
  */
 export async function cycle(
   db: Database.Database,
   remote: RemoteConfig,
-  cursor: { from?: string; since?: string },
+  cursor: { from?: string },
   events: Array<{ kind: string; summary: string; occurredAt: string }> = [],
-): Promise<{ pushed: number; conflicts: number; missing: number; synced: boolean }> {
+): Promise<{
+  pushed: number;
+  conflicts: number;
+  missing: number;
+  requeued: number;
+  applied: number;
+  keptLocal: number;
+  synced: boolean;
+}> {
   const outcome = await push(db, remote);
+
   const { missing } = await reconcile(db, remote);
+  // Act on the answer, don't just count it. Reconciliation used to detect
+  // records the server never received and then do nothing about them: the
+  // device stayed permanently un-synced with no route back, because the entries
+  // were already marked pushed and `pending()` would never look at them again.
+  const requeued = requeue(db, missing);
 
   const clean = !outcome.stalled && outcome.conflicts === 0 && missing.length === 0;
   if (clean) {
@@ -222,7 +250,36 @@ export async function cycle(
     }).catch(() => {});
   }
 
-  await pull(db, remote, cursor);
+  /**
+   * Apply what we pulled.
+   *
+   * `pull` fetched a snapshot and the result was discarded, so after first-run
+   * provisioning the mirror never received another byte from the server: a void
+   * entered in the browser, a corrected line, a new price — none of it reached
+   * the bar PC, while the desktop's own Full Audit went on reporting the numbers
+   * it was provisioned with. That is the half of two-way sync this app exists
+   * for, and it was never wired up.
+   *
+   * The cursor advances only after a merge actually succeeds, and is stored in
+   * the mirror rather than config.json — see `_sync_state`.
+   */
+  let applied = 0;
+  let keptLocal = 0;
+  const pulled = await pull(db, remote, { from: cursor.from, since: getState(db, LAST_PULL_KEY) });
+  if (pulled) {
+    const result = applySnapshot(db, pulled.payload as Record<string, unknown>, pendingRecordIds(db));
+    applied = result.total;
+    keptLocal = result.skipped;
+    setState(db, LAST_PULL_KEY, pulled.generatedAt);
+  }
 
-  return { pushed: outcome.pushed, conflicts: outcome.conflicts, missing: missing.length, synced: clean };
+  return {
+    pushed: outcome.pushed,
+    conflicts: outcome.conflicts,
+    missing: missing.length,
+    requeued,
+    applied,
+    keptLocal,
+    synced: clean,
+  };
 }

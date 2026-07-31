@@ -39,6 +39,22 @@ CREATE TABLE IF NOT EXISTS "_outbox" (
   "conflictBody"  TEXT
 );
 CREATE INDEX IF NOT EXISTS "_outbox_pending" ON "_outbox" ("pushedAt", "seq");
+
+-- Sync cursors live in the mirror, not in config.json.
+--
+-- config.json is written by the MAIN process (safeStorage lives there) while
+-- syncing happens in the utility process, so the cursor was read once from an
+-- env var at boot and never written back: the "since" cursor stayed frozen at
+-- the value captured during first-run setup, for the life of the install.
+-- (No backticks in this string, ever: it lives inside a JS template literal,
+-- and one closes it. That has now cost this codebase three separate builds.)
+-- Keeping it here
+-- puts the cursor in the same file, and the same transaction, as the work it
+-- describes.
+CREATE TABLE IF NOT EXISTS "_sync_state" (
+  "key"   TEXT PRIMARY KEY,
+  "value" TEXT NOT NULL
+);
 `;
 
 export interface OutboxEntry {
@@ -200,4 +216,64 @@ export function conflicts(db: Database.Database): OutboxEntry[] {
          FROM "_outbox" WHERE conflictAt IS NOT NULL ORDER BY seq ASC`,
     )
     .all() as OutboxEntry[];
+}
+
+/** Read a sync cursor. Absent is normal — a device that has never pulled. */
+export function getState(db: Database.Database, key: string): string | undefined {
+  const row = db.prepare(`SELECT value FROM "_sync_state" WHERE key = ?`).get(key) as
+    | { value: string }
+    | undefined;
+  return row?.value;
+}
+
+export function setState(db: Database.Database, key: string, value: string): void {
+  db.prepare(
+    `INSERT INTO "_sync_state" (key, value) VALUES (?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+  ).run(key, value);
+}
+
+/**
+ * Ids this device is still holding — created locally, not yet accepted.
+ *
+ * A snapshot merge must not overwrite these. The server's copy of such a row is
+ * either absent (so nothing to clobber) or STALE relative to a local edit that
+ * has not been pushed yet, and `INSERT OR REPLACE` would silently discard the
+ * newer local version — losing exactly the work the outbox exists to protect.
+ */
+export function pendingRecordIds(db: Database.Database): Set<string> {
+  const rows = db
+    .prepare(`SELECT recordIds FROM "_outbox" WHERE pushedAt IS NULL AND recordIds IS NOT NULL`)
+    .all() as Array<{ recordIds: string | null }>;
+  const out = new Set<string>();
+  for (const r of rows) {
+    if (!r.recordIds) continue;
+    for (const id of JSON.parse(r.recordIds) as string[]) out.add(id);
+  }
+  return out;
+}
+
+/**
+ * Put entries the server never received back in the queue.
+ *
+ * `reconcile` asks which of the ids we believe we pushed are absent upstream;
+ * this is the half that acts on the answer. Clearing `pushedAt` is enough —
+ * `pending()` picks them up in the original sequence order, so causal order
+ * survives the round trip. Replaying something that DID land is safe: every
+ * create route is idempotent on the client-supplied id (lib/idempotency.ts) and
+ * answers 200 rather than duplicating.
+ */
+export function requeue(db: Database.Database, missingIds: string[]): number {
+  if (missingIds.length === 0) return 0;
+  const wanted = new Set(missingIds);
+  const rows = db
+    .prepare(`SELECT seq, recordIds FROM "_outbox" WHERE pushedAt IS NOT NULL AND recordIds IS NOT NULL`)
+    .all() as Array<{ seq: number; recordIds: string }>;
+  const seqs = rows
+    .filter((r) => (JSON.parse(r.recordIds) as string[]).some((id) => wanted.has(id)))
+    .map((r) => r.seq);
+  if (seqs.length === 0) return 0;
+  const stmt = db.prepare(`UPDATE "_outbox" SET pushedAt = NULL WHERE seq = ?`);
+  db.transaction(() => seqs.forEach((seq) => stmt.run(seq)))();
+  return seqs.length;
 }

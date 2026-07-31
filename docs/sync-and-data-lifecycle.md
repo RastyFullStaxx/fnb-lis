@@ -453,3 +453,49 @@ exist yet, and all of them are testable through `verify:sync`.
 5. **Staleness rules on the Full Audit.** Server-side flags; the desktop enforces the refusal.
 6. **Outbox, merge-on-pull, and the conflict inbox.** These live in the Electron app, and are the
    point at which it starts being written.
+
+---
+
+## 7.8 What one cycle actually does
+
+Corrected 2026-07-31, after finding that three of these steps existed only on
+paper — the code shipped, ran clean, reported "synced", and did not do them.
+
+```
+push  →  reconcile (+ re-queue)  →  ack  →  pull  →  MERGE  →  advance cursor
+```
+
+- **push** replays the outbox in sequence order. Order is causal, so a hard
+  failure stops the run rather than skipping ahead.
+- **reconcile** asks the server which ids this device believes it pushed never
+  arrived, and **puts those entries back in the queue** by clearing `pushedAt`.
+  Replay is safe: every create route is idempotent on the client-supplied id, so
+  a replay of something that did land answers 200 instead of duplicating.
+  *Previously the answer was counted and discarded — a device that lost a
+  request stayed permanently un-synced with no route back.*
+- **ack** only when the queue drained AND nothing was missing, so
+  `Device.lastSyncAt` never advertises a sync that did not happen.
+- **pull + MERGE** applies the snapshot to the mirror, skipping any row this
+  device still holds unpushed work on — the server's copy of such a row is older
+  than the local edit by definition, and `INSERT OR REPLACE` would discard the
+  newer one silently. *Previously the snapshot was fetched and thrown away: after
+  first-run provisioning the mirror never received another byte from the server.
+  A void entered in the browser, a corrected line, a new price — none of it
+  reached the bar PC, while the desktop's Full Audit went on reporting the
+  numbers it was provisioned with.*
+- **cursor** (`_sync_state.lastPullAt`) advances only after a merge succeeds and
+  lives in the mirror, not `config.json`. *Previously it came from an env var
+  read once at boot: the utility process cannot write config (safeStorage is in
+  the main process), so `since` stayed frozen at the value first-run setup saw,
+  for the life of the install.*
+
+The merge runs even on a stalled cycle. Inbound truth does not depend on
+outbound success, and a device that cannot push is precisely the one whose
+operator most needs to see what the office changed.
+
+**Known lever, deliberately unused.** The snapshot is whole-location by design
+(see the endpoint's own note in `routes/sync.ts`). `from` bounds history if a
+client ever accumulates enough for that to hurt; at a megabyte or two per
+location it is not worth the complexity yet. This is why a cycle applies the
+same row count each time rather than a shrinking delta — `since` adds late edits
+to old periods back in, it does not narrow the window.

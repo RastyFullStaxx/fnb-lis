@@ -2676,3 +2676,69 @@ it (confirmed in `dist/host.mjs`). Launches clean, serves the SPA and
 database. There is no hard delete for a count — correctly — so it was voided
 with the reason "Created accidentally while testing validation messages", and
 sits in the trail as a VOID row on 2026-07-30 at Main Bar.
+
+---
+
+## 2026-07-31 (sixth pass) — the desktop was not syncing inbound at all
+
+Asked to harden sync edge cases. The edge cases were fine; the main path was
+not. Three steps of the cycle existed only in comments — the code shipped, ran
+without error, and reported `synced: true` while doing none of them.
+
+### 1. Pulled snapshots were thrown away
+
+`cycle()` called `pull()` and discarded the result. `applySnapshot` was reachable
+only from first-run provisioning and the test harness. **After setup, the mirror
+never received another byte from the server** — a void entered in the browser, a
+corrected line, a new price, a new item: none of it reached the bar PC, while the
+desktop's own Full Audit kept reporting the numbers it was provisioned with. The
+inbound half of two-way sync, which is most of why the desktop exists, was never
+wired up.
+
+Proven end to end: supplier created in the browser → one `/_desktop/sync-now` →
+present in `mirror.db`. Before the fix a cycle applied 0 rows; now 520.
+
+### 2. Reconciliation detected missing records and did nothing
+
+`reconcile()`'s own doc says "and re-queue them… This closes it". It returned
+`{ missing }` and `cycle` counted the length. Nothing re-queued, and the entries
+were already marked pushed so `pending()` would never look at them again — a
+device that lost a request in flight stayed permanently un-synced with no route
+back. `requeue()` clears `pushedAt`; replay is safe because every create route is
+idempotent on the client-supplied id.
+
+### 3. The pull cursor never advanced
+
+`FNB_LAST_PULL_AT` was read from the environment once at process start.
+`writeConfig({ lastPullAt })` only ever ran during first-run setup, and the
+utility process cannot write config anyway — safeStorage lives in the main
+process. So `since` was frozen at whatever provisioning saw, for the life of the
+install. The cursor now lives in `_sync_state` inside the mirror, beside the
+outbox, and advances only after a merge actually lands.
+
+### 4. The merge could have destroyed unpushed work
+
+`pull`'s doc promised "rows referenced by unpushed outbox entries are left
+alone"; `applySnapshot` did a blanket `INSERT OR REPLACE`. Harmless while pull
+was inert — and a data-loss bug the moment it wasn't, since the server's copy of
+a locally-edited draft is older than the edit waiting in the queue.
+`applySnapshot` now takes the protected id set and reports what it skipped.
+
+### Verified
+
+- End-to-end inbound sync, browser → mirror (above).
+- Cursor persists and advances across cycles (08:12:26 → 08:12:54).
+- Focused checks on the new primitives, run once against a throwaway DB: re-queue
+  targets only the entry owning a missing id, preserves causal replay order, is a
+  no-op for ids the server has; protected ids include unpushed and exclude
+  pushed; cursor round-trips and overwrites in place. 10/10.
+- `verify:seed` PASS · `verify:sync` PASS · `verify:mirror` MIRROR MATCHES THE
+  SERVER. Typechecks clean across all three workspaces.
+
+### Notes
+
+- A SQL comment containing backticks closed the surrounding JS template literal
+  again — **third time this session**. The comment in `outbox.ts` now says so.
+- Housekeeping: verification created supplier `SYNCTEST-4421` on Main Bar. There
+  is no delete route for suppliers, so it is renamed
+  "SYNCTEST-4421 (test, safe to delete)" and deactivated.
