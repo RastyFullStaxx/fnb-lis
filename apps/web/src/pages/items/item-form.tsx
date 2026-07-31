@@ -176,38 +176,41 @@ export function ItemFormSheet({
               const vErr = form.formState.errors.variants?.[i];
               return (
                 <div key={field.id} className="space-y-3 rounded-lg border p-3">
-                  <div className="flex items-end gap-2">
-                    <div className="w-28 space-y-1.5">
-                      <Label className="text-xs">Size</Label>
-                      <QuantityInput
-                        className="tnum"
-                        {...(vErr?.size ? { "aria-invalid": true } : {})}
-                        {...form.register(`variants.${i}.size`, { valueAsNumber: true })}
-                      />
-                    </div>
-                    <div className="flex-1 space-y-1.5">
-                      <Label className="text-xs">Unit</Label>
-                      <Select
-                        value={form.watch(`variants.${i}.unitId`)}
-                        onValueChange={(v) => form.setValue(`variants.${i}.unitId`, v, { shouldValidate: true })}
-                      >
-                        <SelectTrigger aria-invalid={vErr?.unitId ? true : undefined}>
-                          <SelectValue placeholder="Unit" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {(units.data ?? []).map((u) => (
-                            <SelectItem key={u.id} value={u.id}>
-                              {u.name} · {u.kind.toLowerCase()}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                  <div className="flex items-start gap-2">
+                    <div className="grid flex-1 grid-cols-2 items-start gap-2">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Size</Label>
+                        <QuantityInput
+                          className="tnum"
+                          {...(vErr?.size ? { "aria-invalid": true } : {})}
+                          {...form.register(`variants.${i}.size`, { valueAsNumber: true })}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Unit</Label>
+                        <Select
+                          value={form.watch(`variants.${i}.unitId`)}
+                          onValueChange={(v) => form.setValue(`variants.${i}.unitId`, v, { shouldValidate: true })}
+                        >
+                          <SelectTrigger aria-invalid={vErr?.unitId ? true : undefined}>
+                            <SelectValue placeholder="Unit" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {(units.data ?? []).map((u) => (
+                              <SelectItem key={u.id} value={u.id}>
+                                {u.name} · {u.kind.toLowerCase()}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
                     {variants.fields.length > 1 && (
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon"
+                        className="mt-6"
                         aria-label="Remove size"
                         onClick={() => variants.remove(i)}
                       >
@@ -280,7 +283,7 @@ export function ItemFormSheet({
                       )}
 
                       {netMode && canEditWeights && (
-                        <div className="grid grid-cols-2 items-end gap-2">
+                        <div className="grid grid-cols-2 items-start gap-2">
                           <div className="space-y-1.5">
                             <Label className="text-xs">Empty Weight</Label>
                             <QuantityInput
@@ -320,50 +323,54 @@ export function ItemFormSheet({
                       )}
 
                       {contentTracked && canEditWeights && (
-                        <div className="grid grid-cols-2 items-end gap-2 sm:grid-cols-3">
-                          <div className="space-y-1.5">
-                            <Label className="text-xs">Empty Weight</Label>
-                            <QuantityInput
-                              className="tnum"
-                              placeholder="empty container"
-                              {...form.register(`variants.${i}.tareWeight`, {
-                                setValueAs: (v) => (v === "" || v === null ? null : Number(v)),
-                              })}
-                            />
+                        <div className="space-y-2">
+                          <div className="grid grid-cols-2 items-start gap-2">
+                            <div className="space-y-1.5">
+                              <Label className="text-xs">Empty Weight</Label>
+                              <QuantityInput
+                                className="tnum"
+                                placeholder="empty container"
+                                {...form.register(`variants.${i}.tareWeight`, {
+                                  setValueAs: (v) => (v === "" || v === null ? null : Number(v)),
+                                })}
+                              />
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label className="text-xs">Weight Unit</Label>
+                              <Select
+                                value={form.watch(`variants.${i}.tareWeightUnit`) ?? ""}
+                                onValueChange={(v) =>
+                                  form.setValue(`variants.${i}.tareWeightUnit`, (v || null) as "g" | "oz" | null)
+                                }
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="g / oz" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="g">g</SelectItem>
+                                  <SelectItem value="oz">oz</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
                           </div>
-                          <div className="space-y-1.5">
-                            <Label className="text-xs">Weight Unit</Label>
-                            <Select
-                              value={form.watch(`variants.${i}.tareWeightUnit`) ?? ""}
-                              onValueChange={(v) =>
-                                form.setValue(`variants.${i}.tareWeightUnit`, (v || null) as "g" | "oz" | null)
-                              }
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder="g / oz" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="g">g</SelectItem>
-                                <SelectItem value="oz">oz</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div className="col-span-2 space-y-1.5 sm:col-span-1">
-                            <Label className="flex items-center gap-1 text-xs">
-                              <Scale className="size-3" /> Liquid Weight
-                            </Label>
-                            <QuantityInput
-                              className="tnum"
-                              placeholder={
-                                category?.defaultDensityFactor
-                                  ? `${category.defaultDensityFactor} (from ${category.name})`
-                                  : "ml per weight unit"
-                              }
-                              {...form.register(`variants.${i}.densityFactor`, {
-                                setValueAs: (v) => (v === "" || v === null ? null : Number(v)),
-                              })}
-                            />
-                            <p className="text-xs text-muted-foreground">
+                          <div className="grid grid-cols-2 items-start gap-2">
+                            <div className="space-y-1.5">
+                              <Label className="flex items-center gap-1 text-xs">
+                                <Scale className="size-3" /> Liquid Weight
+                              </Label>
+                              <QuantityInput
+                                className="tnum"
+                                placeholder={
+                                  category?.defaultDensityFactor
+                                    ? `${category.defaultDensityFactor} (from ${category.name})`
+                                    : "ml per weight unit"
+                                }
+                                {...form.register(`variants.${i}.densityFactor`, {
+                                  setValueAs: (v) => (v === "" || v === null ? null : Number(v)),
+                                })}
+                              />
+                            </div>
+                            <p className="self-center text-xs text-muted-foreground">
                               Liquid Weight: ml of liquid per gram/oz of weight — converts a scale weight into remaining volume.
                             </p>
                           </div>
