@@ -5,7 +5,7 @@ import { Plus, Scale, Tag, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { can, itemCreate, itemUpdate, type ItemCreate, type ItemUpdate, type Role } from "@fnb/core";
 import { useMe } from "@/api/auth";
-import { useCategories, useCreateItem, useUnits, useUpdateItem } from "@/api/master";
+import { useCategories, useCreateItem, useProductTypes, useUnits, useUpdateItem } from "@/api/master";
 import { variantLabel, type Item, type ItemVariant } from "@/api/types";
 import { defaultWeighUnit, useUnitSystem } from "@/lib/preferences";
 import { ApiError } from "@/api/http";
@@ -54,6 +54,7 @@ export function ItemFormSheet({
   onOpenChange: (open: boolean) => void;
 }) {
   const categories = useCategories();
+  const productTypes = useProductTypes();
   const units = useUnits();
   // The tare / liquid-weight library is LIS's own data — a client manager runs
   // his catalog but never edits the weights (client decision 2026-07-25). The
@@ -73,13 +74,21 @@ export function ItemFormSheet({
   });
   const variants = useFieldArray({ control: form.control, name: "variants" });
 
+  // Category list is long, so Type narrows it first — Category stays empty
+  // and disabled until a Type is picked, then only shows categories of that type.
+  const [selectedType, setSelectedType] = useState<string>("");
+
   useEffect(() => {
-    if (open) form.reset({ name: "", categoryId: "", description: null, variants: [emptyVariant()] });
+    if (open) {
+      form.reset({ name: "", categoryId: "", description: null, variants: [emptyVariant()] });
+      setSelectedType("");
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, form]);
 
   const categoryId = form.watch("categoryId");
   const category = categories.data?.find((c) => c.id === categoryId);
+  const categoriesForType = (categories.data ?? []).filter((c) => c.productType === selectedType);
 
   // The server answers 409 SIMILAR_ITEM when a new name looks like a typo of an
   // existing one. Hold the message here and let the user decide — banning the
@@ -122,23 +131,49 @@ export function ItemFormSheet({
             )}
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="item-category">Category</Label>
-            <Select value={categoryId} onValueChange={(v) => form.setValue("categoryId", v, { shouldValidate: true })}>
-              <SelectTrigger id="item-category">
-                <SelectValue placeholder="Choose a category" />
-              </SelectTrigger>
-              <SelectContent>
-                {(categories.data ?? []).map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name} · {c.productType}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {form.formState.errors.categoryId && (
-              <p className="text-sm text-destructive">Choose a category</p>
-            )}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="item-type">Type</Label>
+              <Select
+                value={selectedType}
+                onValueChange={(v) => {
+                  setSelectedType(v);
+                  // Changing Type invalidates whatever Category was picked under the old Type.
+                  form.setValue("categoryId", "", { shouldValidate: true });
+                }}
+              >
+                <SelectTrigger id="item-type">
+                  <SelectValue placeholder="Choose a type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(productTypes.data?.productTypes ?? []).map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {t}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="item-category">Category</Label>
+              <Select
+                value={categoryId}
+                onValueChange={(v) => form.setValue("categoryId", v, { shouldValidate: true })}
+                disabled={!selectedType}
+              >
+                <SelectTrigger id="item-category">
+                  <SelectValue placeholder={selectedType ? "Choose a category" : "Choose a type first"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {categoriesForType.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -445,6 +480,7 @@ export function ItemEditSheet({
   onOpenChange: (open: boolean) => void;
 }) {
   const categories = useCategories();
+  const productTypes = useProductTypes();
   const updateItem = useUpdateItem();
   // Track only the id and derive the variant from the live item, so the dialog
   // always shows fresh values after a save instead of a stale snapshot.
@@ -463,6 +499,21 @@ export function ItemEditSheet({
     },
   });
   const categoryId = form.watch("categoryId");
+
+  // Type starts pre-filled from the item's existing category (so the field
+  // isn't blank on open) but the user can still switch it to move categories.
+  const [selectedType, setSelectedType] = useState<string>("");
+  const [typeTouched, setTypeTouched] = useState(false);
+  useEffect(() => {
+    if (item && !typeTouched) setSelectedType(item.category.productType);
+  }, [item, typeTouched]);
+  useEffect(() => {
+    if (!item) {
+      setSelectedType("");
+      setTypeTouched(false);
+    }
+  }, [item]);
+  const categoriesForType = (categories.data ?? []).filter((c) => c.productType === selectedType);
 
   const onSubmit = form.handleSubmit(async (values) => {
     if (!item) return;
@@ -505,23 +556,53 @@ export function ItemEditSheet({
             )}
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="item-edit-category">Category</Label>
-            <Select
-              value={categoryId}
-              onValueChange={(v) => form.setValue("categoryId", v, { shouldValidate: true, shouldDirty: true })}
-            >
-              <SelectTrigger id="item-edit-category">
-                <SelectValue placeholder="Choose a category" />
-              </SelectTrigger>
-              <SelectContent>
-                {(categories.data ?? []).map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name} · {c.productType}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="item-edit-type">Type</Label>
+              <Select
+                value={selectedType}
+                onValueChange={(v) => {
+                  setTypeTouched(true);
+                  setSelectedType(v);
+                  // Switching Type off the item's original one clears Category,
+                  // since the old category no longer belongs to this Type's list.
+                  if (v !== item?.category.productType) {
+                    form.setValue("categoryId", "", { shouldValidate: true, shouldDirty: true });
+                  }
+                }}
+              >
+                <SelectTrigger id="item-edit-type">
+                  <SelectValue placeholder="Choose a type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(productTypes.data?.productTypes ?? []).map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {t}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="item-edit-category">Category</Label>
+              <Select
+                value={categoryId}
+                onValueChange={(v) => form.setValue("categoryId", v, { shouldValidate: true, shouldDirty: true })}
+                disabled={!selectedType}
+              >
+                <SelectTrigger id="item-edit-category">
+                  <SelectValue placeholder={selectedType ? "Choose a category" : "Choose a type first"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {categoriesForType.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <div className="space-y-2">

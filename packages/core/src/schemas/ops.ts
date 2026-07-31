@@ -59,9 +59,10 @@ export const countLineCreate = z
       if (val.qtyFull === undefined) {
         ctx.addIssue({ code: "custom", path: ["qtyFull"], message: "Enter the counted quantity" });
       }
-    } else if (val.remainingContent === undefined) {
+    } else if (val.remainingContent === undefined && val.totalAmount === undefined) {
       // Weighing path — needs scale + tare. (Skipped entirely when the counter
-      // enters the remaining amount directly.)
+      // enters the remaining amount directly, or a combined total that the
+      // server will split via splitTotalAmount into qtyFull/remainingContent.)
       if (val.scaleWeight === undefined) {
         ctx.addIssue({ code: "custom", path: ["scaleWeight"], message: "Enter the scale reading" });
       }
