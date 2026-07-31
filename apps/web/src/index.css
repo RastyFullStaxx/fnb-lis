@@ -309,6 +309,33 @@ html[data-font-size="x-large"] {
   tr {
     break-inside: avoid;
   }
+
+  /* Nothing may clip on paper.
+     The app is a viewport-height shell (`h-svh`) whose page content and table
+     surface both scroll — correct on screen, silently destructive on paper. A
+     printed Full Audit measured 463px of box around 1337px of table, so two
+     thirds of the rows simply did not exist in the output, with nothing saying
+     so. On a report whose whole purpose is that its numbers are complete, that
+     is the worst possible failure mode.
+
+     Height first, so the flex chain stops being viewport-bound, then overflow
+     on everything inside the page. `.sr-only` is excluded deliberately: it
+     relies on clipping to stay invisible, and unclipping it would print the
+     screen-reader text. */
+  html,
+  body,
+  .group\/sidebar-wrapper,
+  [data-slot="sidebar-inset"],
+  [data-slot="page-content"] {
+    height: auto !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+  [data-slot="page-content"] *:not(.sr-only) {
+    overflow: visible !important;
+    max-height: none !important;
+  }
 }
 
 /* Sign-in success: the brief beat between "correct credentials" and the

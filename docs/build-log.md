@@ -2406,7 +2406,7 @@ desktop-owned screen and it was already title-cased.
 
 ## 2026-07-31 (third pass) — failed loads stopped lying
 
-Web only; desktop still pending one `npm run dist` (see the previous entry).
+Web only at the time; the desktop caught up in the pass below.
 
 ### The long-standing pause mystery, solved
 
@@ -2513,3 +2513,70 @@ before pending** at every site.
 - 8 screens re-checked with the network restored: real rows, no stuck skeletons.
 - Golden anchors unchanged: −330.6857142857142 / −869.5714285714284 and
   −537 / −1410. Typechecks and production build clean.
+
+---
+
+## 2026-07-31 (fourth pass) — printing, and the desktop catches up
+
+### Printing dropped two thirds of the Full Audit
+
+The print stylesheet was thoughtful — A4 landscape, sidebar hidden, `thead`
+repeated across sheets, `break-inside: avoid` on rows, `print:hidden` on the
+filter bar. It never reset a scroll container.
+
+The app is a viewport-height shell (`h-svh`) whose page content and table
+surface both scroll. Correct on screen; on paper `overflow: auto` clips to the
+box. Measured on the Full Audit: **a 463px box around a 1337px table — 874px,
+about two thirds of the rows, absent from the output** with nothing saying so.
+On the one report the client trusts above all, whose value is that its numbers
+are complete, that is the worst available failure.
+
+Fixed by unbinding height on the shell chain and overflow on everything inside
+`[data-slot="page-content"]`, in that order. `.sr-only` is excluded on purpose —
+it relies on clipping to stay invisible, and unclipping it would print the
+screen-reader text. Verified by applying the same rules at `media="all"`:
+874px clipped → **0**, `.sr-only` still hidden.
+
+### Session-expired notice reached only half the users
+
+`?expired=1` renders "Your session ended — sign in again to continue." — inside
+the password branch only. The desktop signs in with a PIN, so a device booted by
+the new 401 redirect landed on the keypad with no word about why. Hoisted above
+the branch; both credentials now explain it. Same drift as the button ordering
+and the "Go Back" convention: a rule written once, into one of two paths.
+
+### Desktop
+
+Rebuilt and reinstalled — the app now carries all four passes (verified against
+the running local server: print fix, scrollbar guard, sign-in animation,
+`queryFailed`/`hasFocus`, the 401 redirect, activity folding, Settings grouping,
+"Go Back").
+
+Two desktop-only faults:
+
+- **No way to undo an accidental zoom.** Removing the File/Edit menu took
+  Ctrl+0/+/− with it — the same loss that had already been noticed and repaired
+  for reload and devtools, but zoom was missed. Ctrl+scroll, and pinch on a
+  touchscreen bar PC, still zoom the renderer, so someone who knocks the wheel
+  mid-count is stuck at 150% with no menu and no shortcut for the rest of the
+  session. It clears on restart only by accident: the local server takes a new
+  port each launch, so the origin Electron remembers zoom against differs.
+  Now re-registered beside the reload binding.
+- **No minimum window size.** An Electron window has none unless given one, so
+  it could be dragged to a sliver. `minWidth: 880` / `minHeight: 600` — the web
+  app is clean to ~820px, and 880 keeps the icon rail plus a readable table.
+  Verified: a `MoveWindow` to 400×300 clamps to 880×600.
+
+### Verified
+
+- Print: 874px clipped → 0 clipped, `.sr-only` still hidden.
+- Expired notice on both the password and PIN paths.
+- Desktop installs, launches, serves the SPA (200) and `/_desktop/people`
+  (5 users, "Front bar PC"); `host.log` clean.
+- Window minimum enforced at the OS level.
+- Golden anchors unchanged. Typechecks clean across server, web and desktop.
+
+**Not verified by keypress:** the zoom accelerators. Screen access to the
+packaged app was declined, so they are confirmed present in the installed
+`app.asar` and follow the identical, working `before-input-event` binding beside
+them — but no one has pressed Ctrl+0.

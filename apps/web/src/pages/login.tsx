@@ -99,6 +99,15 @@ export function LoginPage() {
 
         <div className="flex flex-1 items-center pb-16">
           <div className="mx-auto w-full max-w-sm">
+            {/* Above the branch, not inside one: the desktop signs in with a PIN
+                and used to land on the keypad with no word about WHY it had
+                signed the person out. Same 401, same explanation, either
+                credential. */}
+            {sessionExpired && !showForgotPassword && (
+              <p role="status" className="mb-6 rounded-md bg-white/95 px-3 py-2.5 text-sm font-medium text-foreground">
+                Your session ended — sign in again to continue.
+              </p>
+            )}
             {showForgotPassword ? (
               <div className="text-center">
                 <KeyRound className="mx-auto mb-3 size-8 text-sidebar-foreground/50" />
@@ -122,11 +131,6 @@ export function LoginPage() {
               <DesktopPinSignIn />
             ) : (
               <>
-                {sessionExpired && (
-                  <p role="status" className="mb-6 rounded-md bg-white/95 px-3 py-2.5 text-sm font-medium text-foreground">
-                    Your session ended — sign in again to continue.
-                  </p>
-                )}
                 <div className="mb-8">
                   <h1 className="text-xl font-semibold tracking-tight text-balance text-sidebar-foreground">
                     Welcome back

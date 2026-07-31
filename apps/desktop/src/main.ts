@@ -264,6 +264,16 @@ async function createWindow(): Promise<void> {
   win = new BrowserWindow({
     width: 1280,
     height: 800,
+    /**
+     * A floor, because nothing else provides one.
+     *
+     * The web app is responsive and clean down to ~820px, but an Electron
+     * window has no minimum unless you give it one — it can be dragged to a
+     * sliver. 880 keeps the sidebar's icon rail plus a readable table; 600 of
+     * height keeps a count's item picker and Save on screen together.
+     */
+    minWidth: 880,
+    minHeight: 600,
     show: false,
     // Belt and braces: also stops the bar reappearing on Alt.
     autoHideMenuBar: true,
@@ -318,6 +328,33 @@ async function createWindow(): Promise<void> {
     if (input.control && input.shift && key === "i") {
       win?.webContents.toggleDevTools();
       event.preventDefault();
+    }
+    /**
+     * Zoom, for the same reason reload is here.
+     *
+     * Ctrl+scroll — and pinch, on a bar PC with a touchscreen — still zooms the
+     * renderer, but removing the menu took Ctrl+0/+/− with it. Someone who
+     * knocks the wheel mid-count is left at 150% with no menu, no shortcut and
+     * no way back for the rest of the session; it only clears on restart, and
+     * only by accident, because the local server takes a new port each launch
+     * so the origin Electron remembers the zoom against is different anyway.
+     *
+     * Ctrl+0 is the one that matters. The steps are here so the pair someone
+     * reaches for after over-zooming both exist.
+     */
+    if (input.control && !input.shift) {
+      const wc = win?.webContents;
+      if (!wc) return;
+      if (key === "0") {
+        wc.setZoomLevel(0);
+        event.preventDefault();
+      } else if (key === "=" || key === "+") {
+        wc.setZoomLevel(Math.min(wc.getZoomLevel() + 0.5, 3));
+        event.preventDefault();
+      } else if (key === "-") {
+        wc.setZoomLevel(Math.max(wc.getZoomLevel() - 0.5, -3));
+        event.preventDefault();
+      }
     }
   });
 
