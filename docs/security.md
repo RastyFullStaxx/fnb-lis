@@ -14,7 +14,7 @@ Run the harness after touching anything in this document's scope:
 npm run verify:security -w @fnb/server
 ```
 
-91 checks against the real Hono app on a throwaway database. Same shape as `verify:seed` and
+105 checks against the real Hono app on a throwaway database. Same shape as `verify:seed` and
 `verify:sync` — one runnable script, exits non-zero when a guarantee breaks. Runs in CI on every
 push.
 
@@ -79,31 +79,38 @@ Four boundaries carry real weight:
 
 An honest score, with the reasoning rather than just a number.
 
-### Score: **93 / 100** — strong throughout; what remains is deployment, not code
+### Score: **94 / 100** — strong throughout; what remains is deployment, not code
 
 *Tracked across 2026-08-01: **78** (initial audit) → **82** (MFA) → **93** (DR, pipeline, KDF,
-route-coverage) → **91** after an adversarial review found five bypasses in the day's own MFA work,
-→ **93** once they were fixed and pinned. The remaining seven points are almost entirely things only
-you can do — terminate TLS, put backups on another machine, run the quarterly drill.
+route-coverage) → **91** when review round one found five bypasses in the day's own MFA work → **93**
+once fixed → **89** when round two found nine more, six of them introduced by round one's fixes →
+**94** once those were fixed and pinned. The remaining points are almost entirely things only you can
+do — terminate TLS, put backups on another machine, run the quarterly drill.
 See [§5](#5-reaching-100).*
 
-**The most useful thing learned today is in that dip.** Four of the five bypasses were introduced by
-the code that added a security control, and one of them was scored as a PASS by the harness written
-alongside it. A check that asserts the wrong thing is worse than no check, because it manufactures
-confidence. Independent adversarial review is not optional on auth code.
+**The most useful thing learned here is in those dips, and it is uncomfortable.** Across two review
+rounds, **eleven of the sixteen security defects were introduced by the security work itself** —
+including a password check that accepted any input against a malformed hash, a restore drill that
+passed on an empty database, a dependency gate that announced success when it had not run, and two
+successive wrong attempts at the same privilege cap. Twice, a harness written alongside a control
+asserted the wrong thing and scored the bug green.
+
+A check that asserts the wrong thing is worse than no check, because it manufactures confidence.
+Independent adversarial review is not optional on security code — least of all on security code
+written to fix security problems.
 
 That splits unevenly, and the split is the useful part:
 
 | Domain | Score | Why |
 |---|---|---|
-| Authorization / tenancy | 98 | Server-side on every route, 404-not-403, nested-relation scoping, no IDOR — and now **all 179 routes probed unauthenticated on every CI run** |
+| Authorization / tenancy | 97 | Server-side on every route, 404-not-403, nested-relation scoping, no IDOR, **all 179 routes probed unauthenticated on every CI run** (every one answers 401). Marked down for five middleware-placement bugs found in one day |
 | Audit integrity | 90 | Mutations and their log rows share a `$transaction`. Immutable records with void chains |
-| Authentication | 94 | TOTP for ADMIN/OWNER, scrypt at 2× the OWASP floor with lazy re-hashing. Marked down from 96: five real bypasses shipped in the first cut of it and were caught only by adversarial review |
+| Authentication | 93 | TOTP for ADMIN/OWNER, scrypt at 2× the OWASP floor with lazy re-hashing, malformed hashes now rejected. Marked down: **eight** real bypasses shipped across two cuts of this work and were caught only by adversarial review |
 | Input handling / injection | 88 | Prisma everywhere, zod on every body, no raw SQL on user input, no dynamic execution |
 | Transport / edge hardening | 75 | Headers, limits and per-request `Secure` all shipped. Stuck at 75 until TLS is actually terminated — that one is yours |
 | Secrets management | 80 | `.env` untracked and clean, gitleaks in CI. Remaining: back up `FNB_MFA_KEY` separately, and a rehearsed rotation |
-| Availability / DR | 85 | Verified tiered backups + a restore drill that re-runs the real reconciliation. Remaining: schedule it, and put a copy on another machine |
-| Pipeline security | 88 | CI runs typechecks, all three harnesses, an expiring-exception audit gate, and gitleaks over full history. Remaining: branch protection |
+| Availability / DR | 88 | Verified tiered backups, an absolute non-vacuity floor, and a drill that re-runs the real reconciliation. Remaining: schedule it, and put a copy on another machine |
+| Pipeline security | 90 | CI runs typechecks, all three harnesses, gitleaks over full history, and an audit gate that fails CLOSED when it cannot run and matches exceptions by advisory identity. Remaining: branch protection |
 
 The pattern that shaped the day's work: the code was well-built and the operations around it barely
 existed. DR and pipeline — 30 and 20 at the start — were worth more than every remaining code
@@ -351,6 +358,117 @@ sign in again to zero the counter, and repeat indefinitely. Six digits with an u
 not a second factor. *Fix:* the counter clears in `completeLogin` — once **every** factor the
 account requires has been proved.
 
+---
+
+### Round-two adversarial review — including the fixes from round one
+
+The round-one fixes were themselves reviewed. **Six of the nine findings below were introduced by
+round one**, and two were in code written specifically to close a security hole. The pattern is now
+established beyond argument: security fixes need review at least as much as the code they fix.
+
+#### C-1 · The restore drill reported PASSED on a completely empty database — FIXED
+Every content check compares the restore against a manifest derived from **the same backup**, which
+is deliberate — comparing to a live database cries wolf on ordinary business activity. But it makes
+the comparisons self-referential, so zeros match zeros: 15 count checks of `0 === 0`, a digest loop
+that never iterates, and the one anti-vacuity guard (`digestedFields > 5`) unreachable because there
+were no digests to guard. Reproduced: all 37 tables emptied, `backup` printed OK, `restore-drill`
+printed **RESTORE DRILL PASSED**.
+
+It compounded. `prune` awards each daily slot to the newest file claiming it, so after 48 hours the
+empty backups would start **evicting the real ones**.
+
+*Fix:* an absolute floor before any relative check counts as evidence — `backup` refuses to keep a
+database with zero users or locations (no install of this product has either), and the drill asserts
+users, locations, an audit trail, counted stock, and at least one auditable period. My own comment
+said "a check that always passes is worse than no check"; the guard I wrote only protected a
+location that already had a digest.
+
+#### H-9 · `verifyPassword` accepted ANY password against a malformed hash — FIXED
+`Buffer.from(x, "hex")` is silently lenient: an empty or non-hex segment yields a **zero-length**
+buffer, which became a zero-length derivation, and `key.length === expected.length &&
+timingSafeEqual(empty, empty)` evaluated to `0 === 0 && true`. Verified:
+`scrypt:32768:8:1:<salt>:` returned `true` for `"literally-anything"`.
+
+This matters for precisely the adversary this system is built against. An insider with database
+access could blank one segment of a `passwordHash` and then sign in as that person with any string,
+leaving a row that still *looks* like a scrypt hash rather than an obvious reset.
+
+*Fix:* every field validated before use — hex of exactly the expected length, integer parameters in
+range. Seven cases pinned in the harness, plus two positive controls.
+
+#### H-10 · The audit gate failed OPEN when npm audit could not run — FIXED
+npm exits non-zero both when it finds advisories and when it fails to reach the registry, and both
+write JSON to stdout. The error payload has no `vulnerabilities` key, so `?? {}` read it as a clean
+tree. Reproduced with `npm_config_registry=http://127.0.0.1:1`: **"PASS — 0 blocking", exit 0.**
+Any registry outage, proxy failure or expired auth turned the dependency gate into a no-op that
+announced success — in CI, where nobody would look.
+
+*Fix:* the response shape is checked; a payload without a `vulnerabilities` object and `metadata`
+throws and exits 1.
+
+#### H-11 · Exceptions were matched by package name only — FIXED
+`EXCEPTIONS.find(e => e.package === name)` meant an exception written for one CVE silently absorbed
+every **future** advisory in that package, including an unrelated RCE. The `advisory` field existed
+but was prose compared to nothing. *Fix:* the GHSA ids must appear in the finding's `via` entries; a
+different advisory in an excepted package blocks and says so.
+
+#### H-12 · An AUDIT_VIEWER could get withheld data out of Stocky — FIXED
+The audit-viewer narrowing keys off a `/reports/` path segment. `/stocky/chat` requires only
+`reports.view` — held by every role — and its tools read `salesReport`, `purchaseReport` and
+`nonRevenueReport`: exactly the reports `AUDIT_VIEWER_REPORTS` withholds as commercially sensitive.
+A third-party viewer barred from the sales report could simply **ask for it in prose**.
+
+*Fix:* audit viewers are refused Stocky outright (404, matching the convention next door). Narrowed
+tool-by-tool would rot the moment a tool is added.
+
+#### H-13 · The `x-acting-user` cap was unsound — FIXED (second attempt)
+Round one capped the claim by position in `ROLES`. That is not a privilege lattice: STAFF (index 3)
+and ACCOUNTANT (index 4) are **incomparable** — STAFF holds `entries.create`, ACCOUNTANT holds
+`reports.export`. "Narrowing" STAFF to ACCOUNTANT therefore handed out an export permission STAFF
+never had: a widening wearing a narrowing's clothes.
+
+*Fix:* `roleSubsumes` compares permission **sets**, derived from `PERMISSIONS` itself so a new
+permission cannot fall outside the check, and a claim that is not subsumed is refused rather than
+silently downgraded. Pinned with a positive control, so the check cannot pass because the route is
+merely broken.
+
+#### H-14 · `isSecureRequest` omitted `Secure` behind a TLS-terminating proxy — FIXED
+The deployment the runbook recommends terminates TLS at Caddy and proxies to Node over plain HTTP,
+so `c.req.url` is `http://…` and the cookie shipped **without** `Secure` unless `FNB_TRUST_PROXY`
+also happened to be set. That is H-1 — two signals disagreeing about production — reintroduced by
+H-1's own fix.
+
+*Fix:* `x-forwarded-proto` is now believed for this decision **without** requiring
+`FNB_TRUST_PROXY`, and that asymmetry against `clientIp()` is the point: a forged
+`X-Forwarded-For` writes false evidence into the audit trail, whereas a forged
+`X-Forwarded-Proto` can only *add* `Secure` — costing the forger their own session over HTTP. The
+two headers have opposite failure modes and deserve opposite defaults.
+
+#### M-8 · The self-reset ban could be sidestepped via `x-acting-user` — FIXED
+`targetId === actor.id` checks the ACTING identity, which a device session chooses. An owner could
+name an equal-role colleague and then clear their own factor. *Fix:* both identities checked —
+`SessionUser.sessionUserId` carries who actually opened the session.
+
+#### M-9 · Fifth middleware-placement bug — FIXED
+`reportRoutes` had two **pathless** `.use()` calls, which Hono registers as
+`/api/locations/:locationId/*` — so they ran on dashboard, Stocky and sync too. Harmless in effect
+(`reports.view` is held by every role), but `dashboardRoutes` carried **no guard of its own** and was
+silently relying on the leak. *Fix:* both scoped to `/reports/*`, and dashboard now states its own
+requirement.
+
+#### M-10 · Manifest failure stopped uploads and pruning — FIXED
+`process.exit(1)` on manifest failure ran before `syncUploads` and `prune`, so a persistent failure
+silently stopped backing up import source documents and stopped retention entirely — while printing
+that the backup was kept. *Fix:* both now run first; the manifest is last because it is the step most
+likely to fail.
+
+### Still open from this round
+
+- **TOTP codes are not single-use** (RFC 6238 §5.2). A code stays valid for its ±1-step window.
+  Needs a `lastTotpStep` column; bounded meanwhile by the per-IP limiter and TLS.
+- **A recovery code is spent before `completeLogin` runs**, which can throw (revoked device, licence
+  cap) — burning the code without granting a session. Annoying, not dangerous; 9 remain.
+
 ### LOW
 
 #### L-1 · `originCheck` passes when `Origin` is absent
@@ -408,6 +526,26 @@ accepted risk gets re-examined instead of forgotten.
 `allowScripts` still permits lifecycle scripts for exactly five packages — `prisma`,
 `@prisma/engines`, `esbuild`, `better-sqlite3`, `electron`. All need them. Known surface, not a
 defect.
+
+#### L-7 · Any user of an establishment can obtain a device session
+`resolveDevice` checks `devices.manage` only when REGISTERING a new machine. Signing in against an
+**already-registered** fingerprint is open to any active user of that establishment — which is the
+intended workflow (staff stand at the bar PC), but it means a STAFF login yields a device-bound
+session with the 365-day TTL meant for a machine.
+
+Bounded, and deliberately left alone:
+- The privilege escalation this used to enable is closed (H-5) — the acting-user claim can no longer
+  widen a role.
+- `Device.status` is re-checked on every request, so revoking the machine cuts every session bound
+  to it at once.
+- The fingerprint is treated as a secret (`routes/devices.ts` withholds it from the list endpoint),
+  though it necessarily sits in plaintext on the bar PC.
+
+The residual is session *lifetime*, not privilege: someone who reads a fingerprint off that machine
+could hold a year-long session at their own role. Shortening it would mean giving the desktop a TTL
+that depends on who signed in, which is exactly the coupling the offline guarantee exists to avoid.
+Revisit only if device sessions ever start being opened by people who are not physically at the
+machine.
 
 #### L-6 · Device registration is trust-on-first-use
 An owner signing in on an unregistered machine registers it. Bounded by `Subscription.maxDevices`,

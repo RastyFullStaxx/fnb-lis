@@ -1,11 +1,15 @@
 import { Hono } from "hono";
 import { allowedProductTypes, can, type Role } from "@fnb/core";
 import { prisma } from "../db";
-import { type AppEnv } from "../middleware/auth";
+import { requirePermission, type AppEnv } from "../middleware/auth";
 import { buildDashboard } from "../services/dashboard";
 import { buildTrends } from "../services/trends";
 
 export const dashboardRoutes = new Hono<AppEnv>()
+  // Stated explicitly. This used to be inherited by accident from a pathless
+  // `.use()` in reportRoutes, which is mounted on the same prefix — the sort of
+  // dependency that vanishes the moment someone tidies the other file.
+  .use("/dashboard", requirePermission("reports.view"))
   .get("/dashboard", async (c) => {
     const location = c.get("location");
     const client = c.get("client");

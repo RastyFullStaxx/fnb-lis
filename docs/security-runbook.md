@@ -67,7 +67,7 @@ on.
 - [ ] `npm run typecheck -w @fnb/server` and `-w @fnb/web`
 - [ ] `npm run verify:seed -w @fnb/server` — golden fixtures intact
 - [ ] `npm run verify:sync -w @fnb/server` — offline mirror guarantees
-- [ ] `npm run verify:security -w @fnb/server` — the 91 checks behind security.md
+- [ ] `npm run verify:security -w @fnb/server` — the 105 checks behind security.md
 - [ ] `npm run audit` passes (the gate, with its reviewed exceptions — see §5)
 - [ ] Both ADMINs enrolled in two-factor, recovery codes stored somewhere that is not the same
       place as the password

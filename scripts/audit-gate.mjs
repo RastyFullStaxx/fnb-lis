@@ -51,20 +51,54 @@ const EXCEPTIONS = [
   },
 ];
 
+/**
+ * Distinguish "audit ran and found things" from "audit never ran".
+ *
+ * npm exits non-zero for BOTH, and both write JSON to stdout — so reading
+ * `err.stdout` and trusting it fails OPEN. When the registry is unreachable npm
+ * emits `{"message":"request to … failed …","error":{…}}` with no
+ * `vulnerabilities` key at all, and `?? {}` then read that as a clean tree: the
+ * gate printed "PASS — 0 blocking" and exited 0. Reproduced with
+ * `npm_config_registry=http://127.0.0.1:1`.
+ *
+ * A dependency gate that announces success when it did not run is worse than
+ * having no gate, because CI goes green and nobody looks. So the shape is
+ * checked: a real report always carries a `vulnerabilities` OBJECT and a
+ * `metadata` block; anything else throws.
+ */
 function auditWorkspace(ws) {
+  let raw;
   try {
-    const out = execFileSync(
-      "npm",
-      ["audit", "--omit=dev", "-w", ws, "--json"],
-      { encoding: "utf-8", shell: process.platform === "win32", maxBuffer: 64 * 1024 * 1024 },
-    );
-    return JSON.parse(out);
+    raw = execFileSync("npm", ["audit", "--omit=dev", "-w", ws, "--json"], {
+      encoding: "utf-8",
+      shell: process.platform === "win32",
+      maxBuffer: 64 * 1024 * 1024,
+    });
   } catch (err) {
     // npm audit exits non-zero WHEN it finds things — that is the normal path
     // here, and its stdout is still the report we want.
-    if (err.stdout) return JSON.parse(err.stdout);
-    throw err;
+    if (!err.stdout) throw err;
+    raw = err.stdout;
   }
+
+  let report;
+  try {
+    report = JSON.parse(raw);
+  } catch {
+    throw new Error(`npm audit for ${ws} did not return JSON:\n${String(raw).slice(0, 400)}`);
+  }
+
+  if (report.error || typeof report.vulnerabilities !== "object" || report.vulnerabilities === null) {
+    const why = report.error?.summary || report.message || "no vulnerabilities object in the response";
+    throw new Error(
+      `npm audit did not run for ${ws} — ${why}\n` +
+        "Refusing to report PASS on an audit that never happened (registry down, proxy, or auth).",
+    );
+  }
+  if (!report.metadata) {
+    throw new Error(`npm audit for ${ws} returned no metadata block; treating as not-run.`);
+  }
+  return report;
 }
 
 const today = new Date().toISOString().slice(0, 10);
@@ -73,14 +107,55 @@ let excepted = 0;
 let expired = 0;
 
 for (const ws of SHIPPING_WORKSPACES) {
-  const report = auditWorkspace(ws);
+  let report;
+  try {
+    report = auditWorkspace(ws);
+  } catch (err) {
+    // Fail LOUD and non-zero. The whole point of this file is that a gate which
+    // cannot distinguish "clean" from "did not run" is not a gate.
+    console.error(`
+FAIL — ${err instanceof Error ? err.message : err}
+`);
+    process.exit(1);
+  }
   const vulns = Object.entries(report.vulnerabilities ?? {});
   const gated = vulns.filter(([, v]) => GATE_LEVEL.has(v.severity));
 
   console.log(`\n== ${ws}: ${vulns.length} advisor${vulns.length === 1 ? "y" : "ies"}, ${gated.length} at high/critical`);
 
   for (const [name, v] of gated) {
-    const exception = EXCEPTIONS.find((e) => e.package === name);
+    /**
+     * Matched on package name AND advisory identity.
+     *
+     * Name alone was wrong: an exception written for one CVE silently absorbed
+     * every FUTURE advisory in the same package, including an unrelated RCE.
+     * The `advisory` field existed but was prose nobody compared to anything.
+     * Now the GHSA ids in it must actually appear in this finding's `via`
+     * entries, so a new advisory in an already-excepted package BLOCKS and gets
+     * looked at.
+     */
+    const advisoryIds = new Set(
+      (v.via ?? [])
+        .filter((x) => typeof x === "object")
+        .flatMap((x) => [x.url, x.source].filter(Boolean).map(String)),
+    );
+    const candidate = EXCEPTIONS.find((e) => e.package === name);
+    const exception =
+      candidate &&
+      candidate.advisory
+        .split("/")
+        .map((a) => a.trim())
+        .filter(Boolean)
+        .every((id) => [...advisoryIds].some((seen) => seen.includes(id)))
+        ? candidate
+        : undefined;
+    if (candidate && !exception) {
+      console.log(`  BLOCK  ${name} (${v.severity}) — a DIFFERENT advisory than the one excepted`);
+      console.log(`         excepted: ${candidate.advisory}`);
+      console.log(`         found   : ${[...advisoryIds].join(", ") || "(none reported)"}`);
+      blocking += 1;
+      continue;
+    }
     if (!exception) {
       blocking += 1;
       console.log(`  BLOCK  ${name} (${v.severity}) — ${v.range}`);

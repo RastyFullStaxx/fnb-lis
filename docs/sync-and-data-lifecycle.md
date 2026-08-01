@@ -164,10 +164,33 @@ member on the owner's device session still cannot void a record.
 
 The trust boundary, stated plainly: a registered device is trusted to assert which of **its own
 client's** users is acting, because offline there is nobody else to ask — the PIN check happened on
-the machine, against hashes it was given. Bounded three ways: the header is ignored unless the
-session is device-bound, the named user must be active and belong to that device's establishment,
-and an unrecognised claim is a 403 rather than a silent fallback. A browser session cannot use the
-header at all.
+the machine, against hashes it was given. Bounded **four** ways: the header is ignored unless the
+session is device-bound, the named user must belong to that device's establishment, an unrecognised
+claim is a 403 rather than a silent fallback, and — added 2026-08-01 — **the claim may only NARROW
+privilege, never widen it**. A browser session cannot use the header at all.
+
+That fourth bound closes a real escalation. The header used to adopt the claimed user's *role*
+outright, and a device session is not owner-only: `resolveDevice` hands an already-registered
+machine to any user of the establishment, checking `devices.manage` only when registering a new one.
+So an ordinary STAFF sign-in on the bar PC was one header away from holding `users.manage`. The role
+is now capped at the session holder's own, which leaves the real workflow untouched — the desktop's
+one session belongs to the owner who registered it, and everyone acting under it is at or below
+that.
+
+> **Login contract changed 2026-08-01 — the Electron client must handle it.** A device login is no
+> longer exempt from two-factor authentication. `POST /api/auth/login` may now answer
+> `{ mfaRequired: true, challenge, expiresAt }` instead of a session, and the desktop must exchange
+> that at `POST /api/auth/mfa/verify` with a code. The device payload it sent in step one is carried
+> through automatically (`MfaChallenge.deviceJson`), so nothing else changes and the machine is
+> registered only once both factors are proved.
+>
+> The old exemption keyed off `device` in the request body — data the caller supplies — so a phished
+> password plus an invented fingerprint bought a full 365-day session with no code. See
+> [security.md](security.md) H-4.
+>
+> This costs the offline story nothing: registration and sign-in happen at the server, over the
+> network, with the owner standing at the machine. Once registered, the desktop verifies PINs
+> locally and does not re-authenticate here.
 
 **Deliberately not built:** `updatedAt`/tombstones/cursor sync (§3 explains why), a separate push
 endpoint, an idempotency-token table, and the event-sourcing rewrite the proposal's language

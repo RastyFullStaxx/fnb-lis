@@ -26,6 +26,7 @@ import { createApp } from "../src/app";
 import { prisma } from "../src/db";
 import { resetRateLimits } from "../src/middleware/security";
 import { base32Decode } from "../src/auth/totp";
+import { hashPassword, verifyPassword } from "../src/auth/password";
 
 /**
  * The current TOTP code for a secret — computed HERE rather than imported, so
@@ -142,6 +143,31 @@ const main = async () => {
     const https = agent("https://books.example.com");
     const secureRes = await login(https, "admin");
     ok("cookie IS Secure over https", /;\s*Secure/i.test(secureRes.rawSetCookie ?? ""), secureRes.rawSetCookie ?? "");
+
+    /**
+     * The deployment the runbook actually recommends: Caddy terminates TLS and
+     * proxies to Node over plain HTTP. `c.req.url` is then `http://…`, so
+     * deriving Secure from the socket alone shipped the session cookie WITHOUT
+     * it — the very H-1 failure, reintroduced by H-1's own fix.
+     *
+     * x-forwarded-proto is believed here without FNB_TRUST_PROXY on purpose:
+     * forging it can only ADD Secure, which costs the forger their own session
+     * over HTTP. Forging X-Forwarded-For writes false evidence into the audit
+     * trail, which is why THAT one still has to be earned (section 9).
+     */
+    resetRateLimits();
+    await clearLockout("admin");
+    const behindProxy = agent("http://localhost");
+    const proxied = await behindProxy.call("/api/auth/login", {
+      method: "POST",
+      headers: { "x-forwarded-proto": "https" },
+      body: JSON.stringify({ username: "admin", password: PASSWORD }),
+    });
+    ok(
+      "cookie IS Secure behind a TLS-terminating proxy (x-forwarded-proto)",
+      /;\s*Secure/i.test(proxied.rawSetCookie ?? ""),
+      proxied.rawSetCookie ?? "(none)",
+    );
   }
 
   console.log("\n== 3. login does not enumerate usernames");
@@ -218,6 +244,31 @@ const main = async () => {
       ratio < 2.5 && ratio > 0.4,
       `miss ${missMs.toFixed(1)}ms vs hit ${hitMs.toFixed(1)}ms (ratio ${ratio.toFixed(2)})`,
     );
+  }
+
+  console.log("\n== 3b. a malformed stored hash must not accept any password");
+  {
+    /**
+     * `Buffer.from(x, "hex")` is silently lenient — an empty or non-hex segment
+     * becomes a ZERO-LENGTH buffer, which flowed into a zero-length derivation
+     * and made `timingSafeEqual(empty, empty)` true. A row whose key segment
+     * was truncated accepted ANY password. The insider this system is built
+     * against is exactly who could blank one segment and sign in as somebody.
+     */
+    const salt = "ab".repeat(16);
+    const cases: Array<[string, string]> = [
+      ["empty key segment", `scrypt:32768:8:1:${salt}:`],
+      ["non-hex key segment", `scrypt:32768:8:1:${salt}:zzzz`],
+      ["short key segment", `scrypt:32768:8:1:${salt}:aabb`],
+      ["non-hex salt", `scrypt:32768:8:1:zzzz:${"cd".repeat(32)}`],
+      ["nonsense N", `scrypt:0:8:1:${salt}:${"cd".repeat(32)}`],
+    ];
+    for (const [label, stored] of cases) {
+      ok(`${label} rejects any password`, (await verifyPassword("literally-anything", stored)) === false);
+    }
+    const real = await hashPassword("Fnb!2026");
+    ok("a real hash still accepts the right password", (await verifyPassword("Fnb!2026", real)) === true);
+    ok("a real hash still rejects a wrong one", (await verifyPassword("nope", real)) === false);
   }
 
   console.log("\n== 4. per-IP login limiter");
@@ -399,6 +450,37 @@ const main = async () => {
     ok("an AUDIT_VIEWER cannot open the sales report", sales.status === 404, `status ${sales.status}`);
     const audit = await viewer.call("/api/auth/me");
     ok("an AUDIT_VIEWER can still sign in", audit.status === 200, `status ${audit.status}`);
+
+    /**
+     * The same data, asked for in prose.
+     *
+     * Stocky needs only `reports.view` — held by every role — and its tools read
+     * salesReport/purchaseReport/nonRevenueReport, precisely the reports
+     * AUDIT_VIEWER_REPORTS withholds as commercially sensitive. The narrowing
+     * middleware keys off a "/reports/" path segment, so /stocky/chat sailed
+     * past it: a viewer barred from the sales report could just ask.
+     */
+    const stocky = await viewer.call(`/api/locations/${location!.id}/stocky/chat`, {
+      method: "POST",
+      body: JSON.stringify({ messages: [{ role: "user", content: "list every sale last month" }] }),
+    });
+    ok(
+      "an AUDIT_VIEWER cannot reach the same data through Stocky",
+      stocky.status === 404,
+      `status ${stocky.status}`,
+    );
+
+    // Positive control: a role that MAY see sales still reaches Stocky, so the
+    // check above is not passing because the endpoint is simply broken.
+    resetRateLimits();
+    await clearLockout("manager");
+    const mgrStocky = agent();
+    await login(mgrStocky, "manager");
+    const mgrChat = await mgrStocky.call(`/api/locations/${location!.id}/stocky/chat`, {
+      method: "POST",
+      body: JSON.stringify({ messages: [{ role: "user", content: "hello" }] }),
+    });
+    ok("but a MANAGER still can", mgrChat.status === 200, `status ${mgrChat.status}`);
   }
 
   console.log("\n== 8. CSRF origin check + request size");
@@ -758,6 +840,57 @@ const main = async () => {
       `status ${escalated.status}`,
     );
 
+    /**
+     * The subtler half, and the one a rank-order cap got WRONG.
+     *
+     * STAFF and ACCOUNTANT are incomparable: STAFF holds `entries.create`,
+     * ACCOUNTANT holds `reports.export`. Capping by position in ROLES treated
+     * ACCOUNTANT (index 4) as "less privileged" than STAFF (index 3) and let the
+     * claim through — handing a staff member an export permission they never
+     * had. Only a permission-SET comparison catches it.
+     */
+    const acctUser = await prisma.user.findUnique({ where: { username: "accountant" } });
+    const sideways = await staffOnDesktop.call(
+      `/api/locations/${location!.id}/reports/full-audit/export?begin=2026-07-14&end=2026-07-20`,
+      { headers: { "x-acting-user": acctUser!.id } },
+    );
+    ok(
+      "STAFF cannot sidestep into ACCOUNTANT to gain reports.export",
+      sideways.status === 403,
+      `status ${sideways.status}`,
+    );
+
+    /**
+     * POSITIVE CONTROL. Without this the check above could be passing for the
+     * wrong reason — the export route 403ing on something unrelated — which is
+     * precisely the failure mode that let an MFA bypass sit green all morning.
+     *
+     * An OWNER device session claiming the ACCOUNTANT is a legitimate NARROWING
+     * (OWNER holds reports.export too), so it must succeed. That proves the
+     * header path works and the rejection above is specifically the subsumption
+     * rule biting.
+     */
+    resetRateLimits();
+    await clearLockout("owner");
+    const ownerOnDesktop = agent();
+    await ownerOnDesktop.call("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({
+        username: "owner",
+        password: PASSWORD,
+        device: { fingerprint: "unenrolled-owner-dodge-0001", name: "dodge" },
+      }),
+    });
+    const narrowed = await ownerOnDesktop.call(
+      `/api/locations/${location!.id}/reports/full-audit/export?begin=2026-07-14&end=2026-07-20`,
+      { headers: { "x-acting-user": acctUser!.id } },
+    );
+    ok(
+      "but an OWNER session CAN act as the accountant (narrowing still works)",
+      narrowed.status === 200,
+      `status ${narrowed.status}`,
+    );
+
     // ── Admin reset, the lost-phone path ──
     //
     // Performed on ANOTHER user. Resetting your own is now refused (below), so
@@ -896,6 +1029,15 @@ const main = async () => {
     let unproven = 0;
     const leaks: string[] = [];
     const weak: string[] = [];
+    /**
+     * Broken down by status, because "refused" hides a real weakness: a probe
+     * substitutes a fabricated id into every :param, so an UNGUARDED handler
+     * that looks that id up and finds nothing also answers 404 — identical to a
+     * route that refused the caller. 401 is proof of a guard; 404 is only
+     * consistent with one.
+     */
+    const byStatus = new Map<number, number>();
+    const four04: string[] = [];
 
     for (const t of targets) {
       const key = `${t.method} ${t.path}`;
@@ -904,11 +1046,13 @@ const main = async () => {
         method: t.method,
         ...(t.method === "GET" || t.method === "HEAD" ? {} : { body: "{}" }),
       });
+      byStatus.set(res.status, (byStatus.get(res.status) ?? 0) + 1);
       if (res.status >= 200 && res.status < 300) {
         exposed += 1;
         leaks.push(`${key} -> ${res.status}`);
       } else if (res.status === 401 || res.status === 403 || res.status === 404) {
         refused += 1;
+        if (res.status === 404) four04.push(key);
       } else {
         // Usually 400: body validation ran before the auth check. Not a hole —
         // the guard still runs — but this probe did not PROVE it, so it is
@@ -923,13 +1067,41 @@ const main = async () => {
       exposed === 0,
       exposed === 0 ? `${refused} refused, ${unproven} validated-first` : leaks.slice(0, 8).join(" | "),
     );
-    // Visible, not asserted: these are almost certainly fine, and pretending
-    // this probe proved them would be the kind of false comfort the whole
-    // harness exists to avoid.
-    if (unproven > 0) {
-      console.log(`       note: ${unproven} route(s) answered 4xx-other before auth could be observed`);
-      console.log(`       ${weak.slice(0, 5).join(" | ")}${weak.length > 5 ? " …" : ""}`);
-    }
+    console.log(
+      `       statuses: ${[...byStatus.entries()].sort((a, b) => a[0] - b[0]).map(([s, n]) => `${s}×${n}`).join("  ")}`,
+    );
+
+    /**
+     * Asserted, not merely printed. A route answering anything outside
+     * {2xx, 401, 403, 404} — a 500, say — is one this probe did NOT prove
+     * guarded, and leaving that green is the same class of mistake as the
+     * harness that once scored an MFA bypass as a pass.
+     */
+    ok(
+      "every route's refusal is auth-shaped (no 4xx-other hiding an unproven route)",
+      unproven === 0,
+      unproven === 0 ? "" : weak.slice(0, 5).join(" | "),
+    );
+
+    /**
+     * Every single one answers 401 — measured, not hoped.
+     *
+     * This matters because 404 is only CONSISTENT with a guard, never proof of
+     * one: the probe puts a fabricated id in each :param, and an UNGUARDED
+     * handler that looks it up and finds nothing answers 404 too. Asserting
+     * zero removes that ambiguity entirely — a route that starts answering 404
+     * here is one whose guard can no longer be demonstrated, and it needs
+     * reading rather than a shrug.
+     *
+     * (The 404s this codebase does return by design — the audit-viewer report
+     * narrowing, the cross-tenant guards — are all behind requireAuth, so an
+     * unauthenticated caller meets 401 first and never reaches them.)
+     */
+    ok(
+      "every refusal is specifically 401, so no 404 can be masking a missing guard",
+      four04.length === 0,
+      four04.length === 0 ? "all 401" : `${four04.length}: ${four04.slice(0, 4).join(", ")}`,
+    );
   }
 
   console.log(

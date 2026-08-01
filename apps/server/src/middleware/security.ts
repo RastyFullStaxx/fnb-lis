@@ -91,12 +91,35 @@ export function clientIp(c: Context): string {
  * both cases with no configuration.
  */
 export function isSecureRequest(c: Context): boolean {
-  if (TRUST_PROXY && c.req.header("x-forwarded-proto") === "https") return true;
   try {
-    return new URL(c.req.url).protocol === "https:";
+    if (new URL(c.req.url).protocol === "https:") return true;
   } catch {
-    return false;
+    /* fall through */
   }
+
+  /**
+   * `x-forwarded-proto` is believed here WITHOUT requiring FNB_TRUST_PROXY, and
+   * that asymmetry against clientIp() is deliberate — the two headers have
+   * opposite failure modes.
+   *
+   * A forged X-Forwarded-For writes a false IP into the audit trail, which is
+   * evidence, so it must be earned. A forged X-Forwarded-Proto can only make us
+   * add `Secure` to a cookie. Getting that WRONG in the permissive direction
+   * costs an attacker's own session over plain HTTP (the browser declines to
+   * store it — a self-inflicted nuisance). Getting it wrong in the strict
+   * direction costs the real user their session token in clear text.
+   *
+   * The strict version was a live bug: the deployment the runbook recommends
+   * terminates TLS at Caddy and proxies to Node over plain HTTP, so
+   * `c.req.url` is `http://…` and the cookie shipped WITHOUT Secure unless
+   * FNB_TRUST_PROXY happened to be set as well. That is precisely the H-1
+   * failure — one signal saying production, another not — reintroduced by its
+   * own fix.
+   */
+  if (c.req.header("x-forwarded-proto")?.split(",")[0]?.trim() === "https") return true;
+
+  /** Last-resort override for a topology neither test recognises. */
+  return process.env.FNB_FORCE_SECURE_COOKIES === "1";
 }
 
 // ─────────────────────────────── Rate limiting ───────────────────────────────

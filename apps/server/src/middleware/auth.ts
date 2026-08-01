@@ -6,7 +6,7 @@ import {
   can,
   deriveAccessState,
   mfaRequiredFor,
-  ROLES,
+  roleSubsumes,
   type Permission,
   type Role,
   type SessionUser,
@@ -109,21 +109,25 @@ async function resolveActingUser(c: Context, session: SessionUser): Promise<Sess
    * to owners: auth/device.ts returns an already-registered ACTIVE machine to
    * any user of that establishment, checking `devices.manage` only when
    * REGISTERING a new one. So a STAFF login on the bar PC — the ordinary case —
-   * was one header away from being the owner. The fingerprint is treated as a
-   * secret (routes/devices.ts withholds it from the list endpoint) but it sits
-   * in plaintext on a machine in a public room.
+   * was one header away from being the owner.
    *
-   * Capping at the session holder's own role keeps the real workflow intact.
-   * The desktop holds ONE long-lived session, opened by the owner who
-   * registered the machine (docs/sync-and-data-lifecycle.md), and every staff
-   * member acting under it is at or below that. What it removes is the upgrade
-   * direction, which had no legitimate use.
+   * The FIRST attempt at this capped by position in `ROLES`, and that was still
+   * wrong: these roles are not totally ordered. STAFF and ACCOUNTANT are
+   * incomparable — STAFF holds `entries.create`, ACCOUNTANT holds
+   * `reports.export` — so "narrowing" STAFF to ACCOUNTANT handed out an export
+   * permission STAFF never had. A widening wearing a narrowing's clothes.
+   * `roleSubsumes` compares the permission SETS instead, derived from
+   * PERMISSIONS itself so a new permission cannot fall outside the check.
+   *
+   * Rejecting rather than silently downgrading matches the convention just
+   * above: an unusable claim is a 403, never a quiet substitution, because
+   * attributing work to the wrong person is the exact failure this prevents.
    */
-  const effectiveRole = leastPrivileged(session.role, actor.role as Role);
-  if (effectiveRole !== actor.role) {
+  if (!roleSubsumes(session.role, actor.role as Role)) {
     console.warn(
-      `[auth] x-acting-user tried to widen privilege: session ${session.role} -> claimed ${actor.role}; capped at ${effectiveRole}`,
+      `[auth] x-acting-user refused: session role ${session.role} does not subsume claimed role ${actor.role}`,
     );
+    throw new AppError(403, "That user cannot act on this device");
   }
 
   return {
@@ -131,27 +135,17 @@ async function resolveActingUser(c: Context, session: SessionUser): Promise<Sess
     username: actor.username,
     firstName: actor.firstName,
     lastName: actor.lastName,
-    role: effectiveRole,
-    modules: effectiveRole === "ADMIN" || actor.modules.length === 0 ? null : actor.modules.map((m) => m.module),
+    role: actor.role as Role,
+    modules: actor.role === "ADMIN" || actor.modules.length === 0 ? null : actor.modules.map((m) => m.module),
     deviceId: session.deviceId,
+    /**
+     * Who actually holds the session, as distinct from who is claimed to be
+     * acting. Routes that must not let a person act on THEMSELVES through a
+     * borrowed identity need both — see the self-reset guard in routes/mfa.ts.
+     */
+    sessionUserId: session.id,
     actorDisabled: actor.status !== "ACTIVE" || undefined,
   };
-}
-
-/**
- * The weaker of two roles, by the ordering in ROLES (most privileged first).
- *
- * Deliberately index-based on the shared constant rather than a second ranking
- * table here: two orderings that can disagree is how a privilege check quietly
- * inverts. A role missing from ROLES sorts last, so an unknown value can only
- * ever lose.
- */
-function leastPrivileged(a: Role, b: Role): Role {
-  const rank = (r: Role) => {
-    const i = (ROLES as readonly string[]).indexOf(r);
-    return i === -1 ? Number.MAX_SAFE_INTEGER : i;
-  };
-  return rank(a) >= rank(b) ? a : b;
 }
 
 /**
@@ -237,10 +231,12 @@ const ALLOWED_WHILE_UNENROLLED = (path: string): boolean =>
  * Lives here rather than beside the login route so the dependency runs one way
  * — routes import middleware, never the reverse.
  *
- * A device session never qualifies: the desktop is exempt from MFA (it
- * authenticates a machine, checks its PIN locally with no network, and is sold
- * on working through a bad connection), and an owner provisioning a bar PC must
- * not be stopped halfway by an enrolment screen he cannot complete offline.
+ * A device session DOES qualify. It used to be exempted here, which let an
+ * ADMIN or OWNER opt out of the requirement permanently by sending one login
+ * with a device payload — request data they control. The consequence is real
+ * and intended: an unenrolled owner who registers a bar PC is gated until they
+ * enrol, which they can do because registration happens online, at the server,
+ * with the owner standing at the machine.
  */
 export async function mfaEnrolmentOutstanding(user: SessionUser): Promise<boolean> {
   if (!isMfaAvailable()) return false;

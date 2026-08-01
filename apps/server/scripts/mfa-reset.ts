@@ -52,8 +52,20 @@ try {
     const { count } = await tx.authSession.deleteMany({ where: { userId: user.id } });
     await tx.activityLog.create({
       data: {
-        userId: user.id,
-        userName: user.username,
+        /**
+         * NOT attributed to the target.
+         *
+         * This is the one action in the system with no in-app actor, and
+         * recording it against the victim's own id makes the trail read as if
+         * they cleared their own second factor — the worst possible reading of
+         * the one event an investigator most needs to understand. `userId` is
+         * nullable precisely for actions the application did not perform.
+         *
+         * `entityId` still points at the affected user, so filtering by entity
+         * finds it.
+         */
+        userId: null,
+        userName: "(server console)",
         action: "mfa.breakGlassReset",
         entity: "UserMfa",
         entityId: user.id,

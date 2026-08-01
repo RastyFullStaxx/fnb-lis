@@ -192,8 +192,23 @@ function requireRange(c: { req: { query: (k: string) => string | undefined } }):
   return { from, to };
 }
 
+/**
+ * Both guards are PATH-SCOPED, never pathless.
+ *
+ * This router is mounted at `/api/locations/:locationId` alongside ten
+ * siblings, and Hono registers a pathless `.use()` as `/api/locations/:id/*` —
+ * so these ran on dashboard, Stocky and sync as well. That is the fifth
+ * instance of this mistake in this codebase (see security.md M-3), and here it
+ * was actively misleading: `dashboardRoutes` carried NO guard of its own and
+ * was silently relying on this one leaking onto it.
+ *
+ * Scoping is safe because `reports.view` is held by every role, so nothing
+ * loses access — but dashboard now states its own requirement rather than
+ * inheriting one by accident.
+ */
 export const reportRoutes = new Hono<AppEnv>()
-  .use(requirePermission("reports.view"))
+  .use("/reports", requirePermission("reports.view"))
+  .use("/reports/*", requirePermission("reports.view"))
   /**
    * Narrow audit-service viewers to the reconciliation set (client req
    * 2026-07-28). Enforced here rather than only in the hub, so a typed URL or a
@@ -203,7 +218,7 @@ export const reportRoutes = new Hono<AppEnv>()
    * indistinguishable from one that does not exist, the same convention the
    * cross-tenant location guard uses.
    */
-  .use(async (c, next) => {
+  .use("/reports/*", async (c, next) => {
     const user = c.get("user")!;
     if (isAuditViewer(user.role as Role)) {
       // "/reports/full-audit/export" and "/reports/full-audit/drill" both

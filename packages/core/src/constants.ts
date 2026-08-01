@@ -448,6 +448,32 @@ export function can(role: Role, permission: Permission): boolean {
   return (PERMISSIONS[permission] as readonly Role[]).includes(role);
 }
 
+/** Every permission this role holds. */
+export function permissionsOf(role: Role): Permission[] {
+  return (Object.keys(PERMISSIONS) as Permission[]).filter((p) => can(role, p));
+}
+
+/**
+ * Does `outer` hold every permission `inner` does?
+ *
+ * Used to bound the `x-acting-user` claim on a device session: the named actor
+ * may only ever NARROW what the session already had.
+ *
+ * It compares PERMISSION SETS rather than positions in `ROLES`, because these
+ * roles are **not** totally ordered and treating the declaration order as a
+ * hierarchy is a live privilege-escalation bug. Concretely: STAFF (index 3) and
+ * ACCOUNTANT (index 4) are incomparable — STAFF holds `entries.create` and
+ * ACCOUNTANT does not, ACCOUNTANT holds `reports.export` and STAFF does not. An
+ * index comparison "narrowing" STAFF to ACCOUNTANT therefore hands out
+ * `reports.export`, which is a widening wearing a narrowing's clothes.
+ *
+ * Derived from PERMISSIONS itself, so a new permission cannot silently fall
+ * outside the check the way a hand-maintained ranking table would.
+ */
+export function roleSubsumes(outer: Role, inner: Role): boolean {
+  return permissionsOf(inner).every((p) => can(outer, p));
+}
+
 /**
  * The bottle weights actually in force for one catalog row.
  *

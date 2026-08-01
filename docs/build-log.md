@@ -3054,3 +3054,85 @@ Two of the four review lenses lost their verifier agents to a session limit, so 
 arrived unvetted. I verified those by hand, which is how the concurrency race was confirmed
 (reproduced at 60/60 before the fix). Worth re-running that review later for the coverage that was
 lost.
+
+## 2026-08-02 — adversarial review, round two
+
+Re-ran the review with the coverage that a session limit cost round one (the DR and middleware
+lenses lost their verifiers). This time 20/20 agents completed. **Fourteen** confirmed findings,
+**six of them introduced by round one's own fixes** — two in code written specifically to close a
+security hole.
+
+### CRITICAL — the restore drill passed on a completely empty database
+
+Every content check compares the restore against a manifest from **the same backup**, so zeros match
+zeros: 15 count assertions of `0 === 0`, a digest loop that never iterates, and the one anti-vacuity
+guard unreachable because there were no digests to guard. Reproduced by emptying all 37 tables:
+`backup` printed OK, `restore-drill` printed **RESTORE DRILL PASSED**.
+
+Worse, `prune` awards each daily slot to the newest file claiming it — so after 48 hours the empty
+backups would have started **evicting the real ones**.
+
+Fixed with an absolute floor: `backup` refuses a database with zero users or locations, and the
+drill asserts users, locations, an audit trail, counted stock, and at least one auditable period
+before any relative comparison counts as evidence. My own comment on the guard I did write said "a
+check that always passes is worse than no check" — and it only protected a location that already had
+a digest.
+
+### HIGH — `verifyPassword` accepted ANY password against a malformed hash
+
+`Buffer.from(x, "hex")` is silently lenient: an empty or non-hex segment gives a zero-length buffer,
+which became a zero-length derivation, and `key.length === expected.length && timingSafeEqual(empty,
+empty)` was `0 === 0 && true`. Verified: `scrypt:32768:8:1:<salt>:` returned true for
+`"literally-anything"`.
+
+Directly relevant to this system's stated adversary — an insider with database access could blank one
+segment of a `passwordHash` and sign in as that person with any string, leaving a row that still
+looks like a scrypt hash rather than an obvious reset. Every field is now validated before use.
+
+### HIGH — the audit gate announced success when it had not run
+
+npm exits non-zero both when it finds advisories and when it cannot reach the registry, and both
+write JSON to stdout. The error payload has no `vulnerabilities` key, so `?? {}` read it as clean.
+Reproduced with an unreachable registry: **"PASS — 0 blocking", exit 0** — in CI, where nobody looks.
+Also: exceptions matched by package NAME only, so one CVE's exception silently absorbed every future
+advisory in that package. Both fixed; both pinned with negative tests.
+
+### HIGH — an AUDIT_VIEWER could get withheld data out of Stocky
+
+The audit-viewer narrowing keys off a `/reports/` path segment. `/stocky/chat` needs only
+`reports.view` (held by every role) and its tools read salesReport/purchaseReport/nonRevenueReport —
+exactly the reports withheld from third-party viewers as commercially sensitive. They could ask for
+them in prose. Now refused outright, with a positive control so the check cannot pass because the
+endpoint is merely broken.
+
+### HIGH — both round-one fixes to the same two problems were themselves wrong
+
+- **The `x-acting-user` cap.** Round one capped by position in `ROLES`. That is not a privilege
+  lattice: STAFF and ACCOUNTANT are incomparable, so "narrowing" STAFF to ACCOUNTANT handed out
+  `reports.export`. Now compares permission SETS via `roleSubsumes`, derived from `PERMISSIONS`.
+- **`isSecureRequest`.** Deriving Secure from the socket meant that behind the TLS-terminating proxy
+  the runbook recommends, the cookie shipped WITHOUT Secure unless `FNB_TRUST_PROXY` was also set —
+  H-1 reintroduced by H-1's fix. `x-forwarded-proto` is now believed without requiring trust, because
+  forging it can only ADD Secure (costing the forger their own session) whereas forging
+  `X-Forwarded-For` writes false evidence into the audit trail. Opposite failure modes, opposite
+  defaults.
+
+### MEDIUM — three more
+
+Self-reset ban sidesteppable via `x-acting-user` (now checks both identities); manifest failure
+aborting before uploads and pruning; and the **fifth** middleware-placement bug — `reportRoutes` had
+pathless `.use()` calls leaking onto dashboard, Stocky and sync, with `dashboardRoutes` carrying no
+guard of its own and silently relying on the leak.
+
+### Verified
+
+- `verify:security` **105/105** (was 91) · `verify:seed` PASS · `verify:sync` PASS · typechecks
+  clean · audit gate PASS · backup + drill PASS · build clean.
+- Each fix pinned by a check that FAILS without it, several with positive controls.
+
+### The lesson, stated plainly
+
+Across two rounds, **eleven of sixteen security defects were introduced by the security work
+itself**, and twice a harness written alongside a control asserted the wrong thing and scored the bug
+green. Security fixes need adversarial review at least as much as the code they fix. Assume the next
+pass will be no different.

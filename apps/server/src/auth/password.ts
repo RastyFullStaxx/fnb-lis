@@ -86,18 +86,47 @@ export async function verifyPassword(password: string, stored: string): Promise<
   const parts = stored.split(":");
   if (parts.length !== 6 || parts[0] !== "scrypt") return false;
   const [, nStr, rStr, pStr, saltHex, keyHex] = parts;
+
+  /**
+   * A malformed stored hash must FAIL, not pass.
+   *
+   * `Buffer.from(x, "hex")` is silently lenient: an empty or non-hex segment
+   * yields a ZERO-LENGTH buffer. That flowed straight into
+   * `scrypt(..., expected.length, ...)` — a zero-length derivation — and then
+   * `key.length === expected.length && timingSafeEqual(empty, empty)` was
+   * `0 === 0 && true`. So a row whose key segment was truncated or corrupted
+   * accepted ANY password. Verified: `scrypt:32768:8:1:<salt>:` returned true
+   * for "literally-anything".
+   *
+   * That matters most for exactly the adversary this system is built against.
+   * An insider with database access could blank one `passwordHash` segment and
+   * then sign in as that user with any string — leaving a row that still looks
+   * like a scrypt hash rather than an obvious password reset.
+   *
+   * Every field is therefore validated before use: even-length non-empty hex of
+   * the expected size, and parameters that are real positive numbers.
+   */
+  const isHex = (s: string | undefined, bytes: number): boolean =>
+    typeof s === "string" && s.length === bytes * 2 && /^[0-9a-fA-F]+$/.test(s);
+  const n = Number(nStr);
+  const r = Number(rStr);
+  const p = Number(pStr);
+  if (!Number.isInteger(n) || n < 2 || !Number.isInteger(r) || r < 1 || !Number.isInteger(p) || p < 1) {
+    return false;
+  }
+  if (!isHex(saltHex, 16) || !isHex(keyHex, KEY_LENGTH)) return false;
+
   const salt = Buffer.from(saltHex!, "hex");
   const expected = Buffer.from(keyHex!, "hex");
-  const nUsed = Number(nStr);
-  const rUsed = Number(rStr);
+  if (expected.length !== KEY_LENGTH) return false;
   // Headroom derived from the STORED parameters, not the current constants:
   // this must verify hashes written before N was raised, and hashes that will
   // be written after it is raised again.
   const key = await scrypt(password, salt, expected.length, {
-    N: nUsed,
-    r: rUsed,
-    p: Number(pStr),
-    maxmem: Math.max(MAXMEM, 128 * nUsed * rUsed * 2),
+    N: n,
+    r,
+    p,
+    maxmem: Math.max(MAXMEM, 128 * n * r * 2),
   });
   return key.length === expected.length && timingSafeEqual(key, expected);
 }

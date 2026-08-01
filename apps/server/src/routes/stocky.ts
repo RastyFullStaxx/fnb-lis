@@ -3,7 +3,7 @@ import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { zValidator } from "../lib/validate";
 import Anthropic from "@anthropic-ai/sdk";
-import { isCostBasis, type CostBasis } from "@fnb/core";
+import { isAuditViewer, isCostBasis, type CostBasis, type Role } from "@fnb/core";
 import { AppError } from "../lib/errors";
 import { requirePermission, type AppEnv } from "../middleware/auth";
 import { AI_MODEL, isAiEnabled } from "../services/import-extract";
@@ -79,6 +79,29 @@ function chunkText(text: string): string[] {
 export const stockyRoutes = new Hono<AppEnv>().post(
   "/stocky/chat",
   requirePermission("reports.view"),
+  /**
+   * Audit-service viewers cannot use Stocky at all.
+   *
+   * `reports.view` is held by every role including AUDIT_VIEWER, and Stocky's
+   * tools read `salesReport`, `purchaseReport` and `nonRevenueReport` — exactly
+   * the reports AUDIT_VIEWER_REPORTS deliberately withholds from them as
+   * commercially sensitive. The narrowing middleware in routes/reports.ts keys
+   * off a "/reports/" path segment, so this endpoint sailed straight past it:
+   * a third-party viewer barred from the sales report could simply ask Stocky
+   * for the same rows in prose.
+   *
+   * Refused outright rather than narrowed tool-by-tool. These accounts exist to
+   * read the reconciliation and nothing else; an operational assistant is not
+   * part of that, and enumerating which of a dozen tools each tier may call is
+   * a rule that rots the moment a tool is added.
+   *
+   * 404, matching the convention next door: a capability this account may never
+   * use should be indistinguishable from one that does not exist.
+   */
+  async (c, next) => {
+    if (isAuditViewer(c.get("user")!.role as Role)) throw new AppError(404, "Not found");
+    await next();
+  },
   zValidator("json", chatBody),
   async (c) => {
     const user = c.get("user")!;

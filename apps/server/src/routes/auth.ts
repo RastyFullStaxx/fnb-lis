@@ -205,6 +205,19 @@ export const authRoutes = new Hono<AppEnv>()
 
     const mfa = await prisma.userMfa.findUnique({ where: { userId: user.id } });
     if (!mfa?.confirmedAt) throw new AppError(400, "This account has no second factor set up");
+    /**
+     * Same fail-closed answer the login step gives. Without it, a challenge
+     * issued before the key went missing reached `decryptSecret`, which throws a
+     * plain Error — a raw 500 in exactly the incident this branch exists for,
+     * and one that burned a rate-limit slot on the way out.
+     */
+    if (!isMfaAvailable()) {
+      throw new AppError(
+        503,
+        "Two-factor authentication is set up on this account, but this server can't verify it right now. Contact your LIS administrator.",
+        "MFA_UNAVAILABLE",
+      );
+    }
 
     const accepted = await consumeMfaCode(mfa, code);
     if (!accepted) {
@@ -236,8 +249,15 @@ export const authRoutes = new Hono<AppEnv>()
      */
     let device: DeviceLogin | undefined;
     if (row.deviceJson) {
-      const parsed = deviceLogin.safeParse(JSON.parse(row.deviceJson));
-      if (parsed.success) device = parsed.data;
+      // JSON.parse inside the try too — it throws on malformed text, and the
+      // whole point of this block is that a bad device field costs a device
+      // binding, never the sign-in of someone who authenticated correctly.
+      try {
+        const parsed = deviceLogin.safeParse(JSON.parse(row.deviceJson));
+        if (parsed.success) device = parsed.data;
+      } catch {
+        /* not JSON — fall through to a plain browser session */
+      }
     }
 
     return c.json(

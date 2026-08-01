@@ -238,7 +238,19 @@ export const mfaAdminRoutes = new Hono<AppEnv>()
      * The whole point of routing lost phones through an administrator is that a
      * SECOND person is involved. Acting on yourself is not that.
      */
-    if (targetId === actor.id) {
+    /**
+     * Both identities, not just the acting one.
+     *
+     * `x-acting-user` lets a device session choose who `c.get("user")` is. With
+     * only `actor.id` checked, an owner holding the desktop's session could name
+     * a colleague of equal role — which `roleSubsumes` permits — and then clear
+     * their OWN factor, because `targetId !== actor.id` was satisfied. The audit
+     * row would credit the impersonated colleague.
+     *
+     * `sessionUserId` is set only when a substitution actually happened, so on
+     * an ordinary browser session this is exactly the same single check.
+     */
+    if (targetId === actor.id || targetId === actor.sessionUserId) {
       throw new AppError(
         403,
         "You can't reset your own two-factor authentication. Ask another administrator to do it.",

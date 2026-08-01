@@ -155,6 +155,12 @@ export interface SessionUser {
    */
   deviceId?: string | null;
   /**
+   * The user who actually OPENED this session, when an acting-user claim has
+   * substituted somebody else (device sessions only). Routes that must not let
+   * a person act upon themselves through a borrowed identity check both.
+   */
+  sessionUserId?: string;
+  /**
    * Set when a device session named an acting user whose account has since been
    * DISABLED. Their queued work is still accepted — it really happened, and
    * discarding it would falsify the audit — but every entry it produces is

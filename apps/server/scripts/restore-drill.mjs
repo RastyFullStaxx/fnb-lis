@@ -8,10 +8,15 @@
  * deliberately more than `PRAGMA integrity_check`:
  *
  *   1. integrity_check            — is it a valid SQLite file?
- *   2. migration state            — is the schema the one this code expects?
+ *   2. NOT VACUOUS                — does it contain anything at all?
  *   3. row counts vs its manifest — did anything silently fall out?
  *   4. FULL AUDIT DIGEST          — does it still produce the same reconciliation?
  *   5. drift vs live              — reported, not asserted: the measured RPO.
+ *
+ * Step 2 exists because steps 3 and 4 are self-referential by design: they
+ * compare the restore against a manifest taken from the same backup, so zeros
+ * match zeros and an EMPTY database once drilled green. Relative checks are
+ * only evidence once an absolute floor has been cleared.
  *
  * Step 4 is the one that matters and the one nobody does. Restoring a file
  * proves the file opens. Re-running the real reconciliation against the restored
@@ -165,7 +170,36 @@ try {
   const manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
   const copy = digestOf(restored);
 
-  console.log("\n== 2. contents match what was backed up");
+  /**
+   * Is there anything here to verify AT ALL?
+   *
+   * Every check below compares the restore against a manifest derived from the
+   * same backup, which is deliberate (comparing to a moving live database
+   * cries wolf on ordinary business activity) — but it means the comparisons
+   * are self-referential and CANNOT fail on an empty backup: zeros match zeros,
+   * the digest loop never iterates, and the drill reported "PASSED" on a
+   * database with every table emptied. Reproduced before this guard existed.
+   *
+   * So the floor is asserted first, in absolute terms, before anything
+   * relative is allowed to count as evidence.
+   */
+  console.log("\n== 2. the backup is not vacuous");
+  ok("it contains users", (manifest.counts.users ?? 0) > 0, `${manifest.counts.users ?? 0}`);
+  ok("it contains locations", (manifest.counts.locations ?? 0) > 0, `${manifest.counts.locations ?? 0}`);
+  ok("it contains an audit trail", (manifest.counts.activityLog ?? 0) > 0, `${manifest.counts.activityLog ?? 0} rows`);
+  ok(
+    "it contains counted stock",
+    (manifest.counts.countLines ?? 0) > 0,
+    `${manifest.counts.countLines ?? 0} count lines`,
+  );
+  const withDigest = manifest.periods.filter((p) => p.digest).length;
+  ok(
+    "at least one location has an auditable period to compare",
+    withDigest > 0,
+    `${withDigest} of ${manifest.periods.length} locations`,
+  );
+
+  console.log("\n== 3. contents match what was backed up");
   for (const [table, n] of Object.entries(manifest.counts)) {
     ok(`${table}: ${n} rows`, copy.counts[table] === n, copy.counts[table] === n ? "" : `restored has ${copy.counts[table]}`);
   }

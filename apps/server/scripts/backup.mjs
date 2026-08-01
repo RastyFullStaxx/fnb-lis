@@ -200,8 +200,61 @@ const main = async () => {
     process.exit(1);
   }
 
+  /**
+   * Does this look like a REAL database, or a structurally perfect empty one?
+   *
+   * `integrity_check` says "valid SQLite file". It says nothing about content,
+   * and an empty database passes it triumphantly. Backing one up green is not
+   * hypothetical: point FNB_DB_FILE somewhere stale, recreate the data
+   * directory and run `migrate deploy`, or let an insider truncate the tables,
+   * and you get an existing, schema-current, integrity-ok, EMPTY file.
+   *
+   * That failure compounds. Every content check in the restore drill compares
+   * the restore against a manifest derived from this same backup, so zeros
+   * match zeros and the drill reports PASSED. Then `prune` — which awards each
+   * daily slot to the newest file claiming it — starts deleting the REAL
+   * backups in favour of the empty ones. Reproduced end to end before this
+   * guard existed.
+   *
+   * No install of this product has zero users or zero locations; the seed
+   * creates both. So this floor cannot fire on anything legitimate, and it
+   * catches the whole family at the source rather than at the drill.
+   */
+  const floor = new Database(target, { readonly: true });
+  let users;
+  let locations;
+  try {
+    users = floor.prepare("SELECT COUNT(*) AS n FROM User").get().n;
+    locations = floor.prepare("SELECT COUNT(*) AS n FROM Location").get().n;
+  } finally {
+    floor.close();
+  }
+  if (users === 0 || locations === 0) {
+    rmSync(target, { force: true });
+    console.error(
+      `\nREFUSED: the source database has ${users} user(s) and ${locations} location(s) — it is empty.`,
+    );
+    console.error(`Backup discarded rather than left to masquerade as a restore point.`);
+    console.error(`Check FNB_DB_FILE (currently ${dbFile}).`);
+    process.exit(1);
+  }
+
   const bytes = statSync(target).size;
   console.log(`verified: integrity ok, ${counts} activity rows, ${(bytes / 1024 / 1024).toFixed(1)} MB`);
+
+  /**
+   * Uploads and pruning run BEFORE the manifest, because the manifest is the
+   * step most likely to fail (it shells out to tsx) and it must not be able to
+   * stop the two jobs that keep the backup directory correct. The first version
+   * exited on manifest failure before reaching either, so a persistent failure
+   * silently stopped copying import source documents and stopped retention
+   * entirely — while still printing that the backup was kept.
+   */
+  const copied = syncUploads(uploadsDir, path.join(backupRoot, "uploads"));
+  if (copied > 0) console.log(`uploads : ${copied} new file(s) copied`);
+
+  const { kept, removed } = prune(backupRoot, Date.now());
+  console.log(`retained: ${kept} backup(s), pruned ${removed}`);
 
   /**
    * A manifest of what this backup SAYS, computed from the backup itself.
@@ -211,9 +264,6 @@ const main = async () => {
    * legitimately diverge the moment anyone uses the app, so the drill fails on
    * ordinary business activity and everyone learns to ignore it. The backup has
    * to be checked against its own recorded state.
-   *
-   * Written after integrity passes, so a manifest never describes a backup that
-   * was discarded.
    */
   let manifest;
   try {
@@ -226,28 +276,18 @@ const main = async () => {
     });
     JSON.parse(manifest); // reject a truncated or non-JSON digest before storing it
   } catch (err) {
-    /**
-     * The DATABASE copy is good — integrity_check passed above — so it is kept.
-     * Only its fingerprint is missing, which means the restore drill cannot
-     * verify this particular backup; the drill skips past it to one it can, and
-     * names it while doing so.
-     *
-     * Exits non-zero so a scheduled run surfaces as a failure rather than
-     * accumulating silently unverifiable backups.
-     */
-    console.error(`\nWARNING: backup kept, but its manifest could not be written: ${err instanceof Error ? err.message : err}`);
+    // The DATABASE copy is good — integrity_check passed — so it is kept, and
+    // uploads and retention have already run. Only the fingerprint is missing,
+    // which means the restore drill cannot verify THIS backup; it skips to one
+    // it can and names this one while doing so.
+    console.error(`
+WARNING: backup kept, but its manifest could not be written: ${err instanceof Error ? err.message : err}`);
     console.error("This backup cannot be verified by the restore drill. Investigate before relying on it.");
     process.exit(1);
   }
   writeFileSync(target.replace(/\.db$/, ".manifest.json"), manifest);
   const parsed = JSON.parse(manifest);
   console.log(`manifest: ${parsed.periods.filter((p) => p.digest).length} auditable location(s) fingerprinted`);
-
-  const copied = syncUploads(uploadsDir, path.join(backupRoot, "uploads"));
-  if (copied > 0) console.log(`uploads : ${copied} new file(s) copied`);
-
-  const { kept, removed } = prune(backupRoot, Date.now());
-  console.log(`retained: ${kept} backup(s), pruned ${removed}`);
   console.log("OK");
 };
 
