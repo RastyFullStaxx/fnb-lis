@@ -797,8 +797,22 @@ function EditLineDialog({
   const [openAmount, setOpenAmount] = useState("");
   const [changeReason, setChangeReason] = useState("");
 
+  // Client req 2026-07-31 (docs/per-user-per-item-uom-plan.md): correcting a
+  // committed line should show and accept Open Amount in the same resolved
+  // display unit the counter used to enter it in the first place — staff's
+  // own override for this item, then the admin's default, then the
+  // general preference, then the item's own unit. Without this, a bartender
+  // who counted "Vodka" in oz would come back to correct it and find the
+  // field silently switched to ml — exactly the kind of unit mismatch that
+  // produces a wrong-by-a-conversion-factor entry from someone who is
+  // already here because something needed fixing.
+  const { resolve: resolveDisplay } = useItemDisplayUnit(line ? [line.locationItem.itemVariant.item.id] : []);
+  const itemUnit = line?.locationItem.itemVariant.unit ?? null;
+  const displayUnit = resolveDisplay(line?.locationItem.itemVariant.item.id, itemUnit);
+
   // Re-seed every field when a different line opens the dialog — same mapping
-  // the open-session Edit uses.
+  // the open-session Edit uses. Stored remainingContent is in the item's own
+  // unit; show it converted to displayUnit, same as a fresh entry would.
   useEffect(() => {
     if (!line) return;
     setChangeReason("");
@@ -809,7 +823,13 @@ function EditLineDialog({
       setOpenAmount("");
     } else if (line.scaleWeight == null) {
       setMode("OPEN");
-      setOpenAmount(String(line.remainingContent));
+      const lineUnit = line.locationItem.itemVariant.unit;
+      const lineDisplay = resolveDisplay(line.locationItem.itemVariant.item.id, lineUnit) ?? lineUnit;
+      const shown =
+        lineDisplay.kind === lineUnit.kind
+          ? convert(line.remainingContent, lineUnit, lineDisplay)
+          : line.remainingContent;
+      setOpenAmount(String(shown));
       setQty("");
       setScale("");
     } else {
@@ -818,6 +838,7 @@ function EditLineDialog({
       setQty("");
       setOpenAmount("");
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [line]);
 
   // Hooks stay above the early return — useWeighPreview handles a null item.
@@ -829,15 +850,21 @@ function EditLineDialog({
   const preview = useWeighPreview(item, scale, trailingAverage);
   const weighable = (item?.itemVariant.contentTracked || item?.itemVariant.weighMode === "NET") ?? false;
   const activeMode = weighable ? mode : "FULL";
-  // Open Amount here saves remainingContent directly in the item's own
-  // stored unit (no displayUnit conversion layer, unlike OpenSession's save
-  // path below) — so unlike there, no convert() is needed before comparing.
+  // Open Amount here saves in displayUnit like a fresh entry — convert to
+  // the item's own stored unit right at the edge, same toStoredUnit shape
+  // OpenSession's save() uses, so history comparisons stay in the stored
+  // unit regardless of what unit the counter is looking at.
+  const toStoredUnit = (typed: number): number => {
+    if (!itemUnit || !displayUnit || displayUnit.kind !== itemUnit.kind) return typed;
+    return convert(typed, displayUnit, itemUnit);
+  };
   const openAmountWarning = useMemo((): WeighWarning | null => {
     if (activeMode !== "OPEN" || openAmount === "") return null;
     const n = Number(openAmount);
     if (!Number.isFinite(n) || n < 0) return null;
-    return checkContentVsHistory(n, trailingAverage);
-  }, [activeMode, openAmount, trailingAverage]);
+    const stored = itemUnit && displayUnit && displayUnit.kind === itemUnit.kind ? convert(n, displayUnit, itemUnit) : n;
+    return checkContentVsHistory(stored, trailingAverage);
+  }, [activeMode, openAmount, itemUnit, displayUnit, trailingAverage]);
 
   if (!line || !item) return null;
   const variant = item.itemVariant;
@@ -852,7 +879,7 @@ function EditLineDialog({
     } else if (activeMode === "OPEN") {
       const n = Number(openAmount);
       if (openAmount === "" || !Number.isFinite(n) || n < 0) return toast.error("Enter the remaining amount");
-      body = { locationItemId: item.id, countType: "WEIGH" as const, remainingContent: n };
+      body = { locationItemId: item.id, countType: "WEIGH" as const, remainingContent: toStoredUnit(n) };
     } else {
       if (!preview || !preview.ready || !preview.entered || preview.blocking) {
         return toast.error("Fix the scale reading first");
@@ -915,7 +942,7 @@ function EditLineDialog({
             </div>
           ) : activeMode === "OPEN" ? (
             <div className="space-y-2">
-              <Label htmlFor="ec-open">Remaining {variant.unit.name}</Label>
+              <Label htmlFor="ec-open">Remaining {displayUnit?.name ?? variant.unit.name}</Label>
               <QuantityInput
                 id="ec-open"
                 className="tnum"
