@@ -14,7 +14,7 @@ Run the harness after touching anything in this document's scope:
 npm run verify:security -w @fnb/server
 ```
 
-76 checks against the real Hono app on a throwaway database. Same shape as `verify:seed` and
+91 checks against the real Hono app on a throwaway database. Same shape as `verify:seed` and
 `verify:sync` — one runnable script, exits non-zero when a guarantee breaks. Runs in CI on every
 push.
 
@@ -82,8 +82,15 @@ An honest score, with the reasoning rather than just a number.
 ### Score: **93 / 100** — strong throughout; what remains is deployment, not code
 
 *Tracked across 2026-08-01: **78** (initial audit) → **82** (MFA) → **93** (DR, pipeline, KDF,
-route-coverage). The remaining seven points are almost entirely things only you can do — terminate
-TLS, put backups on another machine, run the quarterly drill. See [§5](#5-reaching-100).*
+route-coverage) → **91** after an adversarial review found five bypasses in the day's own MFA work,
+→ **93** once they were fixed and pinned. The remaining seven points are almost entirely things only
+you can do — terminate TLS, put backups on another machine, run the quarterly drill.
+See [§5](#5-reaching-100).*
+
+**The most useful thing learned today is in that dip.** Four of the five bypasses were introduced by
+the code that added a security control, and one of them was scored as a PASS by the harness written
+alongside it. A check that asserts the wrong thing is worse than no check, because it manufactures
+confidence. Independent adversarial review is not optional on auth code.
 
 That splits unevenly, and the split is the useful part:
 
@@ -91,7 +98,7 @@ That splits unevenly, and the split is the useful part:
 |---|---|---|
 | Authorization / tenancy | 98 | Server-side on every route, 404-not-403, nested-relation scoping, no IDOR — and now **all 179 routes probed unauthenticated on every CI run** |
 | Audit integrity | 90 | Mutations and their log rows share a `$transaction`. Immutable records with void chains |
-| Authentication | 96 | TOTP for ADMIN/OWNER, scrypt at 2× the OWASP floor with lazy re-hashing |
+| Authentication | 94 | TOTP for ADMIN/OWNER, scrypt at 2× the OWASP floor with lazy re-hashing. Marked down from 96: five real bypasses shipped in the first cut of it and were caught only by adversarial review |
 | Input handling / injection | 88 | Prisma everywhere, zod on every body, no raw SQL on user input, no dynamic execution |
 | Transport / edge hardening | 75 | Headers, limits and per-request `Secure` all shipped. Stuck at 75 until TLS is actually terminated — that one is yours |
 | Secrets management | 80 | `.env` untracked and clean, gitleaks in CI. Remaining: back up `FNB_MFA_KEY` separately, and a rehearsed rotation |
@@ -257,6 +264,92 @@ The bigger exposure is the **desktop mirror**, which sits on a bar PC in a publi
 carries the establishment's whole catalog plus colleagues' PIN hashes. Mitigation is OS-level
 (BitLocker / FileVault) — see the runbook. Application-level SQLite encryption (SQLCipher) would
 mean dropping `better-sqlite3` and is not worth it for this threat.
+
+---
+
+### Found by adversarial review, after the fixes above
+
+An independent multi-agent review of the day's own security work. **Five of the seven findings below
+were introduced by that work**, which is the point worth keeping: the code that adds a control is
+exactly as capable of removing one.
+
+#### H-4 · A device payload in the login body bypassed the second factor — FIXED
+**The most serious finding of the whole engagement, and it was introduced by the MFA work itself.**
+
+The exemption meant to protect the offline desktop was written as `if (!device && isMfaAvailable())`
+— and `device` is **unauthenticated request body**. Nothing proved the caller was the Electron app:
+no client certificate, no shared secret, no signature. `deviceLogin` validates the *shape* of a
+fingerprint, not its provenance.
+
+So a phished password plus an invented fingerprint bought a full session with no code. Worse, it was
+self-reinforcing: registering a new machine needs `devices.manage` = `[ADMIN, OWNER]`, which is
+byte-identical to `MFA_REQUIRED_ROLES` — the exemption was available to exactly the two roles that
+must never have it. The resulting session was device-bound, so it carried a **365-day** TTL instead
+of 7 days, and `mfaEnrolmentOutstanding` short-circuited on `deviceId`, so the enrolment gate never
+fired either. Demonstrated end to end before the fix: `curl` with a made-up fingerprint returned an
+OWNER session that could reach every admin route.
+
+The harness scored this as a **pass** ("a registered desktop signs in without a code"), which is the
+real lesson: a check that asserts the wrong thing is worse than no check, because it manufactures
+confidence.
+
+*Fix:* the exemption is gone. Every enrolled account presents its factor, and the device payload
+rides the challenge (`MfaChallenge.deviceJson` — a column defined for this and left unwired) so no
+machine is registered on half a credential. The desktop loses nothing real: registration happens at
+the server, over the network, with the owner at the machine — exactly when a phone is to hand.
+
+#### H-5 · `x-acting-user` adopted the claimed user's ROLE — FIXED
+The header names which staff member is working, for attribution. It was taking the claimed user's
+role wholesale with no proof. Any account able to obtain a device session could then name the OWNER
+and hold `users.manage`, `entries.void` and `prices.edit`.
+
+That was reachable: `resolveDevice` returns an **already-registered** machine to any user of that
+establishment, checking `devices.manage` only when registering a *new* one. So an ordinary STAFF
+login on the bar PC was one header away from being the owner.
+
+*Fix:* the header may only **narrow** privilege, never widen it — capped at the session holder's own
+role, with the attempt logged. The real workflow is untouched: the desktop holds one long-lived
+session opened by the owner, and every staff member acting under it is at or below that.
+
+#### H-6 · The rate limiter did not hold under concurrency — FIXED
+The three limiters with teeth (login, PIN, MFA verify) incremented their counter *after* the handler
+resolved, so parallel requests all read zero and all passed. Measured: **60 concurrent bad sign-ins
+against a limit of 10 produced 60 × 401 and 0 × 429**, each burning a full scrypt derivation.
+
+The ceiling applied only to an attacker polite enough to wait for each response — which is to say it
+did not apply. Every brute-force bound claimed elsewhere in this document (passwords, PINs, 6-digit
+TOTP codes) rested on it. The ironic part: the comment on the *other* branch says exactly why
+reserving up front is necessary.
+
+*Fix:* reserve-then-refund. The slot is taken before the handler runs and given back if the outcome
+was not countable, so "only failures count" survives alongside a limit that actually holds.
+
+#### H-7 · An administrator could reset their own second factor — FIXED
+`DELETE /api/admin/users/:id/mfa` never checked that the target was not the caller. So the rule that
+a required role cannot self-disable was decorative: refused at `/api/auth/mfa`, an ADMIN simply
+called the admin route on their own id and removed it with a session cookie alone — no password, no
+code, no second human. Anyone holding a stolen session could do the same and re-enrol their own
+authenticator.
+
+*Fix:* refused on self. Consequence, documented rather than discovered later: a **lone** ADMIN who
+loses phone and codes now has no in-app path back, so the runbook asks for two ADMIN accounts and
+ships a host-console break-glass (`npm run mfa:reset`) that requires shell access and writes
+`mfa.breakGlassReset` to the trail.
+
+#### H-8 · Losing `FNB_MFA_KEY` silently downgraded enrolled accounts — FIXED
+The login gate was `isMfaAvailable()`, a presence check on an environment variable. A blank or
+missing key therefore removed the second factor from every already-enrolled ADMIN and OWNER, with no
+error anywhere — a config accident quietly deleting a security control.
+
+*Fix:* the account is asked first, the configuration second. A confirmed factor with no key now
+returns **503 `MFA_UNAVAILABLE`** rather than a session. That is also what the documentation already
+promised ("losing FNB_MFA_KEY locks out every enrolled user"); the code now agrees with it.
+
+#### M-7 · The lockout counter reset on password success — FIXED
+A correct password cleared `failedLoginCount`, so someone holding it could guess four TOTP codes,
+sign in again to zero the counter, and repeat indefinitely. Six digits with an unbounded budget is
+not a second factor. *Fix:* the counter clears in `completeLogin` — once **every** factor the
+account requires has been proved.
 
 ### LOW
 

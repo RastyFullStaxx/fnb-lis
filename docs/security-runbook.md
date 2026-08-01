@@ -24,7 +24,10 @@ unchecked is a known-accepted risk, not an oversight — write down which ones y
 - [ ] Unused seed accounts **deleted**, not merely disabled
 - [ ] `npm run db:seed` is **not** wired into any deploy script. It is idempotent, which makes it
       *more* dangerous in production, not less — it will happily re-create demo clients
-- [ ] Exactly one ADMIN account, held by a named person
+- [ ] **At least TWO ADMIN accounts**, each held by a named person. An administrator cannot reset
+      their own second factor and an OWNER cannot manage an ADMIN, so a lone ADMIN who loses both
+      their phone and their recovery codes has no path back through the app — only the break-glass
+      below
 
 ### Transport
 
@@ -64,8 +67,10 @@ on.
 - [ ] `npm run typecheck -w @fnb/server` and `-w @fnb/web`
 - [ ] `npm run verify:seed -w @fnb/server` — golden fixtures intact
 - [ ] `npm run verify:sync -w @fnb/server` — offline mirror guarantees
-- [ ] `npm run verify:security -w @fnb/server` — the 76 checks behind security.md
+- [ ] `npm run verify:security -w @fnb/server` — the 91 checks behind security.md
 - [ ] `npm run audit` passes (the gate, with its reviewed exceptions — see §5)
+- [ ] Both ADMINs enrolled in two-factor, recovery codes stored somewhere that is not the same
+      place as the password
 - [ ] `npm run backup -w @fnb/server` then `npm run restore-drill -w @fnb/server` — prove the backup path works BEFORE you need it
 
 ---
@@ -295,6 +300,27 @@ itself stays in the audit trail.
 
 **4 — Review.** Within a week: what happened, what was affected, what the detection gap was, what
 changes. Add a check to `verify-security.ts` for the specific hole. Record it in `build-log.md`.
+
+### Break-glass: an administrator locked out of their own MFA
+
+A lone ADMIN who has lost their authenticator **and** their ten recovery codes cannot be helped
+through the application. That is deliberate — self-reset would let a stolen session remove the
+factor and re-enrol a different phone, and an OWNER managing an ADMIN would break tenant isolation.
+
+From a shell on the server:
+
+```bash
+npm run mfa:reset -w @fnb/server -- <username> "who asked, and why"
+```
+
+It requires something the network cannot supply — a shell on the host and write access to the
+database — which is a stronger proof of authority than any in-app flow. It clears the factor, ends
+every live session for that account, and writes `mfa.breakGlassReset` to the activity trail with
+the reason. Using it is therefore visible afterwards.
+
+**Prefer a second administrator.** Two ADMINs can reset each other through the API, with the same
+mandatory reason and audit entry, and without anyone needing server access. That is why §1 asks for
+two.
 
 ### Notification
 

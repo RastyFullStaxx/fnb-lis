@@ -65,12 +65,18 @@ export const authRoutes = new Hono<AppEnv>()
       throw new AppError(401, failMessage);
     }
 
-    if (user.failedLoginCount > 0) {
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { failedLoginCount: 0, failedLoginAt: null },
-      });
-    }
+    /**
+     * The counter is NOT cleared here.
+     *
+     * Clearing it on a correct password made the per-account lockout useless
+     * against the second factor: someone holding the password could guess four
+     * TOTP codes, sign in again to zero the counter, and repeat forever. Six
+     * digits with an unbounded budget is not a second factor.
+     *
+     * It is cleared in completeLogin instead — once EVERY factor the account
+     * requires has been proved. For an account without MFA that is this same
+     * moment, so nothing changes for them.
+     */
 
     /**
      * Upgrade a hash written with weaker parameters, now that we hold the
@@ -123,8 +129,30 @@ export const authRoutes = new Hono<AppEnv>()
      * resolved now, so a machine is still never registered for someone who has
      * proved only half their credentials.
      */
-    if (isMfaAvailable()) {
+    /**
+     * Asked of the ACCOUNT first, the configuration second.
+     *
+     * This used to be `if (isMfaAvailable() && ...)`, which is a presence check
+     * on an env var — so losing or blanking FNB_MFA_KEY silently downgraded
+     * every already-enrolled ADMIN and OWNER to password-only, with no error
+     * anywhere. A config accident quietly removing a security control is the
+     * worst shape a failure can take.
+     *
+     * Fail CLOSED instead: a confirmed factor exists, so it must be presented,
+     * and if the server cannot verify it then nobody signs in on that account
+     * until the key is restored from backup. That is the behaviour the docs
+     * already promise ("losing FNB_MFA_KEY locks out every enrolled user") —
+     * this makes the code agree with them.
+     */
+    {
       const mfa = await prisma.userMfa.findUnique({ where: { userId: user.id } });
+      if (mfa?.confirmedAt && !isMfaAvailable()) {
+        throw new AppError(
+          503,
+          "Two-factor authentication is set up on this account, but this server can't verify it right now. Contact your LIS administrator.",
+          "MFA_UNAVAILABLE",
+        );
+      }
       if (mfa?.confirmedAt) {
         const challengeToken = randomBytes(32).toString("base64url");
         const expiresAt = new Date(Date.now() + MFA_CHALLENGE_TTL_MS);
@@ -190,12 +218,8 @@ export const authRoutes = new Hono<AppEnv>()
     // Single-use: the challenge dies with the attempt that spent it, so a
     // captured challenge token cannot be replayed against a second guess.
     await prisma.mfaChallenge.delete({ where: { id: row.id } }).catch(() => {});
-    if (user.failedLoginCount > 0) {
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { failedLoginCount: 0, failedLoginAt: null },
-      });
-    }
+    // The failed-attempt counter is cleared in completeLogin, once every factor
+    // is proved — not here, and not after the password check.
     // Housekeeping, on the natural occasion — this project has no scheduler,
     // and a TTL that only exists in a comment is not a TTL.
     await prisma.mfaChallenge.deleteMany({ where: { expiresAt: { lt: new Date() } } }).catch(() => {});
@@ -268,15 +292,34 @@ async function consumeMfaCode(
   if (verifyTotp(decryptSecret(mfa.secretEnc), code)) return "totp";
 
   const cleaned = code.trim().toLowerCase().replace(/\s+/g, "");
+
+  /**
+   * Shape gate before the expensive path.
+   *
+   * Recovery codes are issued as `xxxx-xxxx` (routes/mfa.ts). Without this
+   * check, every WRONG 6-digit TOTP code fell through and ran up to ten
+   * sequential scrypt derivations at N=32768 — 32 MB and ~80 ms each — that
+   * could never match, because a 6-digit string is not that shape. Roughly
+   * 0.8 s of CPU and 320 MB of churn handed to anyone who mistypes, or to
+   * anyone who wants to.
+   */
+  if (!/^[0-9a-f]{4}-[0-9a-f]{4}$/.test(cleaned)) return null;
+
   const hashes = mfa.backupCodes.split("\n").filter(Boolean);
   for (const hash of hashes) {
-    if (await verifyPassword(cleaned, hash)) {
-      await prisma.userMfa.update({
-        where: { userId: mfa.userId },
-        data: { backupCodes: hashes.filter((h) => h !== hash).join("\n") },
-      });
-      return "backup";
-    }
+    if (!(await verifyPassword(cleaned, hash))) continue;
+    /**
+     * Conditional write, so single-use survives concurrency. A plain
+     * read-modify-write of the whole newline-joined string lets two
+     * simultaneous verifies both read the same set, both match, and both write
+     * back — resurrecting a spent code. `updateMany` with the ORIGINAL string
+     * in the WHERE makes exactly one of them win; the loser is told no.
+     */
+    const { count } = await prisma.userMfa.updateMany({
+      where: { userId: mfa.userId, backupCodes: mfa.backupCodes },
+      data: { backupCodes: hashes.filter((h) => h !== hash).join("\n") },
+    });
+    return count === 1 ? "backup" : null;
   }
   return null;
 }
@@ -291,11 +334,28 @@ async function consumeMfaCode(
  */
 async function completeLogin(
   c: Context<AppEnv>,
-  user: { id: string; username: string; firstName: string; lastName: string; role: string; modules: { module: string }[] },
+  user: {
+    id: string;
+    username: string;
+    firstName: string;
+    lastName: string;
+    role: string;
+    failedLoginCount: number;
+    modules: { module: string }[];
+  },
   opts: { rememberMe?: boolean; device?: DeviceLogin; via?: "totp" | "backup" },
 ) {
   const { rememberMe, device, via } = opts;
   const ip = clientIp(c);
+
+  // Every required factor is now proved, so the failed-attempt counter can be
+  // cleared. Deliberately here and not after the password check — see the note
+  // at that site.
+  if (user.failedLoginCount > 0) {
+    await prisma.user
+      .update({ where: { id: user.id }, data: { failedLoginCount: 0, failedLoginAt: null } })
+      .catch(() => {});
+  }
 
   // Resolved AFTER the credentials check, never before: doing it earlier would
   // let an unauthenticated caller probe which fingerprints are registered and

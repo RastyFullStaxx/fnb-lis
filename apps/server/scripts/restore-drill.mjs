@@ -72,15 +72,34 @@ function digestOf(dbFile) {
 
 const started = Date.now();
 
-const backups = existsSync(backupRoot)
+const allBackups = existsSync(backupRoot)
   ? readdirSync(backupRoot)
       .filter((f) => /^fnb-\d{8}-\d{6}\.db$/.test(f))
       .sort()
       .reverse()
   : [];
 
-if (backups.length === 0) {
+/**
+ * Only backups that carry a manifest are drillable. A backup whose manifest
+ * step failed is still a valid database — it just cannot be checked against
+ * what it contained — so skipping past it to one that CAN be verified beats
+ * refusing to drill at all and reporting a false diagnosis about the newest
+ * file. The skipped ones are named, because silently drilling an older backup
+ * while a newer one is quietly unverifiable is exactly the sort of comfort this
+ * whole exercise exists to remove.
+ */
+const backups = allBackups.filter((f) => existsSync(path.join(backupRoot, f.replace(/\.db$/, ".manifest.json"))));
+const skipped = allBackups.filter((f) => !backups.includes(f));
+
+if (allBackups.length === 0) {
   console.error(`No backups found in ${backupRoot}. Run "npm run backup -w @fnb/server" first.`);
+  process.exit(1);
+}
+if (skipped.length > 0) {
+  console.warn(`\n!! ${skipped.length} backup(s) have NO manifest and cannot be verified: ${skipped.join(", ")}`);
+}
+if (backups.length === 0) {
+  console.error(`\nNo verifiable backup in ${backupRoot} — every one is missing its manifest.`);
   process.exit(1);
 }
 
@@ -133,12 +152,15 @@ try {
    * asserts the only thing a restore can actually promise: what went in comes
    * back out.
    */
+  // NOT process.exit() — that skips the `finally` below and leaves a full
+  // unencrypted copy of the production database sitting in the OS temp
+  // directory, world-readable on most systems, on every early return. Throw
+  // instead, so the cleanup always runs.
   const manifestPath = latest.replace(/\.db$/, ".manifest.json");
   if (!existsSync(manifestPath)) {
-    console.error(
-      `\nNo manifest beside ${backups[0]}. It predates manifest support — take a fresh backup and drill that.`,
+    throw new Error(
+      `No manifest beside ${backups[0]}. Take a fresh backup and drill that.`,
     );
-    process.exit(1);
   }
   const manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
   const copy = digestOf(restored);
@@ -190,6 +212,11 @@ try {
   } catch {
     console.log("       (live database unavailable — skipped)");
   }
+} catch (err) {
+  // Caught rather than left to propagate so the `finally` below still shreds
+  // the restored copy, and so the operator gets a sentence instead of a stack.
+  failures += 1;
+  console.error(`\n FAIL  ${err instanceof Error ? err.message : String(err)}`);
 } finally {
   rmSync(scratch, { recursive: true, force: true });
 }

@@ -44,6 +44,8 @@ function totpNow(secretB32: string): string {
 }
 
 const PASSWORD = "Fnb!2026";
+/** Mirrors FNB_RATE_LIMIT_LOGIN's default in app.ts. */
+const LOGIN_LIMIT_FOR_TEST = Number(process.env.FNB_RATE_LIMIT_LOGIN ?? 10);
 
 let failures = 0;
 const ok = (label: string, pass: boolean, detail = "") => {
@@ -254,6 +256,30 @@ const main = async () => {
       "successful sign-ins never trip the limiter (shift change at one NAT)",
       allOk,
       allOk ? "" : `got ${firstBad}`,
+    );
+
+    /**
+     * CONCURRENCY. The limiter used to increment only AFTER the handler
+     * resolved, so parallel requests all read count=0 and all passed — 60
+     * concurrent bad sign-ins against a limit of 10 produced 60 x 401 and
+     * 0 x 429, each burning a full scrypt derivation. The ceiling applied only
+     * to an attacker polite enough to wait for each response, which is to say
+     * it did not apply. Sequential checks cannot see this.
+     */
+    resetRateLimits();
+    const burst = await Promise.all(
+      Array.from({ length: 60 }, (_, i) =>
+        agent().call("/api/auth/login", {
+          method: "POST",
+          body: JSON.stringify({ username: `burst${i}`, password: "guess" }),
+        }),
+      ),
+    );
+    const accepted = burst.filter((r) => r.status !== 429).length;
+    ok(
+      "the limiter holds under concurrency, not just sequentially",
+      accepted <= LOGIN_LIMIT_FOR_TEST,
+      `${accepted} of 60 concurrent failures got through (limit ${LOGIN_LIMIT_FOR_TEST})`,
     );
   }
 
@@ -733,20 +759,81 @@ const main = async () => {
     );
 
     // ── Admin reset, the lost-phone path ──
+    //
+    // Performed on ANOTHER user. Resetting your own is now refused (below), so
+    // the lost-phone path has to be exercised the way it is actually meant to
+    // work: a second human who holds users.manage.
     resetRateLimits();
+    await clearLockout("manager");
     const adminUser = await prisma.user.findUnique({ where: { username: "admin" } });
-    const reset = await admin.call(`/api/admin/users/${adminUser!.id}/mfa`, {
+    const managerUser = await prisma.user.findUnique({ where: { username: "manager" } });
+
+    // Give the manager a factor to reset.
+    const mgr = agent();
+    await login(mgr, "manager");
+    const mgrEnrol = await mgr.call("/api/auth/mfa/enroll", {
+      method: "POST",
+      body: JSON.stringify({ currentPassword: PASSWORD }),
+    });
+    const mgrSecret = (mgrEnrol.body as { secret: string }).secret;
+    await mgr.call("/api/auth/mfa/confirm", {
+      method: "POST",
+      body: JSON.stringify({ code: totpNow(mgrSecret) }),
+    });
+    ok(
+      "a non-required role may also enrol voluntarily",
+      Boolean((await prisma.userMfa.findUnique({ where: { userId: managerUser!.id } }))?.confirmedAt),
+    );
+
+    /**
+     * Not on yourself. Without this the "a required role cannot switch its own
+     * factor off" rule was decorative — refused at DELETE /api/auth/mfa, an
+     * ADMIN simply called the ADMIN route on their own id and removed it with a
+     * session cookie alone. Anyone holding a stolen session could do the same,
+     * then re-enrol their own authenticator and keep the account.
+     */
+    const selfReset = await admin.call(`/api/admin/users/${adminUser!.id}/mfa`, {
+      method: "DELETE",
+      body: JSON.stringify({ reason: "harness: attempting self-reset" }),
+    });
+    ok("an administrator cannot reset their OWN second factor", selfReset.status === 403, `status ${selfReset.status}`);
+    ok(
+      "and their factor survives the attempt",
+      Boolean((await prisma.userMfa.findUnique({ where: { userId: adminUser!.id } }))?.confirmedAt),
+    );
+
+    const reset = await admin.call(`/api/admin/users/${managerUser!.id}/mfa`, {
       method: "DELETE",
       body: JSON.stringify({ reason: "harness: lost phone" }),
     });
-    ok("an administrator can reset a second factor", reset.status === 200, `status ${reset.status}`);
+    ok("an administrator can reset SOMEONE ELSE'S second factor", reset.status === 200, `status ${reset.status}`);
     const resetLog = await prisma.activityLog.findFirst({
       where: { action: "mfa.adminReset" },
       orderBy: { ts: "desc" },
     });
     ok("the reset carries a reason into the trail", (resetLog?.summary ?? "").includes("lost phone"), resetLog?.summary ?? "(none)");
-    const leftoverChallenges = await prisma.mfaChallenge.count({ where: { userId: adminUser!.id } });
+    const leftoverChallenges = await prisma.mfaChallenge.count({ where: { userId: managerUser!.id } });
     ok("and kills any half-finished login against the old factor", leftoverChallenges === 0, `${leftoverChallenges} left`);
+
+    /**
+     * Losing the key must not silently downgrade an enrolled account to
+     * password-only. It used to: the login gate was a presence check on the env
+     * var, so a blank FNB_MFA_KEY removed the factor with no error anywhere.
+     */
+    const savedKey = process.env.FNB_MFA_KEY;
+    delete process.env.FNB_MFA_KEY;
+    resetRateLimits();
+    await clearLockout("admin");
+    const keyless = await agent().call("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username: "admin", password: PASSWORD }),
+    });
+    ok(
+      "an enrolled account fails CLOSED when the MFA key is missing",
+      keyless.status === 503 && (keyless.body as { code?: string }).code === "MFA_UNAVAILABLE",
+      `status ${keyless.status}`,
+    );
+    process.env.FNB_MFA_KEY = savedKey;
 
     // ── The switch itself ──
     delete process.env.FNB_MFA_KEY;

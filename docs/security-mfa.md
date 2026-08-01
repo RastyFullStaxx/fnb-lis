@@ -68,12 +68,37 @@ Five decisions worth not undoing:
 5. **The challenge is single-use and 5-minute.** It dies with the attempt that spends it, so a
    captured token cannot be replayed against a second guess.
 
-### The desktop is exempt
+### The desktop is NOT exempt
 
-A device login skips MFA entirely. The desktop authenticates a *machine*, checks its PIN locally
-with no network, and is sold on working through a bad connection — demanding a phone code from a bar
-PC with no signal breaks the one thing it exists to do. `Device.status`, re-checked on every
-request, is the revocation control that stands in for a second factor there.
+It was, briefly, and that was the single worst bug of the engagement.
+
+The exemption was written as `if (!device && isMfaAvailable())` — gating a security control on
+`device`, which is **unauthenticated request body**. Nothing proves the caller is the Electron app:
+no client certificate, no shared secret, no signature. So a phished password plus an invented
+fingerprint bought a full session with no code, and because registering a machine needs
+`devices.manage` = `[ADMIN, OWNER]` — the same set as `MFA_REQUIRED_ROLES` — the exemption was
+available to exactly the roles that must never have it. The session was device-bound, so it lasted
+**365 days** and suppressed the enrolment gate permanently.
+
+**A control must never be switched off by data the caller supplies.** If the exemption cannot be
+proved, it cannot exist.
+
+Every enrolled account now presents its factor, desktop or not. The device payload rides the
+challenge (`MfaChallenge.deviceJson`) so no machine is registered on half a credential, and the
+offline story is untouched: registration happens at the server, over the network, with the owner
+standing at the machine — exactly when a phone is to hand. Once registered, the desktop verifies
+PINs locally against its mirror and does not re-authenticate here.
+
+`Device.status`, re-checked on every request, remains the revocation control for a stolen machine.
+
+### `x-acting-user` may only narrow privilege
+
+The header names which staff member is working, for attribution. It was adopting the claimed user's
+**role** with no proof, so anyone able to obtain a device session could name the OWNER and hold
+`users.manage`. That was reachable by ordinary staff: `resolveDevice` returns an already-registered
+machine to any user of the establishment, checking `devices.manage` only when registering a new one.
+
+It is now capped at the session holder's own role, and an attempt to widen is logged.
 
 ### Recovery
 
@@ -81,10 +106,13 @@ request, is the revocation control that stands in for a second factor there.
   because they get written on paper and read back under pressure.
 - A recovery-code sign-in is **distinguishable in the audit trail** (`"signed in using a recovery
   code"`) — worth alerting on, since it means a lost authenticator or someone else's codes.
-- **Self-disable is refused for ADMIN and OWNER.** Lost phones go through
-  `DELETE /api/admin/users/:id/mfa` — a second human, present, holding `users.manage`, with a
-  mandatory reason and a transactional audit entry. Same shape as `pinAdminRoutes`, and a stronger
-  check than any self-service flow.
+- **Self-disable is refused for ADMIN and OWNER**, and so is resetting your OWN factor through the
+  admin route. Lost phones go through `DELETE /api/admin/users/:id/mfa` performed by **someone
+  else** — a second human, present, holding `users.manage`, with a mandatory reason and a
+  transactional audit entry.
+- **Keep two ADMIN accounts.** They can reset each other. A lone ADMIN who loses phone and codes has
+  no in-app path back; the escape hatch is `npm run mfa:reset -w @fnb/server -- <username>
+  "<reason>"`, which needs a shell on the host and logs `mfa.breakGlassReset`.
 
 ### Where it lives
 
@@ -111,11 +139,16 @@ immediately and lets those users self-disable.
 
 ### Verified
 
-`npm run verify:security -w @fnb/server` — 32 of its 72 checks cover MFA, including: an unenrolled
-ADMIN can still sign in but is refused everything else; an unconfirmed enrolment does not lift the
-gate; a password alone sets no session cookie; a challenge cannot be replayed; a recovery code works
-once and not twice; a required role cannot self-disable; a registered desktop signs in without a
-code; and with no `FNB_MFA_KEY` the whole feature is off.
+`npm run verify:security -w @fnb/server` — around 45 of its 91 checks cover MFA, including: an
+unenrolled ADMIN can still sign in but is refused everything else; an unconfirmed enrolment does not
+lift the gate; a password alone sets no session cookie; a challenge cannot be replayed; a recovery
+code works once and not twice; a required role cannot self-disable; **a device payload does not
+bypass the factor and registers no machine**; **STAFF cannot become OWNER via `x-acting-user`**;
+**an administrator cannot reset their own factor**; **an enrolled account fails closed when the key
+is missing**; and with no `FNB_MFA_KEY` the whole feature is off.
+
+Five of those checks exist because an adversarial review found the bugs they now pin — including one
+case where the harness had asserted the **opposite** and scored a critical bypass as a pass.
 
 Also driven end-to-end in a real browser against the production build: gate → enrolment → QR →
 code → recovery codes → two-step login → dashboard.

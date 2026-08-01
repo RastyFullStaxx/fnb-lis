@@ -225,6 +225,26 @@ export const mfaAdminRoutes = new Hono<AppEnv>()
     const { reason } = c.req.valid("json");
     const targetId = c.req.param("id");
 
+    /**
+     * NOT on yourself.
+     *
+     * Without this the "a required role cannot switch its own second factor
+     * off" rule was decorative: an ADMIN or OWNER refused by DELETE
+     * /api/auth/mfa simply called this route with their own id and removed it
+     * with a session cookie alone — no password, no code, no second human.
+     * Anyone holding a stolen session could do the same and then re-enrol their
+     * own authenticator, taking the account permanently.
+     *
+     * The whole point of routing lost phones through an administrator is that a
+     * SECOND person is involved. Acting on yourself is not that.
+     */
+    if (targetId === actor.id) {
+      throw new AppError(
+        403,
+        "You can't reset your own two-factor authentication. Ask another administrator to do it.",
+      );
+    }
+
     const target = await prisma.user.findUnique({
       where: { id: targetId },
       select: { id: true, username: true, role: true, clientAccess: { select: { clientId: true } } },

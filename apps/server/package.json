@@ -14,7 +14,8 @@
     "verify:sync": "node prisma/verify-sync.mjs",
     "verify:security": "node prisma/verify-security.mjs",
     "backup": "node scripts/backup.mjs",
-    "restore-drill": "node scripts/restore-drill.mjs"
+    "restore-drill": "node scripts/restore-drill.mjs",
+    "mfa:reset": "tsx scripts/mfa-reset.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

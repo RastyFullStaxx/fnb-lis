@@ -2972,3 +2972,85 @@ path it will match is the single most reliable way to introduce a bug.
 - Backup + restore drill pass, and the drill **fails correctly** on a tampered backup (exit 1).
 - Audit gate passes, and **fails correctly** when an exception expires (exit 1).
 - react-router 8.3.0 verified in a real browser: sign-in, routing, and the MFA gate all work.
+
+## 2026-08-01 (fourth pass) — adversarial review of the day's own security work
+
+Ran an independent multi-agent review over everything the three previous passes added. It found
+**twelve** confirmed defects. Seven were security-relevant, and **five of those were introduced by
+the security work itself** — including one the new harness was actively scoring as a *pass*.
+
+That is the finding worth keeping. The code that adds a control is exactly as capable of removing
+one, and a check that asserts the wrong thing is worse than no check because it manufactures
+confidence.
+
+### CRITICAL — a device payload in the login body bypassed the second factor
+
+The offline-desktop exemption was `if (!device && isMfaAvailable())`. `device` is **unauthenticated
+request body**: nothing proves the caller is the Electron app — no client certificate, no shared
+secret, no signature. `deviceLogin` validates the shape of a fingerprint, not its provenance.
+
+So a phished password plus an invented fingerprint bought a full session with no code. It compounded
+three ways: registering a machine needs `devices.manage` = `[ADMIN, OWNER]`, byte-identical to
+`MFA_REQUIRED_ROLES`, so the exemption belonged to exactly the roles that must never have it; the
+session was device-bound, so **365 days** instead of 7; and `mfaEnrolmentOutstanding` short-circuited
+on `deviceId`, so the enrolment gate never fired either.
+
+Reproduced end to end before fixing — `curl` with a made-up fingerprint returned an OWNER session
+reaching every admin route. **The harness asserted the opposite** ("a registered desktop signs in
+without a code") and scored it green.
+
+Fixed: no exemption. The device payload rides the challenge via `MfaChallenge.deviceJson` — a column
+defined for exactly this on the first pass and then left wired to `null`.
+
+### HIGH — the rate limiter did not hold under concurrency
+
+The three limiters with teeth incremented *after* the handler resolved, so parallel requests all read
+zero and all passed. Measured: **60 concurrent bad sign-ins against a limit of 10 → 60 × 401,
+0 × 429**, each burning a full scrypt derivation. Every brute-force bound claimed for passwords, PINs
+and 6-digit codes rested on this. The comment on the *other* branch says exactly why reserving up
+front is necessary.
+
+Fixed with reserve-then-refund, and pinned by a concurrency check — sequential checks cannot see it.
+
+### HIGH — three more, all in the new MFA code
+
+- **`x-acting-user` adopted the claimed user's role** with no proof. Reachable by ordinary STAFF,
+  because `resolveDevice` returns an already-registered machine to any user of the establishment.
+  One header from staff to owner. Now capped at the session holder's role, and logged when tried.
+- **An administrator could reset their own second factor** via the admin route, making the
+  no-self-disable rule decorative — a stolen session could remove the factor and re-enrol.
+- **Losing `FNB_MFA_KEY` silently downgraded** every enrolled ADMIN/OWNER to password-only. Now
+  fails closed with 503 `MFA_UNAVAILABLE`, which is what the docs already promised.
+
+### MEDIUM/LOW — the rest
+
+Lockout counter reset on password success (making TOTP guessing unbounded per account); wrong TOTP
+codes falling through to ten 32 MB scrypt derivations; non-atomic recovery-code consumption;
+`process.exit` inside a `try` leaving an unencrypted database copy in the OS temp directory;
+backups kept without a manifest blocking the drill with a false diagnosis; `syncUploads` unable to
+heal a truncated file; unbounded rate-limit map; a silent whole-installation lockout when a proxy
+sits in front without `FNB_TRUST_PROXY`.
+
+### A lockout risk the fix created, and its escape hatch
+
+Refusing self-reset means a **lone** ADMIN who loses phone and codes has no in-app path back — an
+OWNER cannot manage an ADMIN. So: the runbook now asks for **two** ADMIN accounts, and
+`npm run mfa:reset -w @fnb/server -- <username> "<reason>"` is the break-glass. It needs a shell on
+the host (a stronger proof of authority than any network flow), ends every session for that account,
+and writes `mfa.breakGlassReset` to the trail.
+
+### Verified
+
+- `verify:security` **91/91** (was 76; 15 new checks pin these findings) · `verify:seed` PASS ·
+  `verify:sync` PASS · typechecks clean · audit gate PASS · build clean.
+- The bypass reproduced and then re-tested dead in a real browser: the device payload now returns a
+  challenge, and `/api/auth/me` is 401.
+- Break-glass reset exercised on a throwaway database, including its audit row and session eviction.
+- Verification enrolment cleared afterwards — its secret existed only in that session.
+
+### Note
+
+Two of the four review lenses lost their verifier agents to a session limit, so their findings
+arrived unvetted. I verified those by hand, which is how the concurrency race was confirmed
+(reproduced at 60/60 before the fix). Worth re-running that review later for the coverage that was
+lost.

@@ -25,7 +25,7 @@
  */
 import Database from "better-sqlite3";
 import { execFileSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -126,19 +126,38 @@ function prune(dir, now) {
   return { kept: keep.size, removed };
 }
 
-/** Uploads are SHA-named and immutable, so absence is the only thing to check. */
+/**
+ * Uploads are SHA-named and immutable, so absence is the main thing to check —
+ * but "it exists" is not the same as "it is complete".
+ *
+ * `copyFileSync` is not atomic: a crash, a full disk or a killed scheduled task
+ * mid-copy leaves a TRUNCATED file at the destination, and a plain
+ * `if (existsSync(to)) continue` would then skip it forever. The backup would
+ * hold a corrupt source document for an audit and never heal.
+ *
+ * So: copy to a temp name and rename into place (rename IS atomic on both NTFS
+ * and POSIX), and re-copy anything whose size does not match the source.
+ */
 function syncUploads(src, dest) {
   if (!existsSync(src)) return 0;
   mkdirSync(dest, { recursive: true });
   let copied = 0;
+  let healed = 0;
   for (const name of readdirSync(src)) {
     const from = path.join(src, name);
-    if (!statSync(from).isFile()) continue;
+    const stat = statSync(from);
+    if (!stat.isFile()) continue;
     const to = path.join(dest, name);
-    if (existsSync(to)) continue;
-    copyFileSync(from, to);
+    if (existsSync(to)) {
+      if (statSync(to).size === stat.size) continue;
+      healed += 1; // partial from an interrupted earlier run
+    }
+    const tmp = `${to}.partial`;
+    copyFileSync(from, tmp);
+    renameSync(tmp, to);
     copied += 1;
   }
+  if (healed > 0) console.log(`uploads : re-copied ${healed} incomplete file(s)`);
   return copied;
 }
 
@@ -196,13 +215,30 @@ const main = async () => {
    * Written after integrity passes, so a manifest never describes a backup that
    * was discarded.
    */
-  const manifest = execFileSync("npx", ["tsx", "scripts/audit-digest.ts"], {
-    cwd: serverRoot,
-    env: { ...process.env, FNB_DB_FILE: target },
-    encoding: "utf-8",
-    shell: process.platform === "win32",
-    maxBuffer: 64 * 1024 * 1024,
-  });
+  let manifest;
+  try {
+    manifest = execFileSync("npx", ["tsx", "scripts/audit-digest.ts"], {
+      cwd: serverRoot,
+      env: { ...process.env, FNB_DB_FILE: target },
+      encoding: "utf-8",
+      shell: process.platform === "win32",
+      maxBuffer: 64 * 1024 * 1024,
+    });
+    JSON.parse(manifest); // reject a truncated or non-JSON digest before storing it
+  } catch (err) {
+    /**
+     * The DATABASE copy is good — integrity_check passed above — so it is kept.
+     * Only its fingerprint is missing, which means the restore drill cannot
+     * verify this particular backup; the drill skips past it to one it can, and
+     * names it while doing so.
+     *
+     * Exits non-zero so a scheduled run surfaces as a failure rather than
+     * accumulating silently unverifiable backups.
+     */
+    console.error(`\nWARNING: backup kept, but its manifest could not be written: ${err instanceof Error ? err.message : err}`);
+    console.error("This backup cannot be verified by the restore drill. Investigate before relying on it.");
+    process.exit(1);
+  }
   writeFileSync(target.replace(/\.db$/, ".manifest.json"), manifest);
   const parsed = JSON.parse(manifest);
   console.log(`manifest: ${parsed.periods.filter((p) => p.digest).length} auditable location(s) fingerprinted`);
