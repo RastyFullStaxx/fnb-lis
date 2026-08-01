@@ -3265,3 +3265,26 @@ not conflict with the pre-chain backfill.)
 audit gate PASS · backup + drill PASS · build clean. Charts, report (92 rows) and toasts all verified
 in a real browser against the production build, with **zero CSP violations**. Live chain verifies
 clean after the break-glass writes.
+
+## 2026-08-02 (fourth pass) — sealing pre-chain history
+
+`npm run seal-history -w @fnb/server` backfills `seq`/`prevHash`/`hash` onto entries written before
+chaining shipped. Dry-run by default; `--confirm` writes.
+
+**It does not prove old history is authentic** — it hashes the rows as they stand, so anything
+already altered is frozen in as correct. What it buys is that from that point they cannot be edited
+or deleted without detection. The run therefore records itself as `activity.sealHistory`, so nobody
+later mistakes *trusted-on-seal* for *verified-from-origin*.
+
+Design notes:
+- **Appended after the current tip**, not spliced into chronological position. Splicing would mean
+  recomputing hashes an operator may already have published as an anchor — precisely the operation
+  the chain exists to make visible. Better to append and say so.
+- Ordered by `ts` then `id`. Rows sharing a millisecond otherwise have no defined order, and a
+  verifier walking them differently would report a false break.
+- One transaction — a half-sealed chain reads as a break at the point the run stopped.
+- Idempotent: rows already carrying a `seq` are skipped.
+
+Run on the dev database: **420 entries sealed**, chain verifies (425 linked, 0 unchained), re-run is
+a no-op, and editing a sealed historic row is caught at its exact seq. `verify:security` 119/119,
+`verify:seed` PASS, `verify:sync` PASS, restore drill PASS.

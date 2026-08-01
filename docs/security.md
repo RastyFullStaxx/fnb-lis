@@ -84,9 +84,10 @@ An honest score, with the reasoning rather than just a number.
 *Tracked across 2026-08-01: **78** (initial audit) → **82** (MFA) → **93** (DR, pipeline, KDF,
 route-coverage) → **91** when review round one found five bypasses in the day's own MFA work → **93**
 once fixed → **89** when round two found nine more, six of them introduced by round one's fixes →
-**94** once those were fixed and pinned. The remaining points are almost entirely things only you can
-do — terminate TLS, put backups on another machine, run the quarterly drill.
-See [§5](#5-reaching-100).*
+**94** once those were fixed and pinned → **95** with the Phase-2 leftovers → **97** with hash-chained
+ActivityLog, byte-sniffed uploads and inline `<style>` refused. The remaining three points are
+almost entirely things only the operator can do — terminate TLS, schedule the backup onto another
+machine, protect the branch. See [§5](#5-reaching-100).*
 
 **The most useful thing learned here is in those dips, and it is uncomfortable.** Across two review
 rounds, **eleven of the sixteen security defects were introduced by the security work itself** —
@@ -504,6 +505,10 @@ stops reproducing.
 *logs* changes. This is the claim that the log **has not been edited** — including by whoever holds
 the database file, which is precisely this product's stated adversary. An audit trail an insider can
 quietly rewrite is not evidence; it is a confident lie.
+
+Pre-existing rows are sealed separately (`npm run seal-history`, runbook §4) — a *trusted-on-seal*
+operation that freezes them as they stand rather than proving them authentic, and which records
+itself in the trail so the distinction survives.
 
 Nine checks in the harness perform **real tampering** and require the verifier to catch it: an edited
 summary (caught at its exact seq), a deleted row (caught as a gap — the hashes alone would chain

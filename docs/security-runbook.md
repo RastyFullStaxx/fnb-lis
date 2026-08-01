@@ -301,6 +301,28 @@ itself stays in the audit trail.
 **4 — Review.** Within a week: what happened, what was affected, what the detection gap was, what
 changes. Add a check to `verify-security.ts` for the specific hole. Record it in `build-log.md`.
 
+### Sealing pre-chain history
+
+Entries written before hash-chaining shipped carry no hash. The verifier reports them as
+`unchained` rather than calling them corrupt, and they can be sealed once:
+
+```bash
+npm run seal-history -w @fnb/server            # dry run — writes nothing
+npm run seal-history -w @fnb/server -- --confirm
+```
+
+**Sealing does not prove the old entries are authentic.** It hashes them exactly as they stand, so
+anything already altered is frozen in as correct. What it buys is that from that moment they can no
+longer be edited or deleted without detection. The honest name is *trusted-on-seal*, which is why
+the run records itself in the trail as `activity.sealHistory` — nobody later has to wonder whether
+that history was verified from origin or trusted at a point in time.
+
+Run it while you still have reason to believe the history is good. Idempotent, so a re-run is a
+no-op, and the whole batch is one transaction — a half-sealed chain would read as a break.
+
+Sealed on the development database 2026-08-02: 420 entries, chain verifies, tamper-detection
+confirmed against an edit of a sealed row.
+
 ### Break-glass: an administrator locked out of their own MFA
 
 A lone ADMIN who has lost their authenticator **and** their ten recovery codes cannot be helped
