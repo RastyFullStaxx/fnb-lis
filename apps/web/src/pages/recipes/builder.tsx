@@ -5,7 +5,7 @@ import { convert, recipeCost } from "@fnb/core";
 import { useMenu, useMenuMutations, type MenuSummary } from "@/api/menus";
 import { variantLabel, type LocationItem } from "@/api/types";
 import { ApiError } from "@/api/http";
-import { usePreferredUnit } from "@/lib/preferences";
+import { useItemDisplayUnit } from "@/lib/preferences";
 import { cn, formatMoney } from "@/lib/utils";
 import { ItemCombobox } from "@/components/item-combobox";
 import { Button } from "@/components/ui/button";
@@ -44,17 +44,29 @@ export function RecipeBuilderSheet({
   const [lines, setLines] = useState<BuilderLine[]>([]);
   const [picking, setPicking] = useState<LocationItem | null>(null);
 
-  // Client req 2026-07-31: Serving shows and accepts the user's own
-  // preferred unit, same as Open Amount / Weigh Partial in Counts
-  // (session.tsx). The item's own unit stays the source of truth for
-  // recipeCost and for what gets submitted — this only changes what the
-  // person building the recipe sees and types.
-  const preferredVolume = usePreferredUnit("VOLUME");
-  const preferredMass = usePreferredUnit("MASS");
+  // Client req 2026-07-31: Serving shows and accepts the resolved display
+  // unit for each ingredient — staff's own override for that item, then the
+  // admin's default for that item, then this user's general preference,
+  // then the item's own unit (resolveDisplayUnit() in @fnb/core). The
+  // item's own unit stays the source of truth for recipeCost and for what
+  // gets submitted — this only changes what the person building the recipe
+  // sees and types. Resolves for every ingredient that could appear in this
+  // sheet: the lines already in state, PLUS whatever the current version
+  // detail would seed (needed on the same render the detail lands, before
+  // `lines` itself has caught up).
+  const detailItemIds = useMemo(
+    () => (detail.data?.versions[0]?.lines ?? []).map((l) => l.locationItem.itemVariant.item.id),
+    [detail.data],
+  );
+  const lineItemIds = useMemo(() => lines.map((l) => l.item.itemVariant.item.id), [lines]);
+  const allItemIds = useMemo(
+    () => [...new Set([...detailItemIds, ...lineItemIds])],
+    [detailItemIds, lineItemIds],
+  );
+  const { resolve: resolveDisplay } = useItemDisplayUnit(allItemIds);
   const displayUnitFor = (variant: LocationItem["itemVariant"]) => {
     if (!variant.contentTracked) return null;
-    const preferred = variant.unit.kind === "MASS" ? preferredMass : variant.unit.kind === "VOLUME" ? preferredVolume : null;
-    return preferred && preferred.kind === variant.unit.kind ? preferred : variant.unit;
+    return resolveDisplay(variant.item.id, variant.unit);
   };
   // Typed in displayUnit, converted to the item's own stored unit at the
   // edge — same toStoredUnit shape session.tsx uses for Open Amount.
@@ -127,7 +139,7 @@ export function RecipeBuilderSheet({
           })),
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [lines, preferredVolume, preferredMass],
+    [lines, resolveDisplay],
   );
   const srpNum = Number(srp) || 0;
   const margin = srpNum > 0 ? ((srpNum - cost) / srpNum) * 100 : null;

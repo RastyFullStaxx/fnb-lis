@@ -175,6 +175,49 @@ export const preferencesRoutes = new Hono<AppEnv>()
     return c.json({ ok: true });
   })
 
+  // ── Batch resolve — levels 1 & 2 for many items at once (client req
+  // 2026-07-31, docs/per-user-per-item-uom-plan.md). The per-item GET routes
+  // above are one-row-at-a-time, fine for the Settings page's own list, but
+  // every screen that actually renders quantities (count session, recipe
+  // builder/detail) needs this for a whole page of items in one request, not
+  // one request per row. Returns only the raw staffOverride/adminDefault
+  // strings (or null) per item — resolveDisplayUnit() (@fnb/core) is still
+  // where levels 3/4 (general preference, item's own unit) get folded in,
+  // client-side, because that step needs each item VARIANT's unit kind
+  // (VOLUME vs MASS) to know whether the general preference even applies,
+  // and the caller already has that loaded locally (no need to ship it here).
+  // requireAuth only, same tier as /preferences: reading your own resolution
+  // context needs no special permission, same as the per-item GETs above.
+  .get("/item-display-units", async (c) => {
+    const user = c.get("user")!;
+    const clientId = c.req.query("clientId") ?? "";
+    const itemIdsParam = c.req.query("itemIds") ?? "";
+    if (!clientId) throw new AppError(400, "clientId is required");
+    const itemIds = [...new Set(itemIdsParam.split(",").map((s) => s.trim()).filter(Boolean))];
+    if (itemIds.length === 0) return c.json({});
+    await assertClientAccess(user.id, user.role, clientId);
+    const [overrides, defaults] = await Promise.all([
+      prisma.userItemUnitPreference.findMany({
+        where: { userId: user.id, itemId: { in: itemIds } },
+        select: { itemId: true, unit: true },
+      }),
+      prisma.clientItemUnitDefault.findMany({
+        where: { clientId, itemId: { in: itemIds } },
+        select: { itemId: true, unit: true },
+      }),
+    ]);
+    const overrideByItem = new Map(overrides.map((o) => [o.itemId, o.unit]));
+    const defaultByItem = new Map(defaults.map((d) => [d.itemId, d.unit]));
+    const result: Record<string, { staffOverride: string | null; adminDefault: string | null }> = {};
+    for (const itemId of itemIds) {
+      result[itemId] = {
+        staffOverride: overrideByItem.get(itemId) ?? null,
+        adminDefault: defaultByItem.get(itemId) ?? null,
+      };
+    }
+    return c.json(result);
+  })
+
   // READ-ONLY and outside the master.write guard on purpose: the basis is
   // printed on every valuation report, so anyone who can read a report must be
   // able to read the basis. A 403 here would silently mislabel their screen as

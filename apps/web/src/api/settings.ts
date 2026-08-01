@@ -193,6 +193,36 @@ export function useSetItemUnitDefault(clientId: string, itemId: string) {
   });
 }
 
+/**
+ * Batch resolve — levels 1 & 2 (staff override, admin default) for many
+ * items in one request (client req 2026-07-31, docs/per-user-per-item-uom-plan.md).
+ * Every screen that actually renders quantities for a page of items (count
+ * session, recipe builder/detail) needs this, not the one-item-at-a-time
+ * GETs above, which exist for the Settings page's own list. Levels 3/4
+ * (general preferredVolumeUnit/preferredMassUnit, item's own unit) are
+ * folded in by the caller via resolveDisplayUnit() (@fnb/core), because that
+ * step needs each item variant's unit KIND, which the caller already has
+ * loaded locally.
+ */
+export interface ItemDisplayUnitLevels {
+  staffOverride: ItemDisplayUnit | null;
+  adminDefault: ItemDisplayUnit | null;
+}
+
+export function useItemDisplayUnits(clientId: string, itemIds: string[]) {
+  // Stable, order-independent key so adding/removing lines in a different
+  // order (or re-rendering with the same set) doesn't refetch unnecessarily.
+  const sortedIds = [...new Set(itemIds)].sort();
+  return useQuery({
+    queryKey: ["settings", "item-display-units", clientId, sortedIds],
+    queryFn: () =>
+      api<Record<string, ItemDisplayUnitLevels>>(
+        `/api/settings/item-display-units?clientId=${clientId}&itemIds=${sortedIds.join(",")}`,
+      ),
+    enabled: Boolean(clientId) && sortedIds.length > 0,
+  });
+}
+
 export function useUpdateProductTypes() {
   const qc = useQueryClient();
   return useMutation({
