@@ -17,7 +17,7 @@ import {
 } from "@fnb/core";
 import { prisma } from "../db";
 import { AppError } from "../lib/errors";
-import { burnPasswordTime, verifyPassword } from "../auth/password";
+import { burnPasswordTime, hashPassword, needsRehash, verifyPassword } from "../auth/password";
 import { resolveDevice } from "../auth/device";
 import { createSession, destroySession, SESSION_COOKIE } from "../auth/session";
 import { decryptSecret, isMfaAvailable, verifyTotp } from "../auth/totp";
@@ -69,6 +69,24 @@ export const authRoutes = new Hono<AppEnv>()
         where: { id: user.id },
         data: { failedLoginCount: 0, failedLoginAt: null },
       });
+    }
+
+    /**
+     * Upgrade a hash written with weaker parameters, now that we hold the
+     * plaintext and have already proved it. The only moment this is possible.
+     *
+     * Without it, raising the scrypt cost protects only accounts created after
+     * the change — the oldest accounts, which includes the administrators, stay
+     * on the old cost indefinitely. It also re-closes the enumeration oracle:
+     * see needsRehash in auth/password.ts.
+     *
+     * Best-effort. A failure here must never cost someone their sign-in — they
+     * proved their password, and the hash they already had is still valid.
+     */
+    if (needsRehash(user.passwordHash)) {
+      await prisma.user
+        .update({ where: { id: user.id }, data: { passwordHash: await hashPassword(password) } })
+        .catch(() => {});
     }
 
     /**

@@ -2879,3 +2879,96 @@ mounts several routers on shared prefixes.
   restore and a CI pipeline are ~4 hours of work for roughly +13 points overall; everything else is
   expensive polish, except hash-chained `ActivityLog`, which is a product feature more than a
   security one.
+
+## 2026-08-01 (third pass) — DR, CI, and the KDF
+
+Closing the two domains that scored lowest in the morning's audit: **Availability/DR 30→85** and
+**Pipeline 20→88**. Overall 82 → **93**. Everything left is a deployment or a schedule, not a commit
+— [security.md §5](security.md) now says exactly who has to do what.
+
+### Backups that verify themselves
+
+`npm run backup -w @fnb/server` — better-sqlite3's online backup API, **not** the `sqlite3` CLI
+(which isn't installed here, so the command the runbook originally gave would have failed) and not a
+file copy (which tears a WAL database into something that opens fine and is missing recent commits).
+
+It verifies `integrity_check` before keeping the file, syncs new uploads (SHA-named, so absence is
+the only test needed), and prunes on tiers — all recent for 48 h, then daily for 30 d, then weekly
+for a year.
+
+### A restore drill that checks the numbers, not the file
+
+`npm run restore-drill -w @fnb/server` restores to scratch and checks integrity, foreign keys,
+migration state, row counts, and — the part that matters — **re-runs the real Full Audit for every
+location and compares it to what the backup recorded**. Proven to catch a *single tampered count
+line*, a corruption `integrity_check` calls "ok". Measured RTO on the dev dataset: **4.4 s**.
+
+Two design corrections found by running it rather than reasoning about it:
+
+1. **Comparing against the live database was wrong.** It failed on eight activity rows a browser
+   session had written since the backup — i.e. on ordinary business activity. A drill that cries
+   wolf is a drill nobody runs. The backup now writes a **manifest** of its own counts and audit
+   digests, and the drill checks restored-vs-manifest. Drift against live is still reported, and
+   that number is the **measured RPO**.
+2. **The first digest hashed field names that don't exist** (`beginQty`, `varianceQty` — the real
+   ones are `beginFull`, `variance`). It would have hashed all-nulls and matched itself forever. The
+   digest now reports how many fields it actually covered, and the drill asserts that count.
+
+### CI
+
+`.github/workflows/ci.yml` — typechecks, all three harnesses, the web build, an audit gate, and
+gitleaks with `fetch-depth: 0`. The harnesses were always the hard part; they just never ran unless
+someone remembered.
+
+**The audit gate is not bare `npm audit`.** That has two end states in CI and both are useless: block
+every build over an advisory nobody can reach, or get `|| true` appended. `scripts/audit-gate.mjs`
+scopes to the workspaces that ship and carries exceptions that are justified by a traced call path
+and **expire**, so an accepted risk gets re-examined instead of forgotten.
+
+It found a genuine one: **react-router had a high-severity RSC-mode CSRF bypass** — patched 8.1.0 →
+8.3.0. Not exploitable here (Vite SPA, no RSC) but it ships. Two remain accepted until 2026-11-01,
+both transitive and unreachable. Notably `npm audit fix` was **reverted**: it resolves `fast-uri` by
+bumping the Prisma CLI to 7.9.1 while `@prisma/client` stays 7.8.0, and a split Prisma toolchain
+under a system whose value is numerical correctness is the worse trade.
+
+### Every route, probed
+
+The 76th security check enumerates **every route the app registers** (179 after dedupe) and probes
+each unauthenticated. Result: 175 refused, 0 exposed, and **0 that validated a body before checking
+auth** — auth runs first everywhere.
+
+This is the check that scales. Both authorization bugs found today were middleware landing somewhere
+its author hadn't pictured, which review catches only by luck.
+
+### scrypt N 16384 → 32768, and two traps
+
+Raised now that the rate limiter exists (raising it earlier would have made `/login` a better CPU
+amplifier, not a safer endpoint). Both traps are worth knowing:
+
+- **Node's scrypt defaults `maxmem` to 32 MB and requires the working set strictly under it.** scrypt
+  needs `128·N·r` = *exactly* 33,554,432 bytes at N=32768, r=8. So the recommended parameters fail
+  outright until `maxmem` moves — and it must be passed on **verify** too, or every existing hash
+  stops checking. Caught by the seed failing, 30 seconds after the one-line "improvement".
+- **Raising N re-opened the M-2 timing oracle backwards.** `burnPasswordTime` runs at the current N
+  (~80 ms) while legacy hashes verified at the old one (~38 ms) — making a *known* username faster
+  than an unknown one. Fixed by re-hashing on successful sign-in, which also stops the oldest
+  accounts being the weakest forever.
+
+### One more middleware-placement bug
+
+`requireMfaEnrolment` blocked `/api/settings/preferences`, which `PreferencesProvider` fetches
+globally — including on the enrolment screen itself. Effects: the enrolment page rendered at the
+wrong font size for someone who chose "large" for poor eyesight, and the client's 403 handler rather
+than the login redirect drove the navigation, showing as a dashboard flash and a full page reload
+mid-sign-in. Now allowlisted; `/login` → `/account/security` goes straight through.
+
+That is **three** middleware-placement bugs in one day (M-3, the SPA route, this). The pattern is
+clear enough to state as a rule: in this codebase, mounting middleware without thinking about every
+path it will match is the single most reliable way to introduce a bug.
+
+### Verified
+
+- `verify:security` **76/76** · `verify:seed` PASS · `verify:sync` PASS · typechecks clean.
+- Backup + restore drill pass, and the drill **fails correctly** on a tampered backup (exit 1).
+- Audit gate passes, and **fails correctly** when an exception expires (exit 1).
+- react-router 8.3.0 verified in a real browser: sign-in, routing, and the MFA gate all work.

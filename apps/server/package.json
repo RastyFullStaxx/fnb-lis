@@ -12,7 +12,9 @@
     "db:seed": "tsx prisma/seed.ts",
     "verify:seed": "node prisma/verify-seed.mjs",
     "verify:sync": "node prisma/verify-sync.mjs",
-    "verify:security": "node prisma/verify-security.mjs"
+    "verify:security": "node prisma/verify-security.mjs",
+    "backup": "node scripts/backup.mjs",
+    "restore-drill": "node scripts/restore-drill.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

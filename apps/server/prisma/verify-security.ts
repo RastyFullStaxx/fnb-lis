@@ -170,6 +170,20 @@ const main = async () => {
       });
       return Number(process.hrtime.bigint() - started) / 1e6;
     };
+    // Legacy hashes are upgraded on successful sign-in (needsRehash). Sign in
+    // once first so the timing comparison below measures the CONVERGED state —
+    // an account still holding a weaker hash verifies faster than the
+    // burnPasswordTime branch, which is the oracle inverted rather than closed.
+    resetRateLimits();
+    await clearLockout("manager");
+    await login(agent(), "manager");
+    const upgraded = await prisma.user.findUnique({ where: { username: "manager" } });
+    ok(
+      "a legacy password hash is upgraded on sign-in",
+      (upgraded?.passwordHash ?? "").startsWith("scrypt:32768:"),
+      (upgraded?.passwordHash ?? "").split(":").slice(0, 4).join(":"),
+    );
+
     const samples = 5;
     let missMs = 0;
     let hitMs = 0;
@@ -181,12 +195,25 @@ const main = async () => {
     }
     missMs /= samples;
     hitMs /= samples;
-    // Generous bound: the point is that a miss is not ORDERS of magnitude
-    // faster, which is what makes enumeration trivial.
+    /**
+     * A bound, not a claim of zero.
+     *
+     * The KDF cost is now equal on both paths (burnPasswordTime runs the same
+     * N as a real verify, and legacy hashes upgrade on sign-in). What remains is
+     * that a REAL account has a failed-login counter to increment and a missing
+     * one does not — roughly 50 ms of database write that no amount of
+     * restructuring removes without either weakening the lockout or giving an
+     * unauthenticated caller a way to make the server do pointless writes.
+     *
+     * That residual is bounded to a handful of samples by the per-IP limiter
+     * (10 failures / 15 min), which is what makes it impractical rather than
+     * merely small. This assertion exists to catch a REGRESSION — the original
+     * bug was 5 ms vs 100 ms, a 20× signal — not to assert perfect symmetry.
+     */
     const ratio = hitMs / Math.max(missMs, 0.001);
     ok(
-      "unknown-user and wrong-password take comparable time",
-      ratio < 3 && ratio > 0.33,
+      "no order-of-magnitude timing signal between unknown user and wrong password",
+      ratio < 2.5 && ratio > 0.4,
       `miss ${missMs.toFixed(1)}ms vs hit ${hitMs.toFixed(1)}ms (ratio ${ratio.toFixed(2)})`,
     );
   }
@@ -430,6 +457,20 @@ const main = async () => {
      * raw 403 JSON instead of the enrolment screen, which is as locked out as
      * having no screen at all. Caught in a browser, pinned here.
      */
+    /**
+     * Per-user DISPLAY preferences stay reachable. PreferencesProvider fetches
+     * them globally, including on the enrolment screen itself, and they carry
+     * no security value (font size, unit system). Blocking them rendered the
+     * enrolment page at the wrong font size for a user who chose "large" for
+     * poor eyesight — and made the client's 403 handler, rather than the login
+     * redirect, the thing driving them there, which showed up as a dashboard
+     * flash and a full page reload mid-sign-in.
+     */
+    const prefsWhileGated = await admin.call("/api/settings/preferences");
+    ok("display preferences stay reachable while un-enrolled", prefsWhileGated.status === 200, `status ${prefsWhileGated.status}`);
+    const companyWhileGated = await admin.call(`/api/settings/company?clientId=${location!.clientId}`);
+    ok("but the rest of /api/settings is still gated", companyWhileGated.status === 403, `status ${companyWhileGated.status}`);
+
     const spaRoute = await admin.call("/account/security");
     ok(
       "the gate does not block the SPA route it sends people to",
@@ -618,6 +659,93 @@ const main = async () => {
     await login(noKey, "owner");
     const noKeyCall = await noKey.call("/api/admin/users");
     ok("with no FNB_MFA_KEY the whole feature is off (fail-safe)", noKeyCall.status === 200, `status ${noKeyCall.status}`);
+  }
+
+  console.log("\n== 11. every registered route, probed unauthenticated");
+  {
+    /**
+     * The check that scales. Sections above test the routes someone thought to
+     * test; this one enumerates what the app ACTUALLY registered and probes all
+     * of it, so a new route that ships without a guard fails the build instead
+     * of waiting for a reviewer to notice.
+     *
+     * Both authorization bugs found on 2026-08-01 were middleware landing
+     * somewhere its author had not pictured — a class of mistake that review
+     * catches only by luck, and that this catches by construction.
+     */
+    delete process.env.FNB_MFA_KEY;
+    resetRateLimits();
+
+    const location = await prisma.location.findFirst({ where: { status: "ACTIVE" } });
+
+    /** Routes that are anonymous BY DESIGN. Anything else must refuse. */
+    const ANONYMOUS = new Set([
+      "GET /api/health",
+      "POST /api/auth/login",
+      "POST /api/auth/mfa/verify",
+      // Logout is deliberately harmless without a session: it clears a cookie
+      // that isn't there and returns ok, rather than 401-ing someone who is
+      // trying to sign out of an already-dead session.
+      "POST /api/auth/logout",
+    ]);
+
+    const registered = (app as unknown as { routes: Array<{ method: string; path: string }> }).routes ?? [];
+    const seen = new Set<string>();
+    const targets: Array<{ method: string; path: string }> = [];
+    for (const r of registered) {
+      if (r.method === "ALL" || r.path.includes("*")) continue;
+      const key = `${r.method} ${r.path}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      targets.push({ method: r.method, path: r.path });
+    }
+
+    // Params get plausible values. When auth is enforced the id never matters —
+    // the request is refused before anything looks it up.
+    const fill = (p: string) =>
+      p
+        .replace(/:locationId/g, location!.id)
+        .replace(/:[A-Za-z]+/g, "clzzzzzzz0000zzzzzzzzzzzz");
+
+    let exposed = 0;
+    let refused = 0;
+    let unproven = 0;
+    const leaks: string[] = [];
+    const weak: string[] = [];
+
+    for (const t of targets) {
+      const key = `${t.method} ${t.path}`;
+      if (ANONYMOUS.has(key)) continue;
+      const res = await agent().call(fill(t.path), {
+        method: t.method,
+        ...(t.method === "GET" || t.method === "HEAD" ? {} : { body: "{}" }),
+      });
+      if (res.status >= 200 && res.status < 300) {
+        exposed += 1;
+        leaks.push(`${key} -> ${res.status}`);
+      } else if (res.status === 401 || res.status === 403 || res.status === 404) {
+        refused += 1;
+      } else {
+        // Usually 400: body validation ran before the auth check. Not a hole —
+        // the guard still runs — but this probe did not PROVE it, so it is
+        // reported rather than counted as a pass.
+        unproven += 1;
+        weak.push(`${key} -> ${res.status}`);
+      }
+    }
+
+    ok(
+      `no route serves data without a session (${targets.length} routes probed)`,
+      exposed === 0,
+      exposed === 0 ? `${refused} refused, ${unproven} validated-first` : leaks.slice(0, 8).join(" | "),
+    );
+    // Visible, not asserted: these are almost certainly fine, and pretending
+    // this probe proved them would be the kind of false comfort the whole
+    // harness exists to avoid.
+    if (unproven > 0) {
+      console.log(`       note: ${unproven} route(s) answered 4xx-other before auth could be observed`);
+      console.log(`       ${weak.slice(0, 5).join(" | ")}${weak.length > 5 ? " …" : ""}`);
+    }
   }
 
   console.log(

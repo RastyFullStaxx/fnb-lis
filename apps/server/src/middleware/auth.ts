@@ -165,6 +165,25 @@ export const requireAuth = createMiddleware<AppEnv>(async (c, next) => {
 const mfaEnforcementOn = () => process.env.FNB_REQUIRE_MFA !== "0";
 
 /**
+ * What an un-enrolled account may still reach.
+ *
+ * `/api/auth/*` is the enrolment flow itself — blocking it would gate people
+ * out of the only screen that can un-gate them.
+ *
+ * `/api/settings/preferences` is here because it is a PER-USER DISPLAY setting
+ * (font size, unit system) with no security value whatsoever, and it is fetched
+ * globally by PreferencesProvider on every page including the enrolment screen.
+ * Refusing it meant the enrolment page rendered at the wrong font size for a
+ * user who had chosen "large" for poor eyesight — punishing exactly the person
+ * we are asking to read a QR-code setup flow. It also made the client's 403
+ * handler, rather than the login redirect, the thing driving them there.
+ */
+const ALLOWED_WHILE_UNENROLLED = (path: string): boolean =>
+  path.startsWith("/api/auth/") ||
+  path === "/api/health" ||
+  path === "/api/settings/preferences";
+
+/**
  * Does this account's role demand a second factor it has not set up yet?
  *
  * Lives here rather than beside the login route so the dependency runs one way
@@ -188,7 +207,7 @@ export async function mfaEnrolmentOutstanding(user: SessionUser): Promise<boolea
 export const requireMfaEnrolment = createMiddleware<AppEnv>(async (c, next) => {
   const user = c.get("user");
   if (!user || !mfaEnforcementOn()) return next();
-  if (c.req.path.startsWith("/api/auth/") || c.req.path === "/api/health") return next();
+  if (ALLOWED_WHILE_UNENROLLED(c.req.path)) return next();
   if (await mfaEnrolmentOutstanding(user)) {
     throw new AppError(
       403,

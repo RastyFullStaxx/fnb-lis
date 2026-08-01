@@ -64,14 +64,17 @@ on.
 - [ ] `npm run typecheck -w @fnb/server` and `-w @fnb/web`
 - [ ] `npm run verify:seed -w @fnb/server` — golden fixtures intact
 - [ ] `npm run verify:sync -w @fnb/server` — offline mirror guarantees
-- [ ] `npm run verify:security -w @fnb/server` — the 38 checks behind security.md
-- [ ] `npm audit --omit=dev` reviewed
+- [ ] `npm run verify:security -w @fnb/server` — the 76 checks behind security.md
+- [ ] `npm run audit` passes (the gate, with its reviewed exceptions — see §5)
+- [ ] `npm run backup -w @fnb/server` then `npm run restore-drill -w @fnb/server` — prove the backup path works BEFORE you need it
 
 ---
 
 ## 2. Backup and disaster recovery
 
-**This is the weakest part of the system (scored 30/100) and the highest-value thing to fix.**
+Backup, verification, retention and the restore drill are now scripted (`npm run backup` /
+`npm run restore-drill`). What is left is **operational**: schedule them, put the copies somewhere
+else, and actually run the quarterly drill.
 
 ### Objectives
 
@@ -92,52 +95,86 @@ These are proposals. The client has not signed off on them — that conversation
 
 ### Taking a backup
 
-SQLite in WAL mode **cannot** be backed up by copying the file while the server runs — you get a
-torn database. Use the online backup API:
-
 ```bash
-sqlite3 apps/server/data/fnb.db ".backup 'C:/backups/fnb-$(date +%Y%m%d-%H%M).db'"
+npm run backup -w @fnb/server
 ```
 
-That is safe against a live writer. Then verify and compress — an unverified backup is not a backup:
+That is the whole thing — a script rather than a command to memorise, because the obvious command is
+wrong in two ways: the `sqlite3` CLI is **not installed** on this machine (checked), and a plain file
+copy of a WAL-mode database yields a torn database that opens fine and is missing the most recent
+commits.
 
-```bash
-sqlite3 "C:/backups/fnb-20260801-1400.db" "PRAGMA integrity_check;"   # must print: ok
-```
+The script uses `better-sqlite3`'s online backup API — safe against a live writer — and then:
+
+1. **Verifies before keeping.** `integrity_check` runs on the copy; a failure deletes it. A corrupt
+   backup sitting in the directory looking like a backup is worse than a missing one, because it is
+   the one you will reach for.
+2. **Writes a manifest** beside it — row counts plus a Full Audit fingerprint per location, computed
+   from the backup itself. This is what the restore drill checks against.
+3. **Copies new uploads.** They are SHA-256-named and immutable, so "copy what isn't there" is a
+   correct incremental sync.
+4. **Prunes on the tiered schedule below**, so it can run hourly forever without either filling the
+   disk or losing last month's history.
+
+Two environment variables:
+
+| | |
+|---|---|
+| `FNB_BACKUP_DIR` | Where backups go. **Point this at a different volume** — the default sits beside the database, where one failed disk takes both |
+| `FNB_UPLOADS_DIR` | Source of import files, if not the default |
 
 ### Schedule
 
-| Frequency | Retention | Where |
+| Frequency | Retained | Where |
 |---|---|---|
-| Hourly | 48 hours | Same host, separate volume |
-| Nightly | 30 days | Different physical machine |
-| Weekly | 12 months | Offsite / different provider |
+| Hourly | 48 hours, all of them | Separate volume (`FNB_BACKUP_DIR`) |
+| Daily | 30 days, one per day | Different physical machine |
+| Weekly | 52 weeks, one per week | Offsite / different provider |
 
-The offsite copy is the one that survives ransomware and fire, and it is the one people skip. It
-must be **encrypted** (the file holds every client's cost prices) and **write-once** if the storage
-supports it.
+Retention is enforced by the script. The **offsite** copy is the one that survives ransomware and
+fire, and it is the one people skip: sync `FNB_BACKUP_DIR` elsewhere, encrypted, ideally write-once.
+
+On Windows, hourly via Task Scheduler — one line, run once:
+
+```bash
+schtasks /create /tn "FNB backup" /sc hourly /ru SYSTEM /tr "cmd /c cd /d C:\xampp\htdocs\fnb-lis && npm run backup -w @fnb/server"
+```
+
+**`.env` is deliberately not backed up.** It holds `FNB_MFA_KEY`, and putting the encryption key in
+the same archive as the ciphertext it protects defeats the point. Back it up separately, encrypted,
+somewhere the database backups are not.
 
 ### Restore drill — do this quarterly
 
 An untested backup is a belief. The drill *is* the deliverable:
 
 ```bash
-# 1. Restore to a scratch path — never over the live file
-cp /backups/fnb-nightly.db /tmp/restore-test.db
-
-# 2. Structural check
-sqlite3 /tmp/restore-test.db "PRAGMA integrity_check;"
-
-# 3. Prove the NUMBERS survived, not just the file. This is the real test —
-#    it re-runs the golden fixtures against the restored database.
-FNB_DB_FILE=/tmp/restore-test.db npx tsx apps/server/prisma/verify-seed.ts
+npm run restore-drill -w @fnb/server
 ```
 
-Step 3 is why this project's fixture harness earns its keep: it turns "the file opens" into "the
-Full Audit still produces the numbers the client signed off on".
+It restores the newest backup to a scratch path (never over the live file) and checks four things:
 
-Record each drill in `build-log.md` with the date and the elapsed restore time. That elapsed time
-is your **real** RTO, as opposed to the aspirational one above.
+1. `integrity_check` and `foreign_key_check` — is it a valid, internally consistent SQLite file?
+2. **Migration state** — is the schema the one this code expects? A backup taken before a migration
+   restores fine and then fails at runtime in a much more confusing way.
+3. **Row counts vs its own manifest** — did anything silently fall out?
+4. **The Full Audit digest** — re-runs the real reconciliation for every location's latest committed
+   period and compares it to what the backup recorded.
+
+**Step 4 is the one that matters and the one nobody does.** Restoring a file proves the file opens.
+Re-running the reconciliation proves the Full Audit — the single report this client trusts
+absolutely — survives a restore intact. It is sensitive enough to catch a *single altered count
+line*, a corruption `integrity_check` cheerfully reports as "ok".
+
+Everything is compared against the backup's **own manifest**, never against the live database. Live
+moves; a backup does not. Comparing to live makes the drill fail on ordinary business activity, and
+a check that cries wolf is a check nobody runs.
+
+It then reports, without asserting, how far behind live the backup is — **that number is your
+measured RPO**: exactly the work a restore would discard.
+
+Record the elapsed time in `build-log.md`. **That is your real RTO**, as opposed to the aspirational
+one above. Measured 2026-08-01: **4.4 s** on the dev dataset.
 
 ### Failure scenarios
 
@@ -221,8 +258,10 @@ Point the supervisor and any uptime monitor at it.
 **1 — Contain.** Preserve evidence *first*; it is the thing you cannot recover later.
 
 ```bash
-# Snapshot the database and logs BEFORE changing anything
-sqlite3 apps/server/data/fnb.db ".backup '/incident/evidence-$(date +%s).db'"
+# Snapshot the database BEFORE changing anything. Same online-backup path as the
+# scheduled job, so it is safe while the server is still running — and it writes
+# a manifest, which timestamps and fingerprints the evidence.
+FNB_BACKUP_DIR=/incident npm run backup -w @fnb/server
 ```
 
 Then, as appropriate:
@@ -273,33 +312,55 @@ data and their competitors who would want it.
 
 ## 5. Dependency and supply-chain hygiene
 
-No CI exists today (scored 20/100), so this is manual until one does.
-
 ```bash
-npm audit --omit=dev          # production dependencies only
-npm outdated
+npm run audit
 ```
 
-Monthly, and before any release. Treat `critical`/`high` in a production dependency as SEV-3.
+Not bare `npm audit`. That has two end states in CI and both are useless: it blocks every build over
+an advisory nobody can reach, or somebody appends `|| true` and it silently stops meaning anything.
+
+`scripts/audit-gate.mjs` instead scopes to the workspaces that actually **ship** (`@fnb/server`,
+`@fnb/web` — not the Electron builder toolchain), and carries exceptions that are written down,
+justified by an actual traced call path, and **expiring**. When an exception lapses the build fails
+and a human looks again, which is the behaviour you want from an accepted risk as opposed to a
+forgotten one.
+
+Two exceptions are live as of 2026-08-01, both expiring 2026-11-01:
+
+| Package | Why it is accepted |
+|---|---|
+| `brace-expansion` | ReDoS/OOM via attacker-controlled **glob patterns**. Reached only as exceljs → archiver → glob → minimatch, where the patterns are archiver's own constants. No user input reaches a glob here — uploads are named from a SHA-256 and never globbed |
+| `fast-uri` | URI host confusion, present only via the **Prisma CLI** (`prisma` → `@prisma/dev` → ajv), which runs at migrate/generate time and is never loaded by the running server |
+
+`npm audit fix` resolves `fast-uri` by bumping the Prisma CLI to 7.9.1 while `@prisma/client` stays
+7.8.0. A split Prisma toolchain under a system whose entire value is numerical correctness is the
+worse trade — so it is refused deliberately, not overlooked.
+
+**Fixed rather than excepted on 2026-08-01:** `react-router` (RSC-mode CSRF bypass) — patched
+8.1.0 → 8.3.0. Not exploitable here (this is a Vite SPA with no RSC), but it was a free patch on
+code that actually ships.
 
 `allowScripts` in the root `package.json` permits install-time lifecycle scripts for exactly five
 packages — `prisma`, `@prisma/engines`, `esbuild`, `better-sqlite3`, `electron`. All genuinely need
 them. **Do not extend that list casually**; an install script is arbitrary code execution on the
 build machine.
 
-### When CI exists
+### CI
 
-The minimum worth having, in priority order:
+`.github/workflows/ci.yml` runs on every push and PR, weekly on a schedule, and on demand:
 
-1. `npm audit --audit-level=high`
-2. Secret scanning (gitleaks) — on **history**, not just the diff
-3. `npm run typecheck` for both workspaces
-4. All three `verify:*` harnesses
-5. Protected `main`, no direct pushes
+| Job | What |
+|---|---|
+| **verify** | Typecheck both workspaces, then all three harnesses (`verify:seed`, `verify:sync`, `verify:security`), then the web build |
+| **audit** | The audit gate above |
+| **secrets** | Gitleaks, with `fetch-depth: 0` |
 
-Note that the repo currently commits `apps/server/.env` to `.gitignore` correctly, but **git history
-has never been scanned**. Do that once, retroactively, before the repo is ever shared:
+That `fetch-depth: 0` matters: gitleaks must see **history**, not just the diff. A key committed and
+removed in the next commit is still in the pack file, still published, and still valid. Scanning
+only the diff is what lets that sit undetected for a year.
 
-```bash
-gitleaks detect --source . --log-opts="--all"
-```
+Still to do by hand, once:
+
+- [ ] Enable branch protection on `main` — no direct pushes, CI must pass
+- [ ] Run gitleaks against full history retroactively before this repo is shared with anyone
+- [ ] Consider Dependabot or Renovate with grouped weekly PRs

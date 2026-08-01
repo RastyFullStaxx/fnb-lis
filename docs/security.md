@@ -14,8 +14,13 @@ Run the harness after touching anything in this document's scope:
 npm run verify:security -w @fnb/server
 ```
 
-38 checks against the real Hono app on a throwaway database. Same shape as `verify:seed` and
-`verify:sync` — one runnable script, exits non-zero when a guarantee breaks.
+76 checks against the real Hono app on a throwaway database. Same shape as `verify:seed` and
+`verify:sync` — one runnable script, exits non-zero when a guarantee breaks. Runs in CI on every
+push.
+
+The last of those checks enumerates **every route the app registers** and probes each one
+unauthenticated, so a new endpoint that ships without a guard fails the build rather than waiting
+for a reviewer to notice.
 
 ---
 
@@ -74,27 +79,29 @@ Four boundaries carry real weight:
 
 An honest score, with the reasoning rather than just a number.
 
-### Score: **82 / 100** — strong application security, incomplete operational security
+### Score: **93 / 100** — strong throughout; what remains is deployment, not code
 
-*(78 at the start of this pass; MFA took Authentication from 78 to 92. The remaining ceiling is
-almost entirely operational — see [§4](#4-roadmap) for what each domain needs to reach 100.)*
+*Tracked across 2026-08-01: **78** (initial audit) → **82** (MFA) → **93** (DR, pipeline, KDF,
+route-coverage). The remaining seven points are almost entirely things only you can do — terminate
+TLS, put backups on another machine, run the quarterly drill. See [§5](#5-reaching-100).*
 
 That splits unevenly, and the split is the useful part:
 
 | Domain | Score | Why |
 |---|---|---|
-| Authorization / tenancy | 92 | Genuinely strong. Server-side on every route, 404-not-403 convention, nested-relation scoping, no IDOR found |
+| Authorization / tenancy | 98 | Server-side on every route, 404-not-403, nested-relation scoping, no IDOR — and now **all 179 routes probed unauthenticated on every CI run** |
 | Audit integrity | 90 | Mutations and their log rows share a `$transaction`. Immutable records with void chains |
-| Authentication | 92 | Solid primitives, correctly used, now with TOTP for ADMIN/OWNER |
+| Authentication | 96 | TOTP for ADMIN/OWNER, scrypt at 2× the OWASP floor with lazy re-hashing |
 | Input handling / injection | 88 | Prisma everywhere, zod on every body, no raw SQL on user input, no dynamic execution |
-| Transport / edge hardening | 75 | Fixed in this pass (was ~35). Depends on TLS termination being configured correctly |
-| Secrets management | 65 | `.env` untracked and clean, but no rotation, no scanning, no manager |
-| Availability / DR | 30 | **The weakest domain.** Single SQLite file, no automated backup, no restore drill |
-| Pipeline security | 20 | No CI at all — no dependency scanning, no secret scanning, no protected branches |
+| Transport / edge hardening | 75 | Headers, limits and per-request `Secure` all shipped. Stuck at 75 until TLS is actually terminated — that one is yours |
+| Secrets management | 80 | `.env` untracked and clean, gitleaks in CI. Remaining: back up `FNB_MFA_KEY` separately, and a rehearsed rotation |
+| Availability / DR | 85 | Verified tiered backups + a restore drill that re-runs the real reconciliation. Remaining: schedule it, and put a copy on another machine |
+| Pipeline security | 88 | CI runs typechecks, all three harnesses, an expiring-exception audit gate, and gitleaks over full history. Remaining: branch protection |
 
-The pattern is clear and worth naming: **the code is well-built, the operations around it barely
-exist.** That is the normal shape for a system in active development by one engineer, and it means
-the highest-value remaining work is not in the codebase.
+The pattern that shaped the day's work: the code was well-built and the operations around it barely
+existed. DR and pipeline — 30 and 20 at the start — were worth more than every remaining code
+change combined, and they are now 85 and 88. What is left is genuinely not codeable: terminating
+TLS, putting a backup on a second machine, and running a drill once a quarter.
 
 ### What was already right before this audit
 
@@ -259,11 +266,27 @@ Deliberate and documented (`middleware/auth.ts`): non-browser callers (`curl`, t
 POSTs, and `SameSite=Lax` is a second independent barrier. **Not worth changing** — tightening it
 breaks the desktop for no real gain.
 
-#### L-2 · scrypt cost at the OWASP floor
-N=16384 (16 MB, ~100 ms) is the stated minimum for r=8, p=1. Deliberately not higher: `/login` runs
-it *before* knowing who is calling, so the work factor doubles as an unauthenticated CPU cost. Now
-that H-2 caps that, raising N to 32768 is a safe one-line change — the parameters live in the hash
-string, so old hashes keep verifying and no migration is needed. Do the two together.
+#### L-2 · scrypt cost at the OWASP floor — FIXED
+N=16384 was the stated minimum for r=8, p=1. Raised to **32768** once H-2's rate limiter existed —
+not before, because `/login` runs the KDF *before* knowing who is calling, so the work factor
+doubles as an unauthenticated CPU cost.
+
+Two traps this hit on the way, both worth recording:
+
+- **Node's scrypt defaults `maxmem` to 32 MB and requires the working set to be strictly under it.**
+  scrypt needs `128·N·r`, which at N=32768, r=8 is *exactly* 33,554,432 bytes. So the recommended
+  parameters fail outright with "memory limit exceeded" until `maxmem` moves too — and it must be
+  passed on **verify** as well as hash, or every existing hash stops checking. `MAXMEM` is now
+  computed from the parameters and doubled, so it cannot silently become the ceiling again.
+- **Raising N re-opened M-2 in reverse.** `burnPasswordTime` runs at the *current* N (~80 ms) while a
+  real account holding a legacy hash verified at the old one (~38 ms) — so a known username became
+  *faster* than an unknown one. Fixed by re-hashing on successful sign-in (`needsRehash`), which
+  also means the oldest accounts stop being the weakest. Once every hash has upgraded, both paths
+  cost the same and the oracle closes for good.
+
+A residual ~50 ms asymmetry remains: a real account has a failed-login counter to increment and a
+missing one does not. Bounded to a handful of samples by the per-IP limiter, and asserted against
+regression (ratio < 2.5) rather than claimed to be zero.
 
 #### L-3 · Seed credentials are uniform and public
 Five accounts share `Fnb!2026`, printed in `README.md`. Correct for a dev fixture, catastrophic if
@@ -274,9 +297,24 @@ Five accounts share `Fnb!2026`, printed in `README.md`. Correct for a dev fixtur
 (NIST SP 800-63B) actually favours length over composition rules, so this is defensible — but 8 is
 short and a breached-password check is the single highest-value addition. See M-5's document.
 
-#### L-5 · `allowScripts` permits lifecycle scripts for 5 packages
-`prisma`, `@prisma/engines`, `esbuild`, `better-sqlite3`, `electron` — all need them, all are
-legitimate. Recorded as known supply-chain surface, not a defect.
+#### L-5 · Dependency advisories — PARTLY FIXED, remainder accepted with expiry
+`react-router` carried a high-severity RSC-mode CSRF bypass; patched 8.1.0 → 8.3.0. Not exploitable
+here (Vite SPA, no RSC) but free, and it ships.
+
+Two remain, both **transitive and unreachable**, both accepted until **2026-11-01** in
+`scripts/audit-gate.mjs` with the traced call path written down: `brace-expansion` (ReDoS via glob
+patterns that are archiver's own constants) and `fast-uri` (only via the Prisma **CLI**, never
+loaded by the running server). `npm audit fix` resolves the latter by splitting the Prisma toolchain
+— CLI 7.9.1 against client 7.8.0 — which is the worse trade under a system whose value is numerical
+correctness.
+
+The gate exists because bare `npm audit` in CI has two end states and both are useless: block every
+build over something nobody can reach, or get `|| true` appended. Exceptions here expire, so an
+accepted risk gets re-examined instead of forgotten.
+
+`allowScripts` still permits lifecycle scripts for exactly five packages — `prisma`,
+`@prisma/engines`, `esbuild`, `better-sqlite3`, `electron`. All need them. Known surface, not a
+defect.
 
 #### L-6 · Device registration is trust-on-first-use
 An owner signing in on an unregistered machine registers it. Bounded by `Subscription.maxDevices`,
@@ -303,155 +341,74 @@ Recording the negatives so the next audit does not redo them:
 
 ---
 
-## 4. Roadmap
+## 4. Before the first real client
 
-Ordered by value per unit of effort, not by severity.
+Six things, none of them code. In order.
 
-### Immediate — before the first real client goes live
+1. **Terminate TLS** and set `FNB_TRUST_PROXY=1` behind a proxy that *overwrites* `X-Forwarded-For`.
+   H-1 and M-1 both assume this — the Caddy config in the runbook is four lines.
+2. **Generate a production `FNB_MFA_KEY`** and back it up **separately from the database**. MFA is
+   off until it exists; losing it locks out every enrolled user. Then enrol every ADMIN and OWNER.
+3. **Change every seeded password** and delete the accounts you do not need. Five accounts share
+   `Fnb!2026`, printed in `README.md`.
+4. **Schedule `npm run backup`** (hourly), point `FNB_BACKUP_DIR` at a different volume, and sync a
+   copy to a **different machine**. The script is written; nothing runs it yet.
+5. **Run `npm run restore-drill` once now**, then quarterly. Record the elapsed time — that is your
+   real RTO.
+6. **Turn on `SENTRY_DSN`.** Right now a 500 in production is invisible.
 
-1. **Terminate TLS properly** and set `FNB_TRUST_PROXY=1` on the app. Everything in H-1/M-1 assumes
-   this. See the runbook.
-2. **Automate backups and *test a restore*.** This is the single largest remaining risk. An
-   untested backup is a belief, not a backup.
-3. **Change every seeded password**; delete the accounts you do not need.
-4. **Turn on `SENTRY_DSN`** or an equivalent. Right now a 500 in production is invisible.
-
-5. **Generate `FNB_MFA_KEY` and back it up separately from the database.** MFA is off until you do,
-   and losing the key locks out every enrolled user.
-
-### Short term
-
-6. **Breached-password check** at set-password time.
-7. **CI with `npm audit` + secret scanning.** There is no pipeline at all today.
-8. **Raise scrypt N to 32768** (with L-2's note).
-9. **Full-disk encryption on every desktop** running the mirror.
-
-### Longer term
-
-10. **A dedicated audit-log integrity mechanism** — hash-chained `ActivityLog` rows. This is the one
-    genuinely product-shaped security feature: an audit system that can *prove* its trail is
-    unaltered is a different product from one that merely stores it.
-11. **Move rate-limit state out of process memory** — only if the app is ever fronted by more than
-    one instance. Today it is single-process by design (`db.ts`, SQLite WAL), so in-memory is the
-    correct scope, not a shortcut.
-12. **Read/write database separation**, if reporting load ever justifies it.
+Then the standing checklist in [security-runbook.md §1](security-runbook.md).
 
 ---
 
 ## 5. Reaching 100
 
-The gap to a perfect score, per domain, with an honest note on where 100 is not worth buying.
+Updated 2026-08-01 after the DR and pipeline work. **Almost everything left needs a deployment, a
+schedule, or a decision — not a commit.**
 
-**Read the effort column before the list.** Six of the eight domains are already ≥88 and their
-remaining points cost more than they return. Two are cheap and enormous. If you only do the rows
-marked ⭐, the overall score goes from 82 to about 95.
+### The seven points, and who has to do them
 
-### Availability / DR — 30 → 100 ⭐ *the single biggest win available*
+| # | Domain | What's left | Whose |
+|---|---|---|---|
+| 1 | Transport 75→95 | **Terminate TLS**, set `FNB_TRUST_PROXY=1` behind an overwriting proxy | Yours — 1 h, runbook §1 |
+| 2 | DR 85→95 | **Schedule the backup** (`schtasks` one-liner) and put a copy on a **different machine** | Yours — 1 h |
+| 3 | DR 95→100 | Run the **quarterly restore drill** and record the elapsed time | Yours — 5 min/quarter |
+| 4 | Secrets 80→90 | Back up `FNB_MFA_KEY` **separately from the database** | Yours — 10 min |
+| 5 | Pipeline 88→95 | Branch protection on `main`; gitleaks over history once, retroactively | Yours — 20 min |
+| 6 | Audit integrity 90→97 | **Hash-chain `ActivityLog`** | Mine — ~1 day |
+| 7 | Input 88→94 | Content-sniff uploads instead of trusting the extension | Mine — 2 h |
 
-| Step | Effort | Gets you to |
-|---|---|---|
-| ⭐ Hourly `sqlite3 .backup` + nightly offsite, encrypted | 2 h | 65 |
-| ⭐ **A restore drill that re-runs the golden fixtures** (runbook §2) | 1 h | 80 |
-| Quarterly drill on a calendar, elapsed time recorded in `build-log.md` | ongoing | 88 |
-| Documented RPO/RTO **agreed with the client**, not just proposed | 1 h | 93 |
-| Automated backup-integrity check + alert when a backup is missed | 3 h | 100 |
+Items 1–5 are worth more than 6–7 combined, and none of them is code.
 
-The drill is the part people skip and the only part that proves anything. Restoring a file proves
-the file opens; re-running `verify-seed.ts` against the restored database proves the **Full Audit
-still produces the numbers the client signed off on**. Nothing else in this list matters if that
-one is missing.
+### Still worth building, in order
 
-### Pipeline / DevSecOps — 20 → 100 ⭐ *cheapest points on the board*
+**Hash-chained `ActivityLog` (item 6).** The only item on this page that is a **product feature**
+rather than a control. Every competitor can say their system logs changes. A system that can *prove*
+its trail has not been altered — including by whoever holds the database — is a different claim, and
+it is exactly the claim this client's business rests on. Each row carries the previous row's hash;
+a periodic verification pass detects any retroactive edit; an anchor published outside the database
+makes it provable to a third party.
 
-| Step | Effort | Gets you to |
-|---|---|---|
-| ⭐ GitHub Actions: `typecheck` ×2 + all three `verify:*` on every push | 1 h | 55 |
-| ⭐ `npm audit --audit-level=high` in the same workflow | 15 min | 70 |
-| ⭐ `gitleaks detect --log-opts="--all"` — **scan history once**, then per-push | 30 min | 82 |
-| Branch protection on `main`, no direct pushes | 10 min | 88 |
-| Dependabot/Renovate with grouped weekly PRs | 30 min | 94 |
-| Build provenance (`actions/attest-build-provenance`) for desktop installers | 2 h | 100 |
+**Content-sniffing uploads (item 7).** `detectSource` picks a parser from the *filename*, so a
+mislabelled file reaches the wrong parser. Not a vulnerability today — the stored file is never
+served back and both parsers are memory-safe — but it is the kind of assumption that becomes one.
 
-You already have the hard part — three real verification harnesses. They just never run unless
-someone remembers. That is the whole gap.
+**Breached-password check.** A k-anonymity range query against HIBP at set-password time; the API
+never sees the password. "At least 8 characters" plus a password already in a breach corpus is the
+realistic failure mode, and this is the single highest-value addition to authentication.
 
-### Secrets — 65 → 100
+### Deliberately not doing
 
-| Step | Effort | Gets you to |
-|---|---|---|
-| ⭐ `FNB_MFA_KEY` generated and backed up **separately from the database** | 10 min | 78 |
-| Documented rotation schedule, and one rehearsed rotation | 1 h | 86 |
-| Secret manager (Infisical/Doppler) once >1 host or >1 operator | 3 h | 95 |
-| Automatic rotation with zero-downtime re-encryption | 1 d | 100 |
-
-Below two hosts and one operator, a permissioned `.env` genuinely is the right answer — the
-manager's remaining points are for a team you do not have yet.
-
-### Transport / edge — 75 → 100
-
-| Step | Effort | Gets you to |
-|---|---|---|
-| ⭐ TLS terminated + `FNB_TRUST_PROXY=1` with an overwriting proxy | 1 h | 90 |
-| CSP `style-src` nonce, dropping `'unsafe-inline'` | 4 h | 95 |
-| CSP violation reporting endpoint | 2 h | 98 |
-| HSTS preload submission | 30 min | 100 |
-
-Everything after the first row is defence-in-depth on top of a CSP that already blocks script
-injection. The `style-src` work means threading a nonce through the SPA build for shadcn's chart
-primitive — real effort, small return.
-
-### Authentication — 92 → 100
-
-| Step | Effort | Gets you to |
-|---|---|---|
-| Breached-password check (k-anonymity range query against HIBP) | 2 h | 96 |
-| Raise scrypt N to 32768 (one line — cost is in the hash string) | 5 min | 98 |
-| WebAuthn as an *option* alongside TOTP | 1–2 d | 100 |
-
-The HIBP check is the only one worth doing soon: "8 characters" plus a password already in a breach
-corpus is the realistic failure, and the range-query API never sees the password.
-
-### Authorization / tenancy — 92 → 100
-
-| Step | Effort | Gets you to |
-|---|---|---|
-| Extend `verify-security.ts` to assert **every** route rejects a foreign tenant | 4 h | 98 |
-| A route-manifest test that fails when a new route ships with no guard | 4 h | 100 |
-
-The second is the one that actually changes the future: today, adding an unguarded route is caught
-by review or not at all. Both findings in this audit that touched authorization (M-3, and the SPA
-gate bug) were *ordering* mistakes, not missing checks — a manifest catches exactly that class.
-
-### Input handling / injection — 88 → 100
-
-| Step | Effort | Gets you to |
-|---|---|---|
-| Content-sniff uploads instead of trusting the extension (`detectSource`) | 2 h | 94 |
-| Fuzz the import parsers against malformed CSV/XLSX | 1 d | 98 |
-| Formal schema coverage assertion across every route | 4 h | 100 |
-
-The upload one is worth doing: `detectSource` picks a parser from the *filename*, so a mislabelled
-file reaches the wrong parser. It is not a vulnerability today — the stored file is never served
-back and both parsers are memory-safe — but it is the kind of assumption that becomes one.
-
-### Audit integrity — 90 → 100 · *the one worth doing for the product, not the score*
-
-| Step | Effort | Gets you to |
-|---|---|---|
-| Hash-chain `ActivityLog` rows (each row carries the previous row's hash) | 1 d | 97 |
-| Periodic chain verification + an anchor published outside the database | 2 d | 100 |
-
-This is the only item on this page that is a **product feature**. Every competitor can say their
-system logs changes. A system that can *prove* its trail has not been altered — including by
-whoever holds the database — is a different claim, and it is exactly the claim this client's whole
-business rests on. If any of the 100-point work gets built, build this one.
-
-### What "100" does not mean
-
-No high-availability cluster, no Redis, no WAF appliance. Each establishment's desktop mirror keeps
-working through a total server outage, which buys more real availability for this workload than a
-second app server would. The scores above are for a **single-instance, single-tenant-per-database
-deployment**, which is what this is. Re-score if that ever changes.
+- **CSP `style-src` nonce.** Needs threading through the SPA build for shadcn's chart primitive.
+  Real effort, and `script-src 'self'` already blocks injected JavaScript — which is the half that
+  matters.
+- **WebAuthn.** Phishing-resistant, but phishing is not this system's realistic threat. The
+  adversary here is an insider with legitimate access altering history, and a hardware key does
+  nothing about that.
+- **HA cluster, Redis, WAF appliance.** Each establishment's desktop mirror already survives a total
+  server outage, which buys more real availability for this workload than a second app server would.
+  The scores here are for a **single-instance** deployment, which is what this is. Re-score if that
+  changes.
 
 ---
 

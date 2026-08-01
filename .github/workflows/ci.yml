@@ -1,0 +1,112 @@
+name: CI
+
+# The three verification harnesses already existed and were the hard part.
+# They just never ran unless someone remembered. This is the fix.
+#
+# See docs/security.md §5 (Pipeline) and docs/security-runbook.md §5.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # So a dependency advisory published after a quiet week still gets noticed.
+  schedule:
+    - cron: "0 2 * * 1"
+  workflow_dispatch:
+
+# A second push supersedes the first; no point burning minutes on a stale commit.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Typecheck and verification harnesses
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # better-sqlite3 needs its prebuild; the root package.json's allowScripts
+      # already permits it. --foreground-scripts surfaces a failed native build
+      # as a build failure rather than a mysterious runtime error later.
+      - name: Install
+        run: npm ci --foreground-scripts
+
+      # migrate does NOT regenerate the client — the same trap as the Windows
+      # dev loop documented in CLAUDE.md.
+      - name: Generate Prisma client
+        run: npm run db:generate -w @fnb/server
+
+      - name: Typecheck server
+        run: npm run typecheck -w @fnb/server
+
+      - name: Typecheck web
+        run: npm run typecheck -w @fnb/web
+
+      # Each harness builds its own throwaway database (migrate -> seed ->
+      # assert -> delete), so they need no service container and cannot touch
+      # anyone's working data.
+      - name: Golden fixtures
+        run: npm run verify:seed -w @fnb/server
+
+      - name: Offline-mirror guarantees
+        run: npm run verify:sync -w @fnb/server
+
+      - name: Security controls
+        run: npm run verify:security -w @fnb/server
+
+      - name: Build web
+        run: npm run build
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # --ignore-scripts: this job only reads the dependency tree, so there is
+      # no reason to execute install scripts from the packages being audited.
+      - name: Install (no scripts)
+        run: npm ci --ignore-scripts
+
+      # scripts/audit-gate.mjs, not bare `npm audit`. Bare audit in CI has two
+      # end states and both are useless: it blocks every build over an advisory
+      # nobody can reach, or somebody appends `|| true` and it stops meaning
+      # anything. The gate scopes to the workspaces that actually ship and
+      # carries exceptions that are written down, justified, and EXPIRING — so
+      # an accepted risk gets re-examined instead of forgotten.
+      - name: Audit gate
+        run: npm run audit
+
+      # Full picture, non-blocking, for the log.
+      - name: npm audit (all, advisory)
+        run: npm audit --audit-level=moderate || true
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Gitleaks must see HISTORY, not just the tip. A key committed and
+          # then removed in the next commit is still in the pack file, still
+          # published, and still valid. Scanning only the diff is what lets
+          # that sit undetected for a year.
+          fetch-depth: 0
+
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

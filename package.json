@@ -11,7 +11,8 @@
     "build": "npm run build -w @fnb/web",
     "db:migrate": "npm run db:migrate -w @fnb/server",
     "db:generate": "npm run db:generate -w @fnb/server",
-    "db:seed": "npm run db:seed -w @fnb/server"
+    "db:seed": "npm run db:seed -w @fnb/server",
+    "audit": "node scripts/audit-gate.mjs"
   },
   "devDependencies": {
     "concurrently": "^10.0.3"

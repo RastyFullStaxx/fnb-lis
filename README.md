@@ -47,7 +47,7 @@ mirror needs (and no password hashes). See
 After ANY change to auth, sessions, permissions, or the request edge:
 
 ```bash
-npm run verify:security -w @fnb/server   # same throwaway-db harness, 72 checks
+npm run verify:security -w @fnb/server   # same throwaway-db harness, 76 checks
 ```
 
 Same in-process approach: hardening headers are really sent, the session cookie's `Secure` flag
@@ -56,7 +56,20 @@ failed sign-ins hit a per-IP ceiling while successful ones don't, permission gua
 own routes and not their neighbours', a password reset kills live sessions, and the tenant/role/
 device boundaries hold. Half of it covers two-factor auth: a password alone issues no session, an
 unconfirmed enrolment doesn't lift the gate, a challenge can't be replayed, and a recovery code
-works once. See [docs/security.md](docs/security.md).
+works once. The last check enumerates **every route the app registers** and probes each one
+unauthenticated, so a new endpoint that ships without a guard fails the build. See
+[docs/security.md](docs/security.md).
+
+Backups and their drill are scripted — and the drill re-runs the real reconciliation, so it catches
+a single altered count line, not just a corrupt file:
+
+```bash
+npm run backup -w @fnb/server && npm run restore-drill -w @fnb/server
+```
+
+`npm run audit` gates dependencies with reviewed, **expiring** exceptions. CI
+(`.github/workflows/ci.yml`) runs typechecks, all three harnesses, the audit gate and gitleaks over
+full history on every push. See [docs/security-runbook.md](docs/security-runbook.md).
 
 Seed logins are `ADMIN`/`OWNER`, so **two-factor is required for them** once `FNB_MFA_KEY` is set
 (it is, in dev — see `.env`). First sign-in lands on `/account/security` to scan a QR code. Comment
