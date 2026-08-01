@@ -44,6 +44,18 @@ session survives a long offline stretch and dies on revocation, and the snapshot
 mirror needs (and no password hashes). See
 [docs/sync-and-data-lifecycle.md](docs/sync-and-data-lifecycle.md).
 
+After ANY change to auth, sessions, permissions, or the request edge:
+
+```bash
+npm run verify:security -w @fnb/server   # same throwaway-db harness, 38 checks
+```
+
+Same in-process approach: hardening headers are really sent, the session cookie's `Secure` flag
+follows the transport, login doesn't leak which usernames exist (by message, status, *or* timing),
+failed sign-ins hit a per-IP ceiling while successful ones don't, permission guards land on their
+own routes and not their neighbours', a password reset kills live sessions, and the tenant/role/
+device boundaries hold. See [docs/security.md](docs/security.md).
+
 Seed logins: `admin` · `manager` · `staff` · `accountant` · `readonly` — password `Fnb!2026`.
 
 XAMPP owns ports 80/3306 on the dev machine; don't touch them.
@@ -100,5 +112,8 @@ lives, and the open client decisions.
 | [docs/architecture.md](docs/architecture.md) | Stack, data model, **formula appendix (§6)**, deviation log |
 | [docs/golden-fixtures.md](docs/golden-fixtures.md) | The hand-computed numbers that must never change |
 | [docs/sync-and-data-lifecycle.md](docs/sync-and-data-lifecycle.md) | Offline desktop mirror: ownership, the two flows, retention/backup |
+| [docs/security.md](docs/security.md) | Threat model, audit findings, what's fixed and what's deliberately open |
+| [docs/security-runbook.md](docs/security-runbook.md) | Production pre-flight, backup/DR, monitoring, incident response |
+| [docs/security-mfa.md](docs/security-mfa.md) | TOTP and other integrations — specified, ready to connect |
 | [docs/build-log.md](docs/build-log.md) | What shipped when, and what the audits found |
 | [docs/reference/](docs/reference/) | Legacy-system behaviour (read-only answer key) |

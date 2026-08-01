@@ -83,6 +83,9 @@ sync, idempotency or device paths.**
 | The numbers that must never change | [golden-fixtures.md](golden-fixtures.md) |
 | How the offline desktop shares data, and how data is kept safe long-term | [sync-and-data-lifecycle.md](sync-and-data-lifecycle.md) |
 | What shipped when, and what the audit found | [build-log.md](build-log.md) |
+| Threat model, security findings, what's fixed vs deliberately open | [security.md](security.md) |
+| Going live safely, backups/DR, monitoring, incident response | [security-runbook.md](security-runbook.md) |
+| MFA and other integrations — specified, waiting to be connected | [security-mfa.md](security-mfa.md) |
 | How the legacy system behaved (answer key) | [reference/](reference/) — read-only |
 | Original project brief | `AGENTS.md` (repo root, historical) |
 

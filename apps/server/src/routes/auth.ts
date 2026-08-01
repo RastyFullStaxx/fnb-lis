@@ -11,13 +11,12 @@ import {
 } from "@fnb/core";
 import { prisma } from "../db";
 import { AppError } from "../lib/errors";
-import { verifyPassword } from "../auth/password";
+import { burnPasswordTime, verifyPassword } from "../auth/password";
 import { resolveDevice } from "../auth/device";
 import { createSession, destroySession, SESSION_COOKIE } from "../auth/session";
 import { logActivity } from "../services/activity";
 import { requireAuth, type AppEnv } from "../middleware/auth";
-
-const isProd = process.env.NODE_ENV === "production";
+import { clientIp, isSecureRequest } from "../middleware/security";
 
 export const authRoutes = new Hono<AppEnv>()
   .post("/login", zValidator("json", loginRequest), async (c) => {
@@ -28,7 +27,17 @@ export const authRoutes = new Hono<AppEnv>()
       include: { modules: true },
     });
     const failMessage = "Incorrect username or password";
-    if (!user || user.status !== "ACTIVE") throw new AppError(401, failMessage);
+    if (!user || user.status !== "ACTIVE") {
+      // Spend the same ~100 ms scrypt an existing account would, before
+      // answering. Returning immediately here made the response time a reliable
+      // oracle for "does this username exist?" — a miss answered in single-digit
+      // milliseconds, a hit in a hundred. That turns the deliberately vague
+      // "Incorrect username or password" into an enumeration endpoint, and a
+      // confirmed list of real usernames is the first half of credential
+      // stuffing against a system whose accounts are named after staff.
+      await burnPasswordTime(password);
+      throw new AppError(401, failMessage);
+    }
 
     // Legacy lockout rule: 5 failed attempts within the window → locked 1 hour.
     if (
@@ -55,7 +64,7 @@ export const authRoutes = new Hono<AppEnv>()
       });
     }
 
-    const ip = c.req.header("x-forwarded-for") ?? "";
+    const ip = clientIp(c);
 
     // Resolved AFTER the password check, never before: doing it earlier would
     // let an unauthenticated caller probe which fingerprints are registered and
@@ -116,7 +125,13 @@ export const authRoutes = new Hono<AppEnv>()
     setCookie(c, SESSION_COOKIE, token, {
       httpOnly: true,
       sameSite: "Lax",
-      secure: isProd,
+      // Asked of the request, not of NODE_ENV. The old constant meant a hosted
+      // deploy that forgot to export NODE_ENV=production sent session cookies
+      // without Secure — and this cookie IS the session, so one plaintext
+      // request on a shared network hands over the establishment's books.
+      // Deriving it per-request also keeps the plain-HTTP Electron desktop
+      // working, which a hard-coded `true` would have broken.
+      secure: isSecureRequest(c),
       path: "/",
       // ponytail: rememberMe=false → no expires, browser drops cookie on close.
       // Server-side session (and its 7-day sliding expiry) is unchanged either way.
@@ -164,7 +179,7 @@ export const authRoutes = new Hono<AppEnv>()
         entity: "User",
         entityId: user.id,
         summary: `${user.username} signed out`,
-        details: { ip: c.req.header("x-forwarded-for") ?? "", userAgent: c.req.header("user-agent") ?? null },
+        details: { ip: clientIp(c), userAgent: c.req.header("user-agent") ?? null },
       });
     }
     return c.json({ ok: true });

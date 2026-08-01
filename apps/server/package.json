@@ -11,7 +11,8 @@
     "db:generate": "prisma generate",
     "db:seed": "tsx prisma/seed.ts",
     "verify:seed": "node prisma/verify-seed.mjs",
-    "verify:sync": "node prisma/verify-sync.mjs"
+    "verify:sync": "node prisma/verify-sync.mjs",
+    "verify:security": "node prisma/verify-security.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

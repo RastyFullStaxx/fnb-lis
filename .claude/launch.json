@@ -12,6 +12,13 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "-w", "@fnb/web"],
       "port": 5173
+    },
+    {
+      "// api-prod": "Serves the BUILT SPA from apps/web/dist on the API origin — the only mode where the CSP in middleware/security.ts actually reaches the HTML. Run `npm run build` first. Used to verify hardening headers don't break the real app.",
+      "name": "api-prod",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "start", "-w", "@fnb/server"],
+      "port": 3001
     }
   ]
 }

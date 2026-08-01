@@ -870,11 +870,36 @@ export const userAdminRoutes = new Hono<AppEnv>()
         await tx.userModule.deleteMany({ where: { userId: id } });
         await tx.userModule.createMany({ data: body.modules.map((module) => ({ userId: id, module })) });
       }
+      /**
+       * A password reset ends that account's existing sessions.
+       *
+       * The reason an owner resets a password is almost always that the old one
+       * is compromised — a phone left in a taxi, a shared password, a departed
+       * employee. Without this, the reset changed nothing for whoever already
+       * held a session cookie: they kept full access for up to seven more days
+       * (a year on a registered desktop), while the screen told the owner the
+       * account was secured. The audit trail is also cleared to say so, because
+       * "everyone was signed out" is the part the owner needs to be able to
+       * verify afterwards.
+       *
+       * Only on a password change. A role or module edit needs no eviction —
+       * getSessionUser re-reads role and modules from the User row on every
+       * request, so those take effect on the next call anyway, and throwing
+       * someone out of a half-finished count to widen their access would be
+       * hostile for no gain.
+       */
+      let endedSessions = 0;
+      if (body.password) {
+        const { count } = await tx.authSession.deleteMany({ where: { userId: id } });
+        endedSessions = count;
+      }
       await logActivity(
         {
           user: actor, action: "user.update", entity: "User", entityId: id,
-          summary: `Updated user ${u.username}`,
-          details: { ...body, password: body.password ? "(reset)" : undefined },
+          summary: body.password
+            ? `Updated user ${u.username} — password reset, ${endedSessions} active session${endedSessions === 1 ? "" : "s"} ended`
+            : `Updated user ${u.username}`,
+          details: { ...body, password: body.password ? "(reset)" : undefined, endedSessions: body.password ? endedSessions : undefined },
         },
         tx,
       );

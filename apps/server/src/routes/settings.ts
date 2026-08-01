@@ -152,10 +152,31 @@ export const preferencesRoutes = new Hono<AppEnv>()
     return c.json({ varianceThresholdPct: client?.varianceThresholdPct ?? MATERIAL_VARIANCE_PCT });
   });
 
-export const settingsRoutes = new Hono<AppEnv>()
-  .use(requireAuth, requirePermission("master.write"))
+/**
+ * `master.write` is attached PER ROUTE, never as a blanket `.use()`.
+ *
+ * `preferencesRoutes` mounts on this same `/api/settings` prefix (app.ts) with
+ * only `requireAuth`, and Hono merges routers by path — a pathless `.use()` here
+ * registers as `/api/settings/*` and runs on the OTHER router's routes too.
+ * Verified, not assumed: with the blanket guard in place, a STAFF or ACCOUNTANT
+ * login got 403 from GET /api/settings/preferences and GET
+ * /api/settings/cost-basis, the two endpoints whose own comments say they are
+ * outside this guard on purpose. The cost-basis one matters beyond an annoyance:
+ * the client falls back to "PRICE" on error, so an accountant whose
+ * establishment values at LAST_COST would read every valuation screen under the
+ * wrong basis label with nothing to signal it.
+ *
+ * Method matters as well as path — preferencesRoutes serves GET /cost-basis and
+ * GET /variance-threshold at the very paths this router serves PUT on — so a
+ * path-scoped `.use("/cost-basis", …)` would not have been narrow enough either.
+ * This is the same trap admin.ts documents at its own `.use("/clients", …)`.
+ */
+const writeGuard = requirePermission("master.write");
 
-  .get("/company", async (c) => {
+export const settingsRoutes = new Hono<AppEnv>()
+  .use(requireAuth)
+
+  .get("/company", writeGuard, async (c) => {
     const user = c.get("user")!;
     const clientId = c.req.query("clientId") ?? "";
     if (!clientId) throw new AppError(400, "clientId is required");
@@ -163,7 +184,7 @@ export const settingsRoutes = new Hono<AppEnv>()
     return c.json(await getCompanyInfo(clientId));
   })
 
-  .put("/company", zValidator("json", companyInfo), async (c) => {
+  .put("/company", writeGuard, zValidator("json", companyInfo), async (c) => {
     const user = c.get("user")!;
     const clientId = c.req.query("clientId") ?? "";
     if (!clientId) throw new AppError(400, "clientId is required");
@@ -187,7 +208,7 @@ export const settingsRoutes = new Hono<AppEnv>()
   // Stored on the Client, not passed per request: an accounting policy must
   // not vary between two people exporting the same report. The matching GET
   // lives on preferencesRoutes so non-editors can still see the basis.
-  .put("/cost-basis", zValidator("json", costBasisBody), async (c) => {
+  .put("/cost-basis", writeGuard, zValidator("json", costBasisBody), async (c) => {
     const user = c.get("user")!;
     const clientId = c.req.query("clientId") ?? "";
     if (!clientId) throw new AppError(400, "clientId is required");
@@ -217,7 +238,7 @@ export const settingsRoutes = new Hono<AppEnv>()
   // ── Variance highlight threshold (audit policy — client req 2026-07-21) ──
   // Per-establishment, like the cost basis: a bar and a fine-dining kitchen
   // tolerate different over/short. Presentation only — never the sacred math.
-  .put("/variance-threshold", zValidator("json", varianceThresholdBody), async (c) => {
+  .put("/variance-threshold", writeGuard, zValidator("json", varianceThresholdBody), async (c) => {
     const user = c.get("user")!;
     const clientId = c.req.query("clientId") ?? "";
     if (!clientId) throw new AppError(400, "clientId is required");

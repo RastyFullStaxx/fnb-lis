@@ -2742,3 +2742,79 @@ a locally-edited draft is older than the edit waiting in the queue.
 - Housekeeping: verification created supplier `SYNCTEST-4421` on Main Bar. There
   is no delete route for suppliers, so it is renamed
   "SYNCTEST-4421 (test, safe to delete)" and deactivated.
+
+## 2026-08-01 — security audit and edge hardening
+
+Full-system security review. New docs: [security.md](security.md) (threat model, findings,
+posture), [security-runbook.md](security-runbook.md) (pre-flight, backup/DR, incident response),
+[security-mfa.md](security-mfa.md) (TOTP and other integrations, specified but not wired).
+
+The headline: **application security was already strong — authorization, tenancy, and audit
+integrity all scored 90+ — and the gaps were almost entirely at the request edge and in
+operations.** Scored 78/100 overall, dragged down by DR (30) and pipeline (20), not by code.
+
+### Fixed
+
+1. **Session cookie `Secure` keyed off `NODE_ENV`** while the SPA-serving decision keyed off a
+   `--dev` argv flag — two different signals for "is this production". A deploy that set one and
+   not the other served the app perfectly while emitting session cookies without `Secure`. Now
+   derived per-request from the actual transport, which is correct for HTTPS hosting *and* for the
+   plain-HTTP Electron desktop (a hard-coded `true` would have broken the latter).
+2. **No rate limiting anywhere.** The per-account lockout is blind to credential stuffing (one
+   password, many usernames) and to the fact that `/login` runs scrypt before it knows who is
+   calling. Added per-IP limiters counting **failures** rather than attempts, so fifteen staff
+   signing in at shift change behind one NAT address never trip it.
+3. **No response security headers.** Added CSP (`script-src 'self'`, no unsafe-inline/eval),
+   HSTS-when-TLS, `X-Frame-Options: DENY`, nosniff, referrer policy. `style-src` keeps
+   `'unsafe-inline'` — shadcn's chart primitive emits a `<style>` block and React writes inline
+   `style=` props; removing it needs a nonce threaded through the SPA build.
+4. **`x-forwarded-for` trusted verbatim** for the IP recorded against every login. Any client could
+   set it, so the login-history screen an owner uses to answer "who did this?" was
+   attacker-controlled. Now socket-derived unless `FNB_TRUST_PROXY=1`, and then it takes the *last*
+   hop, not the conventional first — the first is the attacker-controlled end of the list.
+5. **Username enumeration by timing.** The no-such-user branch returned before hashing: a miss
+   answered in single-digit ms, a hit in ~100 ms, undoing the deliberately vague error message.
+   Added `burnPasswordTime`. Measured 34.9 ms vs 33.0 ms after.
+6. **A permission guard leaked onto a neighbouring router.** `settingsRoutes` used a pathless
+   `.use(requirePermission("master.write"))`; `preferencesRoutes` mounts on the same
+   `/api/settings` prefix, and Hono merges routers by path. Verified experimentally rather than
+   assumed. STAFF and ACCOUNTANT were getting 403 from the two endpoints whose own comments say
+   they sit outside that guard on purpose — and the cost-basis one falls back to `"PRICE"` on
+   error, so an establishment valuing at `LAST_COST` read every valuation screen under the wrong
+   basis label. Fail-closed, so not exploitable, but silently mislabelling the numbers is the
+   serious kind of bug here. Guards moved per-route; path scoping alone wasn't enough because the
+   two routers serve GET and PUT at the *same paths*. `admin.ts` documents this same trap.
+7. **A password reset left existing sessions alive** — up to 7 more days, a year on a registered
+   desktop — while the screen told the owner the account was secured. Now evicts in the same
+   transaction, with the count in the audit summary. Role/module edits deliberately don't evict:
+   `getSessionUser` re-reads both per request, so they already take effect on the next call.
+
+### Verified clean
+
+No SQL injection (no raw SQL on user input), no RCE surface (no eval/child_process/deserialization),
+no path traversal (uploads are SHA-256-named with a server-chosen extension and never served back),
+no XSS (the one `dangerouslySetInnerHTML` interpolates developer-authored chart config), no IDOR,
+no mass assignment. Stocky's tool registry is read-only and scoped from the session, so prompt
+injection through an imported document cannot reach a write.
+
+### New harness
+
+`npm run verify:security -w @fnb/server` — 38 checks, same throwaway-database shape as
+`verify:seed`/`verify:sync`, driving the real Hono app in-process.
+
+One harness bug caught during the run and worth recording: checks that deliberately fail sign-ins
+left `manager` account-locked, which then made three *later* sections fail for an unrelated reason.
+Added `clearLockout()` between sections — the control was working, the harness was contaminating
+itself.
+
+### Verified
+
+- `verify:security` 38/38 · `verify:seed` PASS · `verify:sync` PASS.
+- Typechecks clean on `@fnb/server` and `@fnb/web`.
+- Reconciliation math untouched — no file under `packages/core` was modified.
+
+### Still open, deliberately
+
+MFA (specified in security-mfa.md, blocked on the client's enrolment-policy decision), encryption at
+rest, and the two weakest domains: **automated backups with a tested restore**, and **any CI at
+all**. Those two are now the highest-value remaining security work, and neither is a code change.
