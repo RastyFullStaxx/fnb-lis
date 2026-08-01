@@ -1,4 +1,5 @@
 import { phpRound } from "./rounding";
+import { WEIGH_OUTLIER_LOW_RATIO, WEIGH_OUTLIER_HIGH_RATIO } from "./constants";
 
 /**
  * Open-container weighing — the legacy system's signature calculation.
@@ -16,7 +17,44 @@ export interface WeighInput {
 
 export type WeighWarning =
   | { code: "SCALE_BELOW_TARE"; blocking: true; message: string }
-  | { code: "CONTENT_EXCEEDS_SIZE"; blocking: false; message: string };
+  | { code: "CONTENT_EXCEEDS_SIZE"; blocking: false; message: string }
+  | { code: "CONTENT_BELOW_SIZE_FLOOR"; blocking: false; message: string }
+  | { code: "CONTENT_UNUSUAL_VS_HISTORY"; blocking: false; message: string };
+
+/**
+ * History-ratio check (plan §3, §6 step 1) — shared by validateWeigh and
+ * validateNetWeigh, and callable on its own for Open Amount (Phase 4), which
+ * has no scale/tare, only a final content value.
+ *
+ * Flags a reading that is a large multiple away from this item's own recent
+ * count history at this location, in either direction. `trailingAverage` is
+ * fetched by the caller (the server route, Phase 2) — this file stays pure,
+ * no I/O, per architecture.md §3. `null`/`undefined`/`<= 0` means no history
+ * yet, so the check stays silent rather than guessing (plan §3, §8) — the
+ * same "derived, not configured" fallback resolveDensityFactor already uses.
+ */
+export function checkContentVsHistory(
+  content: number,
+  trailingAverage: number | null | undefined,
+): WeighWarning | null {
+  if (trailingAverage == null || trailingAverage <= 0) return null;
+  const ratio = content / trailingAverage;
+  if (ratio < WEIGH_OUTLIER_LOW_RATIO) {
+    return {
+      code: "CONTENT_UNUSUAL_VS_HISTORY",
+      blocking: false,
+      message: "That's much lower than this item's recent counts — check the reading.",
+    };
+  }
+  if (ratio > WEIGH_OUTLIER_HIGH_RATIO) {
+    return {
+      code: "CONTENT_UNUSUAL_VS_HISTORY",
+      blocking: false,
+      message: "That's much higher than this item's recent counts — check the reading.",
+    };
+  }
+  return null;
+}
 
 /** remaining = round((scale − tare) × densityFactor) — integer, legacy parity. */
 export function remainingContent(input: WeighInput): number {
@@ -26,6 +64,7 @@ export function remainingContent(input: WeighInput): number {
 export function validateWeigh(
   input: WeighInput,
   variantSize?: number | null,
+  trailingAverage?: number | null,
 ): WeighWarning[] {
   const warnings: WeighWarning[] = [];
   if (input.scaleWeight < input.tareWeight) {
@@ -36,16 +75,32 @@ export function validateWeigh(
     });
     return warnings;
   }
+  const remaining = remainingContent(input);
+  // Size-based check, DENSITY items only (plan §3): CONTENT_EXCEEDS_SIZE
+  // (too high) kept as is, CONTENT_BELOW_SIZE_FLOOR (too low) is its new
+  // low-side sibling — same reference (container size), opposite direction.
+  // Ordered first: a size violation is closer to physically implausible
+  // than a history mismatch (plan §4).
   if (variantSize && variantSize > 0) {
-    const remaining = remainingContent(input);
     if (remaining > variantSize) {
       warnings.push({
         code: "CONTENT_EXCEEDS_SIZE",
         blocking: false,
         message: "That's more than a full container holds — check the Liquid Weight or empty weight.",
       });
+    } else if (remaining < variantSize * WEIGH_OUTLIER_LOW_RATIO) {
+      warnings.push({
+        code: "CONTENT_BELOW_SIZE_FLOOR",
+        blocking: false,
+        message: "That's far below what this container should hold — check the reading.",
+      });
     }
   }
+  // History-based check (plan §3, both weigh modes) — independent of the
+  // size check above, catches a reading that fits the container fine but
+  // is still a typo relative to how this item normally counts.
+  const historyWarning = checkContentVsHistory(remaining, trailingAverage);
+  if (historyWarning) warnings.push(historyWarning);
   return warnings;
 }
 
@@ -68,8 +123,22 @@ export function netQuantity(input: {
   return netGrams / input.targetFactorToBase;
 }
 
-/** validateWeigh's sibling for the NET path — same blocking rule, no density/size checks. */
-export function validateNetWeigh(input: { scaleWeight: number; tareWeight: number }): WeighWarning[] {
+/**
+ * validateWeigh's sibling for the NET path — same blocking rule, no size
+ * check (NET items have no container size to compare against, plan §3/§6).
+ *
+ * `netContent` is the already-computed netQuantity() result and
+ * `trailingAverage` this item's history at this location — both fetched by
+ * the caller, same reason validateWeigh takes variantSize rather than
+ * resolving it itself. Either argument omitted means "can't run the history
+ * check yet" (e.g. a live preview before a full netQuantity call), which
+ * stays silent rather than guessing, same as no history existing at all.
+ */
+export function validateNetWeigh(
+  input: { scaleWeight: number; tareWeight: number },
+  netContent?: number | null,
+  trailingAverage?: number | null,
+): WeighWarning[] {
   if (input.scaleWeight < input.tareWeight) {
     return [
       {
@@ -79,7 +148,12 @@ export function validateNetWeigh(input: { scaleWeight: number; tareWeight: numbe
       },
     ];
   }
-  return [];
+  const warnings: WeighWarning[] = [];
+  if (netContent != null) {
+    const historyWarning = checkContentVsHistory(netContent, trailingAverage);
+    if (historyWarning) warnings.push(historyWarning);
+  }
+  return warnings;
 }
 
 /** Per-item density factor beats the category default (legacy behavior). */

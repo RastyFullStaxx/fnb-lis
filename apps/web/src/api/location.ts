@@ -44,6 +44,23 @@ export function useLocationItems(filters: { search?: string; missingPrices?: boo
 }
 
 /**
+ * Trailing average of an item's recent weigh counts at this location — feeds
+ * the live weigh preview's history-based outlier check
+ * (docs/2026-08-01-weight-outlier-warning-plan.md, phases doc Phase 3/4).
+ * `null` while disabled or before an item is picked, matching the server's
+ * "no history yet" silence rather than showing a stale number.
+ */
+export function useTrailingAverage(locationItemId: string | null) {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["trailingAverage", locationId, locationItemId],
+    queryFn: () =>
+      api<{ trailingAverage: number | null }>(`${base(locationId)}/location-items/${locationItemId}/trailing-average`),
+    enabled: locationItemId != null,
+  });
+}
+
+/**
  * Master variants not yet in this location's catalog. The server already
  * restricts results to THIS LOCATION's own modules (Fix Plan §2.3) — this
  * hook doesn't need to (and can't) work around that; productType here is

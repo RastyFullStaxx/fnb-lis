@@ -4,6 +4,7 @@ import { allowedProductTypes, locationItemAttach, locationItemUpdate, resolveBot
 import { prisma } from "../db";
 import { AppError } from "../lib/errors";
 import { assertNotQueuedEdit } from "../lib/two-way";
+import { getTrailingAverage } from "../lib/weigh-history";
 import { logActivity } from "../services/activity";
 import { generateAssetCode } from "../services/asset-supplier";
 import { requirePermission, type AppEnv } from "../middleware/auth";
@@ -162,6 +163,26 @@ export const locationItemRoutes = new Hono<AppEnv>()
       return li;
     });
     return c.json(created, 201);
+  })
+
+  /**
+   * Trailing average of this item's recent weigh counts at this location —
+   * feeds the live weigh preview's history-based outlier check
+   * (docs/2026-08-01-weight-outlier-warning-plan.md §3, §6; phases doc
+   * Phase 3/4). Same query the server itself checks against at save time
+   * (routes/counts.ts), so what the counter sees while typing can never
+   * disagree with what gets logged when they save.
+   *
+   * `requireAuth` only — reading your own count history to sanity-check a
+   * reading needs no special permission, same tier as reading the catalog.
+   */
+  .get("/location-items/:id/trailing-average", async (c) => {
+    const location = c.get("location");
+    const itemId = c.req.param("id");
+    const existing = await prisma.locationItem.findUnique({ where: { id: itemId } });
+    if (!existing || existing.locationId !== location.id) throw new AppError(404, "Catalog item not found");
+    const trailingAverage = await getTrailingAverage(itemId);
+    return c.json({ trailingAverage });
   })
 
   .put("/location-items/:id", priceGuard, zValidator("json", locationItemUpdate), async (c) => {

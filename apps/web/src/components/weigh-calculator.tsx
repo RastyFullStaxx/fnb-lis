@@ -24,8 +24,16 @@ import { defaultWeighUnit, useUnitSystem } from "@/lib/preferences";
  * Two modes (client req #16):
  *   DENSITY — bar open-bottle: (scale − tare) × density ⇒ content (ml)
  *   NET     — kitchen: (scale − tare) converted to the counting unit ⇒ qty
+ *
+ * `trailingAverage` feeds the history-based outlier check
+ * (docs/2026-08-01-weight-outlier-warning-plan.md §3, §6 step 1; phases doc
+ * Phase 3) — fetched by the caller (useTrailingAverage), not by this hook,
+ * so the math here stays a pure function of its own arguments, same shape
+ * as before this feature. `undefined`/`null` (no history yet, or not loaded
+ * yet) flows straight through to validateWeigh/validateNetWeigh, which stay
+ * silent on the history check rather than guessing.
  */
-export function useWeighPreview(item: LocationItem | null, scaleText: string) {
+export function useWeighPreview(item: LocationItem | null, scaleText: string, trailingAverage?: number | null) {
   const unitSystem = useUnitSystem();
   const units = useUnits();
   // Fallback only for items that have no tare unit configured yet — a
@@ -57,8 +65,10 @@ export function useWeighPreview(item: LocationItem | null, scaleText: string) {
       if (scaleText === "" || !Number.isFinite(scale)) {
         return { ready: true as const, entered: false as const, mode, tare, density: null, unit: unitName };
       }
-      const warnings = validateNetWeigh({ scaleWeight: scale, tareWeight: tare });
-      const blocking = warnings.some((w) => w.blocking);
+      // Blocking check first — SCALE_BELOW_TARE only needs scale/tare, so it
+      // doesn't wait on the quantity below.
+      const blockingCheck = validateNetWeigh({ scaleWeight: scale, tareWeight: tare });
+      const blocking = blockingCheck.some((w) => w.blocking);
       // Same math as the server (core netQuantity): round in base grams, then
       // express in the counting unit.
       const scaleUnitRow = units.data?.find((u) => u.name === unitName);
@@ -71,6 +81,12 @@ export function useWeighPreview(item: LocationItem | null, scaleText: string) {
               scaleFactorToBase: scaleUnitRow.factorToBase,
               targetFactorToBase: variant.unit.factorToBase,
             });
+      // Re-run with the computed content so the history-based outlier check
+      // (plan §3, both weigh modes) can compare it against trailingAverage —
+      // blocking already resolved above, so this only adds/keeps warnings.
+      const warnings = blocking
+        ? blockingCheck
+        : validateNetWeigh({ scaleWeight: scale, tareWeight: tare }, remaining, trailingAverage);
       return {
         ready: true as const,
         entered: true as const,
@@ -105,7 +121,7 @@ export function useWeighPreview(item: LocationItem | null, scaleText: string) {
       };
     }
     const input = { scaleWeight: scale, tareWeight: tare, densityFactor: density };
-    const warnings = validateWeigh(input, variant.size);
+    const warnings = validateWeigh(input, variant.size, trailingAverage);
     const blocking = warnings.some((w) => w.blocking);
     const remaining = blocking ? 0 : remainingContent(input);
     return {
@@ -121,7 +137,7 @@ export function useWeighPreview(item: LocationItem | null, scaleText: string) {
       warnings,
       blocking,
     };
-  }, [item, scaleText, fallbackUnit, units.data]);
+  }, [item, scaleText, fallbackUnit, units.data, trailingAverage]);
 }
 
 export function WeighPreviewStrip({

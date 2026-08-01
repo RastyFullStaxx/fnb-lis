@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { zValidator } from "../lib/validate";
 import {
+  checkContentVsHistory,
   commitRequest,
   countLineCreate,
   countSessionCreate,
@@ -9,13 +10,17 @@ import {
   resolveBottleWeights,
   resolveDensityFactor,
   splitTotalAmount,
+  validateNetWeigh,
+  validateWeigh,
   voidRequest,
   type CountLineCreate,
   type SessionUser,
+  type WeighWarning,
 } from "@fnb/core";
 import { prisma, type Tx } from "../db";
 import { AppError } from "../lib/errors";
 import { replay } from "../lib/idempotency";
+import { getTrailingAverage } from "../lib/weigh-history";
 import {
   assertExpectedStatus,
   assertMayEditDraft,
@@ -101,6 +106,7 @@ async function buildLineData(locationId: string, body: CountLineCreate) {
       if (!split.ok) throw new AppError(400, split.message);
       return {
         locationItem,
+        entryPath: "totalAmount" as const,
         data: {
           countType: "WEIGH",
           qtyFull: split.fullCount,
@@ -119,6 +125,7 @@ async function buildLineData(locationId: string, body: CountLineCreate) {
     if (body.remainingContent !== undefined) {
       return {
         locationItem,
+        entryPath: "openAmount" as const,
         data: {
           countType: "WEIGH",
           qtyFull: 0,
@@ -142,6 +149,7 @@ async function buildLineData(locationId: string, body: CountLineCreate) {
     if (mode === "NET") {
       return {
         locationItem,
+        entryPath: "scale" as const,
         data: {
           countType: "WEIGH",
           qtyFull: 0,
@@ -160,6 +168,7 @@ async function buildLineData(locationId: string, body: CountLineCreate) {
     if (!density) throw new AppError(400, "No density factor configured for this item or its category");
     return {
       locationItem,
+      entryPath: "scale" as const,
       data: {
         countType: "WEIGH",
         qtyFull: 0,
@@ -173,6 +182,7 @@ async function buildLineData(locationId: string, body: CountLineCreate) {
   }
   return {
     locationItem,
+    entryPath: "full" as const,
     data: {
       countType: "FULL",
       qtyFull: body.qtyFull!,
@@ -210,6 +220,113 @@ async function getOwnedSession(locationId: string, sessionId: string) {
   const session = await prisma.countSession.findUnique({ where: { id: sessionId } });
   if (!session || session.locationId !== locationId) throw new AppError(404, "Count session not found");
   return session;
+}
+
+/**
+ * Runs the Phase 1 core checks server-side (plan §6 step 4; phases doc
+ * Phase 5) — closes the gap client-only checks leave open: a device sync or
+ * a direct API call bypasses the browser UI entirely, so the server needs
+ * its own copy to catch an outlier even when no one saw a live preview.
+ *
+ * Reuses validateWeigh/validateNetWeigh directly rather than re-deriving
+ * their checks — the plan is explicit this extends the existing mechanism,
+ * not a parallel one. Re-runs from the STORED scale/tare/content, not a
+ * browser-supplied warning list, so a direct API call gets the same
+ * coverage as one that went through the live preview.
+ *
+ * Advisory only, same as CONTENT_EXCEEDS_SIZE today — never blocks the save.
+ * Logged to the activity trail only when a warning actually fires, so a
+ * clean entry doesn't add noise to the log the way every append would.
+ *
+ * Scoped to exactly the two paths phases doc 5.1 names — Weigh Partial and
+ * Open Amount — via the caller-supplied `entryPath`, not inferred from
+ * data.scaleWeight/tareWeight being null. totalAmount also nulls out
+ * scale/tare (see buildLineData), so a null-based check would silently
+ * sweep that third path into the same history check as Open Amount: real
+ * coverage, but undocumented, asymmetric with the client (no live preview
+ * for totalAmount), and would log an outlier for a save the counter never
+ * saw a warning on at entry time. entryPath makes the exclusion explicit
+ * instead of accidental.
+ */
+async function checkOutlierWarnings(
+  locationItem: { id: string; itemVariant: { size: number; weighMode: string | null; contentTracked: boolean } },
+  data: {
+    countType: string;
+    remainingContent: number;
+    scaleWeight: number | null;
+    tareWeight: number | null;
+    densityFactor: number | null;
+  },
+  entryPath: "scale" | "openAmount" | "totalAmount" | "full",
+): Promise<WeighWarning[]> {
+  if (data.countType !== "WEIGH") return [];
+  if (entryPath === "totalAmount") return [];
+
+  const trailingAverage = await getTrailingAverage(locationItem.id);
+
+  // Weigh Partial (scale reading present): re-run the same validator the
+  // live preview used, from the stored scale/tare/density — recomputing
+  // the same remainingContent that was actually saved, not a placeholder.
+  if (entryPath === "scale") {
+    if (data.scaleWeight == null || data.tareWeight == null) return [];
+    const mode = effectiveWeighMode(locationItem.itemVariant);
+    if (mode === "NET") {
+      return validateNetWeigh(
+        { scaleWeight: data.scaleWeight, tareWeight: data.tareWeight },
+        data.remainingContent,
+        trailingAverage,
+      );
+    }
+    if (data.densityFactor == null) return [];
+    return validateWeigh(
+      { scaleWeight: data.scaleWeight, tareWeight: data.tareWeight, densityFactor: data.densityFactor },
+      locationItem.itemVariant.size,
+      trailingAverage,
+    );
+  }
+
+  // Open Amount (typed content, no scale reading): history-only check, the
+  // only one that doesn't need a scale/tare pair (plan §6 step 1).
+  const historyWarning = checkContentVsHistory(data.remainingContent, trailingAverage);
+  return historyWarning ? [historyWarning] : [];
+}
+
+/**
+ * Runs checkOutlierWarnings and logs any that fire (phases doc 5.3). Shared
+ * by all three CountLine save sites (create, edit, correct) so the coverage
+ * and the log shape can't drift between them.
+ */
+async function logOutlierWarnings(
+  user: SessionUser,
+  location: { clientId: string; id: string },
+  locationItem: { id: string; itemVariant: { size: number; weighMode: string | null; contentTracked: boolean; item: { name: string } } },
+  data: {
+    countType: string;
+    remainingContent: number;
+    scaleWeight: number | null;
+    tareWeight: number | null;
+    densityFactor: number | null;
+  },
+  entryPath: "scale" | "openAmount" | "totalAmount" | "full",
+  lineId: string,
+  tx?: Tx,
+): Promise<void> {
+  const warnings = await checkOutlierWarnings(locationItem, data, entryPath);
+  for (const warning of warnings) {
+    await logActivity(
+      {
+        user,
+        clientId: location.clientId,
+        locationId: location.id,
+        action: "countLine.weighOutlier",
+        entity: "CountLine",
+        entityId: lineId,
+        summary: `Weigh outlier on ${locationItem.itemVariant.item.name}: ${warning.message}`,
+        details: { code: warning.code, remainingContent: data.remainingContent },
+      },
+      tx,
+    );
+  }
 }
 
 export const countRoutes = new Hono<AppEnv>()
@@ -287,7 +404,7 @@ export const countRoutes = new Hono<AppEnv>()
     );
     if (already) return c.json(already, 200);
 
-    const { locationItem, data } = await buildLineData(location.id, body);
+    const { locationItem, data, entryPath } = await buildLineData(location.id, body);
 
     const line = await prisma.countLine.create({
       data: {
@@ -307,29 +424,40 @@ export const countRoutes = new Hono<AppEnv>()
       },
       include: LINE_INCLUDE,
     });
+
+    // Server-side outlier enforcement (plan §6 step 4; phases doc Phase 5):
+    // a device sync or direct API call skips the browser, so this is the
+    // only guaranteed place a fired warning gets logged. Advisory only —
+    // never blocks the save above, and only logged when one actually fires.
+    await logOutlierWarnings(user, location, locationItem, data, entryPath, line.id);
+
     return c.json(line, 201);
   })
 
   .put("/counts/:id/lines/:lineId", createGuard, zValidator("json", countLineCreate), async (c) => {
     const location = c.get("location");
+    const user = c.get("user")!;
     const session = await getOwnedSession(location.id, c.req.param("id"));
     if (session.status !== "OPEN") throw new AppError(409, "Committed count lines cannot be edited — void or correct instead");
-    assertMayEditDraft(session, c.get("user")!, "count");
+    assertMayEditDraft(session, user, "count");
     // The line must belong to THIS session — a raw update by id would reach
     // any CountLine in the database, including committed ones elsewhere.
     const existing = await prisma.countLine.findUnique({ where: { id: c.req.param("lineId") } });
     if (!existing || existing.countSessionId !== session.id) throw new AppError(404, "Count line not found");
     const body = c.req.valid("json");
-    const { locationItem, data } = await buildLineData(location.id, body);
+    const { locationItem, data, entryPath } = await buildLineData(location.id, body);
     const line = await prisma.countLine.update({
       where: { id: existing.id },
       data: {
         locationItemId: locationItem.id,
         ...data,
-        ...snapshotPrices(c.get("user")!, body, locationItem),
+        ...snapshotPrices(user, body, locationItem),
       },
       include: LINE_INCLUDE,
     });
+    // Same server-side outlier enforcement as create (phases doc Phase 5) —
+    // an edit can turn a clean reading into an outlier just as easily.
+    await logOutlierWarnings(user, location, locationItem, data, entryPath, line.id);
     return c.json(line);
   })
 
@@ -453,7 +581,7 @@ export const countRoutes = new Hono<AppEnv>()
       if (!original || original.countSessionId !== session.id) throw new AppError(404, "Count line not found");
       if (original.status === "VOID") throw new AppError(409, "Line is already voided");
 
-      const { locationItem, data } = await buildLineData(location.id, body);
+      const { locationItem, data, entryPath } = await buildLineData(location.id, body);
       const replacement = await prisma.$transaction(async (tx) => {
         await tx.countLine.update({
           where: { id: original.id },
@@ -478,6 +606,11 @@ export const countRoutes = new Hono<AppEnv>()
           { user, clientId: location.clientId, locationId: location.id, action: "countLine.correct", entity: "CountLine", entityId: created.id, summary: `Corrected count line (${locationItem.itemVariant.item.name}): ${body.reason}`, details: { originalId: original.id } },
           tx,
         );
+        // Same server-side outlier enforcement as create/edit (phases doc
+        // Phase 5) — a correction can introduce or clear an outlier just
+        // like any other save, and stays in the same transaction as the
+        // rest of the correction.
+        await logOutlierWarnings(user, location, locationItem, data, entryPath, created.id, tx);
         return created;
       });
       return c.json(replacement, 201);

@@ -1,12 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useParams } from "react-router";
 import { ArrowLeft, Check, Pencil } from "lucide-react";
 import { toast } from "sonner";
-import { can, convert, type Role } from "@fnb/core";
+import { can, checkContentVsHistory, convert, type Role, type WeighWarning } from "@fnb/core";
 import { statusVariant } from "@/lib/status";
 import { useMe } from "@/api/auth";
 import { usePreferredUnit } from "@/lib/preferences";
-import { useLocationId, useLocationItems } from "@/api/location";
+import { useLocationId, useLocationItems, useTrailingAverage } from "@/api/location";
 import { useCountMutations, useCountSession } from "@/api/ops";
 import { variantLabel, type CountLine, type LocationItem } from "@/api/types";
 import { ApiError } from "@/api/http";
@@ -162,7 +162,11 @@ function OpenSession({ session }: { session: SessionWithLines }) {
 
   const weighable = (item?.itemVariant.contentTracked || item?.itemVariant.weighMode === "NET") ?? false;
   const activeMode = weighable ? mode : "FULL";
-  const preview = useWeighPreview(item, scale);
+  // Weight outlier warning (docs/2026-08-01-weight-outlier-warning-plan.md,
+  // phases doc Phase 3/4) — one fetch per picked item, shared by both the
+  // Weigh Partial preview below and the Open Amount check further down.
+  const trailingAverage = useTrailingAverage(item?.id ?? null).data?.trailingAverage;
+  const preview = useWeighPreview(item, scale, trailingAverage);
 
   // Client req 2026-07-31: show and accept Open Amount / total in the
   // user's own preferred unit, convert to the item's stored unit right at
@@ -176,6 +180,23 @@ function OpenSession({ session }: { session: SessionWithLines }) {
   const itemUnit = item?.itemVariant.unit ?? null;
   const preferredUnit = itemUnit?.kind === "MASS" ? preferredMass : itemUnit?.kind === "VOLUME" ? preferredVolume : null;
   const displayUnit = preferredUnit ?? itemUnit;
+
+  /**
+   * Open Amount's own outlier check (docs/2026-08-01-weight-outlier-warning-plan.md
+   * §6 step 3; phases doc Phase 4) — this entry mode has no live calculator,
+   * so there's no existing on-change computation to extend; this is the new
+   * one. History is compared in the item's own STORED unit, so the typed
+   * displayUnit value is converted first — the same conversion `save()`
+   * already applies at submit — otherwise a counter on "oz" preference would
+   * get compared against a history recorded in ml.
+   */
+  const openAmountWarning = useMemo((): WeighWarning | null => {
+    if (activeMode !== "OPEN" || useTotalAmount || openAmount === "") return null;
+    const n = Number(openAmount);
+    if (!Number.isFinite(n) || n < 0) return null;
+    const stored = itemUnit && displayUnit && displayUnit.kind === itemUnit.kind ? convert(n, displayUnit, itemUnit) : n;
+    return checkContentVsHistory(stored, trailingAverage);
+  }, [activeMode, useTotalAmount, openAmount, itemUnit, displayUnit, trailingAverage]);
 
   /**
    * Focus the entry field for the current mode. Picking an item left focus on
@@ -458,6 +479,14 @@ function OpenSession({ session }: { session: SessionWithLines }) {
                   <p className="text-xs text-muted-foreground">
                     Type the amount left in the open container — no scale or empty weight needed.
                   </p>
+                  {/* Same bg-warning/10 style as WeighPreviewStrip (phases doc
+                      4.2/4.3) — the two entry modes should look identical to
+                      the counter even though there's no live calculator here. */}
+                  {openAmountWarning && (
+                    <p className="rounded-md bg-warning/10 px-3 py-1.5 text-xs text-foreground">
+                      {openAmountWarning.message}
+                    </p>
+                  )}
                 </div>
               )}
             </div>
@@ -762,9 +791,22 @@ function EditLineDialog({
 
   // Hooks stay above the early return — useWeighPreview handles a null item.
   const item = line?.locationItem ?? null;
-  const preview = useWeighPreview(item, scale);
+  // Weight outlier warning (docs/2026-08-01-weight-outlier-warning-plan.md,
+  // phases doc Phase 3/4) — same fetch OpenSession uses, shared by the
+  // Weigh Partial preview and the Open Amount check below.
+  const trailingAverage = useTrailingAverage(item?.id ?? null).data?.trailingAverage;
+  const preview = useWeighPreview(item, scale, trailingAverage);
   const weighable = (item?.itemVariant.contentTracked || item?.itemVariant.weighMode === "NET") ?? false;
   const activeMode = weighable ? mode : "FULL";
+  // Open Amount here saves remainingContent directly in the item's own
+  // stored unit (no displayUnit conversion layer, unlike OpenSession's save
+  // path below) — so unlike there, no convert() is needed before comparing.
+  const openAmountWarning = useMemo((): WeighWarning | null => {
+    if (activeMode !== "OPEN" || openAmount === "") return null;
+    const n = Number(openAmount);
+    if (!Number.isFinite(n) || n < 0) return null;
+    return checkContentVsHistory(n, trailingAverage);
+  }, [activeMode, openAmount, trailingAverage]);
 
   if (!line || !item) return null;
   const variant = item.itemVariant;
@@ -850,6 +892,11 @@ function EditLineDialog({
                 value={openAmount}
                 onChange={(e) => setOpenAmount(e.target.value)}
               />
+              {openAmountWarning && (
+                <p className="rounded-md bg-warning/10 px-3 py-1.5 text-xs text-foreground">
+                  {openAmountWarning.message}
+                </p>
+              )}
             </div>
           ) : (
             <div className="space-y-2">
