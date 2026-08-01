@@ -1,5 +1,6 @@
 import type { SessionUser } from "@fnb/core";
 import { prisma, type Tx } from "../db";
+import { chainTip, computeHash } from "./activity-chain";
 
 export interface ActivityInput {
   user?: SessionUser | null;
@@ -44,18 +45,48 @@ export async function logActivity(input: ActivityInput, tx?: Tx): Promise<void> 
         ? sync
         : input.details;
 
+  /**
+   * Link this entry into the tamper-evident chain (services/activity-chain.ts).
+   *
+   * Done HERE because this function is the single choke point every one of the
+   * ~90 log sites goes through — the same reason the device-session fields are
+   * folded in above. A chain maintained at ninety call sites would be a chain
+   * with holes in it.
+   *
+   * The tip is read with the SAME client the insert uses, so when a caller
+   * passes a transaction the read and the append are inside it. That is what
+   * keeps `seq` contiguous: SQLite serialises write transactions (one writer,
+   * WAL — db.ts), so two concurrent mutations cannot both see the same tip and
+   * fork the chain.
+   */
+  const tip = await chainTip(db);
+  const seq = tip.seq + 1;
+  const ts = new Date();
+  const detailsJson = details === undefined ? null : JSON.stringify(details);
+
+  const material = {
+    seq,
+    ts,
+    userId: input.user?.id ?? null,
+    userName: input.user ? `${input.user.firstName} ${input.user.lastName}` : null,
+    clientId: input.clientId ?? null,
+    locationId: input.locationId ?? null,
+    action: input.action,
+    entity: input.entity,
+    entityId: input.entityId ?? null,
+    summary: input.summary,
+    detailsJson,
+  };
+
   await db.activityLog.create({
     data: {
-      userId: input.user?.id ?? null,
-      userName: input.user ? `${input.user.firstName} ${input.user.lastName}` : null,
-      clientId: input.clientId ?? null,
-      locationId: input.locationId ?? null,
-      action: input.action,
-      entity: input.entity,
-      entityId: input.entityId ?? null,
-      summary: input.summary,
-      detailsJson: details === undefined ? null : JSON.stringify(details),
+      ...material,
+      // Written explicitly rather than left to @default(now()), because the
+      // hash covers `ts` and the two must be the same instant.
+      ts,
       deviceId: input.user?.deviceId ?? null,
+      prevHash: tip.hash,
+      hash: computeHash(material, tip.hash),
     },
   });
 }

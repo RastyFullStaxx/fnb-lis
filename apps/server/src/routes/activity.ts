@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { prisma } from "../db";
 import { requireAuth, requirePermission, type AppEnv } from "../middleware/auth";
+import { chainAnchor, verifyChain } from "../services/activity-chain";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -12,6 +13,27 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
  */
 export const activityRoutes = new Hono<AppEnv>()
   .use(requireAuth, requirePermission("activity.view"))
+
+  /**
+   * Is the audit trail intact?
+   *
+   * ADMIN only, because the answer is about the integrity of the whole log
+   * rather than any one establishment's records, and because a partial view of
+   * a chain is misleading — a break at position 40 concerns every client whose
+   * entries come after it.
+   *
+   * Returns the anchor on success: the one value worth publishing somewhere
+   * outside this database (a monthly report, the audit certificate). Nothing
+   * stored alongside the data it protects can stop someone with write access
+   * recomputing the chain — an external copy is what makes that visible.
+   */
+  .get("/verify", requirePermission("admin.manage"), async (c) => {
+    const verdict = await verifyChain();
+    return c.json({
+      ...verdict,
+      anchor: verdict.ok ? await chainAnchor() : null,
+    });
+  })
 
   .get("/", async (c) => {
     const user = c.get("user")!;

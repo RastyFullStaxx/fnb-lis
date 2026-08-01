@@ -69,8 +69,8 @@ function ChartContainer({
           className
         )}
         {...props}
+        style={{ ...chartColorVars(config), ...props.style }}
       >
-        <ChartStyle id={chartId} config={config} />
         <RechartsPrimitive.ResponsiveContainer
           initialDimension={initialDimension}
         >
@@ -81,37 +81,35 @@ function ChartContainer({
   )
 }
 
-const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
-  const colorConfig = Object.entries(config).filter(
-    ([, config]) => config.theme ?? config.color
-  )
-
-  if (!colorConfig.length) {
-    return null
-  }
-
-  return (
-    <style
-      dangerouslySetInnerHTML={{
-        __html: Object.entries(THEMES)
-          .map(
-            ([theme, prefix]) => `
-${prefix} [data-chart=${id}] {
-${colorConfig
-  .map(([key, itemConfig]) => {
+/**
+ * The chart's `--color-<key>` custom properties, as a React style OBJECT.
+ *
+ * Upstream shadcn renders these through a `<style>` element built with
+ * `dangerouslySetInnerHTML`. That is safe in itself — the values come from
+ * developer-authored chart config, never from user input — but it was the ONLY
+ * `<style>` element the app produced at runtime, and its existence forced
+ * `style-src 'unsafe-inline'` in the Content-Security-Policy, which then also
+ * permits any `<style>` block an attacker manages to inject.
+ *
+ * Emitting the same variables as an inline style attribute moves them from
+ * `style-src` (elements) to `style-src-attr` (attributes), so the policy can
+ * refuse inline `<style>` elements outright while still allowing React's own
+ * `style=` props. Same rendered result, one less hole.
+ *
+ * Per-theme colours (`config.theme`) resolve through the SAME CSS variables the
+ * rest of the design system uses, so a `var(--chart-1)` value keeps working in
+ * light and dark without a media query — which is why no chart in this app
+ * needed the `theme` form in the first place.
+ */
+function chartColorVars(config: ChartConfig): React.CSSProperties {
+  const vars: Record<string, string> = {}
+  for (const [key, itemConfig] of Object.entries(config)) {
     const color =
-      itemConfig.theme?.[theme as keyof typeof itemConfig.theme] ??
+      itemConfig.theme?.[Object.keys(THEMES)[0] as keyof typeof THEMES] ??
       itemConfig.color
-    return color ? `  --color-${key}: ${color};` : null
-  })
-  .join("\n")}
-}
-`
-          )
-          .join("\n"),
-      }}
-    />
-  )
+    if (color) vars[`--color-${key}`] = color
+  }
+  return vars as React.CSSProperties
 }
 
 const ChartTooltip = RechartsPrimitive.Tooltip
@@ -370,5 +368,4 @@ export {
   ChartTooltipContent,
   ChartLegend,
   ChartLegendContent,
-  ChartStyle,
 }

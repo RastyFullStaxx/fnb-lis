@@ -47,7 +47,7 @@ mirror needs (and no password hashes). See
 After ANY change to auth, sessions, permissions, or the request edge:
 
 ```bash
-npm run verify:security -w @fnb/server   # same throwaway-db harness, 110 checks
+npm run verify:security -w @fnb/server   # same throwaway-db harness, 119 checks
 ```
 
 Same in-process approach: hardening headers are really sent, the session cookie's `Secure` flag

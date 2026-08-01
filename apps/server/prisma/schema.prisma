@@ -970,6 +970,28 @@ model ActivityLog {
   entityId    String?
   summary     String
   detailsJson String? // old/new values (TEXT)
+
+  /**
+   * Tamper-evidence for the audit trail (docs/security.md).
+   *
+   * `hash` = SHA-256 over this row's own material fields PLUS the previous
+   * row's hash, so the log is a chain: altering, deleting or reordering any row
+   * breaks every hash after it. `seq` is the chain position — a monotonic
+   * integer, so a verifier can walk in a defined order without depending on
+   * timestamp ties.
+   *
+   * This is the difference between a system that STORES its history and one
+   * that can PROVE the history was not edited — including by whoever holds the
+   * database file, which is precisely this product's stated adversary. Storing
+   * a log an insider can quietly rewrite is a confident lie.
+   *
+   * Nullable because rows written before this shipped have no chain; the
+   * verifier reports where the chain begins rather than treating history as
+   * corrupt.
+   */
+  seq      Int?    @unique
+  prevHash String?
+  hash     String?
   // ts = when the server logged it; occurredAt = when the user did it on an
   // offline device. Same distinction as CountSession.occurredAt, and the reason
   // the audit trail of a synced day is still readable as a sequence of events.

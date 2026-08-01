@@ -12,6 +12,7 @@ import { requirePermission, type AppEnv } from "../middleware/auth";
 import { parseCsv, parseXlsx, type ParsedRow } from "../services/import-parse";
 import { AI_MODEL, extractWithAi, isAiEnabled } from "../services/import-extract";
 import { matchRows } from "../services/import-match";
+import { describeSniff, looksLikeText, sniffFileType } from "../services/file-type";
 
 const uploadGuard = requirePermission("imports.upload");
 const commitGuard = requirePermission("imports.commit");
@@ -34,14 +35,60 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function detectSource(fileName: string, mime: string): { sourceType: "CSV" | "XLSX" | "PDF" | "IMAGE"; mediaType: string } {
+/**
+ * Which parser this file goes to — decided by its BYTES, with the filename as a
+ * hint of last resort.
+ *
+ * The name and MIME type both come from the caller, so choosing a parser from
+ * them alone let the caller choose the parser. Sniffing first means a PDF named
+ * `sales.csv` reaches the PDF path (or is refused) rather than being fed to the
+ * CSV reader as text.
+ *
+ * The extension still decides between the formats bytes cannot separate — XLSX
+ * and any other Zip look identical until something opens the archive — and it
+ * is the only signal available for CSV, which has no magic number at all.
+ */
+function detectSource(
+  fileName: string,
+  mime: string,
+  bytes: Buffer,
+): { sourceType: "CSV" | "XLSX" | "PDF" | "IMAGE"; mediaType: string } {
   const ext = fileName.toLowerCase().split(".").pop() ?? "";
-  if (ext === "csv" || mime === "text/csv") return { sourceType: "CSV", mediaType: "text/csv" };
-  if (ext === "xlsx" || ext === "xls") return { sourceType: "XLSX", mediaType: mime };
-  if (ext === "pdf" || mime === "application/pdf") return { sourceType: "PDF", mediaType: "application/pdf" };
-  if (["png", "jpg", "jpeg", "webp", "gif"].includes(ext)) {
-    return { sourceType: "IMAGE", mediaType: ext === "jpg" ? "image/jpeg" : `image/${ext}` };
+  const sniffed = sniffFileType(bytes);
+
+  // Bytes first, and they are conclusive for these.
+  if (sniffed === "PDF") return { sourceType: "PDF", mediaType: "application/pdf" };
+  if (sniffed === "PNG") return { sourceType: "IMAGE", mediaType: "image/png" };
+  if (sniffed === "JPEG") return { sourceType: "IMAGE", mediaType: "image/jpeg" };
+  if (sniffed === "GIF") return { sourceType: "IMAGE", mediaType: "image/gif" };
+  if (sniffed === "WEBP") return { sourceType: "IMAGE", mediaType: "image/webp" };
+
+  // A Zip container. Only the extension can say whether it is a spreadsheet.
+  if (sniffed === "ZIP") {
+    if (ext === "xlsx" || ext === "xls") return { sourceType: "XLSX", mediaType: mime };
+    throw new AppError(400, "That looks like a Zip archive. Upload the CSV, Excel, PDF or image itself.");
   }
+
+  // No magic number matched, so it is either text or something unknown.
+  if (ext === "csv" || mime === "text/csv") {
+    if (!looksLikeText(bytes)) {
+      throw new AppError(400, `That file is named .csv but its contents are ${describeSniff(sniffed)}.`);
+    }
+    return { sourceType: "CSV", mediaType: "text/csv" };
+  }
+
+  /**
+   * The name claims a binary format the bytes did not confirm. Refused rather
+   * than passed through: the previous behaviour handed it to that format's
+   * parser anyway, which is the exact assumption being removed.
+   */
+  if (["xlsx", "xls", "pdf", "png", "jpg", "jpeg", "webp", "gif"].includes(ext)) {
+    throw new AppError(
+      400,
+      `That file is named .${ext} but its contents don't match. It may be renamed or corrupted — re-export it and try again.`,
+    );
+  }
+
   throw new AppError(400, "Unsupported file type. Use CSV, Excel, PDF, or an image.");
 }
 
@@ -80,7 +127,7 @@ export const importRoutes = new Hono<AppEnv>()
     if (bytes.length === 0) throw new AppError(400, "The file is empty");
     if (bytes.length > MAX_BYTES) throw new AppError(413, "File too large (max 20 MB)");
 
-    const { sourceType, mediaType } = detectSource(file.name, file.type);
+    const { sourceType, mediaType } = detectSource(file.name, file.type, bytes);
     if ((sourceType === "PDF" || sourceType === "IMAGE") && !isAiEnabled()) {
       throw new AppError(400, "PDF and image import needs the AI extractor. Add ANTHROPIC_API_KEY to enable it — CSV and Excel work without it.");
     }

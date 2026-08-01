@@ -27,6 +27,7 @@ import { prisma } from "../src/db";
 import { resetRateLimits } from "../src/middleware/security";
 import { base32Decode } from "../src/auth/totp";
 import { hashPassword, verifyPassword } from "../src/auth/password";
+import { chainAnchor, verifyChain } from "../src/services/activity-chain";
 
 /**
  * The current TOTP code for a secret — computed HERE rather than imported, so
@@ -1061,6 +1062,90 @@ const main = async () => {
       });
       ok("but an unbreached one is accepted", fine.status === 200, `status ${fine.status}`);
     }
+  }
+
+  console.log("\n== 10c. the audit trail is tamper-evident");
+  {
+    /**
+     * The product-shaped control. Every competitor can say their system LOGS
+     * changes; this asserts the log can be shown not to have been edited —
+     * including by whoever holds the database, which is this system's stated
+     * adversary.
+     *
+     * Each check below performs a REAL tamper and requires the verifier to
+     * catch it. A chain that has never been tested against an actual edit is
+     * an assumption wearing a hash.
+     */
+    resetRateLimits();
+    const clean = await verifyChain();
+    ok("the chain verifies on an untouched database", clean.ok, `${clean.checked} linked, ${clean.unchained} pre-chain`);
+    ok("and every new entry is linked", clean.checked > 0, `${clean.checked} chained rows`);
+
+    // 1. EDIT a historic summary — the "quietly change what happened" attack.
+    const victim = await prisma.activityLog.findFirst({
+      where: { seq: { not: null } },
+      orderBy: { seq: "asc" },
+    });
+    const originalSummary = victim!.summary;
+    await prisma.activityLog.update({
+      where: { id: victim!.id },
+      data: { summary: "…nothing to see here" },
+    });
+    const edited = await verifyChain();
+    ok(
+      "an edited entry breaks the chain",
+      !edited.ok && edited.brokenAt?.seq === victim!.seq,
+      edited.brokenAt ? `caught at seq ${edited.brokenAt.seq}` : "NOT CAUGHT",
+    );
+    await prisma.activityLog.update({ where: { id: victim!.id }, data: { summary: originalSummary } });
+    ok("and restoring the original repairs it", (await verifyChain()).ok);
+
+    // 2. DELETE an entry — the "make it never have happened" attack. The hashes
+    //    alone would still chain across the hole if it were the newest row,
+    //    which is why gaps are checked explicitly.
+    const middle = await prisma.activityLog.findFirst({
+      where: { seq: { not: null } },
+      orderBy: { seq: "asc" },
+      skip: 2,
+    });
+    const backup = { ...middle! };
+    await prisma.activityLog.delete({ where: { id: middle!.id } });
+    const deleted = await verifyChain();
+    ok(
+      "a deleted entry is detected as a gap",
+      !deleted.ok && deleted.gaps.includes(middle!.seq!),
+      `gaps: [${deleted.gaps.join(", ")}]`,
+    );
+    await prisma.activityLog.create({ data: backup });
+    ok("and putting it back repairs it", (await verifyChain()).ok);
+
+    // 3. A forged entry, hash and all — the attacker who knows the format.
+    //    Appending is not what the chain prevents; it prevents doing so
+    //    INVISIBLY, because the tip no longer matches any published anchor.
+    const before = await chainAnchor();
+    const tip = await prisma.activityLog.findFirst({ where: { seq: { not: null } }, orderBy: { seq: "desc" } });
+    await prisma.activityLog.create({
+      data: {
+        seq: tip!.seq! + 1,
+        ts: new Date(),
+        action: "forged.entry",
+        entity: "Forged",
+        summary: "an entry an attacker appended",
+        prevHash: tip!.hash,
+        hash: "0".repeat(64),
+      },
+    });
+    const forged = await verifyChain();
+    ok("a forged entry with a wrong hash is caught", !forged.ok, forged.brokenAt ? `seq ${forged.brokenAt.seq}` : "");
+    await prisma.activityLog.deleteMany({ where: { action: "forged.entry" } });
+
+    const after = await chainAnchor();
+    ok(
+      "the anchor is stable while the trail is untouched",
+      before.hash === after.hash,
+      `${before.hash.slice(0, 12)}…`,
+    );
+    ok("and the chain verifies again at the end", (await verifyChain()).ok);
   }
 
   console.log("\n== 11. every registered route, probed unauthenticated");

@@ -3198,3 +3198,70 @@ point is one the drill will (correctly) refuse.
 
 `verify:security` **110/110** · `verify:seed` PASS · `verify:sync` PASS · typechecks clean · audit
 gate PASS · backup + drill PASS · build clean.
+
+## 2026-08-02 (third pass) — the last three code items
+
+Built all three remaining items from the security roadmap. **95 → 97.** What is left is entirely
+operational and belongs to the operator, not the codebase.
+
+### Hash-chained ActivityLog — the one that is a product feature
+
+Every entry now carries `hash = SHA-256(prevHash ‖ its own material fields)` plus a monotonic `seq`.
+Written in `logActivity`, the single choke point all ~90 log sites go through — a chain maintained at
+ninety call sites would be a chain with holes. `GET /api/activity/verify` (ADMIN) walks it and names
+the first position that stops reproducing.
+
+The distinction worth stating: every competitor can say their system *logs* changes. This says the
+log **has not been edited**, including by whoever holds the database — which is exactly this
+product's stated adversary. A trail an insider can quietly rewrite is not evidence.
+
+Nine harness checks perform **real tampering** and require detection: an edited summary (caught at
+its exact seq), a deleted row (caught as a gap — hashes alone would chain across the hole if it were
+the newest), a forged append. A chain never tested against an actual edit is an assumption wearing a
+hash.
+
+Honest limit, documented in the code: someone with write access can recompute the chain forward and
+it verifies. Nothing stored beside the data it protects can stop that. `chainAnchor()` returns the
+value worth publishing **outside** the database, which is what makes forward-recomputation visible.
+
+Two implementation notes:
+- The tip is read with the **same client** the insert uses, so a caller's `$transaction` covers both.
+  SQLite serialises write transactions (one writer, WAL), which is what keeps `seq` contiguous rather
+  than merely usually-contiguous.
+- `ts` is written explicitly rather than left to `@default(now())`, because the hash covers it and the
+  two must be the same instant.
+
+### Uploads routed by magic bytes
+
+`detectSource` picked the parser from the filename and browser MIME type — both caller-controlled, so
+the caller picked the parser. Now sniffed from bytes, with the extension only breaking ties bytes
+cannot (XLSX vs any other Zip) and covering CSV, which has no magic number.
+
+### Inline `<style>` elements refused — and the regression it exposed
+
+CSP3 splits `style-src-elem` from `style-src-attr`. The app emitted exactly one `<style>` element
+(shadcn's chart); rewriting it to emit colour variables as an inline style object made
+`style-src-elem 'self'` possible.
+
+**Then the browser caught what no harness would have.** Sonner injects ~15 KB of CSS as an inline
+`<style>` at runtime — the tightened policy blocked it, and every toast in the app would have shipped
+unstyled. Fixed by importing `sonner/dist/styles.css` through the bundler. **That import is
+load-bearing.**
+
+Worth recording as a pattern: this is the second time in two days that a CSP change passed every
+in-process check and broke something only visible in a real browser. Header changes need a browser
+pass, full stop.
+
+### The migration needed hand-writing
+
+`prisma migrate dev` refuses to add a UNIQUE constraint non-interactively. Generated the SQL with
+`prisma migrate diff --from-config-datasource --to-schema` and wrote the migration folder by hand,
+then `migrate deploy`. (SQLite permits many NULLs under a UNIQUE index, so `seq` being nullable does
+not conflict with the pre-chain backfill.)
+
+### Verified
+
+`verify:security` **119/119** (was 110) · `verify:seed` PASS · `verify:sync` PASS · typechecks clean ·
+audit gate PASS · backup + drill PASS · build clean. Charts, report (92 rows) and toasts all verified
+in a real browser against the production build, with **zero CSP violations**. Live chain verifies
+clean after the break-glass writes.

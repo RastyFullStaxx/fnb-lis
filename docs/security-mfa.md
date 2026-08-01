@@ -139,7 +139,7 @@ immediately and lets those users self-disable.
 
 ### Verified
 
-`npm run verify:security -w @fnb/server` — around 50 of its 110 checks cover MFA, including: an
+`npm run verify:security -w @fnb/server` — around 50 of its 119 checks cover MFA, including: an
 unenrolled ADMIN can still sign in but is refused everything else; an unconfirmed enrolment does not
 lift the gate; a password alone sets no session cookie; a challenge cannot be replayed; a recovery
 code works once and not twice; a required role cannot self-disable; **a device payload does not

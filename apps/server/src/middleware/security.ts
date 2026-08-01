@@ -268,20 +268,38 @@ export function resetRateLimits(): void {
 // ─────────────────────────────── Response headers ────────────────────────────
 
 /**
- * `style-src` carries 'unsafe-inline' deliberately and cannot currently drop it:
- * shadcn's chart primitive renders a `<style>` block for its colour variables
- * (apps/web/src/components/ui/chart.tsx) and React writes `style=` props inline
- * throughout. Neither is an injection sink — both are developer-authored — but
- * both are inline styles, so a nonce would have to be threaded through the SPA
- * build to remove it. `script-src` has NO such escape hatch, which is the half
- * that actually stops injected JavaScript.
+ * Inline `<style>` ELEMENTS are now refused; inline `style=` ATTRIBUTES are not.
+ *
+ * CSP3 splits these: `style-src-elem` governs `<style>` and stylesheet links,
+ * `style-src-attr` governs the `style="…"` attribute. React writes hundreds of
+ * the latter and cannot stop, but the app produced exactly ONE of the former —
+ * shadcn's chart primitive, which built a `<style>` block for its colour
+ * variables. Rewriting it to emit those same variables as an inline style
+ * object (apps/web/src/components/ui/chart.tsx) removed the last one, which is
+ * what makes `style-src-elem 'self'` possible.
+ *
+ * That is a real tightening rather than a cosmetic one: an attacker who managed
+ * to inject markup can no longer bring a `<style>` block with it, which closes
+ * the CSS-exfiltration trick where attribute selectors leak field contents by
+ * requesting a different background image per character.
+ *
+ * `style-src` is kept as the fallback for browsers that do not implement the
+ * -elem/-attr split; they get the old, laxer behaviour rather than a broken app.
+ * `script-src` has never had an escape hatch, and that remains the half that
+ * actually stops injected JavaScript.
  */
 export const securityHeaders: MiddlewareHandler = async (c, next) => {
   const handler = secureHeaders({
     contentSecurityPolicy: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'"],
+      // Fallback for browsers without the CSP3 -elem/-attr split.
       styleSrc: ["'self'", "'unsafe-inline'"],
+      // The app emits no inline <style> elements any more — see the note above.
+      styleSrcElem: ["'self'"],
+      // React's style= props. Unavoidable, and a far smaller surface than
+      // arbitrary <style> blocks.
+      styleSrcAttr: ["'unsafe-inline'"],
       imgSrc: ["'self'", "data:", "blob:"],
       fontSrc: ["'self'", "data:"],
       // The SPA only ever talks to its own origin (apps/web/src/api/http.ts uses

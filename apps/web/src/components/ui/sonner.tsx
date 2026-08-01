@@ -8,6 +8,24 @@ import {
   TriangleAlertIcon,
 } from "lucide-react"
 import { useTheme } from "next-themes"
+/**
+ * Sonner's stylesheet, imported EXPLICITLY rather than left to the library.
+ *
+ * Sonner injects its ~15 KB of CSS as an inline `<style>` element at runtime.
+ * The Content-Security-Policy now refuses inline `<style>` elements
+ * (`style-src-elem 'self'` — see apps/server/src/middleware/security.ts), so
+ * that injected block is blocked and every toast would render completely
+ * unstyled.
+ *
+ * Importing the same CSS through the bundler makes it an ordinary same-origin
+ * stylesheet, which the policy allows. The library still injects its duplicate
+ * and the browser still blocks it — harmlessly, because these rules are already
+ * present.
+ *
+ * THIS IMPORT IS LOAD-BEARING. Removing it, or a sonner upgrade that changes
+ * where its CSS lives, silently unstyles every toast in the app.
+ */
+import "sonner/dist/styles.css"
 import { Toaster as Sonner, type ToasterProps } from "sonner"
 
 const Toaster = ({ ...props }: ToasterProps) => {

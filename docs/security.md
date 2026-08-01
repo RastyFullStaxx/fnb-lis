@@ -14,7 +14,7 @@ Run the harness after touching anything in this document's scope:
 npm run verify:security -w @fnb/server
 ```
 
-110 checks against the real Hono app on a throwaway database. Same shape as `verify:seed` and
+119 checks against the real Hono app on a throwaway database. Same shape as `verify:seed` and
 `verify:sync` — one runnable script, exits non-zero when a guarantee breaks. Runs in CI on every
 push.
 
@@ -79,7 +79,7 @@ Four boundaries carry real weight:
 
 An honest score, with the reasoning rather than just a number.
 
-### Score: **95 / 100** — strong throughout; what remains is deployment, not code
+### Score: **97 / 100** — strong throughout; what remains is deployment, not code
 
 *Tracked across 2026-08-01: **78** (initial audit) → **82** (MFA) → **93** (DR, pipeline, KDF,
 route-coverage) → **91** when review round one found five bypasses in the day's own MFA work → **93**
@@ -104,10 +104,10 @@ That splits unevenly, and the split is the useful part:
 | Domain | Score | Why |
 |---|---|---|
 | Authorization / tenancy | 97 | Server-side on every route, 404-not-403, nested-relation scoping, no IDOR, **all 179 routes probed unauthenticated on every CI run** (every one answers 401). Marked down for five middleware-placement bugs found in one day |
-| Audit integrity | 90 | Mutations and their log rows share a `$transaction`. Immutable records with void chains |
+| Audit integrity | 97 | Mutations and their log rows share a `$transaction`, immutable records with void chains — and the trail is now **hash-chained and provably unedited**, verified against real edit/delete/forge attacks on every CI run |
 | Authentication | 95 | TOTP for ADMIN/OWNER (single-use per RFC 6238), scrypt at 2× the OWASP floor with lazy re-hashing, malformed hashes rejected, breached passwords refused. Still marked down: **eight** real bypasses shipped across two cuts of this work and were caught only by adversarial review |
-| Input handling / injection | 90 | Prisma everywhere, zod on every body, no raw SQL on user input, no dynamic execution, per-request timeout. Remaining: content-sniff uploads rather than trusting the extension |
-| Transport / edge hardening | 75 | Headers, limits and per-request `Secure` all shipped. Stuck at 75 until TLS is actually terminated — that one is yours |
+| Input handling / injection | 96 | Prisma everywhere, zod on every body, no raw SQL on user input, no dynamic execution, per-request timeout, and uploads routed by **magic bytes** rather than a caller-supplied filename |
+| Transport / edge hardening | 80 | Headers, limits, per-request `Secure`, and inline `<style>` elements now refused outright (`style-src-elem 'self'`). Stuck below 95 until TLS is actually terminated — that one is yours |
 | Secrets management | 80 | `.env` untracked and clean, gitleaks in CI. Remaining: back up `FNB_MFA_KEY` separately, and a rehearsed rotation |
 | Availability / DR | 90 | Verified tiered backups, a non-vacuity floor, a drill that re-runs the real reconciliation, and a health check that can actually fail. Remaining: schedule it, and put a copy on another machine |
 | Pipeline security | 90 | CI runs typechecks, all three harnesses, gitleaks over full history, and an audit gate that fails CLOSED when it cannot run and matches exceptions by advisory identity. Remaining: branch protection |
@@ -490,6 +490,53 @@ the declines matter as much as the builds, so they are recorded rather than quie
 
 - **A recovery code is spent before `completeLogin` runs**, which can throw (revoked device, licence cap) — burning the code without granting a session. Consuming *first* is the fail-safe direction; the alternatives are a race or a two-phase commit. Annoying, not dangerous, and 9 codes remain.
 - **Alerting implementation** — the signals are documented as queries in the runbook, but firing them needs an email/Slack channel that does not exist yet.
+
+### The last three code items — built 2026-08-02
+
+#### Hash-chained `ActivityLog` — the product-shaped one
+
+Every entry now carries `hash = SHA-256(prevHash ‖ its own material fields)` and a monotonic `seq`,
+written in `logActivity` — the single choke point all ~90 log sites pass through, so the chain cannot
+have holes in it. `GET /api/activity/verify` (ADMIN) walks it and reports the first position that
+stops reproducing.
+
+**Why this is different from the rest of this document.** Every competitor can say their system
+*logs* changes. This is the claim that the log **has not been edited** — including by whoever holds
+the database file, which is precisely this product's stated adversary. An audit trail an insider can
+quietly rewrite is not evidence; it is a confident lie.
+
+Nine checks in the harness perform **real tampering** and require the verifier to catch it: an edited
+summary (caught at its exact seq), a deleted row (caught as a gap — the hashes alone would chain
+across the hole), and a forged append. A chain never tested against an actual edit is an assumption
+wearing a hash.
+
+**What it does not do:** an attacker with write access can recompute the whole chain forward and it
+will verify. Nothing stored beside the data it protects can prevent that. `chainAnchor()` returns the
+one value worth publishing **outside** the database — on the monthly report, the audit certificate —
+because altering every copy that has left the building is the point at which tampering stops being
+quiet.
+
+#### Uploads routed by magic bytes
+
+`detectSource` chose a parser from the filename extension and the browser-supplied MIME type — both
+caller-controlled, so the caller chose the parser. Now sniffed from the bytes
+(`services/file-type.ts`), with the extension only breaking ties bytes cannot (XLSX vs any other Zip)
+and covering CSV, which has no magic number — there, a NUL byte in the first 8 KB rejects a binary
+wearing a `.csv` name.
+
+#### Inline `<style>` elements refused
+
+CSP3 splits `style-src-elem` (elements) from `style-src-attr` (attributes). React writes hundreds of
+inline `style=` props and cannot stop, but the app emitted exactly **one** `<style>` element —
+shadcn's chart primitive. Rewriting it to emit its colour variables as an inline style object made
+`style-src-elem 'self'` possible, which closes the CSS-exfiltration trick where injected attribute
+selectors leak field contents one character at a time.
+
+⚠️ **This surfaced a regression in the browser that no harness would have caught.** Sonner injects
+~15 KB of CSS as an inline `<style>` at runtime, so the tightened policy blocked it and every toast
+in the app rendered unstyled. Fixed by importing `sonner/dist/styles.css` through the bundler — an
+ordinary same-origin stylesheet the policy allows. **That import is load-bearing**; removing it, or a
+sonner upgrade that relocates its CSS, silently unstyles every toast.
 
 ### Still open from this round
 
