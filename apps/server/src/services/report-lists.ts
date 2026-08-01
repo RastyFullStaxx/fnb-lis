@@ -607,7 +607,91 @@ export async function nonMovingReport(
   return { lastCountDate: snap.lastCountDate, periodBegin: snap.periodBegin, periodEnd: snap.periodEnd, rows, totals: { count: totals.count, costValue: round2(totals.costValue), retailValue: round2(totals.retailValue) } };
 }
 
-// ── Asset Breakage (client req 2026-07-21) ──
+// ── Clutter candidates (clutter-item-removal plan, Phase 3) ──
+// System-suggested items for the manual hide action. Reuses the same
+// idle-stock read as Non-Moving, then adds two guards so a seasonal item
+// is not suggested by mistake: a 12-month lookback instead of one closed
+// period, and a per-item movement schedule. No scheduler job — this runs
+// on request, same as every other report here.
+
+export interface ClutterCandidateRow {
+  locationItemId: string;
+  name: string;
+  category: string;
+  onHand: number;
+  costValue: number;
+  monthsChecked: number;
+}
+export interface ClutterCandidateReport {
+  asOfDate: string | null;
+  rows: ClutterCandidateRow[];
+}
+
+function monthsAgo(dateStr: string, months: number): string {
+  const d = new Date(dateStr);
+  // Clamp to day 1 first so this can't overflow into the following month
+  // on a short target month (e.g. Mar 31 minus 1 -> Mar 3 instead of the
+  // intended Feb 28). Then set the real day, capped to the target month's
+  // own last day.
+  const probe = new Date(d.getFullYear(), d.getMonth() - months, 1);
+  const lastDayOfTargetMonth = new Date(probe.getFullYear(), probe.getMonth() + 1, 0).getDate();
+  probe.setDate(Math.min(d.getDate(), lastDayOfTargetMonth));
+  return `${probe.getFullYear()}-${String(probe.getMonth() + 1).padStart(2, "0")}-${String(probe.getDate()).padStart(2, "0")}`;
+}
+
+/**
+ * True when `month` (1-12) falls inside the item's expected movement window.
+ * No schedule set means always inside, so an unscheduled item falls back to
+ * the plain lookback with no seasonal exception.
+ */
+function inScheduleWindow(month: number, start: number | null, end: number | null): boolean {
+  if (start == null || end == null) return true;
+  if (start <= end) return month >= start && month <= end;
+  // Window wraps the year end, e.g. Nov (11) to Jan (1).
+  return month >= start || month <= end;
+}
+
+export async function clutterCandidates(
+  locationId: string,
+  allowedProductTypes?: readonly string[] | null,
+  costBasis: CostBasis = "PRICE",
+): Promise<ClutterCandidateReport> {
+  const snap = await stockSnapshot(locationId, allowedProductTypes, costBasis);
+  if (!snap.lastCountDate) return { asOfDate: null, rows: [] };
+
+  const lookbackStart = monthsAgo(snap.lastCountDate, 12);
+  const lookbackAudit = await buildFullAudit(locationId, lookbackStart, snap.lastCountDate, undefined, allowedProductTypes, costBasis);
+  const usage12mo = new Map<string, number>();
+  for (const r of lookbackAudit.rows) usage12mo.set(r.locationItemId, r.usage);
+
+  const schedules = await prisma.locationItem.findMany({
+    where: { id: { in: snap.items.map((it) => it.locationItemId) } },
+    select: { id: true, scheduleStartMonth: true, scheduleEndMonth: true },
+  });
+  const scheduleMap = new Map(schedules.map((s) => [s.id, s]));
+  const currentMonth = new Date(snap.lastCountDate).getMonth() + 1;
+
+  const rows: ClutterCandidateRow[] = snap.items
+    .filter((it) => it.onHand > VARIANCE_EPSILON)
+    .filter((it) => !hasVariance(usage12mo.get(it.locationItemId) ?? 0))
+    .filter((it) => {
+      const sched = scheduleMap.get(it.locationItemId);
+      return inScheduleWindow(currentMonth, sched?.scheduleStartMonth ?? null, sched?.scheduleEndMonth ?? null);
+    })
+    .map((it) => ({
+      locationItemId: it.locationItemId,
+      name: it.name,
+      category: it.category,
+      onHand: round2(it.onHand),
+      costValue: round2(it.onHand * it.cost),
+      monthsChecked: 12,
+    }))
+    .sort((a, b) => b.costValue - a.costValue || a.name.localeCompare(b.name));
+
+  return { asOfDate: snap.lastCountDate, rows };
+}
+
+
 // Equipment that left the register: non-revenue records on ASSET-type items,
 // showing "what happened" (the note) — the asset equivalent of usage. Filters
 // to the Asset product type, so it's empty on a bar/kitchen location.

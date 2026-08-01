@@ -1,6 +1,7 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { zValidator } from "../lib/validate";
-import { allowedProductTypes, locationItemAttach, locationItemUpdate, resolveBottleWeights, supplierUpsert, toCsv, type CsvValue } from "@fnb/core";
+import { allowedProductTypes, isCostBasis, locationItemAttach, locationItemSchedule, locationItemUpdate, resolveBottleWeights, supplierUpsert, toCsv, type CostBasis, type CsvValue } from "@fnb/core";
+import { clutterCandidates } from "../services/report-lists";
 import { prisma } from "../db";
 import { AppError } from "../lib/errors";
 import { assertNotQueuedEdit } from "../lib/two-way";
@@ -10,6 +11,17 @@ import { generateAssetCode } from "../services/asset-supplier";
 import { requirePermission, type AppEnv } from "../middleware/auth";
 
 const priceGuard = requirePermission("prices.edit");
+const masterGuard = requirePermission("master.write");
+
+/**
+ * The client's saved inventory cost basis. Same policy as the reports —
+ * the candidate list's cost value must not disagree with what Non-Moving
+ * or the Full Audit show for the same item.
+ */
+function basisOf(c: Context<AppEnv>): CostBasis {
+  const raw = (c.get("client") as { costBasis?: string } | undefined)?.costBasis;
+  return isCostBasis(raw) ? raw : "PRICE";
+}
 
 /** Asset register fields writable through the shared catalog PUT. */
 const ASSET_DETAIL_FIELDS = ["assetCode", "initialCost", "serialNo", "condition", "status", "remarks"] as const;
@@ -240,6 +252,163 @@ export const locationItemRoutes = new Hono<AppEnv>()
       return li;
     });
     return c.json(updated);
+  })
+
+  /**
+   * Hide a catalog item. Manual path from the clutter-item-removal plan: a
+   * manager can act now, without waiting on a report. Sets isActive false so
+   * the item drops off new counts, purchases, and menus; past reports keep
+   * showing it as before (isActive is a visibility flag, never a delete).
+   *
+   * Blocked while the item is still in use: an open count, a live recipe
+   * line, or stock in transit that has not been received. Clearing the link
+   * first keeps every report and reconciliation consistent with what the
+   * item's last real state actually was.
+   */
+  .post("/location-items/:id/hide", masterGuard, async (c) => {
+    const location = c.get("location");
+    const user = c.get("user")!;
+    const itemId = c.req.param("id");
+    const existing = await prisma.locationItem.findUnique({
+      where: { id: itemId },
+      include: { itemVariant: { include: { unit: true, item: true } } },
+    });
+    if (!existing || existing.locationId !== location.id) throw new AppError(404, "Catalog item not found");
+    if (!existing.isActive) throw new AppError(409, "This item is already hidden");
+
+    const openCount = await prisma.countLine.findFirst({
+      where: { locationItemId: itemId, status: "ACTIVE", countSession: { status: "OPEN" } },
+    });
+    if (openCount) throw new AppError(409, "This item has an open count. Close or void the count first.");
+
+    // Only the latest published version of each menu item is live — an item
+    // referenced only by a superseded recipe version should not block a hide.
+    // Same "latest version" read used for sales matching and the menu editor.
+    const menuItemsUsingIt = await prisma.menuItem.findMany({
+      where: { isActive: true, versions: { some: { lines: { some: { locationItemId: itemId } } } } },
+      include: { versions: { orderBy: { versionNo: "desc" }, take: 1, include: { lines: true } } },
+    });
+    const recipeLine = menuItemsUsingIt.find((mi) =>
+      mi.versions[0]?.lines.some((l) => l.locationItemId === itemId),
+    );
+    if (recipeLine) throw new AppError(409, "This item is used in an active recipe. Remove it from the recipe first.");
+
+    const unresolvedTransfer = await prisma.transferLine.findFirst({
+      where: {
+        locationItemId: itemId,
+        status: "ACTIVE",
+        transfer: { status: { in: ["DRAFT", "COMMITTED"] } },
+        receipts: { none: { status: "ACTIVE" } },
+      },
+    });
+    if (unresolvedTransfer) throw new AppError(409, "This item has stock in transit that hasn't been received yet.");
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const li = await tx.locationItem.update({
+        where: { id: itemId },
+        data: { isActive: false, updatedById: user.id },
+        include: { itemVariant: { include: { unit: true, item: { include: { category: true } } } } },
+      });
+      await logActivity(
+        {
+          user, clientId: location.clientId, locationId: location.id,
+          action: "locationItem.hide", entity: "LocationItem", entityId: itemId,
+          summary: `Hid ${existing.itemVariant.item.name} ${existing.itemVariant.size} ${existing.itemVariant.unit.name} from catalog`,
+          details: { old: { isActive: true }, new: { isActive: false } },
+        },
+        tx,
+      );
+      return li;
+    });
+    return c.json(updated);
+  })
+
+  /**
+   * Restore a hidden catalog item. Same gate as hide, no link checks needed:
+   * bringing something back is always safe.
+   */
+  .post("/location-items/:id/restore", masterGuard, async (c) => {
+    const location = c.get("location");
+    const user = c.get("user")!;
+    const itemId = c.req.param("id");
+    const existing = await prisma.locationItem.findUnique({
+      where: { id: itemId },
+      include: { itemVariant: { include: { unit: true, item: true } } },
+    });
+    if (!existing || existing.locationId !== location.id) throw new AppError(404, "Catalog item not found");
+    if (existing.isActive) throw new AppError(409, "This item is not hidden");
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const li = await tx.locationItem.update({
+        where: { id: itemId },
+        data: { isActive: true, updatedById: user.id },
+        include: { itemVariant: { include: { unit: true, item: { include: { category: true } } } } },
+      });
+      await logActivity(
+        {
+          user, clientId: location.clientId, locationId: location.id,
+          action: "locationItem.restore", entity: "LocationItem", entityId: itemId,
+          summary: `Restored ${existing.itemVariant.item.name} ${existing.itemVariant.size} ${existing.itemVariant.unit.name} to catalog`,
+          details: { old: { isActive: false }, new: { isActive: true } },
+        },
+        tx,
+      );
+      return li;
+    });
+    return c.json(updated);
+  })
+
+  /**
+   * Set or clear the item's expected movement window, clutter-item-removal
+   * plan Phase 4. Feeds the schedule check in the clutter-candidates read
+   * (Phase 3): inside the window, no movement is a real signal; outside it,
+   * the item is skipped. No schedule set falls back to the plain 12-month
+   * lookback, no seasonal exception.
+   */
+  .put("/location-items/:id/schedule", masterGuard, zValidator("json", locationItemSchedule), async (c) => {
+    const location = c.get("location");
+    const user = c.get("user")!;
+    const itemId = c.req.param("id");
+    const body = c.req.valid("json");
+    const existing = await prisma.locationItem.findUnique({
+      where: { id: itemId },
+      include: { itemVariant: { include: { unit: true, item: true } } },
+    });
+    if (!existing || existing.locationId !== location.id) throw new AppError(404, "Catalog item not found");
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const li = await tx.locationItem.update({
+        where: { id: itemId },
+        data: { scheduleStartMonth: body.scheduleStartMonth, scheduleEndMonth: body.scheduleEndMonth, updatedById: user.id },
+        include: { itemVariant: { include: { unit: true, item: { include: { category: true } } } } },
+      });
+      await logActivity(
+        {
+          user, clientId: location.clientId, locationId: location.id,
+          action: "locationItem.scheduleChange", entity: "LocationItem", entityId: itemId,
+          summary: `Updated movement schedule for ${existing.itemVariant.item.name} ${existing.itemVariant.size} ${existing.itemVariant.unit.name}`,
+          details: {
+            old: { scheduleStartMonth: existing.scheduleStartMonth, scheduleEndMonth: existing.scheduleEndMonth },
+            new: body,
+          },
+        },
+        tx,
+      );
+      return li;
+    });
+    return c.json(updated);
+  })
+
+  /**
+   * System-suggested removal candidates (clutter-item-removal plan, Phase 3).
+   * Reuses the Non-Moving idle-stock read, computed on request, no scheduler.
+   * A manager reviews this list and calls hide directly on whichever items
+   * they approve; dismissing one is just not acting on it, no state change.
+   */
+  .get("/location-items/clutter-candidates", masterGuard, async (c) => {
+    const location = c.get("location");
+    const allowed = allowedProductTypes(c.get("locationModules"));
+    return c.json(await clutterCandidates(location.id, allowed, basisOf(c)));
   })
 
   /**

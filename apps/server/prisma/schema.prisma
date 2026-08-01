@@ -424,6 +424,12 @@ model LocationItem {
   status        String?     // data-driven list, Setting "statusOptions" — distinct from isActive
   remarks       String?
   isActive      Boolean     @default(true)
+  // Expected movement window (1-12, calendar month), clutter-item-removal
+  // plan. Null on both = no schedule, plain 12-month lookback applies.
+  // Outside the window, no movement is normal and the item is skipped as a
+  // candidate; inside it, no movement is a real signal.
+  scheduleStartMonth Int?
+  scheduleEndMonth   Int?
   updatedById   String?
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
