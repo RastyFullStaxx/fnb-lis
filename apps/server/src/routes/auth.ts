@@ -4,6 +4,7 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { zValidator } from "../lib/validate";
 import {
   deriveAccessState,
+  deviceLogin,
   loginRequest,
   mfaRequiredFor,
   mfaVerifyRequest,
@@ -97,13 +98,32 @@ export const authRoutes = new Hono<AppEnv>()
      * credential must buy exactly one thing: the right to present the other
      * half. The challenge row is the whole state that crosses the gap.
      *
-     * Device sessions are exempt. The desktop authenticates a machine, checks
-     * its PIN locally with no network, and is sold on working through a bad
-     * connection — demanding a phone code from a bar PC with no signal breaks
-     * the one thing it exists to do. The machine is separately revocable, which
-     * is the control that stands in for the second factor there.
+     * A DEVICE LOGIN IS NOT EXEMPT. It used to be — `if (!device && ...)` — and
+     * that was a critical hole, because `device` is unauthenticated request
+     * body. Nothing proves the caller is the Electron desktop: no client
+     * certificate, no shared secret, no signature. `deviceLogin` validates the
+     * SHAPE of a fingerprint, not its provenance.
+     *
+     * So a phished password plus an invented fingerprint bought a full session
+     * with no code at all — and, because registering a new machine needs
+     * `devices.manage` (ADMIN/OWNER), which is byte-identical to
+     * MFA_REQUIRED_ROLES, the exemption was available to exactly the two roles
+     * that must never have it. Worse, the resulting session was device-bound:
+     * a 365-day TTL instead of 7 days, with mfaEnrolmentOutstanding
+     * short-circuiting on deviceId so the enrolment gate never fired either.
+     * Demonstrated end to end before this was changed.
+     *
+     * Requiring the code here costs the desktop nothing real. Registration and
+     * sign-in happen at the server, over the network, with the owner standing
+     * at the machine — which is exactly when a phone is available. The offline
+     * story is unaffected: once registered, the desktop verifies PINs locally
+     * against its mirror and does not re-authenticate here.
+     *
+     * The device payload rides the challenge (`deviceJson`) rather than being
+     * resolved now, so a machine is still never registered for someone who has
+     * proved only half their credentials.
      */
-    if (!device && isMfaAvailable()) {
+    if (isMfaAvailable()) {
       const mfa = await prisma.userMfa.findUnique({ where: { userId: user.id } });
       if (mfa?.confirmedAt) {
         const challengeToken = randomBytes(32).toString("base64url");
@@ -114,7 +134,7 @@ export const authRoutes = new Hono<AppEnv>()
             userId: user.id,
             expiresAt,
             rememberMe: rememberMe !== false,
-            deviceJson: null,
+            deviceJson: device ? JSON.stringify(device) : null,
             ip: clientIp(c),
             userAgent: c.req.header("user-agent"),
           },
@@ -180,8 +200,24 @@ export const authRoutes = new Hono<AppEnv>()
     // and a TTL that only exists in a comment is not a TTL.
     await prisma.mfaChallenge.deleteMany({ where: { expiresAt: { lt: new Date() } } }).catch(() => {});
 
+    /**
+     * The device payload the FIRST step carried, replayed now that both halves
+     * of the credential are proved. Re-validated rather than trusted: it went
+     * out to the database and came back, and a schema is cheaper than reasoning
+     * about whether that round trip could have been tampered with.
+     *
+     * A malformed payload drops to a plain browser session rather than throwing
+     * — the person has authenticated correctly, and refusing them a session over
+     * a bad device field would be the wrong failure.
+     */
+    let device: DeviceLogin | undefined;
+    if (row.deviceJson) {
+      const parsed = deviceLogin.safeParse(JSON.parse(row.deviceJson));
+      if (parsed.success) device = parsed.data;
+    }
+
     return c.json(
-      await completeLogin(c, user, { rememberMe: row.rememberMe, device: undefined, via: accepted }),
+      await completeLogin(c, user, { rememberMe: row.rememberMe, device, via: accepted }),
     );
   })
 

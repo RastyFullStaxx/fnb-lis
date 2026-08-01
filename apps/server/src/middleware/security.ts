@@ -38,7 +38,27 @@ const TRUST_PROXY = process.env.FNB_TRUST_PROXY === "1";
  * an attacker controls, which is why the first entry (the conventional choice)
  * is the wrong one to take here.
  */
+/**
+ * One-time warning for the misconfiguration that turns rate limiting into a
+ * self-inflicted outage: a reverse proxy in front, but FNB_TRUST_PROXY unset.
+ *
+ * Every request then carries the PROXY's socket address, so the whole
+ * installation shares a single bucket and ten failed sign-ins from any one
+ * anonymous caller locks everybody out of /api/auth/login for fifteen minutes.
+ * The symptom ("nobody can log in") looks nothing like the cause, so it is
+ * worth saying out loud the first time the evidence appears.
+ */
+let warnedAboutProxy = false;
+
 export function clientIp(c: Context): string {
+  if (!TRUST_PROXY && !warnedAboutProxy && c.req.header("x-forwarded-for")) {
+    warnedAboutProxy = true;
+    console.warn(
+      "[security] X-Forwarded-For is present but FNB_TRUST_PROXY is not set. " +
+        "If this app is behind a reverse proxy, every client shares one rate-limit bucket " +
+        "and one attacker can lock out the whole installation. See docs/security-runbook.md §1.",
+    );
+  }
   if (TRUST_PROXY) {
     const xff = c.req.header("x-forwarded-for");
     if (xff) {
@@ -100,11 +120,35 @@ export function isSecureRequest(c: Context): boolean {
 type Bucket = { count: number; resetAt: number };
 const buckets = new Map<string, Bucket>();
 
+/**
+ * Hard ceiling on distinct keys.
+ *
+ * With FNB_TRUST_PROXY=1 the bucket key comes from a header, so any request
+ * that reaches the app WITHOUT traversing the proxy (a misconfigured firewall,
+ * a container on the same network) can mint unlimited distinct keys and grow
+ * this map without bound. The sweep only removes entries that have already
+ * expired, which is no help against a caller creating new ones faster.
+ */
+const MAX_BUCKETS = 20_000;
+
 /** Drop expired entries so a long-running process can't accumulate them. */
 function sweep(now: number): void {
   for (const [key, b] of buckets) {
     if (b.resetAt <= now) buckets.delete(key);
   }
+  // Still oversized after dropping the dead ones: evict oldest-inserted first.
+  // A Map iterates in insertion order, so this sheds the least recently created
+  // keys. Evicting a live counter is a real (small) loss of enforcement, which
+  // is why the ceiling is far above any plausible legitimate client count —
+  // reaching it at all means something abnormal is happening.
+  if (buckets.size <= MAX_BUCKETS) return;
+  const excess = buckets.size - MAX_BUCKETS;
+  let dropped = 0;
+  for (const key of buckets.keys()) {
+    buckets.delete(key);
+    if (++dropped >= excess) break;
+  }
+  console.warn(`[security] rate-limit table exceeded ${MAX_BUCKETS} keys; evicted ${dropped}`);
 }
 let lastSweep = 0;
 const SWEEP_INTERVAL_MS = 60_000;
@@ -143,25 +187,54 @@ export function rateLimit(opts: RateLimitOptions): MiddlewareHandler {
       throw new AppError(429, opts.message, "RATE_LIMITED");
     }
 
-    // Reserve the slot BEFORE the handler runs when every request counts —
-    // otherwise a flood of concurrent requests all pass the check together.
+    /**
+     * ALWAYS reserve the slot before the handler runs, then refund it if the
+     * outcome turned out not to count.
+     *
+     * Incrementing after `next()` resolved was a complete bypass: concurrent
+     * requests all read count=0 before any of them finished, so the ceiling
+     * only ever applied to a caller polite enough to wait for each response.
+     * Measured before this change: 60 concurrent bad sign-ins against a limit
+     * of 10 produced 60 × 401 and 0 × 429 — every one of them burning a full
+     * scrypt derivation. That silently invalidated the brute-force bound for
+     * passwords, PINs and 6-digit TOTP codes alike.
+     *
+     * Reserve-then-refund keeps the "only failures count" property that lets a
+     * whole bar sign in from one NAT address, while making the limit hold under
+     * concurrency: at most `limit` requests can ever be in flight, and a
+     * successful one gives its slot straight back.
+     */
+    const b = live ?? { count: 0, resetAt: now + opts.windowMs };
+    b.count += 1;
+    buckets.set(key, b);
+
     if (!opts.countOnly) {
-      const b = live ?? { count: 0, resetAt: now + opts.windowMs };
-      b.count += 1;
-      buckets.set(key, b);
       await next();
       return;
     }
 
-    await next();
-
-    if (opts.countOnly(c.res.status)) {
-      const after = buckets.get(key);
-      const b = after && after.resetAt > now ? after : { count: 0, resetAt: now + opts.windowMs };
-      b.count += 1;
-      buckets.set(key, b);
+    try {
+      await next();
+    } catch (err) {
+      // An AppError thrown by the handler (401/423 from the login route) is the
+      // countable case — keep the reservation and let it propagate.
+      const status = (err as { status?: number })?.status;
+      if (typeof status === "number" && !opts.countOnly(status)) refund(key, b);
+      throw err;
     }
+
+    if (!opts.countOnly(c.res.status)) refund(key, b);
   };
+}
+
+/**
+ * Give back a reserved slot. Guarded on identity and on the count still being
+ * positive, so a refund can never resurrect a window that has already rolled
+ * over or push a counter below zero.
+ */
+function refund(key: string, reserved: Bucket): void {
+  const current = buckets.get(key);
+  if (current === reserved && current.count > 0) current.count -= 1;
 }
 
 /** Test seam — lets verify:security reset counters between cases. */

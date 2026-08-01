@@ -6,6 +6,7 @@ import {
   can,
   deriveAccessState,
   mfaRequiredFor,
+  ROLES,
   type Permission,
   type Role,
   type SessionUser,
@@ -94,16 +95,63 @@ async function resolveActingUser(c: Context, session: SessionUser): Promise<Sess
   // wrong person, which is the exact failure this exists to prevent. Refuse.
   if (!actor) throw new AppError(403, "That user cannot act on this device");
 
+  /**
+   * THE HEADER MAY ONLY NARROW PRIVILEGE, NEVER WIDEN IT.
+   *
+   * This exists for attribution — which member of staff recorded this count —
+   * and attribution needs no extra permission. But the claimed user's ROLE was
+   * being adopted wholesale with no proof, and the header is unauthenticated
+   * request data. Any account that could obtain a device session could then
+   * name the OWNER and hold `users.manage`, `entries.void` and `prices.edit`
+   * with no owner password, no PIN and no second factor.
+   *
+   * That mattered more than it looks, because a device session is NOT limited
+   * to owners: auth/device.ts returns an already-registered ACTIVE machine to
+   * any user of that establishment, checking `devices.manage` only when
+   * REGISTERING a new one. So a STAFF login on the bar PC — the ordinary case —
+   * was one header away from being the owner. The fingerprint is treated as a
+   * secret (routes/devices.ts withholds it from the list endpoint) but it sits
+   * in plaintext on a machine in a public room.
+   *
+   * Capping at the session holder's own role keeps the real workflow intact.
+   * The desktop holds ONE long-lived session, opened by the owner who
+   * registered the machine (docs/sync-and-data-lifecycle.md), and every staff
+   * member acting under it is at or below that. What it removes is the upgrade
+   * direction, which had no legitimate use.
+   */
+  const effectiveRole = leastPrivileged(session.role, actor.role as Role);
+  if (effectiveRole !== actor.role) {
+    console.warn(
+      `[auth] x-acting-user tried to widen privilege: session ${session.role} -> claimed ${actor.role}; capped at ${effectiveRole}`,
+    );
+  }
+
   return {
     id: actor.id,
     username: actor.username,
     firstName: actor.firstName,
     lastName: actor.lastName,
-    role: actor.role as Role,
-    modules: actor.role === "ADMIN" || actor.modules.length === 0 ? null : actor.modules.map((m) => m.module),
+    role: effectiveRole,
+    modules: effectiveRole === "ADMIN" || actor.modules.length === 0 ? null : actor.modules.map((m) => m.module),
     deviceId: session.deviceId,
     actorDisabled: actor.status !== "ACTIVE" || undefined,
   };
+}
+
+/**
+ * The weaker of two roles, by the ordering in ROLES (most privileged first).
+ *
+ * Deliberately index-based on the shared constant rather than a second ranking
+ * table here: two orderings that can disagree is how a privilege check quietly
+ * inverts. A role missing from ROLES sorts last, so an unknown value can only
+ * ever lose.
+ */
+function leastPrivileged(a: Role, b: Role): Role {
+  const rank = (r: Role) => {
+    const i = (ROLES as readonly string[]).indexOf(r);
+    return i === -1 ? Number.MAX_SAFE_INTEGER : i;
+  };
+  return rank(a) >= rank(b) ? a : b;
 }
 
 /**
@@ -195,7 +243,17 @@ const ALLOWED_WHILE_UNENROLLED = (path: string): boolean =>
  * not be stopped halfway by an enrolment screen he cannot complete offline.
  */
 export async function mfaEnrolmentOutstanding(user: SessionUser): Promise<boolean> {
-  if (!isMfaAvailable() || user.deviceId) return false;
+  if (!isMfaAvailable()) return false;
+  // NOT exempted by `user.deviceId`. It used to be, and that let an ADMIN or
+  // OWNER opt out of the requirement permanently by sending one login with a
+  // device payload — request data they control. A device session is now
+  // unreachable for an enrolled account without a code (routes/auth.ts), and
+  // this closes the other half: an UNenrolled one cannot use the same trick to
+  // avoid ever enrolling.
+  //
+  // Staff on a shared desktop are unaffected. resolveActingUser has already
+  // swapped in the real actor by the time this runs, and mfaRequiredFor(STAFF)
+  // is false — the gate only ever fires for the roles that must hold a factor.
   if (!mfaRequiredFor(user.role as Role)) return false;
   const mfa = await prisma.userMfa.findUnique({
     where: { userId: user.id },

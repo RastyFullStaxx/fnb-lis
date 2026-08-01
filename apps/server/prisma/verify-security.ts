@@ -612,27 +612,124 @@ const main = async () => {
     });
     ok("a required role cannot switch its own second factor off", selfOff.status === 403, `status ${selfOff.status}`);
 
-    // ── The desktop is exempt ──
+    /**
+     * ── A device payload must NOT buy an exemption ──
+     *
+     * This check previously asserted the OPPOSITE — "a registered desktop signs
+     * in without a code" — and scored a critical bypass as a pass. `device` is
+     * unauthenticated request body: a phished password plus an invented
+     * fingerprint yielded a full 365-day session with no code, for exactly the
+     * two roles required to hold a second factor. Demonstrated end to end.
+     */
     resetRateLimits();
+    await clearLockout("admin");
     const desktop = agent();
-    // admin reaches every client, so resolveDevice requires an explicit one —
-    // it will not guess which establishment a machine belongs to.
-    const deviceLogin = await desktop.call("/api/auth/login", {
+    const deviceAttempt = await desktop.call("/api/auth/login", {
       method: "POST",
       body: JSON.stringify({
         username: "admin",
         password: PASSWORD,
         device: {
-          fingerprint: "mfa-harness-device-0001",
-          name: "MFA harness PC",
+          fingerprint: "attacker-invented-fingerprint-0001",
+          name: "not a real desktop",
           clientId: location!.clientId,
         },
       }),
     });
     ok(
-      "a registered desktop signs in without a code (offline by design)",
-      deviceLogin.status === 200 && !("mfaRequired" in (deviceLogin.body as object)),
-      `status ${deviceLogin.status}`,
+      "a device payload does NOT bypass the second factor",
+      (deviceAttempt.body as { mfaRequired?: boolean }).mfaRequired === true,
+      `status ${deviceAttempt.status}`,
+    );
+    ok(
+      "and no session cookie is issued for it",
+      !/fnb_session=[^;]+/.test(deviceAttempt.rawSetCookie ?? ""),
+      deviceAttempt.rawSetCookie ?? "(none)",
+    );
+    const noDeviceYet = await prisma.device.findUnique({
+      where: { fingerprint: "attacker-invented-fingerprint-0001" },
+    });
+    ok("and no machine is registered on half a credential", noDeviceYet === null);
+
+    // ...but a genuine desktop still completes, carrying its device payload
+    // through the challenge, so the offline workflow is unbroken.
+    const deviceChallenge = (deviceAttempt.body as { challenge: string }).challenge;
+    const deviceDone = await desktop.call("/api/auth/mfa/verify", {
+      method: "POST",
+      body: JSON.stringify({ challenge: deviceChallenge, code: totpNow(secret) }),
+    });
+    ok("a genuine desktop completes once the code is given", deviceDone.status === 200, `status ${deviceDone.status}`);
+    ok(
+      "and the device is registered only then",
+      (await prisma.device.findUnique({ where: { fingerprint: "attacker-invented-fingerprint-0001" } })) !== null,
+    );
+    ok(
+      "the completed session really is device-bound",
+      Boolean((deviceDone.body as { device?: { id: string } }).device?.id),
+    );
+
+    // ── The enrolment gate cannot be dodged with a device payload either ──
+    //
+    // Scoped to the OWNER's own establishment, and its device slots cleared
+    // first: Subscription.maxDevices defaults to 1, so the registration above
+    // legitimately consumes the licence and a second fingerprint would 403 for
+    // a reason that has nothing to do with what this is testing.
+    resetRateLimits();
+    await clearLockout("owner");
+    const ownerAccess = await prisma.userClientAccess.findFirst({
+      where: { user: { username: "owner" } },
+    });
+    await prisma.device.deleteMany({ where: { clientId: ownerAccess!.clientId } });
+    const dodger = agent();
+    const dodge = await dodger.call("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({
+        username: "owner",
+        password: PASSWORD,
+        device: {
+          fingerprint: "unenrolled-owner-dodge-0001",
+          name: "dodge",
+          clientId: ownerAccess!.clientId,
+        },
+      }),
+    });
+    ok("an UNENROLLED owner may still sign in on a device", dodge.status === 200, `status ${dodge.status}`);
+    ok(
+      "but a device session does not exempt them from enrolling",
+      (dodge.body as { mfaSetupRequired?: boolean }).mfaSetupRequired === true,
+    );
+    const dodgeGate = await dodger.call("/api/admin/users");
+    ok("and the gate still refuses them", dodgeGate.status === 403, `status ${dodgeGate.status}`);
+
+    /**
+     * ── x-acting-user may narrow privilege, never widen it ──
+     *
+     * The header names which staff member is working, for attribution. It was
+     * adopting the claimed user's ROLE wholesale, so any account that could get
+     * a device session could name the OWNER and hold users.manage. A device
+     * session is not owner-only: auth/device.ts returns an already-registered
+     * machine to any user of that establishment.
+     */
+    resetRateLimits();
+    await clearLockout("staff");
+    const ownerUser = await prisma.user.findUnique({ where: { username: "owner" } });
+    const staffOnDesktop = agent();
+    const staffDevice = await staffOnDesktop.call("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({
+        username: "staff",
+        password: PASSWORD,
+        device: { fingerprint: "unenrolled-owner-dodge-0001", name: "dodge" },
+      }),
+    });
+    ok("STAFF can sign in on an already-registered machine", staffDevice.status === 200, `status ${staffDevice.status}`);
+    const escalated = await staffOnDesktop.call("/api/admin/users", {
+      headers: { "x-acting-user": ownerUser!.id },
+    });
+    ok(
+      "STAFF cannot become OWNER via x-acting-user",
+      escalated.status === 403,
+      `status ${escalated.status}`,
     );
 
     // ── Admin reset, the lost-phone path ──
