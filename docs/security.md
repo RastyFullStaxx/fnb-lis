@@ -14,7 +14,7 @@ Run the harness after touching anything in this document's scope:
 npm run verify:security -w @fnb/server
 ```
 
-105 checks against the real Hono app on a throwaway database. Same shape as `verify:seed` and
+110 checks against the real Hono app on a throwaway database. Same shape as `verify:seed` and
 `verify:sync` — one runnable script, exits non-zero when a guarantee breaks. Runs in CI on every
 push.
 
@@ -79,7 +79,7 @@ Four boundaries carry real weight:
 
 An honest score, with the reasoning rather than just a number.
 
-### Score: **94 / 100** — strong throughout; what remains is deployment, not code
+### Score: **95 / 100** — strong throughout; what remains is deployment, not code
 
 *Tracked across 2026-08-01: **78** (initial audit) → **82** (MFA) → **93** (DR, pipeline, KDF,
 route-coverage) → **91** when review round one found five bypasses in the day's own MFA work → **93**
@@ -105,11 +105,11 @@ That splits unevenly, and the split is the useful part:
 |---|---|---|
 | Authorization / tenancy | 97 | Server-side on every route, 404-not-403, nested-relation scoping, no IDOR, **all 179 routes probed unauthenticated on every CI run** (every one answers 401). Marked down for five middleware-placement bugs found in one day |
 | Audit integrity | 90 | Mutations and their log rows share a `$transaction`. Immutable records with void chains |
-| Authentication | 93 | TOTP for ADMIN/OWNER, scrypt at 2× the OWASP floor with lazy re-hashing, malformed hashes now rejected. Marked down: **eight** real bypasses shipped across two cuts of this work and were caught only by adversarial review |
-| Input handling / injection | 88 | Prisma everywhere, zod on every body, no raw SQL on user input, no dynamic execution |
+| Authentication | 95 | TOTP for ADMIN/OWNER (single-use per RFC 6238), scrypt at 2× the OWASP floor with lazy re-hashing, malformed hashes rejected, breached passwords refused. Still marked down: **eight** real bypasses shipped across two cuts of this work and were caught only by adversarial review |
+| Input handling / injection | 90 | Prisma everywhere, zod on every body, no raw SQL on user input, no dynamic execution, per-request timeout. Remaining: content-sniff uploads rather than trusting the extension |
 | Transport / edge hardening | 75 | Headers, limits and per-request `Secure` all shipped. Stuck at 75 until TLS is actually terminated — that one is yours |
 | Secrets management | 80 | `.env` untracked and clean, gitleaks in CI. Remaining: back up `FNB_MFA_KEY` separately, and a rehearsed rotation |
-| Availability / DR | 88 | Verified tiered backups, an absolute non-vacuity floor, and a drill that re-runs the real reconciliation. Remaining: schedule it, and put a copy on another machine |
+| Availability / DR | 90 | Verified tiered backups, a non-vacuity floor, a drill that re-runs the real reconciliation, and a health check that can actually fail. Remaining: schedule it, and put a copy on another machine |
 | Pipeline security | 90 | CI runs typechecks, all three harnesses, gitleaks over full history, and an audit gate that fails CLOSED when it cannot run and matches exceptions by advisory identity. Remaining: branch protection |
 
 The pattern that shaped the day's work: the code was well-built and the operations around it barely
@@ -461,6 +461,35 @@ requirement.
 silently stopped backing up import source documents and stopped retention entirely — while printing
 that the backup was kept. *Fix:* both now run first; the manifest is last because it is the step most
 likely to fail.
+
+### Phase-2 and leftover items — decided 2026-08-02
+
+Working the remaining phases of the original brief. **Built four; declined five, with reasons** —
+the declines matter as much as the builds, so they are recorded rather than quietly skipped.
+
+#### Built
+
+| Item | Why it earned its place |
+|---|---|
+| **Readiness health check** | `/api/health` returned `{ok:true}` without touching the database, so it reported healthy while SQLite was locked, corrupt, or the disk was full — exactly when a supervisor needs to know. Now queries the DB and returns **503** on failure. A health check that cannot fail is decoration |
+| **Request timeout** (Phase 4) | 120 s ceiling on `/api/*` so a handler blocked on something external cannot hold a slot forever. Generous on purpose — AI import extraction legitimately runs tens of seconds. **Stocky is excluded and must stay excluded**: it is an SSE stream meant to stay open for minutes |
+| **TOTP single-use** (RFC 6238 §5.2) | `window = 1` left one 6-digit code valid ~90 s — ample to replay for anyone who watched it typed. `UserMfa.lastTotpStep` now records the spent step, refused with `<=` so an older step in the window cannot be replayed either, written with a conditional `updateMany` so it holds under concurrency |
+| **Breached-password check** | The single highest-value addition to authentication here, because this app has **no self-service password change** — an ADMIN types every password for everyone, so one person's habits set the floor for the whole establishment. HIBP k-anonymity: only the first 5 chars of the SHA-1 leave the process. **Fails open** if the API is unreachable, so a third-party outage can never block an urgent rotation |
+
+#### Declined, with reasons
+
+| Item | Why not |
+|---|---|
+| **Password composition rules** | NIST SP 800-63B recommends *against* them — "must contain a symbol" produces `Password1!`, which is itself in every breach corpus. The breach check is the version of this that works |
+| **Raising the minimum length 8 → 12** | Marginal here: ADMIN/OWNER are backstopped by MFA, and a cracked STAFF password buys `entries.create` in one establishment. Admin-assigned 12-character passwords get written on a sticky note, which is a net loss. Revisit if self-service password change is ever added |
+| **Refresh-token rotation** | Wrong architecture. That is a JWT pattern; this uses server-side revocable sessions, which already provide the property rotation buys — immediate revocation. Adding it would be cargo-cult |
+| **Suspicious-session detection** | There is no delivery channel. Without email, a detection nobody is told about is a log line. Blocked behind [security-mfa.md §2](security-mfa.md); revisit together |
+| **Encryption at rest** | Right layer is the OS (BitLocker/FileVault), already in the runbook pre-flight. Application-level means dropping `better-sqlite3` for SQLCipher — a large change for a threat full-disk encryption already covers |
+
+#### Still open, deliberately
+
+- **A recovery code is spent before `completeLogin` runs**, which can throw (revoked device, licence cap) — burning the code without granting a session. Consuming *first* is the fail-safe direction; the alternatives are a race or a two-phase commit. Annoying, not dangerous, and 9 codes remain.
+- **Alerting implementation** — the signals are documented as queries in the runbook, but firing them needs an email/Slack channel that does not exist yet.
 
 ### Still open from this round
 

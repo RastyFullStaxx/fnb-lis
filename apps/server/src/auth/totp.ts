@@ -83,17 +83,32 @@ export function newTotpSecret(): string {
  * `timingSafeEqual`.
  */
 export function verifyTotp(secretB32: string, token: string, window = 1): boolean {
+  return verifyTotpStep(secretB32, token, window) !== null;
+}
+
+/**
+ * Which 30-second step this code belongs to, or null.
+ *
+ * The step is returned so the caller can record it and refuse to accept the
+ * same one twice (RFC 6238 §5.2). Without that, `window = 1` leaves a single
+ * 6-digit code usable for ~90 seconds — ample for anyone who watched it being
+ * typed or captured it in transit.
+ *
+ * Still no early return: every candidate is compared regardless of which one
+ * matched, so the work is constant, and each comparison is `timingSafeEqual`.
+ */
+export function verifyTotpStep(secretB32: string, token: string, window = 1): number | null {
   const cleaned = token.replace(/\s+/g, "");
-  if (!/^\d{6}$/.test(cleaned)) return false;
+  if (!/^\d{6}$/.test(cleaned)) return null;
   const secret = base32Decode(secretB32);
-  if (secret.length === 0) return false;
+  if (secret.length === 0) return null;
   const counter = Math.floor(Date.now() / 1000 / STEP_SECONDS);
   const given = Buffer.from(cleaned);
-  let match = false;
+  let matched: number | null = null;
   for (let i = -window; i <= window; i++) {
-    if (timingSafeEqual(Buffer.from(hotp(secret, counter + i)), given)) match = true;
+    if (timingSafeEqual(Buffer.from(hotp(secret, counter + i)), given)) matched = counter + i;
   }
-  return match;
+  return matched;
 }
 
 /** What the QR code encodes. Scanned, or typed by hand from the same secret. */

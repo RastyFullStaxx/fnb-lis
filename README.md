@@ -47,7 +47,7 @@ mirror needs (and no password hashes). See
 After ANY change to auth, sessions, permissions, or the request edge:
 
 ```bash
-npm run verify:security -w @fnb/server   # same throwaway-db harness, 105 checks
+npm run verify:security -w @fnb/server   # same throwaway-db harness, 110 checks
 ```
 
 Same in-process approach: hardening headers are really sent, the session cookie's `Secure` flag
@@ -135,4 +135,5 @@ lives, and the open client decisions.
 | [docs/security-runbook.md](docs/security-runbook.md) | Production pre-flight, backup/DR, monitoring, incident response |
 | [docs/security-mfa.md](docs/security-mfa.md) | TOTP and other integrations — specified, ready to connect |
 | [docs/build-log.md](docs/build-log.md) | What shipped when, and what the audits found |
+| [docs/2026-08-02-client-requests-plan.md](docs/2026-08-02-client-requests-plan.md) | Current client notes: what to build, the traps, what's blocked |
 | [docs/reference/](docs/reference/) | Legacy-system behaviour (read-only answer key) |

@@ -3136,3 +3136,65 @@ Across two rounds, **eleven of sixteen security defects were introduced by the s
 itself**, and twice a harness written alongside a control asserted the wrong thing and scored the bug
 green. Security fixes need adversarial review at least as much as the code they fix. Assume the next
 pass will be no different.
+
+## 2026-08-02 (second pass) — remaining phases of the security brief
+
+Worked the leftovers from the original 13-phase brief. **Built four, declined five.** The declines are
+written up in [security.md](security.md) beside the builds, because "we chose not to" is a different
+thing from "we forgot", and only one of them is defensible six months from now.
+
+### Built
+
+- **Readiness health check.** `/api/health` returned `{ok:true}` without touching the database — so it
+  reported healthy while SQLite was locked, corrupt, or the disk was full, which is exactly when a
+  supervisor needs the truth. Now queries the DB, returns 503 on failure.
+- **Request timeout** (Phase 4). 120 s on `/api/*`. Generous deliberately: this is a resource guard,
+  not a latency budget, and AI import extraction legitimately runs tens of seconds. **Stocky is
+  excluded** — it is an SSE stream meant to stay open for minutes, and timing it out would sever the
+  answer mid-sentence.
+- **TOTP single-use** (RFC 6238 §5.2). `window = 1` left a code valid ~90 s. `UserMfa.lastTotpStep`
+  records the spent step; refused with `<=` so an older step in the window cannot be replayed either;
+  conditional `updateMany` so it holds under concurrency.
+- **Breached-password check.** HIBP k-anonymity — only the first 5 characters of the SHA-1 leave the
+  process. Verified live: `Password123` → 1,505,362 breaches, `Fnb!2026` → 0. Fails OPEN if the API
+  is unreachable, so a third-party outage can never block an urgent password rotation.
+
+The breach check earns its place for a reason specific to this app: **there is no self-service
+password change.** An ADMIN types every password on someone else's behalf, so one person's habits set
+the floor for the whole establishment.
+
+### Declined
+
+Composition rules (NIST recommends against them — they produce `Password1!`), raising the minimum
+length to 12 (ADMIN/OWNER are backstopped by MFA; admin-assigned 12-char passwords get written on a
+sticky note), refresh-token rotation (JWT pattern; server-side revocable sessions already give what
+it buys), suspicious-session detection (no delivery channel until email exists), and encryption at
+rest (OS-level full-disk is the right layer and is already in the runbook).
+
+### Also declined: Phase 7 entirely
+
+Load balancing is **blocked by architecture, not effort** — SQLite WAL supports one writing process,
+so it needs a Postgres migration first, and the thing it usually buys (failover) the desktop mirror
+already provides better. Caching is worse than unnecessary here: the invalidation surface is the
+void/correction path, so getting it slightly wrong serves stale numbers on the Full Audit. Neither
+was skipped quietly — both are written up with the triggers that would justify revisiting.
+
+### The drill caught a real one
+
+`verify:security` passed at 110 checks, but `restore-drill` **failed**:
+
+```
+FAIL  schema is current with prisma/migrations — missing: 20260801175239_totp_single_use
+```
+
+That is check #2 doing precisely its job — the newest backup predated the migration I had just run, so
+restoring it would have produced a database whose schema the code does not expect, failing later in a
+much more confusing way. Fresh backup, re-drill, PASS in 4.0 s.
+
+**Operational note worth remembering: take a backup after every migration**, or the newest restore
+point is one the drill will (correctly) refuse.
+
+### Verified
+
+`verify:security` **110/110** · `verify:seed` PASS · `verify:sync` PASS · typechecks clean · audit
+gate PASS · backup + drill PASS · build clean.

@@ -17,6 +17,7 @@ import {
 import { prisma } from "../db";
 import { AppError } from "../lib/errors";
 import { hashPassword } from "../auth/password";
+import { breachCount, breachMessage } from "../auth/breached";
 import { logActivity } from "../services/activity";
 import { requireAuth, requirePermission, type AppEnv } from "../middleware/auth";
 
@@ -86,6 +87,27 @@ const accessBody = z.object({ clientIds: z.array(z.string()) });
  * ADMINs bypass client scoping entirely and hold no access rows, so they don't
  * consume a client's seats.
  */
+/**
+ * Refuse a password that is already in a public breach corpus.
+ *
+ * Applied at both places a password is set — creation and reset — because this
+ * app has no self-service change: an ADMIN types every password on somebody
+ * else's behalf, so one person's habits set the floor for the whole
+ * establishment.
+ *
+ * The candidate never leaves the process (k-anonymity — see auth/breached.ts),
+ * and the check fails OPEN if the range API is unreachable, so a third-party
+ * outage can never block account creation or an urgent password rotation.
+ *
+ * Deliberately NOT paired with composition rules. NIST SP 800-63B recommends
+ * exactly this check and recommends AGAINST "must contain a symbol", which
+ * merely produces `Password1!` — a string that is itself in every corpus.
+ */
+async function assertPasswordNotBreached(password: string): Promise<void> {
+  const count = await breachCount(password);
+  if (count > 0) throw new AppError(400, breachMessage(count), "PASSWORD_BREACHED");
+}
+
 async function assertUserSeatsAvailable(clientIds: string[], exceptUserId?: string): Promise<void> {
   for (const clientId of clientIds) {
     const sub = await prisma.subscription.findUnique({
@@ -823,6 +845,7 @@ export const userAdminRoutes = new Hono<AppEnv>()
     if (existing) throw new AppError(409, "Username already taken");
     await assertActorMayAssign(c, body.role, body.clientIds);
     await assertUserSeatsAvailable(body.clientIds);
+    await assertPasswordNotBreached(body.password);
     const passwordHash = await hashPassword(body.password);
     const created = await prisma.$transaction(async (tx) => {
       const u = await tx.user.create({
@@ -856,7 +879,10 @@ export const userAdminRoutes = new Hono<AppEnv>()
     const data: Record<string, unknown> = { ...body };
     delete data.password;
     delete data.modules;
-    if (body.password) data.passwordHash = await hashPassword(body.password);
+    if (body.password) {
+      await assertPasswordNotBreached(body.password);
+      data.passwordHash = await hashPassword(body.password);
+    }
     if (body.email === "") data.email = null;
     // Re-enabling claims a seat back, so it has to pass the same check as
     // creating — otherwise disable-then-enable walks straight past the cap.

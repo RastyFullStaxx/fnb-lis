@@ -21,7 +21,7 @@ import { AppError } from "../lib/errors";
 import { burnPasswordTime, hashPassword, needsRehash, verifyPassword } from "../auth/password";
 import { resolveDevice } from "../auth/device";
 import { createSession, destroySession, SESSION_COOKIE } from "../auth/session";
-import { decryptSecret, isMfaAvailable, verifyTotp } from "../auth/totp";
+import { decryptSecret, isMfaAvailable, verifyTotpStep } from "../auth/totp";
 import { logActivity } from "../services/activity";
 import { mfaEnrolmentOutstanding, requireAuth, type AppEnv } from "../middleware/auth";
 import { clientIp, isSecureRequest } from "../middleware/security";
@@ -306,10 +306,28 @@ function hashChallenge(token: string): string {
  * or null. Recovery codes are removed from the stored set as they are used.
  */
 async function consumeMfaCode(
-  mfa: { userId: string; secretEnc: string; backupCodes: string },
+  mfa: { userId: string; secretEnc: string; backupCodes: string; lastTotpStep: number | null },
   code: string,
 ): Promise<"totp" | "backup" | null> {
-  if (verifyTotp(decryptSecret(mfa.secretEnc), code)) return "totp";
+  const step = verifyTotpStep(decryptSecret(mfa.secretEnc), code);
+  if (step !== null) {
+    /**
+     * Single-use, per RFC 6238 §5.2. A code is refused once its step has been
+     * spent — and `<=` rather than `===` so an OLDER step inside the window
+     * cannot be replayed either after a newer one has been accepted.
+     *
+     * The conditional `updateMany` is what makes it hold under concurrency:
+     * two simultaneous verifies presenting the same code both read the same
+     * `lastTotpStep`, but only one write matches the WHERE and the loser is
+     * told no. A plain read-then-write would let both through.
+     */
+    if (mfa.lastTotpStep !== null && step <= mfa.lastTotpStep) return null;
+    const { count } = await prisma.userMfa.updateMany({
+      where: { userId: mfa.userId, lastTotpStep: mfa.lastTotpStep },
+      data: { lastTotpStep: step },
+    });
+    return count === 1 ? "totp" : null;
+  }
 
   const cleaned = code.trim().toLowerCase().replace(/\s+/g, "");
 

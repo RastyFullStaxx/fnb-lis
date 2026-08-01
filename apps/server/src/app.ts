@@ -1,5 +1,8 @@
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { timeout } from "hono/timeout";
+import { HTTPException } from "hono/http-exception";
+import { prisma } from "./db";
 import { errorHandler } from "./lib/errors";
 import {
   originCheck,
@@ -45,6 +48,27 @@ const MAX_JSON_BYTES = 1024 * 1024;
 /** Multipart ceiling — a hair above the 20 MB routes/imports.ts enforces itself. */
 const MAX_UPLOAD_BYTES = 21 * 1024 * 1024;
 
+/**
+ * Per-request ceiling. Two minutes, not two seconds — see the middleware below
+ * for why this is a resource guard rather than a latency budget.
+ */
+const REQUEST_TIMEOUT_MS = Number(process.env.FNB_REQUEST_TIMEOUT_MS ?? 120_000);
+
+/**
+ * `hono/timeout` requires an HTTPException, not our AppError — so the body is
+ * built by hand to keep the `{ error, code }` shape every other failure on this
+ * server uses. The web client reads `body.error`; a differently-shaped timeout
+ * would surface as "[object Object]", which is the exact bug lib/validate.ts
+ * exists to prevent.
+ */
+const timeoutError = () =>
+  new HTTPException(504, {
+    res: new Response(
+      JSON.stringify({ error: "That request took too long and was stopped. Try a narrower range.", code: "TIMEOUT" }),
+      { status: 504, headers: { "content-type": "application/json" } },
+    ),
+  });
+
 export function createApp() {
   const app = new Hono<AppEnv>();
 
@@ -62,7 +86,29 @@ export function createApp() {
   );
   app.use(sessionMiddleware);
 
-  app.get("/api/health", (c) => c.json({ ok: true }));
+  /**
+   * READINESS, not just liveness.
+   *
+   * This used to return `{ ok: true }` unconditionally — so it reported healthy
+   * while SQLite was locked, corrupt, or the disk was full, which is precisely
+   * when the process supervisor and any uptime monitor most need to know. A
+   * health check that cannot fail is decoration.
+   *
+   * One trivial query is enough: it proves the file opens, the schema is
+   * readable, and the WAL is not wedged. `busy_timeout=5000` (db.ts) bounds how
+   * long this can hang.
+   */
+  app.get("/api/health", async (c) => {
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      return c.json({ ok: true, db: "ok" });
+    } catch (err) {
+      console.error("[health] database unreachable", err);
+      // 503, so a supervisor restarts and a load balancer would drain rather
+      // than keep sending traffic at a process that cannot serve it.
+      return c.json({ ok: false, db: "unreachable" }, 503);
+    }
+  });
 
   /**
    * Per-IP net under the per-ACCOUNT lockout (5 failures / 1 hour, enforced in
@@ -114,6 +160,24 @@ export function createApp() {
       countOnly: (status) => status === 401 || status === 423,
     }),
   );
+  /**
+   * A ceiling on how long one request may hold a connection.
+   *
+   * Deliberately generous rather than tight. This is not a latency budget — it
+   * exists so a handler blocked on something external cannot hold a slot
+   * forever. AI import extraction legitimately runs tens of seconds on a large
+   * PDF, so a "sensible" 30s would break real work.
+   *
+   * Stocky is EXCLUDED and must stay excluded: it is a Server-Sent Events
+   * stream (routes/stocky.ts) that is *supposed* to stay open for minutes while
+   * the model answers. Timing it out would sever the response mid-sentence and
+   * look like a broken feature rather than a protection.
+   */
+  app.use("/api/*", async (c, next) => {
+    if (c.req.path.endsWith("/stocky/chat")) return next();
+    return timeout(REQUEST_TIMEOUT_MS, timeoutError)(c, next);
+  });
+
   /**
    * A body is buffered before zod ever sees it, so "the schema rejects it" is
    * not a size control. Split by content-type rather than one global number:

@@ -86,6 +86,7 @@ sync, idempotency or device paths.**
 | Threat model, security findings, what's fixed vs deliberately open | [security.md](security.md) |
 | Going live safely, backups/DR, monitoring, incident response | [security-runbook.md](security-runbook.md) |
 | MFA and other integrations — specified, waiting to be connected | [security-mfa.md](security-mfa.md) |
+| What the client asked for, and what we did about it | [2026-07-21-client-requests-review.md](2026-07-21-client-requests-review.md) (shipped) · [2026-08-02-client-requests-plan.md](2026-08-02-client-requests-plan.md) (in flight) |
 | How the legacy system behaved (answer key) | [reference/](reference/) — read-only |
 | Original project brief | `AGENTS.md` (repo root, historical) |
 

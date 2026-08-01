@@ -117,6 +117,16 @@ model UserMfa {
    * compared, never displayed again after enrolment.
    */
   backupCodes String
+  /**
+   * The last 30-second step accepted for this user, so a code cannot be spent
+   * twice (RFC 6238 §5.2).
+   *
+   * Without it, `window = 1` leaves one 6-digit code valid for ~90 seconds —
+   * long enough for anyone who watched it being typed, or captured it in
+   * transit, to replay it. Storing the step rather than the code keeps nothing
+   * secret on disk: it is just a monotonically increasing integer.
+   */
+  lastTotpStep Int?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

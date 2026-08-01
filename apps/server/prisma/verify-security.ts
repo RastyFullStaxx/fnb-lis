@@ -102,6 +102,22 @@ const login = async (a: ReturnType<typeof agent>, username: string) =>
  * Reset explicitly between sections rather than hoping the usernames never
  * collide.
  */
+/**
+ * Release the single-use TOTP step (RFC 6238 §5.2, auth/totp.ts).
+ *
+ * Several checks legitimately need a working code inside the SAME 30-second
+ * window, which the real control correctly refuses. Waiting 30s per check would
+ * make the harness unusable, so the spent step is cleared explicitly — the same
+ * shape as clearLockout, and for the same reason: a control doing its job must
+ * not be mistaken for a broken check.
+ */
+const clearTotpStep = async (username: string) => {
+  await prisma.userMfa.updateMany({
+    where: { user: { username } },
+    data: { lastTotpStep: null },
+  });
+};
+
 const clearLockout = async (username: string) => {
   await prisma.user.updateMany({
     where: { username },
@@ -662,6 +678,29 @@ const main = async () => {
       body: JSON.stringify({ challenge, code: totpNow(secret) }),
     });
     ok("the right code completes the login", good.status === 200, `status ${good.status}`);
+
+    /**
+     * SINGLE USE (RFC 6238 §5.2). With window=1 a code is otherwise valid for
+     * ~90 seconds — ample for anyone who watched it typed or captured it in
+     * transit to replay it on a fresh challenge.
+     */
+    resetRateLimits();
+    await clearLockout("admin");
+    const spentCode = totpNow(secret);
+    const replayer = agent();
+    const replayStep1 = await replayer.call("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username: "admin", password: PASSWORD }),
+    });
+    const replayed = await replayer.call("/api/auth/mfa/verify", {
+      method: "POST",
+      body: JSON.stringify({ challenge: (replayStep1.body as { challenge: string }).challenge, code: spentCode }),
+    });
+    ok(
+      "a TOTP code already spent cannot be reused on a new challenge",
+      replayed.status === 401,
+      `status ${replayed.status}`,
+    );
     const nowIn = await fresh.call("/api/auth/me");
     ok("and the session works", nowIn.status === 200, `status ${nowIn.status}`);
 
@@ -762,6 +801,7 @@ const main = async () => {
     // ...but a genuine desktop still completes, carrying its device payload
     // through the challenge, so the offline workflow is unbroken.
     const deviceChallenge = (deviceAttempt.body as { challenge: string }).challenge;
+    await clearTotpStep("admin"); // same 30s window as the checks above
     const deviceDone = await desktop.call("/api/auth/mfa/verify", {
       method: "POST",
       body: JSON.stringify({ challenge: deviceChallenge, code: totpNow(secret) }),
@@ -976,6 +1016,51 @@ const main = async () => {
     await login(noKey, "owner");
     const noKeyCall = await noKey.call("/api/admin/users");
     ok("with no FNB_MFA_KEY the whole feature is off (fail-safe)", noKeyCall.status === 200, `status ${noKeyCall.status}`);
+  }
+
+  console.log("\n== 10b. health, timeout and password quality");
+  {
+    resetRateLimits();
+    // Section 10 leaves admin ENROLLED with the key removed, which correctly
+    // fails login closed (503 MFA_UNAVAILABLE). Clear it so this section tests
+    // what it means to test rather than inheriting that state.
+    await prisma.userMfa.deleteMany({});
+    await prisma.mfaChallenge.deleteMany({});
+    // A health check that cannot fail is decoration — this one queries the DB.
+    const health = await agent().call("/api/health");
+    ok("health reports database state, not just liveness", (health.body as { db?: string }).db === "ok", JSON.stringify(health.body));
+
+    // Breached-password refusal at both places a password can be set. Skipped
+    // when the range API is unreachable — the check fails OPEN by design, and a
+    // harness that fails on someone else's outage is a harness people disable.
+    const admin2 = agent();
+    await clearLockout("admin");
+    await login(admin2, "admin");
+    const target = await prisma.user.findUnique({ where: { username: "staff" } });
+    const breached = await admin2.call(`/api/admin/users/${target!.id}`, {
+      method: "PUT",
+      body: JSON.stringify({ password: "Password123" }),
+    });
+    if (breached.status === 200) {
+      console.log("       (breach API unreachable — check skipped, it fails open by design)");
+      // Undo, so later sections can still sign in as staff.
+      await admin2.call(`/api/admin/users/${target!.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ password: PASSWORD }),
+      });
+    } else {
+      ok("a known-breached password is refused", breached.status === 400, `status ${breached.status}`);
+      ok(
+        "and the refusal says why",
+        (breached.body as { code?: string }).code === "PASSWORD_BREACHED",
+        String((breached.body as { code?: string }).code),
+      );
+      const fine = await admin2.call(`/api/admin/users/${target!.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ password: PASSWORD }),
+      });
+      ok("but an unbreached one is accepted", fine.status === 200, `status ${fine.status}`);
+    }
   }
 
   console.log("\n== 11. every registered route, probed unauthenticated");
