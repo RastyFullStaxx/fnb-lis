@@ -38,6 +38,18 @@ const varianceThresholdBody = z.object({
   varianceThresholdPct: z.number().min(VARIANCE_THRESHOLD_MIN).max(VARIANCE_THRESHOLD_MAX),
 });
 
+/**
+ * Client req 2026-07-31 (docs/per-user-per-item-uom-plan.md): the unit an
+ * admin default or staff override may hold for one item. Same 8-value list
+ * as preferredVolumeUnit/preferredMassUnit below, but not split by kind —
+ * a single per-item field can be either a VOLUME or MASS item, so both lists
+ * are accepted here and resolveDisplayUnit() never cross-checks kind at
+ * write time (same as preferredVolumeUnit/preferredMassUnit today).
+ */
+const itemDisplayUnitBody = z.object({
+  unit: z.enum(["ml", "L", "fl oz", "gal", "g", "kg", "oz", "lb"]),
+});
+
 async function assertClientAccess(userId: string, role: string, clientId: string): Promise<void> {
   if (role === "ADMIN") return;
   const access = await prisma.userClientAccess.findUnique({
@@ -124,6 +136,45 @@ export const preferencesRoutes = new Hono<AppEnv>()
     return c.json(body);
   })
 
+  // ── Per-item display unit — staff's own override (client req 2026-07-31,
+  // docs/per-user-per-item-uom-plan.md). Own choice, no permission needed
+  // beyond being signed in — same tier as /preferences above. Sits above the
+  // admin default and the staff's general preferredVolumeUnit/preferredMassUnit
+  // in resolveDisplayUnit() (@fnb/core), but affects nobody else's screen.
+  .get("/item-unit-preference/:itemId", async (c) => {
+    const user = c.get("user")!;
+    const itemId = c.req.param("itemId");
+    const row = await prisma.userItemUnitPreference.findUnique({
+      where: { userId_itemId: { userId: user.id, itemId } },
+    });
+    return c.json({ unit: row?.unit ?? null });
+  })
+
+  .put("/item-unit-preference/:itemId", zValidator("json", itemDisplayUnitBody), async (c) => {
+    const user = c.get("user")!;
+    const itemId = c.req.param("itemId");
+    const { unit } = c.req.valid("json");
+    const item = await prisma.item.findUnique({ where: { id: itemId }, select: { id: true, name: true } });
+    if (!item) throw new AppError(404, "Item not found");
+    const row = await prisma.userItemUnitPreference.upsert({
+      where: { userId_itemId: { userId: user.id, itemId } },
+      update: { unit },
+      create: { userId: user.id, itemId, unit },
+    });
+    return c.json({ unit: row.unit });
+  })
+
+  .delete("/item-unit-preference/:itemId", async (c) => {
+    const user = c.get("user")!;
+    const itemId = c.req.param("itemId");
+    const existing = await prisma.userItemUnitPreference.findUnique({
+      where: { userId_itemId: { userId: user.id, itemId } },
+    });
+    if (!existing) throw new AppError(404, "No override set for this item");
+    await prisma.userItemUnitPreference.delete({ where: { userId_itemId: { userId: user.id, itemId } } });
+    return c.json({ ok: true });
+  })
+
   // READ-ONLY and outside the master.write guard on purpose: the basis is
   // printed on every valuation report, so anyone who can read a report must be
   // able to read the basis. A 403 here would silently mislabel their screen as
@@ -181,6 +232,59 @@ export const settingsRoutes = new Hono<AppEnv>()
       );
     });
     return c.json(body);
+  })
+
+  // ── Per-item display unit — admin default (client req 2026-07-31,
+  // docs/per-user-per-item-uom-plan.md). A manager sets one row per item;
+  // it applies to every user of this client who has no
+  // UserItemUnitPreference of their own for the same item. Same tier as
+  // cost-basis / variance-threshold below: an establishment policy set once
+  // for everyone, gated master.write, logged like the other two.
+  .get("/item-unit-default/:itemId", async (c) => {
+    const user = c.get("user")!;
+    const itemId = c.req.param("itemId");
+    const clientId = c.req.query("clientId") ?? "";
+    if (!clientId) throw new AppError(400, "clientId is required");
+    await assertClientAccess(user.id, user.role, clientId);
+    const row = await prisma.clientItemUnitDefault.findUnique({
+      where: { clientId_itemId: { clientId, itemId } },
+    });
+    return c.json({ unit: row?.unit ?? null });
+  })
+
+  .put("/item-unit-default/:itemId", zValidator("json", itemDisplayUnitBody), async (c) => {
+    const user = c.get("user")!;
+    const itemId = c.req.param("itemId");
+    const clientId = c.req.query("clientId") ?? "";
+    if (!clientId) throw new AppError(400, "clientId is required");
+    await assertClientAccess(user.id, user.role, clientId);
+    const { unit } = c.req.valid("json");
+    const item = await prisma.item.findUnique({ where: { id: itemId }, select: { id: true, name: true } });
+    if (!item) throw new AppError(404, "Item not found");
+    const before = await prisma.clientItemUnitDefault.findUnique({
+      where: { clientId_itemId: { clientId, itemId } },
+    });
+    const row = await prisma.$transaction(async (tx) => {
+      const saved = await tx.clientItemUnitDefault.upsert({
+        where: { clientId_itemId: { clientId, itemId } },
+        update: { unit, updatedById: user.id },
+        create: { clientId, itemId, unit, updatedById: user.id },
+      });
+      await logActivity(
+        {
+          user,
+          clientId,
+          action: "settings.itemUnitDefault",
+          entity: "ClientItemUnitDefault",
+          entityId: saved.id,
+          summary: `Default display unit for ${item.name}: ${unit}`,
+          details: { itemId, from: before?.unit ?? null, to: unit },
+        },
+        tx,
+      );
+      return saved;
+    });
+    return c.json({ unit: row.unit });
   })
 
   // ── Inventory cost basis (accounting policy — client req 2026-07-20) ──
