@@ -21,9 +21,27 @@
  * No test framework by project rule — one runnable script that exits non-zero
  * when a guarantee breaks.
  */
+import { createHmac, randomBytes } from "node:crypto";
 import { createApp } from "../src/app";
 import { prisma } from "../src/db";
 import { resetRateLimits } from "../src/middleware/security";
+import { base32Decode } from "../src/auth/totp";
+
+/**
+ * The current TOTP code for a secret — computed HERE rather than imported, so
+ * the harness is not grading the implementation against itself. Only the base32
+ * decoding is shared; the HMAC, the dynamic truncation and the time step are
+ * independent, which is where a TOTP bug would actually live.
+ */
+function totpNow(secretB32: string): string {
+  const buf = Buffer.alloc(8);
+  buf.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 1000 / 30)));
+  const mac = createHmac("sha1", base32Decode(secretB32)).update(buf).digest();
+  const off = mac[mac.length - 1]! & 0x0f;
+  const code =
+    ((mac[off]! & 0x7f) << 24) | ((mac[off + 1]! & 0xff) << 16) | ((mac[off + 2]! & 0xff) << 8) | (mac[off + 3]! & 0xff);
+  return String(code % 1_000_000).padStart(6, "0");
+}
 
 const PASSWORD = "Fnb!2026";
 
@@ -371,6 +389,235 @@ const main = async () => {
       Boolean(entry) && details.ip !== "203.0.113.9",
       `recorded "${details.ip}"`,
     );
+  }
+
+  console.log("\n== 10. two-factor authentication (ADMIN + OWNER)");
+  {
+    // MFA is off for every check above because FNB_MFA_KEY is unset — that IS
+    // the feature switch (auth/totp.ts). Turn it on only here, so the rest of
+    // the harness proves the ordinary paths are unaffected by its absence.
+    process.env.FNB_MFA_KEY = randomBytes(32).toString("base64");
+    resetRateLimits();
+    await clearLockout("admin");
+    await clearLockout("owner");
+    await clearLockout("staff");
+
+    const location = await prisma.location.findFirst({ where: { status: "ACTIVE" } });
+
+    // ── The gate, before anyone has enrolled ──
+    const admin = agent();
+    const adminLogin = await login(admin, "admin");
+    ok("an unenrolled ADMIN can still SIGN IN (never lock out the last admin)", adminLogin.status === 200, `status ${adminLogin.status}`);
+    ok(
+      "and /me says setup is outstanding",
+      (adminLogin.body as { mfaSetupRequired?: boolean }).mfaSetupRequired === true,
+    );
+
+    const blocked = await admin.call(`/api/locations/${location!.id}/reports/count-dates`);
+    ok("but the rest of the app is refused", blocked.status === 403, `status ${blocked.status}`);
+    ok(
+      "with a code the client can route on",
+      (blocked.body as { code?: string }).code === "MFA_SETUP_REQUIRED",
+      String((blocked.body as { code?: string }).code),
+    );
+    const adminBlocked = await admin.call("/api/admin/clients");
+    ok("admin routes are refused too", adminBlocked.status === 403, `status ${adminBlocked.status}`);
+
+    /**
+     * The gate must NOT reach non-API paths. In production this same app also
+     * serves the built SPA (index.ts), and a pathless guard refused GET
+     * /account/security — the very page the gate redirects people to. They got
+     * raw 403 JSON instead of the enrolment screen, which is as locked out as
+     * having no screen at all. Caught in a browser, pinned here.
+     */
+    const spaRoute = await admin.call("/account/security");
+    ok(
+      "the gate does not block the SPA route it sends people to",
+      !(spaRoute.status === 403 && (spaRoute.body as { code?: string })?.code === "MFA_SETUP_REQUIRED"),
+      `status ${spaRoute.status}`,
+    );
+
+    const owner = agent();
+    await login(owner, "owner");
+    const ownerBlocked = await owner.call("/api/admin/users");
+    ok("an unenrolled OWNER is refused the same way", ownerBlocked.status === 403, `status ${ownerBlocked.status}`);
+
+    // STAFF is deliberately NOT in MFA_REQUIRED_ROLES.
+    const staff = agent();
+    await login(staff, "staff");
+    const staffOk = await staff.call("/api/settings/preferences");
+    ok("STAFF is not required to enrol and works normally", staffOk.status === 200, `status ${staffOk.status}`);
+
+    // ── Enrolment ──
+    const wrongPw = await admin.call("/api/auth/mfa/enroll", {
+      method: "POST",
+      body: JSON.stringify({ currentPassword: "not-my-password" }),
+    });
+    ok("enrolment refuses a wrong password", wrongPw.status === 401, `status ${wrongPw.status}`);
+    await clearLockout("admin");
+
+    const enrolled = await admin.call("/api/auth/mfa/enroll", {
+      method: "POST",
+      body: JSON.stringify({ currentPassword: PASSWORD }),
+    });
+    ok("enrolment starts with the right password", enrolled.status === 200, `status ${enrolled.status}`);
+    const secret = (enrolled.body as { secret: string }).secret;
+    ok("a base32 secret is issued", /^[A-Z2-7]{32}$/.test(secret ?? ""), secret);
+
+    // Still blocked: an unconfirmed enrolment must not count as enrolled, or a
+    // mis-scan would leave someone with a factor they cannot produce.
+    const midEnrol = await admin.call("/api/admin/clients");
+    ok("an UNCONFIRMED enrolment does not lift the gate", midEnrol.status === 403, `status ${midEnrol.status}`);
+
+    const badConfirm = await admin.call("/api/auth/mfa/confirm", {
+      method: "POST",
+      body: JSON.stringify({ code: "000000" }),
+    });
+    ok("confirm refuses a wrong code", badConfirm.status === 401, `status ${badConfirm.status}`);
+
+    const confirmed = await admin.call("/api/auth/mfa/confirm", {
+      method: "POST",
+      body: JSON.stringify({ code: totpNow(secret) }),
+    });
+    ok("confirm accepts a real code", confirmed.status === 200, `status ${confirmed.status}`);
+    const backupCodes = (confirmed.body as { backupCodes: string[] }).backupCodes ?? [];
+    ok("ten recovery codes are issued once", backupCodes.length === 10, `${backupCodes.length} codes`);
+
+    const unblocked = await admin.call("/api/admin/clients");
+    ok("the gate lifts once enrolled", unblocked.status === 200, `status ${unblocked.status}`);
+
+    // ── The two-step login ──
+    resetRateLimits();
+    const fresh = agent();
+    const step1 = await fresh.call("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username: "admin", password: PASSWORD }),
+    });
+    ok("password alone returns a challenge, not a session", (step1.body as { mfaRequired?: boolean }).mfaRequired === true);
+    ok("and sets NO session cookie", !/fnb_session=[^;]+/.test(step1.rawSetCookie ?? ""), step1.rawSetCookie ?? "(none)");
+    const challenge = (step1.body as { challenge: string }).challenge;
+
+    // Prove the cookie really isn't a session: an agent that just did step 1
+    // must still be anonymous.
+    const notYet = await fresh.call("/api/auth/me");
+    ok("the half-finished login is not signed in", notYet.status === 401, `status ${notYet.status}`);
+
+    const badCode = await fresh.call("/api/auth/mfa/verify", {
+      method: "POST",
+      body: JSON.stringify({ challenge, code: "000000" }),
+    });
+    ok("a wrong code is refused", badCode.status === 401, `status ${badCode.status}`);
+
+    const good = await fresh.call("/api/auth/mfa/verify", {
+      method: "POST",
+      body: JSON.stringify({ challenge, code: totpNow(secret) }),
+    });
+    ok("the right code completes the login", good.status === 200, `status ${good.status}`);
+    const nowIn = await fresh.call("/api/auth/me");
+    ok("and the session works", nowIn.status === 200, `status ${nowIn.status}`);
+
+    // Single-use: the challenge died with the attempt that spent it.
+    const replay = await fresh.call("/api/auth/mfa/verify", {
+      method: "POST",
+      body: JSON.stringify({ challenge, code: totpNow(secret) }),
+    });
+    ok("the challenge cannot be replayed", replay.status === 401, `status ${replay.status}`);
+
+    // ── Recovery codes ──
+    resetRateLimits();
+    await clearLockout("admin");
+    const viaBackup = agent();
+    const bstep1 = await viaBackup.call("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username: "admin", password: PASSWORD }),
+    });
+    const bchallenge = (bstep1.body as { challenge: string }).challenge;
+    const usedCode = backupCodes[0]!;
+    const bgood = await viaBackup.call("/api/auth/mfa/verify", {
+      method: "POST",
+      body: JSON.stringify({ challenge: bchallenge, code: usedCode }),
+    });
+    ok("a recovery code completes the login", bgood.status === 200, `status ${bgood.status}`);
+
+    const logged = await prisma.activityLog.findFirst({
+      where: { action: "auth.login" },
+      orderBy: { ts: "desc" },
+    });
+    ok(
+      "recovery-code sign-in is distinguishable in the trail (worth alerting on)",
+      (logged?.summary ?? "").includes("recovery code"),
+      logged?.summary ?? "(none)",
+    );
+
+    resetRateLimits();
+    await clearLockout("admin");
+    const reuse = agent();
+    const rstep1 = await reuse.call("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username: "admin", password: PASSWORD }),
+    });
+    const rbad = await reuse.call("/api/auth/mfa/verify", {
+      method: "POST",
+      body: JSON.stringify({ challenge: (rstep1.body as { challenge: string }).challenge, code: usedCode }),
+    });
+    ok("the same recovery code cannot be used twice", rbad.status === 401, `status ${rbad.status}`);
+
+    // ── Disable rules ──
+    resetRateLimits();
+    await clearLockout("admin");
+    const selfOff = await admin.call("/api/auth/mfa", {
+      method: "DELETE",
+      body: JSON.stringify({ currentPassword: PASSWORD, code: totpNow(secret) }),
+    });
+    ok("a required role cannot switch its own second factor off", selfOff.status === 403, `status ${selfOff.status}`);
+
+    // ── The desktop is exempt ──
+    resetRateLimits();
+    const desktop = agent();
+    // admin reaches every client, so resolveDevice requires an explicit one —
+    // it will not guess which establishment a machine belongs to.
+    const deviceLogin = await desktop.call("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({
+        username: "admin",
+        password: PASSWORD,
+        device: {
+          fingerprint: "mfa-harness-device-0001",
+          name: "MFA harness PC",
+          clientId: location!.clientId,
+        },
+      }),
+    });
+    ok(
+      "a registered desktop signs in without a code (offline by design)",
+      deviceLogin.status === 200 && !("mfaRequired" in (deviceLogin.body as object)),
+      `status ${deviceLogin.status}`,
+    );
+
+    // ── Admin reset, the lost-phone path ──
+    resetRateLimits();
+    const adminUser = await prisma.user.findUnique({ where: { username: "admin" } });
+    const reset = await admin.call(`/api/admin/users/${adminUser!.id}/mfa`, {
+      method: "DELETE",
+      body: JSON.stringify({ reason: "harness: lost phone" }),
+    });
+    ok("an administrator can reset a second factor", reset.status === 200, `status ${reset.status}`);
+    const resetLog = await prisma.activityLog.findFirst({
+      where: { action: "mfa.adminReset" },
+      orderBy: { ts: "desc" },
+    });
+    ok("the reset carries a reason into the trail", (resetLog?.summary ?? "").includes("lost phone"), resetLog?.summary ?? "(none)");
+    const leftoverChallenges = await prisma.mfaChallenge.count({ where: { userId: adminUser!.id } });
+    ok("and kills any half-finished login against the old factor", leftoverChallenges === 0, `${leftoverChallenges} left`);
+
+    // ── The switch itself ──
+    delete process.env.FNB_MFA_KEY;
+    resetRateLimits();
+    await clearLockout("owner");
+    const noKey = agent();
+    await login(noKey, "owner");
+    const noKeyCall = await noKey.call("/api/admin/users");
+    ok("with no FNB_MFA_KEY the whole feature is off (fail-safe)", noKeyCall.status === 200, `status ${noKeyCall.status}`);
   }
 
   console.log(

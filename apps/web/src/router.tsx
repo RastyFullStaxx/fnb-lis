@@ -42,9 +42,14 @@ import { AdminClientsPage } from "./pages/admin/clients";
 import { AdminUsersPage } from "./pages/admin/users";
 import { AdminDevicesPage } from "./pages/admin/devices";
 import { AdminActivityPage } from "./pages/admin/activity";
+import { AccountSecurityPage } from "./pages/account-security";
 
 export const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
+  // Outside AppShell deliberately: an ADMIN/OWNER who hasn't enrolled is
+  // refused by every location-scoped route, so nesting the setup screen under
+  // /l/:locationId would put it behind the wall it exists to get past.
+  { path: "/account/security", element: <AccountSecurityPage /> },
   // "/" is the public marketing landing (client req #8); signed-in visitors
   // are bounced to their dashboard by the landing's session probe.
   { path: "/", element: <LandingPage /> },

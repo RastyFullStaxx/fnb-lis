@@ -2818,3 +2818,64 @@ itself.
 MFA (specified in security-mfa.md, blocked on the client's enrolment-policy decision), encryption at
 rest, and the two weakest domains: **automated backups with a tested restore**, and **any CI at
 all**. Those two are now the highest-value remaining security work, and neither is a code change.
+
+## 2026-08-01 (second pass) — two-factor authentication for ADMIN and OWNER
+
+Client decision: **ADMIN + OWNER** must hold a second factor; optional for everyone else. Closes
+[security.md](security.md) M-5, the one open item from the morning's audit. Full as-built notes in
+[security-mfa.md §1](security-mfa.md).
+
+TOTP (RFC 6238) on `node:crypto` — no dependency on the server. Every TOTP package is a wrapper
+around ~60 lines of HMAC and truncation, and an auth primitive with a supply chain is a worse trade
+than code you can read. `qrcode.react` on the web, for the scan.
+
+### The decisions that carry weight
+
+1. **The password buys one thing: the right to present the second factor.** An enrolled account
+   gets a short-lived `MfaChallenge` — no cookie, no session, no device registration, no
+   `auth.login` row until the code lands. Registering a device in step one would consume a licence
+   slot for someone who has proved half a credential.
+2. **`MfaChallenge` is its own table, not a flag on `AuthSession`.** A half-authenticated row in the
+   session table needs every reader to check the flag, and forgetting once fails *open*.
+3. **Enrolment stays unconfirmed until a code is proved**, so a mis-scan can't lock someone out of
+   their own account.
+4. **Login is never hard-blocked; the app is.** Refusing an unenrolled ADMIN's login would lock out
+   the only administrator with no way back. They sign in, and `requireMfaEnrolment` refuses
+   everything but `/api/auth/*`.
+5. **`FNB_MFA_KEY` is the on-switch.** No key → the feature is entirely off. Fail-safe, and it means
+   enforcing MFA can never outrun the ability to enrol.
+6. **The desktop is exempt.** It authenticates a machine, checks its PIN locally with no network,
+   and is sold on working through bad connectivity. `Device.status` revocation stands in.
+7. **Self-disable refused for the required roles** — lost phones go through an administrator, same
+   shape as `pinAdminRoutes`.
+
+### One bug found in browser verification
+
+`app.use(requireMfaEnrolment)` was pathless, so in production — where this same app serves the built
+SPA — it also refused `GET /account/security`, **the very page the gate redirects people to**. The
+user got raw 403 JSON instead of the enrolment screen, which is as locked out as having no screen.
+Scoped to `/api/*` and pinned with a check.
+
+That is the second ordering bug of the day (M-3 was the first). Both were middleware landing
+somewhere its author didn't picture — worth noting as a pattern this codebase is prone to, since it
+mounts several routers on shared prefixes.
+
+### Verified
+
+- `verify:security` **72/72** (up from 38; 32 new checks cover MFA), `verify:seed` PASS,
+  `verify:sync` PASS. Typechecks clean on both workspaces.
+- Driven end-to-end in a real browser against the production build: gate → enrolment → QR → code →
+  recovery codes → sign out → two-step login via a recovery code → dashboard. No console errors, no
+  CSP violations, no server errors.
+- The verification enrolment was reset afterwards (`mfa.adminReset`) — its secret existed only in
+  that browser session, so leaving it would have locked the dev admin out.
+
+### Notes
+
+- A dev `FNB_MFA_KEY` is in `apps/server/.env`. **Generate a fresh one for production**, and back it
+  up separately from the database — losing it locks out every enrolled user.
+- `security.md` now carries a **§5 "Reaching 100"** — what each scored domain needs, with effort
+  estimates and an honest note on where 100 isn't worth buying. Short version: backups-with-a-tested-
+  restore and a CI pipeline are ~4 hours of work for roughly +13 points overall; everything else is
+  expensive polish, except hash-chained `ActivityLog`, which is a product feature more than a
+  security one.

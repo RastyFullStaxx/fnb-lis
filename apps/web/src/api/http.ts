@@ -45,8 +45,13 @@ export const post = <T>(path: string, body?: unknown) =>
 export const put = <T>(path: string, body?: unknown) =>
   api<T>(path, { method: "PUT", body: body === undefined ? undefined : JSON.stringify(body) });
 
-/** Streams a file download, honoring the server's content-disposition filename. */
-export const del = <T>(path: string) => api<T>(path, { method: "DELETE" });
+/**
+ * Body is optional: most deletes need none, but the ones that undo a security
+ * control (turning off a second factor) require the caller to re-prove
+ * themselves in the same request.
+ */
+export const del = <T>(path: string, body?: unknown) =>
+  api<T>(path, { method: "DELETE", body: body === undefined ? undefined : JSON.stringify(body) });
 
 export async function downloadFile(path: string): Promise<void> {
   const res = await fetch(path, { credentials: "same-origin" });

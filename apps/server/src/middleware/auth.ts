@@ -2,10 +2,18 @@ import type { Context } from "hono";
 import { createMiddleware } from "hono/factory";
 import { getCookie } from "hono/cookie";
 import type { Client, Location } from "../generated/prisma/client";
-import { can, deriveAccessState, type Permission, type Role, type SessionUser } from "@fnb/core";
+import {
+  can,
+  deriveAccessState,
+  mfaRequiredFor,
+  type Permission,
+  type Role,
+  type SessionUser,
+} from "@fnb/core";
 import { prisma } from "../db";
 import { AppError } from "../lib/errors";
 import { getSessionUser, SESSION_COOKIE } from "../auth/session";
+import { isMfaAvailable } from "../auth/totp";
 
 export type AppEnv = {
   Variables: {
@@ -125,6 +133,69 @@ export const originCheck = createMiddleware(async (c, next) => {
 
 export const requireAuth = createMiddleware<AppEnv>(async (c, next) => {
   if (!c.get("user")) throw new AppError(401, "Not signed in");
+  await next();
+});
+
+/**
+ * ADMIN and OWNER cannot use the app until they hold a second factor.
+ *
+ * Server-side, not a UI flag — the same rule as every other permission here
+ * (README rule 5). `MeResponse.mfaSetupRequired` exists so the client can show
+ * an enrolment screen instead of a wall of 403s, but this is the gate.
+ *
+ * Existing accounts cannot be hard-blocked at LOGIN, or turning the feature on
+ * would lock out the only administrator with no way back in. So the login
+ * succeeds and everything past it is refused until they enrol, with the
+ * enrolment routes themselves deliberately left open. That is the whole
+ * allowlist:
+ *
+ *   /api/auth/*   — me, logout, and the enrolment routes they need to reach
+ *   /api/health   — unauthenticated anyway
+ *
+ * Note the ordering this depends on: mounted AFTER sessionMiddleware (so there
+ * is a user to inspect) and BEFORE every route group, so there is no path that
+ * quietly predates the check.
+ */
+/**
+ * Read per call, not captured at module load: `isMfaAvailable()` already works
+ * that way, and having the two halves of one decision disagree about WHEN they
+ * read the environment is the kind of subtlety that produces a control which is
+ * on in production and off in the harness that was supposed to prove it.
+ */
+const mfaEnforcementOn = () => process.env.FNB_REQUIRE_MFA !== "0";
+
+/**
+ * Does this account's role demand a second factor it has not set up yet?
+ *
+ * Lives here rather than beside the login route so the dependency runs one way
+ * — routes import middleware, never the reverse.
+ *
+ * A device session never qualifies: the desktop is exempt from MFA (it
+ * authenticates a machine, checks its PIN locally with no network, and is sold
+ * on working through a bad connection), and an owner provisioning a bar PC must
+ * not be stopped halfway by an enrolment screen he cannot complete offline.
+ */
+export async function mfaEnrolmentOutstanding(user: SessionUser): Promise<boolean> {
+  if (!isMfaAvailable() || user.deviceId) return false;
+  if (!mfaRequiredFor(user.role as Role)) return false;
+  const mfa = await prisma.userMfa.findUnique({
+    where: { userId: user.id },
+    select: { confirmedAt: true },
+  });
+  return !mfa?.confirmedAt;
+}
+
+export const requireMfaEnrolment = createMiddleware<AppEnv>(async (c, next) => {
+  const user = c.get("user");
+  if (!user || !mfaEnforcementOn()) return next();
+  if (c.req.path.startsWith("/api/auth/") || c.req.path === "/api/health") return next();
+  if (await mfaEnrolmentOutstanding(user)) {
+    throw new AppError(
+      403,
+      "Your role requires two-factor authentication. Set it up to continue.",
+      "MFA_SETUP_REQUIRED",
+    );
+  }
   await next();
 });
 

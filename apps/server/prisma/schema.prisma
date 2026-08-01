@@ -31,10 +31,12 @@ model User {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
-  sessions     AuthSession[]
-  clientAccess UserClientAccess[]
-  modules      UserModule[]
-  devicePin    DevicePin?
+  sessions      AuthSession[]
+  clientAccess  UserClientAccess[]
+  modules       UserModule[]
+  devicePin     DevicePin?
+  mfa           UserMfa?
+  mfaChallenges MfaChallenge[]
 }
 
 /**
@@ -75,6 +77,78 @@ model DevicePin {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+/**
+ * Second factor for the web login (TOTP — Google Authenticator, Authy, 1Password).
+ *
+ * Required for ADMIN and OWNER, optional for everyone else (client decision
+ * 2026-08-01). STAFF are deliberately excluded from the requirement: they sign
+ * in on a shared bar PC mid-shift, already hold a device PIN, and are already
+ * restricted to appends — a second factor buys little there at real cost to a
+ * counting workflow.
+ *
+ * Absence of a row means "not enrolled", so existing accounts need no backfill.
+ *
+ * This protects the BROWSER login only. The offline desktop is unaffected by
+ * design: it authenticates a machine, its PIN check happens locally with no
+ * network, and demanding a phone code from a bar PC that may have no signal
+ * would break the one thing the desktop exists to do.
+ */
+model UserMfa {
+  userId String @id
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /**
+   * AES-256-GCM ciphertext of the base32 TOTP secret, as iv:tag:ciphertext hex.
+   * ENCRYPTED, not hashed — verification needs the plaintext back — under a key
+   * (FNB_MFA_KEY) that lives outside the database, so a leaked database file
+   * alone yields no working second factors.
+   */
+  secretEnc String
+  /**
+   * Null until the user proves one working code. Enrolment that stopped at the
+   * QR screen must not count as enrolled, or a mis-scan locks someone out of
+   * their own account with no way back in.
+   */
+  confirmedAt DateTime?
+  /**
+   * Newline-separated scrypt hashes of single-use recovery codes (same format
+   * as passwordHash). Hashed rather than encrypted because these are only ever
+   * compared, never displayed again after enrolment.
+   */
+  backupCodes String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/**
+ * The gap between "password accepted" and "second factor accepted".
+ *
+ * A row here is NOT a session and cannot be mistaken for one — that is why it
+ * is a separate table rather than a flag on AuthSession. A half-authenticated
+ * row living in the session table would need every reader to remember to check
+ * the flag, and forgetting once fails OPEN. Nothing issues a session cookie
+ * until the second factor lands.
+ *
+ * The device payload and rememberMe ride along because step two is what
+ * actually completes the login: resolving a device in step one would register
+ * a machine (consuming a licence slot) for someone who has only proved half
+ * their credentials.
+ */
+model MfaChallenge {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  rememberMe Boolean @default(true)
+  /// The DeviceLogin payload as JSON text (no Json scalar — SQLite portability).
+  deviceJson String?
+  ip         String?
+  userAgent  String?
 }
 
 // Per-user module restriction (client req #9): which of BAR/KITCHEN/ASSET

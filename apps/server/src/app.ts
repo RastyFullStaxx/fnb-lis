@@ -5,11 +5,13 @@ import {
   originCheck,
   requireAuth,
   requireLocationAccess,
+  requireMfaEnrolment,
   sessionMiddleware,
   type AppEnv,
 } from "./middleware/auth";
 import { rateLimit, securityHeaders } from "./middleware/security";
 import { authRoutes } from "./routes/auth";
+import { mfaRoutes, mfaAdminRoutes } from "./routes/mfa";
 import { pinRoutes, pinAdminRoutes } from "./routes/pin";
 import { adminRoutes, userAdminRoutes } from "./routes/admin";
 import { deviceRoutes } from "./routes/devices";
@@ -97,6 +99,22 @@ export function createApp() {
     }),
   );
   /**
+   * A 6-digit code is 10^6 guesses, which is only strong because it is
+   * throttled. Its own bucket rather than the login one: a legitimate user
+   * mistyping a code must not consume the allowance that stops password
+   * guessing, and vice versa.
+   */
+  app.use(
+    "/api/auth/mfa/verify",
+    rateLimit({
+      id: "mfa",
+      limit: LOGIN_RATE_LIMIT,
+      windowMs: 15 * 60_000,
+      message: "Too many failed codes from this network. Try again in a few minutes.",
+      countOnly: (status) => status === 401 || status === 423,
+    }),
+  );
+  /**
    * A body is buffered before zod ever sees it, so "the schema rejects it" is
    * not a size control. Split by content-type rather than one global number:
    * file import is legitimately multipart and large (routes/imports.ts caps it
@@ -111,8 +129,21 @@ export function createApp() {
     })(c, next);
   });
 
+  // After sessionMiddleware (there must be a user to inspect) and before every
+  // route group (so no path predates the check). The enrolment routes it
+  // allows through are mounted on /api/auth for exactly this reason.
+  //
+  // Scoped to /api/* and NOT pathless: in production this same app serves the
+  // built SPA (index.ts), so a pathless guard also refused GET
+  // /account/security — the very page the gate sends people to. The user got
+  // the raw 403 JSON instead of the enrolment screen, which is as locked out as
+  // having no screen at all.
+  app.use("/api/*", requireMfaEnrolment);
+
   app.route("/api/auth", authRoutes);
   app.route("/api/auth", pinRoutes);
+  app.route("/api/auth", mfaRoutes);
+  app.route("/api/admin", mfaAdminRoutes);
   app.route("/api/admin", adminRoutes);
   // Same prefix, softer guard: user accounts are managed by the LIS ADMIN and
   // by each establishment's OWNER (client req 2026-07-25).

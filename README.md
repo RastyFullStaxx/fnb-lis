@@ -47,14 +47,20 @@ mirror needs (and no password hashes). See
 After ANY change to auth, sessions, permissions, or the request edge:
 
 ```bash
-npm run verify:security -w @fnb/server   # same throwaway-db harness, 38 checks
+npm run verify:security -w @fnb/server   # same throwaway-db harness, 72 checks
 ```
 
 Same in-process approach: hardening headers are really sent, the session cookie's `Secure` flag
 follows the transport, login doesn't leak which usernames exist (by message, status, *or* timing),
 failed sign-ins hit a per-IP ceiling while successful ones don't, permission guards land on their
 own routes and not their neighbours', a password reset kills live sessions, and the tenant/role/
-device boundaries hold. See [docs/security.md](docs/security.md).
+device boundaries hold. Half of it covers two-factor auth: a password alone issues no session, an
+unconfirmed enrolment doesn't lift the gate, a challenge can't be replayed, and a recovery code
+works once. See [docs/security.md](docs/security.md).
+
+Seed logins are `ADMIN`/`OWNER`, so **two-factor is required for them** once `FNB_MFA_KEY` is set
+(it is, in dev — see `.env`). First sign-in lands on `/account/security` to scan a QR code. Comment
+the key out to switch the whole feature off. See [docs/security-mfa.md](docs/security-mfa.md).
 
 Seed logins: `admin` · `manager` · `staff` · `accountant` · `readonly` — password `Fnb!2026`.
 

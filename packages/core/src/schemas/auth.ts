@@ -66,6 +66,75 @@ export type LoginRequest = z.infer<typeof loginRequest>;
 
 export const role = z.enum(ROLES);
 
+// ── Second factor (TOTP) ─────────────────────────────────────────────────────
+
+/**
+ * Start enrolment. Re-proving the password matters: without it, anyone who
+ * walks up to an unlocked screen can bind THEIR authenticator to the account
+ * and lock the real owner out of it.
+ */
+export const mfaEnrollRequest = z.object({
+  currentPassword: z.string().min(1, "Password is required"),
+});
+export type MfaEnrollRequest = z.infer<typeof mfaEnrollRequest>;
+
+/** A 6-digit code, or one of the single-use recovery codes. */
+export const mfaCode = z
+  .string()
+  .trim()
+  // Spaces are stripped server-side — authenticator apps display "123 456".
+  .min(6, "Enter the 6-digit code")
+  .max(20);
+
+/** Finish enrolment by proving one working code from the app just scanned. */
+export const mfaConfirmRequest = z.object({ code: mfaCode });
+export type MfaConfirmRequest = z.infer<typeof mfaConfirmRequest>;
+
+/** Second step of a two-step login. `challenge` comes from the login response. */
+export const mfaVerifyRequest = z.object({
+  challenge: z.string().min(1),
+  code: mfaCode,
+});
+export type MfaVerifyRequest = z.infer<typeof mfaVerifyRequest>;
+
+/**
+ * Turn off my own second factor. Requires BOTH proofs — a password alone would
+ * make MFA removable by exactly the attacker it exists to stop.
+ * Refused outright for MFA_REQUIRED_ROLES; those go through an administrator.
+ */
+export const mfaDisableRequest = z.object({
+  currentPassword: z.string().min(1, "Password is required"),
+  code: mfaCode,
+});
+export type MfaDisableRequest = z.infer<typeof mfaDisableRequest>;
+
+/** GET /api/auth/mfa — what the account settings screen renders from. */
+export interface MfaStatus {
+  /** False when the server has no FNB_MFA_KEY; the whole feature is off. */
+  available: boolean;
+  enrolled: boolean;
+  /** This role must enrol before it can use the rest of the app. */
+  required: boolean;
+  confirmedAt: string | null;
+  backupCodesRemaining: number;
+}
+
+/**
+ * What POST /api/auth/login returns.
+ *
+ * The two-arm shape is the point: an enrolled user gets NO session and NO
+ * cookie from the password alone, only a short-lived challenge to exchange.
+ */
+export type LoginResponse =
+  | (MeResponse & { device?: { id: string; clientId: string; locationId: string | null } })
+  | { mfaRequired: true; challenge: string; expiresAt: string };
+
+export function isMfaChallenge(
+  res: LoginResponse,
+): res is { mfaRequired: true; challenge: string; expiresAt: string } {
+  return "mfaRequired" in res && res.mfaRequired === true;
+}
+
 export interface SessionUser {
   id: string;
   username: string;
@@ -128,4 +197,11 @@ export interface MeResponse {
   user: SessionUser;
   clients: MeClient[];
   features: { aiEnabled: boolean };
+  /**
+   * Set when this account's role requires a second factor and it has not
+   * enrolled yet. The server already refuses everything but the enrolment
+   * routes in that state (requireMfaEnrolment); this is so the UI can show the
+   * enrolment screen instead of a wall of 403 toasts.
+   */
+  mfaSetupRequired?: boolean;
 }

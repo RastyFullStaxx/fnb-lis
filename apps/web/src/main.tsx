@@ -35,7 +35,23 @@ void initAnalytics();
  * silent kick-out.
  */
 const onApiError = (error: unknown) => {
-  if (!(error instanceof ApiError) || error.status !== 401) return;
+  if (!(error instanceof ApiError)) return;
+
+  /**
+   * The server refuses everything but the enrolment routes until a role that
+   * requires a second factor has one (`requireMfaEnrolment`). Without this the
+   * user would meet that refusal as a wall of identical toasts on whatever
+   * screen they happened to open, with no route to the fix.
+   *
+   * Same hard-navigation reasoning as the 401 below.
+   */
+  if (error.status === 403 && error.code === "MFA_SETUP_REQUIRED") {
+    if (window.location.pathname.startsWith("/account/security")) return;
+    window.location.assign("/account/security");
+    return;
+  }
+
+  if (error.status !== 401) return;
   // Already there — a failed sign-in is a 401 too, and must not bounce.
   if (window.location.pathname.startsWith("/login")) return;
   window.location.assign("/login?expired=1");

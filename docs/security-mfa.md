@@ -1,265 +1,124 @@
-# MFA and third-party integrations — ready to connect
+# MFA and third-party integrations
 
-Everything here is **specified and written, but not wired in**, because each piece needs something
-that does not exist yet: a client decision, an email provider, or a CDN account.
-
-Nothing in this document is currently in the codebase. That is deliberate — half-wired
-authentication code is worse than none, because it looks like a control and is not one. Each section
-below is complete enough to paste and turn on in a single sitting.
+**Section 1 (TOTP) is BUILT and shipped** — 2026-08-01, required for ADMIN and OWNER.
+Sections 2–5 remain specified but not wired, each blocked on something that does not exist yet: an
+email provider, a CDN account, or a deployment topology.
 
 Companions: **[security.md](security.md)** (findings, M-5) · **[security-runbook.md](security-runbook.md)**
 
 ---
 
-## 1. TOTP (Google Authenticator, Authy, 1Password)
+## 1. TOTP (Google Authenticator, Authy, 1Password) — **SHIPPED**
 
-**Status:** ready to paste · **Blocked on:** the client's answer to *who must enrol*
-**Effort:** roughly half a day including UI
+Required for **ADMIN and OWNER** (client decision 2026-08-01), optional for everyone else.
 
-### Why TOTP and not SMS
+STAFF are deliberately excluded from the requirement: they sign in on a shared bar PC mid-shift,
+already carry a device PIN, and are already restricted to appends. Demanding a phone code there
+costs a counting workflow real time and buys very little.
 
-SMS is worse in every dimension that matters here — SIM swap, delivery cost, and a provider
-dependency for something as load-bearing as sign-in. TOTP needs **no third-party service at all**:
-the "integration" is the user pointing a phone camera at a QR code. That is the single biggest
-reason to do this one first.
+**No third-party service is involved.** The "integration" is a user pointing a phone camera at a QR
+code. SMS was never on the table — SIM swap, delivery cost, and a provider dependency on the
+sign-in path.
 
-### The one open decision
+### Turning it on
 
-Ask the client before building the UI, because it changes the enrolment flow:
-
-| Option | Effect |
-|---|---|
-| **A — ADMIN only** | Smallest change. Protects cross-tenant access, leaves establishments alone |
-| **B — ADMIN + OWNER** (recommended) | Protects everyone who can create users or move money-adjacent settings |
-| **C — Optional for all, mandatory for ADMIN/OWNER** | Best posture. Needs a self-service enrolment screen |
-
-STAFF should **not** be required to enrol. They sign in on a shared bar PC mid-shift, and a role
-that is already restricted to appends and already uses a device PIN gains little from a second
-factor — at real cost to a busy counting workflow.
-
-### Schema
-
-Follows the project's SQLite portability rules — no enums, no `Json`, `Float` not `Decimal`
-(README rule 4). Add to `apps/server/prisma/schema.prisma`:
-
-```prisma
-/**
- * Time-based one-time password enrolment. One row per enrolled user; absence
- * means "not enrolled", so no backfill is needed for existing accounts.
- */
-model UserMfa {
-  userId       String   @id
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  /// AES-256-GCM ciphertext of the base32 TOTP secret. Encrypted, not hashed:
-  /// verification needs the plaintext back. Format iv:tag:ciphertext (hex).
-  secretEnc    String
-  /// Enrolment is only complete once the user proves one working code, so a
-  /// half-finished scan can never lock someone out of their own account.
-  confirmedAt  DateTime?
-  /// scrypt hashes of single-use recovery codes, newline-separated. Hashed
-  /// rather than encrypted because these are only ever compared, never shown
-  /// again after enrolment.
-  backupCodes  String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-}
-```
-
-Add the back-relation on `User`:
-
-```prisma
-  mfa          UserMfa?
-```
-
-Then, per the Windows dev loop (`CLAUDE.md`) — stop the dev server first, and remember that migrate
-does **not** regenerate the client:
-
-```bash
-npm run db:migrate && npm run db:generate
-```
-
-### `apps/server/src/auth/totp.ts`
-
-RFC 6238 on `node:crypto`. No dependency — this is ~60 lines and every TOTP package is a wrapper
-around exactly this (ponytail rung 3: the stdlib does it).
-
-```ts
-import { createCipheriv, createDecipheriv, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-
-const B32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-const STEP_SECONDS = 30;
-const DIGITS = 6;
-
-export function base32Encode(buf: Buffer): string {
-  let bits = 0, value = 0, out = "";
-  for (const byte of buf) {
-    value = (value << 8) | byte;
-    bits += 8;
-    while (bits >= 5) {
-      out += B32[(value >>> (bits - 5)) & 31];
-      bits -= 5;
-    }
-  }
-  if (bits > 0) out += B32[(value << (5 - bits)) & 31];
-  return out;
-}
-
-export function base32Decode(s: string): Buffer {
-  let bits = 0, value = 0;
-  const out: number[] = [];
-  for (const c of s.replace(/=+$/, "").toUpperCase()) {
-    const idx = B32.indexOf(c);
-    if (idx === -1) continue; // tolerate the spaces authenticator apps display
-    value = (value << 5) | idx;
-    bits += 5;
-    if (bits >= 8) {
-      out.push((value >>> (bits - 8)) & 255);
-      bits -= 8;
-    }
-  }
-  return Buffer.from(out);
-}
-
-function hotp(secret: Buffer, counter: number): string {
-  const buf = Buffer.alloc(8);
-  buf.writeBigUInt64BE(BigInt(counter));
-  const mac = createHmac("sha1", secret).update(buf).digest();
-  const offset = mac[mac.length - 1]! & 0x0f;
-  const code =
-    ((mac[offset]! & 0x7f) << 24) |
-    ((mac[offset + 1]! & 0xff) << 16) |
-    ((mac[offset + 2]! & 0xff) << 8) |
-    (mac[offset + 3]! & 0xff);
-  return String(code % 10 ** DIGITS).padStart(DIGITS, "0");
-}
-
-/** A fresh 160-bit secret, base32 for the QR code. */
-export function newTotpSecret(): string {
-  return base32Encode(randomBytes(20));
-}
-
-/**
- * `window = 1` accepts the previous and next 30-second step, absorbing clock
- * drift on a cheap phone. Do not widen it — each extra step is another valid
- * code at any instant.
- */
-export function verifyTotp(secretB32: string, token: string, window = 1): boolean {
-  if (!/^\d{6}$/.test(token)) return false;
-  const secret = base32Decode(secretB32);
-  const counter = Math.floor(Date.now() / 1000 / STEP_SECONDS);
-  const given = Buffer.from(token);
-  let match = false;
-  for (let i = -window; i <= window; i++) {
-    // No early return: comparing every candidate keeps the work constant
-    // regardless of WHICH step matched.
-    if (timingSafeEqual(Buffer.from(hotp(secret, counter + i)), given)) match = true;
-  }
-  return match;
-}
-
-/** What the QR code encodes. Scanned, never typed. */
-export function otpauthUri(username: string, secretB32: string, issuer = "FNB/LIS"): string {
-  const label = encodeURIComponent(`${issuer}:${username}`);
-  return `otpauth://totp/${label}?secret=${secretB32}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=${DIGITS}&period=${STEP_SECONDS}`;
-}
-
-// ── Secret storage ───────────────────────────────────────────────────────────
-// The secret cannot be hashed (verification needs it back), so it is encrypted
-// with a key that lives OUTSIDE the database. A database leak alone then yields
-// no working second factors.
-
-function key(): Buffer {
-  const raw = process.env.FNB_MFA_KEY;
-  if (!raw) throw new Error("FNB_MFA_KEY is not set — MFA cannot be used without it");
-  const buf = Buffer.from(raw, "base64");
-  if (buf.length !== 32) throw new Error("FNB_MFA_KEY must be 32 bytes, base64-encoded");
-  return buf;
-}
-
-export function encryptSecret(plain: string): string {
-  const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", key(), iv);
-  const ct = Buffer.concat([cipher.update(plain, "utf8"), cipher.final()]);
-  return `${iv.toString("hex")}:${cipher.getAuthTag().toString("hex")}:${ct.toString("hex")}`;
-}
-
-export function decryptSecret(stored: string): string {
-  const [ivHex, tagHex, ctHex] = stored.split(":");
-  const decipher = createDecipheriv("aes-256-gcm", key(), Buffer.from(ivHex!, "hex"));
-  decipher.setAuthTag(Buffer.from(tagHex!, "hex"));
-  return Buffer.concat([decipher.update(Buffer.from(ctHex!, "hex")), decipher.final()]).toString("utf8");
-}
-```
-
-Generate the key once per environment and put it in `.env`:
+MFA is **off until a key exists**. That is the switch:
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 ```
 
+Put it in `apps/server/.env` as `FNB_MFA_KEY=…` and restart.
+
 > **Losing `FNB_MFA_KEY` locks out every enrolled user.** Back it up with the same care as the
 > database, and *separately from it* — storing both together defeats the point.
 
-### Login flow
+`FNB_REQUIRE_MFA=0` keeps enrolment available but stops enforcing it, for a staged rollout.
 
-The change to `routes/auth.ts` is small, and the ordering matters:
+A dev key was generated into `.env` on 2026-08-01. Generate a **fresh one** for production.
+
+### What it does at sign-in
 
 ```
 password verified
       │
-      ├─ no UserMfa row, or confirmedAt is null ──► issue session (unchanged)
+      ├─ not enrolled ─────────► session issued (unchanged)
       │
-      └─ enrolled ──► DO NOT issue a session
-                      return { mfaRequired: true, challenge: <short-lived token> }
-                            │
-                            └─ POST /api/auth/mfa/verify {challenge, code}
-                                  ├─ verifyTotp OR a matching unused backup code
-                                  └─ then issue the session
+      └─ enrolled ────────────► NO session, NO cookie, NO device registration
+                                { mfaRequired: true, challenge, expiresAt }
+                                      │
+                                      └─ POST /api/auth/mfa/verify
+                                            ├─ TOTP code, or a single-use recovery code
+                                            └─ THEN the session is issued
 ```
 
-Three rules that are easy to get wrong:
+Five decisions worth not undoing:
 
-1. **No session cookie before the second factor.** If the first response sets a cookie, the second
-   factor is decorative.
-2. **The challenge token is short-lived** (5 minutes), single-use, and bound to the user id. Keep it
-   server-side — an `AuthSession` row with a `pendingMfa` flag reuses machinery that already exists
-   and is already revocable.
-3. **`/api/auth/mfa/verify` goes on the login rate limiter.** Add it to the `id: "login"` bucket in
-   `app.ts` — a 6-digit code is 10⁶ guesses, which is only strong *because* it is throttled.
+1. **The password buys exactly one thing: the right to present the second factor.** No cookie, no
+   `auth.login` entry, and no device registration happens in step one. Registering a device there
+   would consume a licence slot for someone who has proved only half their credentials.
+2. **`MfaChallenge` is its own table, not a flag on `AuthSession`.** A half-authenticated row living
+   in the session table needs every reader to remember to check the flag, and forgetting once fails
+   *open*. A challenge simply is not a session, so no code path can mistake it for one.
+3. **Enrolment is unconfirmed until a code is proved.** A mis-scan or an abandoned QR screen cannot
+   lock someone out of their own account.
+4. **Login is never hard-blocked; the app is.** Refusing an unenrolled ADMIN's login would lock out
+   the only administrator with no way back in. They sign in, and `requireMfaEnrolment` refuses
+   everything except `/api/auth/*` until they enrol.
+5. **The challenge is single-use and 5-minute.** It dies with the attempt that spends it, so a
+   captured token cannot be replayed against a second guess.
 
-Also: a successful verification must reset `failedLoginCount`, and a failed one must increment it,
-so the existing per-account lockout covers the code as well as the password. `routes/pin.ts` already
-shows this pattern — both PIN proofs ride the same lockout for exactly this reason.
+### The desktop is exempt
 
-### Backup codes
+A device login skips MFA entirely. The desktop authenticates a *machine*, checks its PIN locally
+with no network, and is sold on working through a bad connection — demanding a phone code from a bar
+PC with no signal breaks the one thing it exists to do. `Device.status`, re-checked on every
+request, is the revocation control that stands in for a second factor there.
 
-Ten codes, shown **once** at enrolment, each usable once:
+### Recovery
 
-```ts
-const codes = Array.from({ length: 10 }, () => randomBytes(5).toString("hex")); // 10 hex chars
-const hashed = await Promise.all(codes.map(hashPassword));  // reuse auth/password.ts
-// store hashed.join("\n") in UserMfa.backupCodes; return `codes` to the user ONCE
-```
+- **Ten single-use codes**, shown once at enrolment, stored as scrypt hashes. Grouped `xxxx-xxxx`
+  because they get written on paper and read back under pressure.
+- A recovery-code sign-in is **distinguishable in the audit trail** (`"signed in using a recovery
+  code"`) — worth alerting on, since it means a lost authenticator or someone else's codes.
+- **Self-disable is refused for ADMIN and OWNER.** Lost phones go through
+  `DELETE /api/admin/users/:id/mfa` — a second human, present, holding `users.manage`, with a
+  mandatory reason and a transactional audit entry. Same shape as `pinAdminRoutes`, and a stronger
+  check than any self-service flow.
 
-On use, remove that line from the stored set. Reuse `verifyPassword` for comparison — it is already
-constant-time, and using the same primitive means one place to audit.
+### Where it lives
 
-Admin reset path: `users.manage` clears a `UserMfa` row for a user in their own establishment,
-following the exact scoping and audit shape of `pinAdminRoutes` in `routes/pin.ts` — which is the
-model to copy, including the mandatory reason string and the transactional `logActivity`.
+| Path | What |
+|---|---|
+| `apps/server/src/auth/totp.ts` | RFC 6238 on `node:crypto` — no dependency. AES-256-GCM secret storage |
+| `apps/server/src/routes/mfa.ts` | Enrol / confirm / disable, and the admin reset |
+| `apps/server/src/routes/auth.ts` | The two-step login and `completeLogin` |
+| `apps/server/src/middleware/auth.ts` | `requireMfaEnrolment` — the server-side gate |
+| `apps/web/src/pages/account-security.tsx` | Enrolment UI (QR, recovery codes) |
+| `apps/web/src/pages/login-mfa.tsx` | The code prompt |
+| `packages/core/src/constants.ts` | `MFA_REQUIRED_ROLES` — change the policy here |
 
-### Turn-on checklist
+**Why the algorithm is hand-written:** every TOTP package is a wrapper around ~60 lines of HMAC and
+truncation, and an auth primitive with a supply chain is a worse trade than code you can read.
+SHA-1 is not a choice — it is what RFC 6238 specifies and what every authenticator app implements;
+its collision weakness does not apply to HMAC-SHA1.
 
-- [ ] `FNB_MFA_KEY` generated, in `.env`, backed up separately from the database
-- [ ] Migration applied, `db:generate` run
-- [ ] `auth/totp.ts` added
-- [ ] Enrol / verify / disable routes, each writing `ActivityLog` in-transaction
-- [ ] `/api/auth/mfa/verify` added to the login rate-limit bucket
-- [ ] Admin reset path mirroring `pinAdminRoutes`
-- [ ] Enrolment UI (QR + confirm code + backup-code download)
-- [ ] Checks added to `prisma/verify-security.ts`: an enrolled user gets **no** session from password
-      alone; a wrong code is refused; a used backup code cannot be reused; the challenge expires
-- [ ] `security.md` M-5 moved from OPEN to FIXED
+### Changing the policy
+
+`MFA_REQUIRED_ROLES` in `packages/core/src/constants.ts`. Adding a role takes effect on that role's
+next request — existing sessions are not evicted, they are gated. Removing one lifts the gate
+immediately and lets those users self-disable.
+
+### Verified
+
+`npm run verify:security -w @fnb/server` — 32 of its 72 checks cover MFA, including: an unenrolled
+ADMIN can still sign in but is refused everything else; an unconfirmed enrolment does not lift the
+gate; a password alone sets no session cookie; a challenge cannot be replayed; a recovery code works
+once and not twice; a required role cannot self-disable; a registered desktop signs in without a
+code; and with no `FNB_MFA_KEY` the whole feature is off.
+
+Also driven end-to-end in a real browser against the production build: gate → enrolment → QR →
+code → recovery codes → two-step login → dashboard.
 
 ---
 

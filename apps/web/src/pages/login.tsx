@@ -3,9 +3,10 @@ import { Link, useNavigate, useSearchParams } from "react-router";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowLeft, Eye, EyeOff, KeyRound } from "lucide-react";
-import { loginRequest, type LoginRequest } from "@fnb/core";
+import { isMfaChallenge, loginRequest, type LoginRequest, type MeResponse } from "@fnb/core";
 import { useLogin } from "@/api/auth";
 import { ApiError } from "@/api/http";
+import { MfaChallengeForm } from "./login-mfa";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -55,17 +56,36 @@ export function LoginPage() {
   /** Set once the credential is accepted; the overlay then hands off. */
   const [success, setSuccess] = useState<{ name: string; to: string } | null>(null);
 
+  /**
+   * Held in memory only, never in the URL or storage: this is the token that
+   * stands between a proved password and a session.
+   */
+  const [challenge, setChallenge] = useState<string | null>(null);
+
+  /** Where to land once a session actually exists. Shared by both sign-in paths. */
+  const landOn = (me: MeResponse) => {
+    const first = me.clients.flatMap((c) => c.locations)[0];
+    // Someone who must enrol has no usable location yet — every other route
+    // 403s until they do — so send them straight at the setup screen.
+    setSuccess({
+      name: me.user.firstName,
+      to: me.mfaSetupRequired ? "/account/security" : first ? `/l/${first.id}/dashboard` : "/",
+    });
+  };
+
   const onSubmit = form.handleSubmit(async (values) => {
     setServerError(null);
     try {
-      const me = await login.mutateAsync({ ...values, rememberMe });
-      const first = me.clients.flatMap((c) => c.locations)[0];
+      const res = await login.mutateAsync({ ...values, rememberMe });
+      // An enrolled account gets a challenge, NOT a session — branch before
+      // assuming otherwise.
+      if (isMfaChallenge(res)) {
+        setChallenge(res.challenge);
+        return;
+      }
       // The destination is resolved BEFORE the overlay shows, so the animation
       // covers work already done rather than adding a wait in front of it.
-      setSuccess({
-        name: me.user.firstName,
-        to: first ? `/l/${first.id}/dashboard` : "/",
-      });
+      landOn(res);
     } catch (err) {
       setServerError(err instanceof ApiError ? err.message : "Something went wrong. Try again.");
     }
@@ -127,6 +147,15 @@ export function LoginPage() {
                   Back to Sign In
                 </Button>
               </div>
+            ) : challenge ? (
+              <MfaChallengeForm
+                challenge={challenge}
+                onVerified={landOn}
+                onCancel={() => {
+                  setChallenge(null);
+                  form.reset();
+                }}
+              />
             ) : isDesktop ? (
               <DesktopPinSignIn />
             ) : (

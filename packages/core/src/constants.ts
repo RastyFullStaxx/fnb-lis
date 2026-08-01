@@ -354,6 +354,32 @@ export const BILLING_CYCLE_LABELS: Record<BillingCycle, string> = {
 export const LOGIN_LOCKOUT_THRESHOLD = 5;
 export const LOGIN_LOCKOUT_MS = 60 * 60 * 1000;
 
+/**
+ * Roles that MUST hold a second factor on the browser login (client decision
+ * 2026-08-01). These are the two roles that can create users, so compromising
+ * one is compromising everything below it — ADMIN across every establishment,
+ * OWNER across his own.
+ *
+ * MANAGER and below are deliberately excluded, STAFF most of all: they sign in
+ * on a shared bar PC mid-shift, already carry a device PIN, and are already
+ * restricted to appends. Demanding a phone code there costs a counting workflow
+ * real time and buys very little.
+ *
+ * Enforcement is server-side in requireMfaEnrolment (middleware/auth.ts), not
+ * in the UI — the same rule as every other permission here.
+ */
+export const MFA_REQUIRED_ROLES = ["ADMIN", "OWNER"] as const;
+
+export function mfaRequiredFor(role: Role): boolean {
+  return (MFA_REQUIRED_ROLES as readonly string[]).includes(role);
+}
+
+/** How long the gap between "password accepted" and "code accepted" may stay open. */
+export const MFA_CHALLENGE_TTL_MS = 5 * 60 * 1000;
+
+/** Single-use recovery codes handed out at enrolment. */
+export const MFA_BACKUP_CODE_COUNT = 10;
+
 export const PERMISSIONS = {
   // Cross-tenant system administration (every client, every location). ADMIN only —
   // an OWNER must never reach another establishment's data.
