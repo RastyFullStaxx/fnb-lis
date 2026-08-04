@@ -20,7 +20,7 @@ import { can, type Permission, type Role } from "@fnb/core";
 import { useMe } from "@/api/auth";
 import { useDashboard, useTrends, type DashboardData, type TrendPeriod } from "@/api/dashboard";
 // One source for the Dashboard panel and the topbar bell — see lib/attention.ts.
-import { attentionItems, type AttentionItem } from "@/lib/attention";
+import { attentionItems, unresolvedTotal, type AttentionItem } from "@/lib/attention";
 import { formatMoney, formatDate } from "@/lib/utils";
 import { pesoCompact, pesoFull, shortDate } from "@/components/charts/chart-kit";
 import { PeriodColumns } from "@/components/charts/period-columns";
@@ -116,7 +116,7 @@ function DashboardContent({
   to: (path: string) => string;
 }) {
   const stage = getStage(data);
-  const unresolved = unresolvedCount(data);
+  const unresolved = unresolvedTotal(data);
   const primary = getPrimaryAction(data, role);
   const secondary = SECONDARY_ACTIONS.filter(
     (action) => can(role, action.permission) && action.kind !== primary.kind,
@@ -502,7 +502,7 @@ function AttentionQueue({
   to: (path: string) => string;
 }) {
   const items = attentionItems(data, role);
-  const unresolved = unresolvedCount(data);
+  const unresolved = unresolvedTotal(data);
   const allClear = data.readiness.activeItems > 0 && data.period.countDates > 0 && unresolved === 0;
 
   return (
@@ -534,7 +534,11 @@ function AttentionQueue({
       ) : allClear ? (
         <div className="mt-4 flex gap-3 rounded-md bg-success/10 p-3 text-sm">
           <Check className="mt-0.5 size-4 shrink-0 text-success-text" />
-          <p>No pricing, import, delivery, or count work needs review right now.</p>
+          {/* Deliberately not a list of the kinds. It used to name four of them
+              and silently went stale the moment a fifth (bottle keeps) and a
+              sixth (transfer drafts) were added — an all-clear message that
+              enumerates is a message that will lie. */}
+          <p>Nothing needs your attention right now.</p>
         </div>
       ) : data.readiness.activeItems === 0 || data.period.countDates === 0 ? (
         <p className="mt-4 text-sm leading-6 text-muted-foreground">
@@ -827,15 +831,6 @@ function DashboardSkeleton() {
  * or the "requires a manager" note below fires at the wrong times and this stat
  * silently disagrees with the bell.
  */
-function unresolvedCount(data: DashboardData): number {
-  return data.attention.missingPrices
-    + data.attention.missingWeights
-    + data.attention.weightReviews
-    + data.attention.unmatchedRows
-    + data.attention.draftPurchases
-    + data.attention.openCounts;
-}
-
 function greeting(): string {
   const hour = new Date().getHours();
   if (hour < 12) return "Good morning";

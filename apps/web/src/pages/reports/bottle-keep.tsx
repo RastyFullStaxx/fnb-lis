@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router";
 import { AlertTriangle, Printer, Wine } from "lucide-react";
 import { toast } from "sonner";
 import { useBottleKeepMutations, useBottleKeeps, useCurrentLocation } from "@/api/location";
@@ -84,12 +85,28 @@ function statusLook(
 
 export function BottleKeepPage() {
   const location = useCurrentLocation();
-  const [status, setStatus] = useState<string>("ACTIVE");
+  const [params] = useSearchParams();
+  // Deep-linked from the attention bell, same pattern as `stock?missingPrices=1`.
+  // A badge that says "3 bottles are overdue" has to land on those 3 — dropping
+  // someone into a 50-row register to find them is a search task, not a fix.
+  const [status, setStatus] = useState<string>(() => params.get("status") ?? "ACTIVE");
   const [customer, setCustomer] = useState("");
-  const report = useBottleKeeps({ status: status === "ALL" ? undefined : status, customer: customer || undefined });
+  // OVERDUE is not a stored status — it is ACTIVE plus a date that has passed,
+  // which only the server can judge. So it is sent as ACTIVE and narrowed here
+  // using the server's own `dueForForfeit`, rather than this screen re-deriving
+  // "is it past today" against a possibly-wrong local clock.
+  const overdueOnly = status === "OVERDUE";
+  const report = useBottleKeeps({
+    status: status === "ALL" ? undefined : overdueOnly ? "ACTIVE" : status,
+    customer: customer || undefined,
+  });
   const { claim, forfeit } = useBottleKeepMutations();
 
-  const data = report.data;
+  const data = report.data
+    ? overdueOnly
+      ? { ...report.data, rows: report.data.rows.filter((r) => r.dueForForfeit) }
+      : report.data
+    : undefined;
 
   const act = async (kind: "claim" | "forfeit", id: string, who: string) => {
     try {
@@ -143,6 +160,7 @@ export function BottleKeepPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALL">All</SelectItem>
+                  <SelectItem value="OVERDUE">Overdue</SelectItem>
                   {STATUSES.map((s) => (
                     <SelectItem key={s} value={s}>
                       {s.charAt(0) + s.slice(1).toLowerCase()}
@@ -170,8 +188,12 @@ export function BottleKeepPage() {
         ) : !data || data.rows.length === 0 ? (
           <TableEmpty
             icon={Wine}
-            title="No bottles on keep"
-            description="A bottle a guest paid for and left to finish next visit is recorded here, and stays out of sellable stock until it expires."
+            title={overdueOnly ? "Nothing overdue" : "No bottles on keep"}
+            description={
+              overdueOnly
+                ? "Every bottle on keep is still within the date it was promised for."
+                : "A bottle a guest paid for and left to finish next visit is recorded here, and stays out of sellable stock until it expires."
+            }
           />
         ) : (
           <Table>
@@ -260,6 +282,11 @@ export function BottleKeepPage() {
           <h2 className="text-sm font-semibold">Bottles by guest</h2>
           <p className="mt-0.5 text-sm text-muted-foreground">
             The client's own check: how many bottles each guest is holding, and how many are overdue.
+            {/* Says so out loud because it looks wrong otherwise: filtered to
+                Overdue, a one-row table sat directly above "3 bottles on
+                record" and read as a contradiction rather than as two
+                different questions. */}
+            {status !== "ALL" && " Counts every bottle at this location, not just the filtered list above."}
           </p>
           <table className="mt-3 w-full border-collapse text-sm">
             <thead>

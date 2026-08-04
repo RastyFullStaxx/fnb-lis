@@ -28,6 +28,15 @@ export interface DashboardData {
     unmatchedRows: number; // PENDING rows in batches awaiting review
     draftPurchases: number; // uncommitted purchases
     openCounts: number; // count sessions still open
+    /** Bottles a guest left on keep whose promised date has passed (client req
+        2026-08-04). Real outstanding work: forfeiting returns the bottle to
+        stock at zero cost, and nothing moves until a person agrees to it. */
+    bottleKeepsDue: number;
+    /** Uncommitted stock transfers this location started. The sibling of
+        draftPurchases, which had a bell entry from the start while this one
+        silently didn't — a half-entered transfer holds stock in limbo at BOTH
+        ends until it is committed. */
+    draftTransfers: number;
     /** locationItem.priceChange rows (cost actually changed, see 46.1's
         guard) at this location since `since` was passed to buildDashboard —
         this user's own activityViewedAt preference, not a global count
@@ -105,6 +114,8 @@ export async function buildDashboard(
     latestPurchase,
     recent,
     priceChangeRows,
+    bottleKeepsDue,
+    draftTransfers,
   ] = await Promise.all([
     committedCountDates(locationId),
     prisma.locationItem.findMany({
@@ -201,6 +212,17 @@ export async function buildDashboard(
           select: { detailsJson: true },
         })
       : Promise.resolve([]),
+    // `lt` on a TEXT YYYY-MM-DD is a lexicographic compare, which for that
+    // format is the same ordering as a date compare — the whole reason business
+    // dates are stored this way. Strictly less than today: a bottle promised
+    // until the 4th is still the guest's for all of the 4th.
+    prisma.bottleKeep.count({
+      where: { locationId, status: "ACTIVE", expiresOn: { lt: todayBusinessDate() } },
+    }),
+    // `fromLocationId`, not either end: while a transfer is DRAFT the source
+    // owns it and is the only side that can edit or commit it (§7.2). Counting
+    // it at the destination would badge someone who cannot act on it.
+    prisma.transfer.count({ where: { fromLocationId: locationId, status: "DRAFT" } }),
   ]);
 
   const lastCountDate = dates.at(-1) ?? null;
@@ -281,7 +303,17 @@ export async function buildDashboard(
       canAudit,
       latest,
     },
-    attention: { missingPrices, missingWeights, weightReviews, unmatchedRows, draftPurchases, openCounts, recentPriceChanges },
+    attention: {
+      missingPrices,
+      missingWeights,
+      weightReviews,
+      unmatchedRows,
+      draftPurchases,
+      openCounts,
+      bottleKeepsDue,
+      draftTransfers,
+      recentPriceChanges,
+    },
     readiness: { activeItems: priceItems.length },
     openWork: {
       latestCount: latestCount

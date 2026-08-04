@@ -12,7 +12,7 @@
 
 | # | Who | Ask (plain English) | What we found | Action | Effort |
 |---|---|---|---|---|---|
-| **G** | Lourd | Add **Garnish** to bar inventory (cherry, lemon, lime…); also useful for café | Product types are a fixed map; `BAR → ["Beverage"]` only | ❓ Decide scope, then build | ~1 h |
+| **G** | Lourd | Add **Garnish** to bar inventory (cherry, lemon, lime…); also useful for café | Product types are a fixed map; `BAR → ["Beverage"]` only | ✅ **Shipped 2026-08-04** — both BAR and KITCHEN | ~1 h |
 | **1** | Jj | Warn when an entered **weight looks out of range** | Warning machinery already exists; over-range already covered, under-range missing | ✅ Build | ~2 h |
 | **2** | Jj | **UOM per item**, not one setting for everything | Items already carry their own unit — a *per-user display preference* is overriding it | ✅ Build | ~½ day |
 | **3** | Jj | **Reports by subscription tier** (Basic / Medium / Full / Standalone) | No tier gating exists at all. And `packageType` is **derived**, not stored | 🛑 Blocked — see the warning | — |
@@ -38,7 +38,15 @@ Two questions unblock two items. Suggested wording:
 
 ---
 
-## G — Garnish
+## G — Garnish — ✅ SHIPPED 2026-08-04
+
+> Built as recommended below (client answered "parehas"). `MODULE_PRODUCT_TYPES`
+> now has `BAR: ["Beverage", "Garnish"]` and `KITCHEN: ["Food", "Garnish"]`; the
+> `productTypes` Setting gained it via seed + migration
+> `20260806000000_garnish_product_type`. Both verification steps done: a Garnish
+> item created, attached to Main Bar and returned by that bar's catalog;
+> `allowedProductTypes(["ASSET"])` still `["Asset"]`; the Product Type filter
+> lists it (it reads the same Setting). See build-log 2026-08-04.
 
 ### What was asked
 > "Dun sa pag create Menu for bar inventory lagyan natin ng (Garnish) if ever sama nila sa inventory

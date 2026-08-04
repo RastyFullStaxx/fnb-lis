@@ -1,10 +1,12 @@
 import {
+  ArrowLeftRight,
   ClipboardList,
   FileInput,
   History,
   Scale,
   ShoppingCart,
   Tags,
+  Wine,
   type LucideIcon,
 } from "lucide-react";
 import { can, type Role } from "@fnb/core";
@@ -21,7 +23,16 @@ import type { DashboardData } from "@/api/dashboard";
  * the topbar bell — so the two can never disagree about what is outstanding.
  */
 
-export type AttentionKind = "prices" | "weights" | "weightReview" | "import" | "purchase" | "count" | "priceChange";
+export type AttentionKind =
+  | "prices"
+  | "weights"
+  | "weightReview"
+  | "import"
+  | "purchase"
+  | "transfer"
+  | "count"
+  | "bottleKeep"
+  | "priceChange";
 
 export interface AttentionItem {
   kind: AttentionKind;
@@ -39,7 +50,17 @@ export type AttentionGroup = "Missing data" | "Needs review" | "Open work";
 export const ATTENTION_GROUPS: AttentionGroup[] = ["Missing data", "Needs review", "Open work"];
 
 export function attentionItems(data: DashboardData, role: Role): AttentionItem[] {
-  const { missingPrices, missingWeights, weightReviews, unmatchedRows, draftPurchases, openCounts, recentPriceChanges } = data.attention;
+  const {
+    missingPrices,
+    missingWeights,
+    weightReviews,
+    unmatchedRows,
+    draftPurchases,
+    openCounts,
+    bottleKeepsDue,
+    draftTransfers,
+    recentPriceChanges,
+  } = data.attention;
   const items: Array<AttentionItem | null> = [
     missingPrices > 0 && can(role, "prices.edit")
       ? {
@@ -87,6 +108,25 @@ export function attentionItems(data: DashboardData, role: Role): AttentionItem[]
           group: "Needs review",
         }
       : null,
+    // A guest's bottle whose promised date has passed. "Needs review", not
+    // "Open work": nobody started this and no amount of finishing clears it —
+    // it needs a judgement (forfeit it, or let the guest have it anyway), which
+    // is the same shape as the other two items in this group.
+    //
+    // Gated on entries.create because forfeiting writes a zero-cost stock-in,
+    // which is exactly the permission routes/bottle-keep.ts enforces.
+    bottleKeepsDue > 0 && can(role, "entries.create")
+      ? {
+          kind: "bottleKeep",
+          count: bottleKeepsDue,
+          label: `${bottleKeepsDue} kept ${bottleKeepsDue === 1 ? "bottle has" : "bottles have"} passed the keep date`,
+          // Deep-link filtered, same reasoning as the pricing link above: the
+          // overdue ones are ACTIVE rows scattered through a long register.
+          path: "reports/bottle-keep?status=OVERDUE",
+          icon: Wine,
+          group: "Needs review",
+        }
+      : null,
     draftPurchases > 0 && can(role, "entries.create")
       ? {
           kind: "purchase",
@@ -94,6 +134,19 @@ export function attentionItems(data: DashboardData, role: Role): AttentionItem[]
           label: `Continue ${draftPurchases} delivery ${draftPurchases === 1 ? "draft" : "drafts"}`,
           path: "purchases",
           icon: ShoppingCart,
+          group: "Open work",
+        }
+      : null,
+    // Missed when transfers were built: a DRAFT transfer has taken stock off the
+    // source's shelf in the counter's head but committed nothing at either end,
+    // so it goes stale silently. Same group and permission as its sibling above.
+    draftTransfers > 0 && can(role, "entries.create")
+      ? {
+          kind: "transfer",
+          count: draftTransfers,
+          label: `Finish ${draftTransfers} transfer ${draftTransfers === 1 ? "draft" : "drafts"}`,
+          path: "transfers",
+          icon: ArrowLeftRight,
           group: "Open work",
         }
       : null,
@@ -130,4 +183,34 @@ export function attentionItems(data: DashboardData, role: Role): AttentionItem[]
 /** Total pieces of outstanding work — the number on the bell. */
 export function attentionCount(items: AttentionItem[]): number {
   return items.reduce((n, i) => n + i.count, 0);
+}
+
+/**
+ * Counts that are "unread" rather than "unresolved": nothing about them can be
+ * finished, so they must not inflate a total that reads as a workload.
+ * Everything NOT listed here counts.
+ */
+const INFORMATIONAL: ReadonlyArray<keyof DashboardData["attention"]> = ["recentPriceChanges"];
+
+/**
+ * Every piece of outstanding work at this location, ignoring who is looking.
+ *
+ * Deliberately a deny-list over the payload rather than a hand-written sum. The
+ * hand-written version lived in dashboard.tsx and had already drifted — it
+ * still added up six fields after two more were added, so the header read
+ * "4 items" while the bell beside it read "5". Summing what is actually there
+ * means a new server-side count joins both numbers at once, or neither.
+ *
+ * Role-independent on purpose: `attentionItems` filters to what THIS user may
+ * act on, and the dashboard compares the two to say "some work requires a
+ * manager". That comparison only means anything if this side counts everything.
+ */
+export function unresolvedTotal(data: DashboardData): number {
+  return Object.entries(data.attention).reduce(
+    (n, [key, value]) =>
+      typeof value === "number" && !INFORMATIONAL.includes(key as keyof DashboardData["attention"])
+        ? n + value
+        : n,
+    0,
+  );
 }

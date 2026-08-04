@@ -3727,10 +3727,82 @@ the client's own users.
 
 ### Still open
 
-- **Garnish (client answer #2, "parehas")** — `MODULE_PRODUCT_TYPES` maps
-  `BAR: ["Beverage"]` and `KITCHEN: ["Food"]`, so a garnish is invisible to a
-  bar-only location. Not started.
 - **Report tiers (answer #3)** — approach agreed (explicit enabled-reports set
   per subscription, tier as a creation preset); the per-tier lists still need
   Jj's checklist.
 - Guest returns after a forfeit; UTC-vs-+08 expiry boundary; automatic alerting.
+
+## 2026-08-04 — Garnish, and the attention list catching up
+
+### Garnish (client answer #2, "parehas")
+
+Two gates had to move together; changing either alone leaves it half-working.
+
+1. `MODULE_PRODUCT_TYPES` — `"Garnish"` added to **both** `BAR` and `KITCHEN`.
+   `allowedProductTypes` unions across a location's modules, so a BAR+KITCHEN
+   location gets one Garnish list, not two (verified: `["Beverage","Garnish","Food"]`).
+2. The `productTypes` Setting — the list an admin picks from when labelling a
+   category. Added to the seed for fresh installs, and migration
+   `20260806000000_garnish_product_type` appends it to databases that already
+   exist. It uses `json_insert(value, '$[#]', 'Garnish')` rather than rewriting
+   the array, so a product type someone added by hand survives; guarded on
+   `NOT LIKE '%Garnish%'` so re-running is a no-op.
+
+Verified end to end against the running API, not just by reading the map:
+created a Garnish category, an item under it, attached it to Main Bar, and
+confirmed it comes back in that bar's catalog — the route that applies the
+module filter. Probe item deleted afterwards; the `Garnishes` category was kept
+since the client wants it anyway.
+
+### Notifications — forfeit, and what else was missing
+
+The bell and the Dashboard's "Needs Attention" share one source
+(`lib/attention.ts`), so both surfaces got these at once:
+
+- **Overdue bottle keeps** (`bottleKeepsDue`) — ACTIVE keeps past `expiresOn`.
+  Grouped under *Needs review*, not *Open work*: nobody started it and no amount
+  of finishing clears it — it needs a judgement (forfeit, or let the guest have
+  it). Gated on `entries.create`, the permission forfeiting actually requires.
+- **Draft transfers** (`draftTransfers`) — missed when transfers were built,
+  while its sibling `draftPurchases` had a bell entry from the start. Counted at
+  `fromLocationId` only: while a transfer is DRAFT the source owns it (sync §7.2),
+  so badging the destination would nag someone who cannot act.
+
+Both are computed server-side against today, so a tab left open overnight cannot
+show a stale "overdue".
+
+### Two things that were already wrong, found while wiring it up
+
+- **The header and the bell disagreed** — "Unresolved work 4 items" beside a bell
+  reading 5. `dashboard.tsx` hand-summed six named fields; two more had been
+  added since. Replaced with `unresolvedTotal()` in `lib/attention.ts`, which
+  sums whatever numeric fields the payload actually has minus an explicit
+  informational deny-list (`recentPriceChanges` — "unread", not "unresolved").
+  A new server-side count now joins both numbers at once, or neither.
+- **The all-clear message enumerated** — "No pricing, import, delivery, or count
+  work needs review right now" had already gone stale. Now "Nothing needs your
+  attention right now": a message that lists kinds is a message that will lie.
+
+### Deep link
+
+The badge promised a filtered view, so the page now honours one. `?status=OVERDUE`
+is a pseudo-filter — not a stored status, but ACTIVE plus a date only the server
+can judge — so it requests ACTIVE and narrows on the server's own `dueForForfeit`
+rather than re-deriving "past today" against a possibly-wrong local clock. Empty
+state reads "Nothing overdue", not "No bottles on keep". The by-guest roll-up
+deliberately still counts everything, and now says so — filtered to Overdue, a
+one-row table above "3 bottles on record" read as a contradiction.
+
+### Verified
+
+- Live: `attention` returns `bottleKeepsDue: 1`, bell and header both read 5,
+  "1 kept bottle has passed the keep date" renders with correct singular grammar,
+  deep link lands on exactly the overdue row, empty state correct.
+- `verify:seed` PASS · `verify:sync` PASS · `verify:security` PASS ·
+  `verify:mirror` MIRROR MATCHES THE SERVER, both golden anchors exact
+  (−330.6857142857142 / −869.5714285714284 and −537 / −1410).
+- Typechecks clean across all three workspaces. Desktop repackaged
+  (`LIS Setup 0.1.0.exe`); the new migration ships in `resources/migrations`.
+
+> `verify:security` fails wholesale under `FNB_REQUIRE_MFA=0` — that flag
+> disables the gate seven of its assertions exist to test. Run it without.

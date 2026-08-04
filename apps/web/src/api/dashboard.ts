@@ -36,6 +36,10 @@ export interface DashboardData {
     unmatchedRows: number;
     draftPurchases: number;
     openCounts: number;
+    /** Guests' bottles past their promised keep date (client req 2026-08-04). */
+    bottleKeepsDue: number;
+    /** Uncommitted transfers this location started — stock in limbo at both ends. */
+    draftTransfers: number;
     /** locationItem.priceChange rows since this user's own activityViewedAt
         preference (Phase 46.4.2). 0 for a user who hasn't opened Activity yet. */
     recentPriceChanges: number;

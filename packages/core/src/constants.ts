@@ -328,8 +328,23 @@ export const MODULE_TYPE_LABELS: Record<ModuleType, string> = {
  * alias here was only ever a stopgap until this split landed.
  */
 export const MODULE_PRODUCT_TYPES: Record<ModuleType, readonly string[]> = {
-  BAR: ["Beverage"],
-  KITCHEN: ["Food"],
+  /**
+   * Garnish sits in BOTH — client decision 2026-08-04, asked as "bar-only,
+   * kitchen-only, or both?" and answered "parehas".
+   *
+   * Cherries, lemons and limes are stock that a bar consumes and a café
+   * consumes, and they are neither a Beverage nor a Food in the sense those
+   * types are used for elsewhere (a bar's Beverage list drives pour costing; a
+   * kitchen's Food list drives recipes). Without its own type a garnish had to
+   * be mislabelled as one of them to be visible at all, and a bar-only location
+   * could not see it however it was labelled.
+   *
+   * Being in two modules is not a special case here: `allowedProductTypes`
+   * already unions the types of every module a location holds, so a BAR+KITCHEN
+   * location sees one Garnish list rather than two.
+   */
+  BAR: ["Beverage", "Garnish"],
+  KITCHEN: ["Food", "Garnish"],
   ASSET: ["Asset"],
 };
 

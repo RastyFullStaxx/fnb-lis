@@ -277,7 +277,8 @@ async function seedCategories() {
 
 async function seedSettings() {
   const settings: Array<{ key: string; value: unknown }> = [
-    { key: "productTypes", value: ["Beverage", "Food", "Supplies", "Asset"] },
+    // Garnish added 2026-08-04 (client: "parehas" — bar and kitchen both).
+    { key: "productTypes", value: ["Beverage", "Food", "Garnish", "Supplies", "Asset"] },
     // Asset condition/status presets (asset-module-proposal.md, client-confirmed
     // 2026-07-23). Same data-driven-list shape as productTypes above; the UI adds
     // an "Other" branch on top rather than storing it as a literal option.
