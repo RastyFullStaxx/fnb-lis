@@ -35,6 +35,14 @@ import {
  * prettier and the file still downloads, still prints, still looks right — and
  * silently imports as a column of nulls.
  *
+ * **Column ORDER is load-bearing too, in one specific way.** `NAME_RE` includes
+ * `bottle`, so "Quantity (bottles)" matches the item-name pattern as well as
+ * the quantity one. The parser takes the FIRST match for a name, and "Item"
+ * precedes it in every form here — which is the only reason it resolves
+ * correctly. Verified: a purchase row imports `itemText: "Absolut Vodka 700 ml"`
+ * and `qty: 24`. Move the quantity column ahead of Item and the item name
+ * silently becomes the number 24.
+ *
  * These are NOT copies of the client's paper. Their sheets are the starting
  * point and the source of what the columns must mean, but each one here fixes
  * something the paper loses — see the Non-Revenue spec below for the clearest
@@ -56,22 +64,45 @@ interface FormSpec {
   approvedBy?: boolean;
   /** Print the accepted reason words, so nobody has to remember them. */
   reasonLegend?: boolean;
+  /** A line about what unit the quantity is in — printed on the sheet. */
+  unitNote?: string;
 }
 
 const FORMS: Record<Kind, FormSpec> = {
   sales: {
+    /**
+     * "Quantity (bottles)" rather than "Quantity", and the unit is the point.
+     * A sales sheet mixing shots and bottles under one heading is the same
+     * ambiguity the purchase form has below, in a place where it is easier to
+     * miss because most lines are whole bottles.
+     */
     title: "Sales Entry Form",
-    columns: ["Date", "Item", "Quantity", "Price", "Discount %", "Remarks"],
+    columns: ["Date", "Item", "Quantity (bottles)", "Price", "Discount %", "Remarks"],
     itemColumn: 1,
     description:
       "For encoding a day's sales by hand, then importing the file. One line per item sold.",
+    unitNote: "Quantity is in BOTTLES or pieces — the unit the item is counted in, never cases.",
   },
   purchases: {
+    /**
+     * Their supplier invoices read "Bench Mark No.8 Bourbon 750mL X12" with a
+     * quantity of 14 — and nothing on the paper says whether that is 14 bottles
+     * or 14 cases of twelve. Off by a factor of twelve is not a rounding error;
+     * it is a purchase that never reconciles against the next count.
+     *
+     * Fixed at the point of entry rather than guessed at import: the heading
+     * names the unit, and a Pack Size column gives somebody copying an invoice
+     * with "X12" on it somewhere honest to put it. The parser reads
+     * "Quantity (bottles)" through the same /qty|quantity/ rule and ignores
+     * Pack Size, which is for the human checking the delivery.
+     */
     title: "Purchase / Delivery Form",
-    columns: ["Date", "Item", "Quantity", "Unit Cost", "Amount", "Supplier", "Remarks"],
+    columns: ["Date", "Item", "Pack Size", "Quantity (bottles)", "Unit Cost", "Amount", "Supplier"],
     itemColumn: 1,
     description:
-      "For a delivery received on paper. Mirrors a supplier invoice: quantity, unit cost, amount.",
+      "For a delivery received on paper. Copy the invoice, but convert cases to bottles — the system counts bottles.",
+    unitNote:
+      "If the invoice says \"750mL X12\", write 12 under Pack Size and the TOTAL BOTTLES under Quantity — not the number of cases.",
   },
   "non-revenue": {
     /**
@@ -258,6 +289,12 @@ export function BlankFormsPage() {
               ))}
             </tbody>
           </table>
+        )}
+
+        {spec.unitNote && (
+          <p className="mt-4 max-w-prose text-xs leading-5 text-muted-foreground">
+            <span className="font-medium text-foreground">Units:</span> {spec.unitNote}
+          </p>
         )}
 
         {spec.reasonLegend && (

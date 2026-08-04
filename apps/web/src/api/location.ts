@@ -188,3 +188,73 @@ export function useAreaMutations() {
     }),
   };
 }
+
+/**
+ * Bottle Keep — bottles a customer paid for and left to finish next visit.
+ *
+ * `dueForForfeit` and `daysLeft` are computed server-side against today, never
+ * stored: "is it overdue" is a fact about the current date, and a stored flag
+ * is wrong every morning until something rewrites it.
+ */
+export interface BottleKeep {
+  id: string;
+  customerName: string;
+  customerContact: string | null;
+  qty: number;
+  remainingContent: number;
+  keptDate: string;
+  expiresOn: string;
+  status: "ACTIVE" | "CLAIMED" | "FORFEITED" | "VOID";
+  note: string | null;
+  dueForForfeit: boolean;
+  daysLeft: number;
+  area: { id: string; name: string } | null;
+  locationItem: LocationItem;
+}
+
+export interface BottleKeepReport {
+  rows: BottleKeep[];
+  byCustomer: Array<{ customerName: string; bottles: number; active: number; dueForForfeit: number }>;
+  totals: { bottles: number; active: number; dueForForfeit: number };
+}
+
+export function useBottleKeeps(params: { status?: string; customer?: string } = {}) {
+  const locationId = useLocationId();
+  const qs = new URLSearchParams();
+  if (params.status) qs.set("status", params.status);
+  if (params.customer) qs.set("customer", params.customer);
+  return useQuery({
+    queryKey: ["bottle-keeps", locationId, params.status ?? "", params.customer ?? ""],
+    queryFn: () => api<BottleKeepReport>(`${base(locationId)}/bottle-keeps?${qs}`),
+    enabled: Boolean(locationId),
+  });
+}
+
+export function useBottleKeepMutations() {
+  const locationId = useLocationId();
+  const qc = useQueryClient();
+  // Forfeiting writes a Forfeit, so the purchases/forfeit lists and every report
+  // reading them are stale the moment it succeeds.
+  const done = {
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["bottle-keeps", locationId] });
+      void qc.invalidateQueries({ queryKey: ["forfeits", locationId] });
+    },
+  };
+  return {
+    create: useMutation({
+      mutationFn: (body: Record<string, unknown>) =>
+        post<BottleKeep>(`${base(locationId)}/bottle-keeps`, body),
+      ...done,
+    }),
+    claim: useMutation({
+      mutationFn: (id: string) => post<BottleKeep>(`${base(locationId)}/bottle-keeps/${id}/claim`),
+      ...done,
+    }),
+    forfeit: useMutation({
+      mutationFn: (id: string) =>
+        post<{ forfeitId: string }>(`${base(locationId)}/bottle-keeps/${id}/forfeit`),
+      ...done,
+    }),
+  };
+}

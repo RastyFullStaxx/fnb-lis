@@ -3468,3 +3468,88 @@ path doing exactly what it exists for. Confirmed carrying: Blank Entry Forms,
 the reason legend, the storage-area picker, the Storage Areas settings section,
 `reasonFromRaw`, the BLEED classifier and the areas route. SPA 200,
 `/_desktop/people` 5 users, `host.log` clean.
+
+---
+
+## 2026-08-05 — Bottle Keep & Forfeited Inventory; purchase/sales form units
+
+### Bottle Keep (client req 2026-08-04)
+
+A bottle a guest paid for and left to finish next visit. **Its own record, not a
+note on a sale**, because between being paid for and being drunk the bottle sits
+on the shelf and **is not the bar's to sell**. Counted as stock it shows a
+surplus now and a shortage the day the guest returns and drinks it with no sale
+behind it — the variance noise that stops people trusting the Full Audit. This
+is the third case from the earlier "unused bottles" question, which the client
+confirmed does happen ("all of the above").
+
+**One row per bottle, never a quantity.** His own question set the shape: "what
+if may 10 bottles Jack Daniel's na different or same date ang entry for Bottle
+Keeps but different name of client guest". A `qty: 10` row cannot say whose is
+whose, when each expires, or which was claimed on Tuesday.
+
+- `expiresOn` is stored as a **date**, not a day count. A count would be
+  re-evaluated against today's house policy, so changing 30 days to 60 would
+  silently move the expiry of every bottle already on the shelf.
+- "Saan nakalagay" reuses **LocationArea** — his "Main Bar or Satellite bar 1"
+  is the shelf list counts already use, so there is no second vocabulary.
+- `dueForForfeit` / `daysLeft` are computed server-side against today, never
+  stored: a stored flag is wrong every morning until something rewrites it.
+- Forfeiting writes a **Forfeit** in the same transaction — quantity-only, no
+  cost column at all, which is his "transferred to bar stock as purchased at
+  zero cost". Deliberately not a zero-cost Purchase: under Weighted Average,
+  units added at zero cost grow the denominator and not the numerator, dropping
+  the average cost of every remaining bottle and restating valuations.
+- The Forfeit button appears **only once a bottle is actually due**; the server
+  refuses an early forfeit, and a button that exists to be rejected is worse
+  than no button.
+
+### Purchase / Sales forms — units stated at the point of entry
+
+Their invoices read "Bench Mark No.8 Bourbon 750mL X12" against a quantity of
+14, and nothing on the paper says whether that is 14 bottles or 14 cases. Off by
+twelve is not a rounding error; it is a purchase that never reconciles. The
+heading now names the unit, a **Pack Size** column gives the "X12" somewhere
+honest to go, and the sheet prints the rule. Guessing at import time was the
+alternative and it would have been a guess.
+
+⚠️ **Column ORDER is load-bearing.** `NAME_RE` includes `bottle`, so
+"Quantity (bottles)" also matches the item-name pattern; the parser takes the
+first match and "Item" precedes it in every form. Verified — a purchase row
+imports `itemText: "Absolut Vodka 700 ml"`, `qty: 24`. Move the quantity column
+ahead of Item and the item name silently becomes the number. Noted in the file.
+
+### Answering his other question
+
+**No report spans multiple locations today.** Every report mounts under
+`/api/locations/:locationId`, so a consolidated multi-location inventory report
+is net-new work, not a setting.
+
+### Verified
+
+- His scenario end to end: four Jack Daniel's under three guests, different kept
+  dates, sorted by expiry, 2 correctly flagged overdue; per-guest roll-up shows
+  Lourd B. holding 2 bottles of which 1 is overdue.
+- Forfeit → 200, creates a Forfeit with `qty 1`, a note naming the guest and
+  both dates, and **no cost field at all**. Early forfeit → 409 "not due yet —
+  it expires on 2026-08-24".
+- Purchase form round trip: `qty 24` (not the pack size of 12), cost 825,
+  `EXACT` + `APPROVED`.
+- `verify:seed` PASS · `verify:sync` PASS · anchors unchanged · typechecks clean
+  across all three workspaces · build clean.
+
+### Desktop updated
+
+Rebuilt, reinstalled, launched — auto-applied `20260805000000_bottle_keep` to
+its own mirror on boot. Confirmed carrying the Bottle Keep report, the
+bottles-by-guest roll-up, the Pack Size column and unit note, the bottle-keep
+routes and the forfeit-on-expiry path. SPA 200, `host.log` clean.
+
+### Not built
+
+- **Automatic alerting.** The register shows a banner when bottles are overdue;
+  nothing emails or notifies. Forfeiting stays a human decision on purpose — the
+  bottle is a guest's property until the house says otherwise.
+- **Recording a keep from the count screen.** He described entry "pag pinasok yan
+  sa count"; today it is recorded on its own page. Worth confirming which he
+  actually wants before wiring it into the counting rhythm.

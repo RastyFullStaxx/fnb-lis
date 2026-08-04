@@ -20,6 +20,7 @@ import { adminRoutes, userAdminRoutes } from "./routes/admin";
 import { deviceRoutes } from "./routes/devices";
 import { masterRoutes } from "./routes/master";
 import { areaRoutes } from "./routes/areas";
+import { bottleKeepRoutes } from "./routes/bottle-keep";
 import { locationItemRoutes } from "./routes/location-items";
 import { countRoutes } from "./routes/counts";
 import { purchaseRoutes } from "./routes/purchases";
@@ -226,6 +227,7 @@ export function createApp() {
   const locationScoped = new Hono<AppEnv>()
     .use(requireAuth, requireLocationAccess)
     .route("/", areaRoutes)
+    .route("/", bottleKeepRoutes)
     .route("/", locationItemRoutes)
     .route("/", countRoutes)
     .route("/", purchaseRoutes)

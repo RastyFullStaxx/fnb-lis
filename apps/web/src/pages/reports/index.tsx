@@ -142,6 +142,13 @@ const SECTIONS: Array<{ title: string; blurb: string; reports: Report[] }> = [
         description: "Computed current stock with cost and retail valuation.",
       },
       {
+        path: "bottle-keep",
+        icon: ClipboardList,
+        title: "Bottle Keep & Forfeited Inventory",
+        description:
+          "Bottles a guest paid for and left behind — who holds what, what has passed its keep date, and forfeiting it back to stock at zero cost.",
+      },
+      {
         path: "blank-forms",
         icon: ClipboardList,
         title: "Blank Entry Forms",
