@@ -3806,3 +3806,123 @@ one-row table above "3 bottles on record" read as a contradiction.
 
 > `verify:security` fails wholesale under `FNB_REQUIRE_MFA=0` — that flag
 > disables the gate seven of its assertions exist to test. Run it without.
+
+## 2026-08-04 — Audit pass: impeccable + design-motion-principles
+
+Ran the impeccable deterministic detector (0 findings) plus two isolated
+assessments — a design review of the web app and a backend correctness/security
+review — and applied the motion skill's audit lens weighted Emil-primary /
+Jakub-secondary (SaaS dashboard; DESIGN.md's "state, not theater" already
+encodes that philosophy).
+
+### Cross-establishment leaks — the serious ones
+
+Both are the same shape: a route that validates a foreign key on the *create*
+path and trusts it on another path.
+
+- **`routes/sales.ts` — `POST /sales/:id/correct`.** `saleCorrect` extends
+  `saleCreate`, so it carries `locationItemId` and `menuItemId`, and the handler
+  wrote both straight through. A correction could point a sale at another
+  establishment's catalog row: `locationId` said this location, the FK said
+  someone else's. The Sales report joins `locationItem`, so that establishment's
+  item name, size and category would print on this one's report and export, and
+  the Full Audit would value usage against a row this location doesn't own.
+  Now checked exactly as `POST /sales` checks it.
+- **`routes/imports.ts` — the match/commit path.** `PUT .../rows/:rowId` accepted
+  any `matchedLocationItemId`, and commit re-read them with **no** location
+  filter, then took the price from the foreign row. Both lookups are now scoped.
+  Scoping alone wasn't enough: both price paths fall back to zero on a miss
+  (`li?.retail ?? 0`), so filtering would have converted a cross-tenant read into
+  a silent ₱0 commit — corrupt figures in the reconciliation instead of a leak.
+  A miss now refuses the batch and names the row.
+
+**Verified by attack, not by inspection.** A Main Bar sale corrected with a
+Kitchen catalog row → **404 blocked**; the same correction with Main Bar's own
+item → **201, still works**.
+
+### Other backend fixes
+
+- **`routes/settings.ts` — `PUT /item-unit-default/:itemId` had no `writeGuard`,**
+  while both siblings had one and its own comment claimed "gated master.write".
+  Any STAFF or read-only account with client access could rewrite the
+  establishment-wide default display unit. Verified after: STAFF **403**,
+  AUDIT_VIEWER **403**, MANAGER **200**.
+- **`routes/location-items.ts` — the re-attach branch wrote cost and retail with
+  no `$transaction` and no ActivityLog,** while the create branch directly below
+  logs and `PUT /location-items/:id` logs a full before/after. "Archive the item,
+  re-add it at a different cost" was the one way to move a valuation input with
+  nothing recorded. Now logged as `locationItem.priceChange` in the same
+  transaction, with the same before/after shape, so the dashboard counter and
+  the Activity filter pick it up like any other price move.
+
+### UI — load failures rendering as empty states
+
+The pattern behind all three: the codebase already has the right answer
+(`queryFailed` / `TableFailure`), and these screens predate it.
+
+- **`pages/sales/index.tsx`** had no error branch at all — a failed fetch fell
+  through to "Nothing recorded yet for this tab.", telling an encoder mid-shift
+  that the sales they just entered are gone.
+- **`pages/purchases/index.tsx`** — the Returned Bottles tab did the same while
+  the Deliveries tab on the *same page* used `queryFailed`.
+- **`pages/counts/session.tsx`** tested `isPending` before `isError`. A paused
+  query stays `pending`, so a count opened on bad bar wifi sat on a skeleton
+  indefinitely with no message and nothing to press — on the screen an encoder
+  lives in all shift. The error copy also blamed the record ("it may have been
+  removed") for what was usually a network fault; that wording is now reserved
+  for an actual 404.
+
+### Motion
+
+- **One easing token.** DESIGN.md commits to `cubic-bezier(0.16, 1, 0.3, 1)`,
+  but it existed only as a literal repeated across eight `@keyframes`. Every
+  *utility-class* transition therefore ran on Tailwind's default ease-in-out —
+  half the app honoured the contract, half didn't, and nothing could tell.
+  Now `--ease-brand`, and also `--default-transition-timing-function`, so every
+  `transition-*` inherits it. The six overlay primitives opt in explicitly
+  (keyframe animations resolve `--tw-ease`, which only an `ease-*` utility sets).
+- **The sheet was 500ms open / 300ms on ease-in-out** — stock shadcn, never
+  brought in line with the committed 200ms. It drives the mobile sidebar and the
+  Stocky panel, so half a second sat between tapping the hamburger and being able
+  to tap a nav link. Now 200ms in / 150ms out on the brand curve (verified live
+  on the real sheet).
+
+### Hit targets — meeting the floor without undoing a client decision
+
+`size="xs"` measures **27px** at this app's 18px root. That clears WCAG 2.2's
+24px minimum but not DESIGN.md's stricter 32px floor — and shrinking these chips
+was an explicit request ("too part apart and too bulky looking"), so making them
+taller would have reversed it. Instead the *target* grew and the *button* did
+not: a transparent `::after` on `xs`/`icon-xs`. Vertical only on `xs` — those sit
+`gap-1` (4.5px) apart and a sideways expansion would fire the neighbour.
+
+Measured by hit-testing every pixel row, not by reading the CSS: painted **27px**
+(unchanged), effective target **35px**, **0** overlapping points with the adjacent
+button. A first attempt at 3px measured only 31px effective and was still under
+the floor — hence 5px.
+
+### Verified
+
+- `verify:seed` PASS · `verify:sync` PASS · `verify:security` PASS ·
+  `verify:mirror` MIRROR MATCHES THE SERVER, both golden anchors exact.
+- Typechecks clean across all three workspaces; web build clean.
+- Detector: 0 findings before and after.
+
+### Noted, not fixed
+
+From the backend review, worth a decision rather than a silent patch:
+
+- **TOCTOU across the commit boundary** (`counts.ts`, `purchases.ts`,
+  `transfers.ts`): the parent-status check sits outside the transaction that
+  inserts the line, so a desktop replaying its outbox while a manager commits can
+  land a line on a COMMITTED session. Fix is to re-assert status inside the same
+  `$transaction` and make the commit flip an `updateMany` compare-and-set.
+- **Unvalidated `businessDate` on the import upload** (`imports.ts`): the only
+  unvalidated business date on the server. `2026-13-45` commits sales that appear
+  in no audit period, silently.
+- **Cross-tenant access deletion** (`admin.ts`): `PUT /users/:id/access`
+  `deleteMany({ userId })` is unscoped, so an OWNER can strip a shared user's
+  access to an establishment they don't administer.
+- Unvalidated `supplierId` on purchases; unlogged draft-line deletes and
+  import-row approvals; one `toFixed` in a `menus.ts` log string; unbounded
+  `findMany` in `verifyChain()`.
