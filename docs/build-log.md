@@ -4089,3 +4089,50 @@ Later cleanups in this session touched business rows only.
 - `verify:seed` · `verify:sync` · `verify:security` · `verify:races` ·
   `verify:mirror` all pass, both golden anchors exact. Three workspaces
   typecheck. Desktop repackaged.
+
+## 2026-08-04 — Dev database re-seeded (audit chain repaired)
+
+Requested after the previous entry's disclosure. Two things were worth knowing
+first, and neither was obvious:
+
+- **The seed never wipes.** It is entirely upsert-based, so running it against
+  the existing file would have changed nothing and repaired nothing. A real
+  re-seed means rebuilding the file.
+- **The seed does not recreate everything.** `UserMfa`, `Device`, `DevicePin`,
+  `BottleKeep` and `LocationArea` have no seed path, so a rebuild loses them for
+  good.
+
+Sequence: `npm run backup` (verified: integrity ok, 507 activity rows, 1.4 MB) →
+old file moved aside rather than deleted (`data/pre-reseed-20260804-195357-*`) →
+`prisma migrate deploy` → `prisma/seed.ts` → `seal-history --confirm`.
+
+`prisma migrate reset` stays off-limits, so the rebuild is the file-plus-migrate
+route.
+
+**The seal step is not optional and is easy to miss.** Straight after seeding,
+`verifyChain` reported `ok: true` — but with `checked: 0` and `unchained: 14`.
+The seed writes ActivityLog rows without a `seq`, so a "clean" verdict there
+means *nothing was checked*, not *everything verified*. After sealing:
+`ok: true, checked: 15, unchained: 0, gaps: 0`, seq 1–15 contiguous.
+
+Anchor worth keeping outside the database, per the tool's own advice:
+`seq 15  41428f5f793e0b36dbe893e01a7412c36b2349b51a65e71008ee753508a8d138`
+
+### Verified on the rebuilt database
+
+- Golden fixtures reproduce **on the dev database itself**, not only in the
+  throwaway harnesses: −330.6857142857142 / −869.5714285714284 and −537 / −1410.
+- All five harnesses pass. Garnish is present in the seeded `productTypes`.
+- Web app signs in and renders (as `manager`).
+
+### Two consequences to expect
+
+- **ADMIN and OWNER hit the 2FA enrolment screen on first sign-in.** `UserMfa`
+  was wiped and `MFA_REQUIRED_ROLES = ["ADMIN", "OWNER"]`. `FNB_REQUIRE_MFA=0`
+  relaxes the *server* gate only — the web app still renders the setup screen for
+  those two roles. `manager` and below sign in normally.
+- **The desktop needs re-registering.** Both `Device` rows ("Front bar PC",
+  "Provisioning rehearsal PC") and all four `DevicePin` rows are gone.
+
+Old data recoverable from `data/pre-reseed-20260804-195357-fnb.db` or
+`data/backups/fnb-20260804-195339.db`.
