@@ -63,7 +63,7 @@ export function useWeighPreview(item: LocationItem | null, scaleText: string, tr
       const unitName = resolved.tareWeightUnit ?? fallbackUnit;
       const scale = Number(scaleText);
       if (scaleText === "" || !Number.isFinite(scale)) {
-        return { ready: true as const, entered: false as const, mode, tare, density: null, unit: unitName };
+        return { ready: true as const, entered: false as const, mode, tare, density: null, unit: unitName, fromLocal: resolved.fromLocal };
       }
       // Blocking check first — SCALE_BELOW_TARE only needs scale/tare, so it
       // doesn't wait on the quantity below.
@@ -93,6 +93,7 @@ export function useWeighPreview(item: LocationItem | null, scaleText: string, tr
         mode,
         tare,
         density: null,
+        fromLocal: resolved.fromLocal,
         unit: unitName,
         scale,
         remaining,
@@ -117,6 +118,7 @@ export function useWeighPreview(item: LocationItem | null, scaleText: string, tr
         mode,
         tare,
         density,
+        fromLocal: resolved.fromLocal,
         unit: resolved.tareWeightUnit ?? fallbackUnit,
       };
     }
@@ -150,7 +152,21 @@ export function WeighPreviewStrip({
   contentUnit: string;
 }) {
   const me = useMe();
-  const canEditWeights = can((me.data?.user.role ?? "AUDIT_VIEWER_LIMITED") as Role, "prices.edit");
+  const role = (me.data?.user.role ?? "AUDIT_VIEWER_LIMITED") as Role;
+  const canEditWeights = can(role, "prices.edit");
+  /**
+   * May this viewer see the constants themselves?
+   *
+   * Yes when the figures are this location's OWN weighing (`fromLocal`) — they
+   * measured them, they own them. Yes for an LIS administrator regardless,
+   * because diagnosing "why does this bottle compute wrong" is impossible
+   * without the numbers, and `admin.manage` is ADMIN-only — never the client's
+   * own owner or manager, who are exactly who the rule is about.
+   *
+   * Otherwise the figures belong to the Main database and stay there.
+   */
+  const showsMainValues =
+    (preview?.ready === true && preview.fromLocal === true) || can(role, "admin.manage");
   if (!preview) return null;
   if (!preview.ready) {
     return (
@@ -168,10 +184,21 @@ export function WeighPreviewStrip({
     return (
       <p className="text-sm text-muted-foreground tnum">
         {/* The constants are LIS's own calibration data — a counter needs the
-            RESULT, not the inputs (client decision 2026-07-25). */}
-        {preview.mode === "NET"
-          ? `Empty weight ${preview.tare} ${preview.unit} · weighed by net weight — type the scale weight.`
-          : `Empty weight ${preview.tare} ${preview.unit} · Liquid Weight ×${preview.density} — type the scale weight.`}
+            RESULT, not the inputs (client decision 2026-07-25).
+
+            And where the figures come from the MAIN database rather than this
+            location's own weighing, the numbers themselves are withheld (client
+            decision 2026-08-04: "ang information lang makuha ni User ay kung ano
+            lang nakalagay sa Local Database account nila"). The calculation
+            stays on screen either way — hiding how the content was derived was
+            the alternative, and it would cost the transparency that makes a
+            weighed count checkable. Only the borrowed constants are hidden, with
+            the way to own them stated. */}
+        {!showsMainValues
+          ? "Using the standard weights for this bottle — set your own in the Local Database to see the figures. Type the scale weight."
+          : preview.mode === "NET"
+            ? `Empty weight ${preview.tare} ${preview.unit} · weighed by net weight — type the scale weight.`
+            : `Empty weight ${preview.tare} ${preview.unit} · Liquid Weight ×${preview.density} — type the scale weight.`}
       </p>
     );
   }
@@ -196,9 +223,16 @@ export function WeighPreviewStrip({
           <div className="min-w-0 flex-1 space-y-0.5 tnum text-sm">
             <div>
               <span className="text-muted-foreground">
+                {/* Same rule, applied to the working: the SHAPE of the sum is
+                    shown so the result can be understood, but a borrowed
+                    constant is named rather than printed. */}
                 {preview.mode === "NET"
-                  ? `scale ${fmt(preview.scale)} − empty ${fmt(preview.tare)} ${preview.unit}`
-                  : `(scale ${fmt(preview.scale)} − empty ${fmt(preview.tare)} ${preview.unit}) × Liquid Weight ${fmt(preview.density)}`}
+                  ? showsMainValues
+                    ? `scale ${fmt(preview.scale)} − empty ${fmt(preview.tare)} ${preview.unit}`
+                    : `scale ${fmt(preview.scale)} − standard empty weight`
+                  : showsMainValues
+                    ? `(scale ${fmt(preview.scale)} − empty ${fmt(preview.tare)} ${preview.unit}) × Liquid Weight ${fmt(preview.density)}`
+                    : `(scale ${fmt(preview.scale)} − standard empty weight) × standard liquid weight`}
               </span>{" "}
               ={" "}
               {/* Keyed on the result so every recomputation visibly ticks (DESIGN.md motion). */}

@@ -47,7 +47,40 @@ import {
  * out of date while a tab is left open overnight.
  */
 
-const STATUSES = ["ACTIVE", "CLAIMED", "FORFEITED"] as const;
+const STATUSES = ["ACTIVE", "CLAIMED", "FORFEITED", "VOID"] as const;
+
+/**
+ * What each status looks like, and why.
+ *
+ * Four outcomes that mean four different things, so they must not share one
+ * grey pill — a glance down this column is how somebody finds the row that
+ * needs them.
+ *
+ *  - Overdue    destructive  the only row that wants action today
+ *  - On keep    outline      normal, quiet, the majority
+ *  - Claimed    success      resolved the way everyone wanted
+ *  - Forfeited  warning      resolved, but the guest lost the bottle and stock
+ *                            moved — not a failure, not a non-event either
+ *  - Void       secondary    recorded in error; deliberately the dullest thing
+ *                            on screen, and it counts toward nothing
+ *
+ * Colour is never the only carrier: each returns its own words too, so this
+ * still reads correctly in the printed sheet and to anyone who cannot
+ * distinguish the hues.
+ */
+function statusLook(
+  status: string,
+  dueForForfeit: boolean,
+): { label: string; variant: "outline" | "success" | "warning" | "destructive" | "secondary" } {
+  if (status === "ACTIVE") {
+    return dueForForfeit
+      ? { label: "Overdue", variant: "destructive" }
+      : { label: "On keep", variant: "outline" };
+  }
+  if (status === "CLAIMED") return { label: "Claimed", variant: "success" };
+  if (status === "FORFEITED") return { label: "Forfeited", variant: "warning" };
+  return { label: "Void", variant: "secondary" };
+}
 
 export function BottleKeepPage() {
   const location = useCurrentLocation();
@@ -91,8 +124,9 @@ export function BottleKeepPage() {
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-foreground" />
           <p className="text-sm">
             <span className="font-medium">
-              {data.totals.dueForForfeit} {data.totals.dueForForfeit === 1 ? "bottle has" : "bottles have"} passed
-              their keep date.
+              {data.totals.dueForForfeit === 1
+                ? "1 bottle has passed its keep date."
+                : `${data.totals.dueForForfeit} bottles have passed their keep date.`}
             </span>{" "}
             Forfeiting one returns it to bar stock at zero cost. Nothing moves until someone here says so.
           </p>
@@ -154,8 +188,8 @@ export function BottleKeepPage() {
             </TableHeader>
             <TableBody>
               {data.rows.map((r) => (
-                <TableRow key={r.id}>
-                  <TableCell className="font-medium">
+                <TableRow key={r.id} className={r.status === "VOID" ? "opacity-55" : undefined}>
+                  <TableCell className={r.status === "VOID" ? "font-medium line-through" : "font-medium"}>
                     {r.customerName}
                     {r.customerContact && (
                       <span className="ml-2 text-xs text-muted-foreground">{r.customerContact}</span>
@@ -184,15 +218,20 @@ export function BottleKeepPage() {
                     )}
                   </TableCell>
                   <TableCell>
-                    <Badge variant={r.dueForForfeit ? "destructive" : "outline"}>
-                      {r.status.charAt(0) + r.status.slice(1).toLowerCase()}
-                    </Badge>
+                    {(() => {
+                      const look = statusLook(r.status, r.dueForForfeit);
+                      return <Badge variant={look.variant}>{look.label}</Badge>;
+                    })()}
                   </TableCell>
                   <TableCell className="text-right print:hidden">
                     {r.status === "ACTIVE" && (
                       <div className="flex justify-end gap-1">
+                        {/* "Mark claimed", not "Claimed": a button says what
+                            pressing it DOES. "Claimed" reads as the row's
+                            current state, so it looks like a label that has
+                            somehow become clickable. */}
                         <Button size="xs" variant="outline" onClick={() => void act("claim", r.id, r.customerName)}>
-                          Claimed
+                          Mark claimed
                         </Button>
                         {/* Only offered once it is actually due — the server
                             refuses an early forfeit, and a button that exists
@@ -203,7 +242,7 @@ export function BottleKeepPage() {
                             variant="destructive"
                             onClick={() => void act("forfeit", r.id, r.customerName)}
                           >
-                            Forfeit
+                            Forfeit now
                           </Button>
                         )}
                       </div>

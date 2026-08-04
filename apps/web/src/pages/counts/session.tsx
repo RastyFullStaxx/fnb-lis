@@ -10,6 +10,7 @@ import { useAreas, useLocationId, useLocationItems, useTrailingAverage } from "@
 import { useCountMutations, useCountSession } from "@/api/ops";
 import { variantLabel, type CountLine, type LocationItem } from "@/api/types";
 import { ApiError } from "@/api/http";
+import { BottleKeepInline } from "@/components/bottle-keep-inline";
 import { ItemCombobox } from "@/components/item-combobox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { WeightReport } from "@/pages/stock/weight-report";
@@ -464,6 +465,12 @@ function OpenSession({ session }: { session: SessionWithLines }) {
               autoFocus
             />
           </div>
+
+          {/* Sits between the item and the quantity field on purpose: the
+              warning has to be read BEFORE the number is typed, and after it
+              is the one place it would be useless. Outside the Enter-to-save
+              path — see BottleKeepInline. */}
+          <BottleKeepInline item={item} countDate={session.countDate} />
 
           {weighable && (
             <Tabs value={activeMode} onValueChange={(v) => setMode(v as "FULL" | "WEIGH" | "OPEN")}>

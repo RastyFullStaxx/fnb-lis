@@ -4,6 +4,7 @@ import { zValidator } from "../lib/validate";
 import { prisma } from "../db";
 import { AppError } from "../lib/errors";
 import { logActivity } from "../services/activity";
+import { replay } from "../lib/idempotency";
 import { requirePermission, type AppEnv } from "../middleware/auth";
 
 /**
@@ -24,6 +25,16 @@ import { requirePermission, type AppEnv } from "../middleware/auth";
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 const keepCreate = z.object({
+  /**
+   * Client-supplied id, like every other create route (lib/idempotency.ts).
+   *
+   * `/bottle-keeps` is not in the outbox's NEVER_QUEUE list, so an offline
+   * desktop queues it and replays on reconnect. Without an id a lost response
+   * means the retry creates a SECOND bottle for the same guest — and since the
+   * whole design is one row per bottle, a duplicate is not a cosmetic problem:
+   * it is a bottle the bar thinks it owes someone.
+   */
+  id: z.string().min(1).optional(),
   locationItemId: z.string().min(1),
   areaId: z.string().min(1).optional(),
   customerName: z.string().trim().min(1, "Whose bottle is it?").max(120),
@@ -55,7 +66,21 @@ export const bottleKeepRoutes = new Hono<AppEnv>()
    */
   .get("/bottle-keeps", async (c) => {
     const location = c.get("location");
-    const status = c.req.query("status");
+    /**
+     * Validated, not passed through.
+     *
+     * An unrecognised value used to filter on itself and return an empty list —
+     * so a typo, or a caller sending the UI's own "ALL" sentinel, produced
+     * "no bottles on keep" rather than an error. On a register whose job is to
+     * say what the house is holding, silently answering "nothing" is the worst
+     * available failure.
+     */
+    const rawStatus = c.req.query("status");
+    const KEEP_STATUSES = ["ACTIVE", "CLAIMED", "FORFEITED", "VOID"];
+    if (rawStatus && !KEEP_STATUSES.includes(rawStatus)) {
+      throw new AppError(400, `Unknown status "${rawStatus}". Use one of: ${KEEP_STATUSES.join(", ")}.`);
+    }
+    const status = rawStatus;
     const customer = c.req.query("customer");
     const today = new Date().toISOString().slice(0, 10);
 
@@ -89,23 +114,41 @@ export const bottleKeepRoutes = new Hono<AppEnv>()
     // guests must not read as one line of ten.
     const byCustomer = new Map<string, { customerName: string; bottles: number; active: number; dueForForfeit: number }>();
     for (const r of rows) {
-      const agg = byCustomer.get(r.customerName) ?? {
+      // Grouped on a normalised key, displayed with the name as typed.
+      // "Lourd B.", "lourd b." and "Lourd  B." are one guest; splitting them
+      // would understate how many bottles somebody is holding, which is
+      // precisely the number the client wants to watch.
+      const key = r.customerName.trim().toLowerCase().replace(/\s+/g, " ");
+      const agg = byCustomer.get(key) ?? {
         customerName: r.customerName,
         bottles: 0,
         active: 0,
         dueForForfeit: 0,
       };
-      agg.bottles += 1;
-      if (r.status === "ACTIVE") agg.active += 1;
-      if (r.dueForForfeit) agg.dueForForfeit += 1;
-      byCustomer.set(r.customerName, agg);
+      // VOID rows are excluded from every tally.
+      //
+      // A voided keep is one that was recorded in error — it is not a bottle
+      // this guest holds, and counting it inflates the very number the client
+      // watches for fraud. It stays in `rows` so the mistake and its reason
+      // remain auditable; it just does not add up to anything.
+      if (r.status !== "VOID") {
+        agg.bottles += 1;
+        if (r.status === "ACTIVE") agg.active += 1;
+        if (r.dueForForfeit) agg.dueForForfeit += 1;
+      }
+      byCustomer.set(key, agg);
     }
 
     return c.json({
       rows,
-      byCustomer: [...byCustomer.values()].sort((a, b) => b.bottles - a.bottles),
+      byCustomer: [...byCustomer.values()]
+        // A guest whose every row was voided would otherwise sit in the list at
+        // zero, reading as somebody with bottles rather than somebody with none.
+        .filter((c) => c.bottles > 0)
+        .sort((a, b) => b.bottles - a.bottles),
       totals: {
-        bottles: rows.length,
+        // Same rule as the per-guest tally above — a voided keep is not a bottle.
+        bottles: rows.filter((r) => r.status !== "VOID").length,
         active: rows.filter((r) => r.status === "ACTIVE").length,
         dueForForfeit: rows.filter((r) => r.dueForForfeit).length,
       },
@@ -134,9 +177,19 @@ export const bottleKeepRoutes = new Hono<AppEnv>()
     if (!expiresOn) throw new AppError(400, "Set how long the bottle is kept, or an expiry date");
     if (expiresOn < body.keptDate) throw new AppError(400, "The expiry date is before the date kept");
 
+    // Replay of an offline push: the row is already here, answer 200 with it
+    // rather than creating a twin.
+    const already = await replay(
+      body.id,
+      (id) => prisma.bottleKeep.findUnique({ where: { id } }),
+      (row) => row.locationId === location.id,
+    );
+    if (already) return c.json(already, 200);
+
     const keep = await prisma.$transaction(async (tx) => {
       const created = await tx.bottleKeep.create({
         data: {
+          id: body.id,
           locationId: location.id,
           areaId: body.areaId ?? null,
           locationItemId: li.id,
@@ -197,6 +250,51 @@ export const bottleKeepRoutes = new Hono<AppEnv>()
       return row;
     });
     return c.json(updated);
+  })
+
+  /**
+   * Recorded in error — void it.
+   *
+   * VOID, never a hard delete: a bottle keep is a claim against the house, and
+   * "there was never a bottle" and "the bottle was cancelled, by this person,
+   * for this reason" are different statements. The fraud this register exists to
+   * catch would be trivial if a bartender could simply remove the row.
+   *
+   * Only an ACTIVE keep can be voided. A forfeited one already moved stock, so
+   * undoing it would mean reversing the Forfeit too — a different operation with
+   * a different audit story, deliberately not hidden behind this one.
+   */
+  .post("/bottle-keeps/:id/void", writeGuard, zValidator("json", z.object({ reason: z.string().trim().min(3, "A reason is required") })), async (c) => {
+    const location = c.get("location");
+    const user = c.get("user")!;
+    const { reason } = c.req.valid("json");
+    const keep = await prisma.bottleKeep.findUnique({ where: { id: c.req.param("id") } });
+    if (!keep || keep.locationId !== location.id) throw new AppError(404, "Bottle keep not found");
+    if (keep.status === "FORFEITED") {
+      throw new AppError(409, "This bottle was already forfeited into stock — void the returned-stock record instead");
+    }
+    if (keep.status === "VOID") throw new AppError(409, "This bottle keep is already void");
+
+    const row = await prisma.$transaction(async (tx) => {
+      const updated = await tx.bottleKeep.update({
+        where: { id: keep.id },
+        data: { status: "VOID", voidReason: reason },
+      });
+      await logActivity(
+        {
+          user,
+          clientId: location.clientId,
+          locationId: location.id,
+          action: "bottleKeep.void",
+          entity: "BottleKeep",
+          entityId: keep.id,
+          summary: `Voided bottle keep for ${keep.customerName}: ${reason}`,
+        },
+        tx,
+      );
+      return updated;
+    });
+    return c.json(row);
   })
 
   /**

@@ -3553,3 +3553,184 @@ routes and the forfeit-on-expiry path. SPA 200, `host.log` clean.
 - **Recording a keep from the count screen.** He described entry "pag pinasok yan
   sa count"; today it is recorded on its own page. Worth confirming which he
   actually wants before wiring it into the counting rhythm.
+
+### Bottle Keep on the count screen (same day)
+
+Client req: "pag pinasok yan sa count". Wired in, with the edge cases worked out
+BEFORE writing it — two of them were real bugs.
+
+#### The one that protects the numbers
+
+**A kept bottle must not be counted.** It sits on the shelf, but the sale that
+paid for it already took it out of stock. Count it and `end` is one too high, so
+usage falls by one, so the Full Audit reports an **over that never happened** —
+followed by a matching short when the guest returns and drinks it with no sale
+behind it. Nothing in the arithmetic can detect that; only the person holding
+the shelf can.
+
+Fixed with **no change to the reconciliation**: picking an item that has active
+keeps shows, above the quantity field, how many bottles are on keep, whose they
+are, and why they must be left out. The warning sits between the item and the
+quantity because after the number is typed is the one place it would be useless.
+
+#### Two real bugs found while listing edge cases
+
+1. **Offline replay created duplicate bottles.** `/bottle-keeps` is not in the
+   outbox's `NEVER_QUEUE`, so a desktop queues it — and the route took no
+   client-supplied id. A lost response meant the retry created a SECOND bottle
+   for the same guest. Since the whole design is one row per bottle, that is not
+   cosmetic: it is a bottle the bar thinks it owes someone. Now takes an `id` and
+   goes through `replay()` like every other create route — the invariant this
+   codebase already had, which I had broken. Verified: same id twice → 201 then
+   200, one row.
+2. **Guest-name variants split the roll-up.** "Lourd B." / "lourd b." /
+   "Lourd  B." counted as three guests, understating how many bottles one person
+   holds — exactly the number the client wants to watch, and trivially gamed.
+   Grouped on a normalised key, displayed as typed. Verified: four variants →
+   one row of 4.
+
+#### Also added
+
+**A void route**, because there was no way to correct a mis-entered keep and a
+bartender typing the wrong guest needs one. VOID with a reason, never a hard
+delete — "there was never a bottle" and "cancelled by this person for this
+reason" are different statements, and the fraud this register exists to catch
+would be trivial if a row could just disappear. A FORFEITED keep cannot be
+voided this way: it already moved stock, so undoing it means reversing the
+Forfeit too — a different operation with a different audit story.
+
+#### Decided against: forfeiting from the count screen
+
+The warning belongs at count time; the forfeit does not.
+
+- **Different act, different person.** Counting is fast and repetitive.
+  Forfeiting takes a guest's property and converts it to house stock — a
+  commercial decision, made deliberately, not mid-rhythm.
+- **It writes stock.** A forfeit creates a Forfeit that moves the reconciliation.
+  Doing that inside an uncommitted count session mixes two ledgers at the moment
+  someone is least likely to be reading carefully.
+- **It is a calendar event, not a count event.** A bottle expires whether or not
+  anyone is counting.
+- **It is the fraud path the client named.** He raised bartenders and bottle
+  keeps unprompted. Forfeit-in-the-count-loop is the fastest possible route from
+  a guest's bottle to pourable stock, for the person with physical access. It
+  stays on the register, where it is visible and deliberate.
+
+#### Edge cases identified and NOT yet handled
+
+- **Guest returns after a forfeit.** No un-forfeit path; the bottle is already
+  stock. Needs a decision from the client, not a guess.
+- **Expiry near midnight in +08.** `dueForForfeit` compares UTC dates, so between
+  00:00 and 08:00 Manila a bottle due "today" reads as due tomorrow. Same
+  convention as the rest of the app's business dates; noted rather than changed
+  in isolation.
+- **A keep is not linked to the count session** it was entered from. Deliberate
+  — voiding a count must not void a guest's bottle — but it means the only trail
+  is the activity log.
+- **Automatic alerting.** The register banners overdue bottles; nothing notifies.
+
+### Verified
+
+- Count screen: nothing before an item is picked; after picking Jack Daniel's,
+  "3 bottles are on keep for a guest — do not count them. Lourd B. (2),
+  Ramon D." plus the explanation and the Bottle keep button.
+- Idempotency, name grouping and void all verified live; test rows voided with a
+  reason rather than deleted, throwaway count session voided.
+- `verify:seed` PASS · `verify:sync` PASS · anchors unchanged · typechecks clean
+  across all three workspaces · build clean.
+- Desktop rebuilt, reinstalled, carrying the warning, the dialog, the void route
+  and the replay guard. SPA 200, `host.log` clean.
+
+### Bottle Keep — status colour, action wording, and a simulation pass
+
+Asked to colour-code the statuses and fix the action word, then simulate the
+feature and hunt bugs. The simulation found three the eye would not have.
+
+#### Bugs found
+
+1. **Voided keeps still counted as bottles.** `agg.bottles += 1` ran for every
+   row regardless of status, so a keep recorded in error and voided still added
+   to "how many bottles this guest holds" — the exact number the client watches
+   for fraud, and trivially inflated by entering and voiding. Now excluded from
+   `bottles`, `active`, `dueForForfeit` and the totals; the row stays in the list
+   so the mistake and its reason remain auditable. Measured: 10 rows, 6 void →
+   totals 4.
+2. **A guest whose every keep was voided still appeared** in the roll-up at zero,
+   reading as somebody holding bottles rather than somebody holding none. Now
+   filtered out.
+3. **An unknown `?status=` silently returned an empty list.** A typo, or a caller
+   sending the UI's own "ALL" sentinel, produced "no bottles on keep" instead of
+   an error — on a register whose job is to say what the house is holding,
+   silently answering "nothing" is the worst available failure. Now 400 with the
+   valid values listed.
+
+Also a grammar bug on the banner: "1 bottle has passed **their** keep date".
+
+#### Status colour
+
+Four outcomes meant four different things and shared one grey pill. A glance
+down that column is how somebody finds the row that needs them:
+
+| | | |
+|---|---|---|
+| Overdue | destructive | the only row wanting action today |
+| On keep | outline | normal, quiet, the majority |
+| Claimed | success | resolved the way everyone wanted |
+| Forfeited | warning | resolved, but the guest lost the bottle and stock moved |
+| Void | secondary + struck through | recorded in error, counts toward nothing |
+
+Colour is never the only carrier — each state returns its own word, so the
+printed sheet and anyone who cannot separate the hues still reads it correctly.
+`VOID` was also missing from the status filter, so voided rows could be seen
+under "All" but never isolated.
+
+#### Action wording
+
+"Claimed" → **"Mark claimed"**, and "Forfeit" → **"Forfeit now"**. A button says
+what pressing it does; "Claimed" reads as the row's current state, so it looked
+like a label that had somehow become clickable.
+
+#### Edge cases exercised, all already correct
+
+| probe | result |
+|---|---|
+| expiry before kept date | 400 "The expiry date is before the date kept" |
+| neither expiry nor days | 400 "Set how long the bottle is kept, or an expiry date" |
+| blank guest name | 400 "Customer name: Whose bottle is it?" |
+| item from another location | 404 "Item not found at this location" |
+| claim twice | 409 "This bottle is already claimed" |
+| forfeit a claimed bottle | 409 "This bottle is already claimed" |
+| guest search, any case | LOURD / lourd / Lourd all return the same 2 |
+
+#### Also in this pass — Local vs Main Database (client answer #4)
+
+His rule: "ang information lang makuha ni User ay kung ano lang nakalagay sa
+Local Database account nila". The weigh screen showed the resolved tare and
+liquid weight regardless of where they came from, so a client saw Main database
+constants whenever they had not set their own.
+
+The calculation stays on screen — hiding it was the alternative and it costs the
+transparency that makes a weighed count checkable — but a borrowed constant is
+now NAMED rather than printed: "(scale 900 − standard empty weight) × standard
+liquid weight = …", with "set your own in the Local Database to see the figures".
+An LIS ADMIN still sees the numbers (`admin.manage`, ADMIN-only), because
+diagnosing a bad master weight is impossible without them and the rule is about
+the client's own users.
+
+### Verified
+
+- Colours render: Overdue `bg-destructive`, On keep outline. Actions read
+  "Mark claimed" / "Forfeit now". Banner singular/plural correct.
+- `verify:seed` PASS · `verify:sync` PASS · typechecks clean across all three
+  workspaces · build clean.
+- Desktop rebuilt, installed and launched.
+
+### Still open
+
+- **Garnish (client answer #2, "parehas")** — `MODULE_PRODUCT_TYPES` maps
+  `BAR: ["Beverage"]` and `KITCHEN: ["Food"]`, so a garnish is invisible to a
+  bar-only location. Not started.
+- **Report tiers (answer #3)** — approach agreed (explicit enabled-reports set
+  per subscription, tier as a creation preset); the per-tier lists still need
+  Jj's checklist.
+- Guest returns after a forfeit; UTC-vs-+08 expiry boundary; automatic alerting.
