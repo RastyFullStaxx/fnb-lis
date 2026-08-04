@@ -19,6 +19,7 @@ import { pinRoutes, pinAdminRoutes } from "./routes/pin";
 import { adminRoutes, userAdminRoutes } from "./routes/admin";
 import { deviceRoutes } from "./routes/devices";
 import { masterRoutes } from "./routes/master";
+import { areaRoutes } from "./routes/areas";
 import { locationItemRoutes } from "./routes/location-items";
 import { countRoutes } from "./routes/counts";
 import { purchaseRoutes } from "./routes/purchases";
@@ -224,6 +225,7 @@ export function createApp() {
   // Location-scoped routes: auth + client access enforced once here.
   const locationScoped = new Hono<AppEnv>()
     .use(requireAuth, requireLocationAccess)
+    .route("/", areaRoutes)
     .route("/", locationItemRoutes)
     .route("/", countRoutes)
     .route("/", purchaseRoutes)

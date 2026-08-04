@@ -284,8 +284,37 @@ model Location {
   transfersOut  Transfer[]       @relation("TransferFrom")
   transfersIn   Transfer[]       @relation("TransferTo")
   devices       Device[]
+  areas         LocationArea[]
 
   @@index([clientId])
+}
+
+/// Where inside the establishment stock physically sits.
+///
+/// Straight off the client's own paper sheet (June 2026): every item row has a
+/// column per area — MAIN BAR, COCKTAIL LOUNGE, BEER HALL, STOCK ROOM — tallied
+/// separately, and the number in the margin is their sum. Collapsing that to one
+/// figure loses the only thing that makes a variance actionable: WHICH shelf to
+/// recount.
+///
+/// Optional throughout. A location that does not split its stock never sees an
+/// area and every line carries null, which is exactly how every existing count
+/// already looks.
+model LocationArea {
+  id         String     @id @default(cuid())
+  locationId String
+  location   Location   @relation(fields: [locationId], references: [id])
+  name       String
+  /// Print/display order — the paper sheet has a fixed column order and the
+  /// screen must match it, or checking one against the other is guesswork.
+  sortOrder  Int        @default(0)
+  status     String     @default("ACTIVE") // ACTIVE | ARCHIVED
+  createdAt  DateTime   @default(now())
+
+  countLines CountLine[]
+
+  @@unique([locationId, name])
+  @@index([locationId])
 }
 
 // The enforced reality for a single location: which modules it may stock,
@@ -671,6 +700,15 @@ model CountLine {
   countSession     CountSession @relation(fields: [countSessionId], references: [id])
   locationItemId   String
   locationItem     LocationItem @relation(fields: [locationItemId], references: [id])
+  /// Which part of the establishment this tally came from. Null = the location
+  /// does not split by area, or the line predates areas.
+  ///
+  /// Safe for the reconciliation by construction: report-assembly already SUMS
+  /// count lines per item (`agg.beginFullQty += line.qtyFull`), so four area
+  /// rows total exactly as one combined row did. Verified against both golden
+  /// anchors.
+  areaId           String?
+  area             LocationArea? @relation(fields: [areaId], references: [id])
   countType        String // FULL | WEIGH
   qtyFull          Float        @default(0)
   scaleWeight      Float?

@@ -16,6 +16,16 @@ export const countLineCreate = z
   .object({
     ...syncFields,
     locationItemId: id,
+    /**
+     * Which part of the establishment this tally is from (client sheet, June
+     * 2026: MAIN BAR / COCKTAIL LOUNGE / BEER HALL / STOCK ROOM).
+     *
+     * Optional, and stays optional: a location that keeps all its stock in one
+     * place never picks one, and every count recorded before areas existed has
+     * none. Several lines for the same item — one per area — is the normal
+     * shape, and totals correctly because report-assembly sums them.
+     */
+    areaId: id.optional(),
     countType: z.enum(["FULL", "WEIGH"]),
     qtyFull: nonNegative.optional(),
     scaleWeight: nonNegative.optional(),

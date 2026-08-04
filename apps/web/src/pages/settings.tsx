@@ -11,7 +11,7 @@ import {
   type Role,
 } from "@fnb/core";
 import { useClearDevicePin, useDevicePin, useMe, useSetDevicePin } from "@/api/auth";
-import { useCurrentClient, useLocationId } from "@/api/location";
+import { useAreaMutations, useAreas, useCurrentClient, useLocationId } from "@/api/location";
 import { useProductTypes } from "@/api/master";
 import {
   useClearItemUnitPreference,
@@ -78,6 +78,7 @@ export function SettingsPage() {
           <CostBasisSection />
           <VarianceThresholdSection />
           {can(role, "master.write") && <AdminItemUnitDefaultSection />}
+          {can(role, "master.write") && <StorageAreasSection />}
           {can(role, "master.write") && <CatalogExportSection />}
           {can(role, "admin.manage") && <ProductTypesSection />}
         </SettingsGroup>
@@ -886,6 +887,104 @@ function CompanySection() {
           </Button>
         </div>
       )}
+    </SettingsSection>
+  );
+}
+
+/**
+ * Storage areas — the columns on the printed count sheet.
+ *
+ * Lives under Establishment settings because it changes the paper every
+ * counter in the building works from, not one person's screen.
+ *
+ * Saves per action rather than as a batch with a Save button: each area is an
+ * independent row the server already validates on its own, and a half-typed
+ * list sitting unsaved while somebody prints the sheet is the failure worth
+ * avoiding here.
+ */
+function StorageAreasSection() {
+  const areas = useAreas();
+  const { create, archive } = useAreaMutations();
+  const [draft, setDraft] = useState("");
+  const me = useMe();
+  const role = (me.data?.user.role ?? "AUDIT_VIEWER_LIMITED") as Role;
+  const canEdit = can(role, "master.write");
+
+  const add = async () => {
+    const name = draft.trim();
+    if (!name) return;
+    try {
+      await create.mutateAsync({ name });
+      setDraft("");
+      toast.success(`Added "${name}"`);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not add the area");
+    }
+  };
+
+  const list = areas.data ?? [];
+
+  return (
+    <SettingsSection
+      title="Storage Areas"
+      description="Where stock sits inside this establishment — the bar, the lounge, the stock room. Each one becomes a column on the printed count sheet, and counters tally them separately."
+    >
+      <div className="max-w-md space-y-3">
+        {areas.isPending ? (
+          <Skeleton className="h-9 w-full" />
+        ) : list.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No areas yet. The count sheet prints one tally column, which suits an establishment that
+            keeps its stock in one place.
+          </p>
+        ) : (
+          <ul className="divide-y rounded-md border">
+            {list.map((a) => (
+              <li key={a.id} className="flex items-center gap-2 px-3 py-2">
+                <span className="text-sm">{a.name}</span>
+                {canEdit && (
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    className="ml-auto"
+                    onClick={() => {
+                      void archive
+                        .mutateAsync(a.id)
+                        .then(() => toast.success(`Archived "${a.name}"`))
+                        .catch((err) =>
+                          toast.error(err instanceof ApiError ? err.message : "Could not archive"),
+                        );
+                    }}
+                  >
+                    <X className="size-3.5" />
+                    <span className="sr-only">Archive {a.name}</span>
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {canEdit && (
+          <div className="flex gap-2">
+            <Input
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), void add())}
+              placeholder="Add an area…"
+              aria-label="Add a storage area"
+              className="max-w-xs"
+            />
+            <Button size="sm" variant="outline" onClick={() => void add()} disabled={create.isPending}>
+              <Plus className="size-4" /> Add
+            </Button>
+          </div>
+        )}
+        <p className="text-xs leading-5 text-muted-foreground">
+          Archiving keeps every past count intact — an area still names where those bottles were
+          counted; it just stops appearing on new sheets.
+        </p>
+      </div>
     </SettingsSection>
   );
 }

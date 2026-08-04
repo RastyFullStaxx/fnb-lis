@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { ClipboardList, Printer } from "lucide-react";
-import { useCurrentLocation, useLocationItems } from "@/api/location";
+import { useAreas, useCurrentLocation, useLocationItems } from "@/api/location";
 import { formatDate } from "@/lib/utils";
 import type { LocationItem } from "@/api/types";
 import { PageHeader } from "@/components/page-header";
@@ -41,6 +41,17 @@ function isWeighable(row: LocationItem): boolean {
 export function CountSheetPage() {
   const location = useCurrentLocation();
   const catalog = useLocationItems();
+  const areas = useAreas();
+  /**
+   * One tally column per storage area, straight off the client's own sheet
+   * (MAIN BAR / COCKTAIL LOUNGE / BEER HALL / STOCK ROOM), plus a Total the
+   * counter adds up — they already write that in the margin.
+   *
+   * A location with no areas keeps the original single "Full units" column, so
+   * nothing changes for anyone who counts one room.
+   */
+  const areaCols = (areas.data ?? []).filter((a) => a.status === "ACTIVE");
+  const hasAreas = areaCols.length > 0;
   const [grouping, setGrouping] = useState<Grouping>("category");
 
   const groups = useMemo(() => {
@@ -131,10 +142,21 @@ export function CountSheetPage() {
                   <tr className="border-b">
                     <th className="w-[8%] py-1 text-left font-medium">Code</th>
                     <th className="py-1 text-left font-medium">Item</th>
-                    <th className="w-[12%] py-1 text-left font-medium">Size</th>
-                    <th className="w-[14%] py-1 text-left font-medium">Full units</th>
-                    <th className="w-[14%] py-1 text-left font-medium">Open / scale</th>
-                    <th className="w-[18%] py-1 text-left font-medium">Notes</th>
+                    <th className="w-[10%] py-1 text-left font-medium">Size</th>
+                    {hasAreas ? (
+                      <>
+                        {areaCols.map((a) => (
+                          <th key={a.id} className="py-1 text-left font-medium">
+                            {a.name}
+                          </th>
+                        ))}
+                        <th className="w-[9%] py-1 text-left font-medium">Total</th>
+                      </>
+                    ) : (
+                      <th className="w-[14%] py-1 text-left font-medium">Full units</th>
+                    )}
+                    <th className="w-[12%] py-1 text-left font-medium">Open / scale</th>
+                    <th className="w-[14%] py-1 text-left font-medium">Notes</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -149,9 +171,25 @@ export function CountSheetPage() {
                       </td>
                       {/* Ruled write-in boxes rather than empty cells: an
                           underline tells a counter where to put the number. */}
-                      <td className="py-1.5 align-bottom">
-                        <span className="block h-4 border-b border-dashed border-muted-foreground/50" />
-                      </td>
+                      {hasAreas ? (
+                        <>
+                          {areaCols.map((a) => (
+                            <td key={a.id} className="py-1.5 align-bottom">
+                              <span className="block h-4 border-b border-dashed border-muted-foreground/50" />
+                            </td>
+                          ))}
+                          {/* Solid rule, not dashed: the total is the one number
+                              transcribed into the system, so it should look
+                              different from the tallies feeding it. */}
+                          <td className="py-1.5 align-bottom">
+                            <span className="block h-4 border-b border-muted-foreground" />
+                          </td>
+                        </>
+                      ) : (
+                        <td className="py-1.5 align-bottom">
+                          <span className="block h-4 border-b border-dashed border-muted-foreground/50" />
+                        </td>
+                      )}
                       <td className="py-1.5 align-bottom">
                         {isWeighable(r) ? (
                           <span className="block h-4 border-b border-dashed border-muted-foreground/50" />

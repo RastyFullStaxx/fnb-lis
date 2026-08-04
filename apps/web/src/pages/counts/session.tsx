@@ -6,11 +6,12 @@ import { can, checkContentVsHistory, convert, type Role, type UnitDef, type Weig
 import { statusVariant } from "@/lib/status";
 import { useMe } from "@/api/auth";
 import { useItemDisplayUnit } from "@/lib/preferences";
-import { useLocationId, useLocationItems, useTrailingAverage } from "@/api/location";
+import { useAreas, useLocationId, useLocationItems, useTrailingAverage } from "@/api/location";
 import { useCountMutations, useCountSession } from "@/api/ops";
 import { variantLabel, type CountLine, type LocationItem } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { ItemCombobox } from "@/components/item-combobox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { WeightReport } from "@/pages/stock/weight-report";
 import { VoidDialog } from "@/components/void-dialog";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -161,6 +162,18 @@ function OpenSession({ session }: { session: SessionWithLines }) {
   const comboRef = useRef<HTMLButtonElement>(null);
 
   const weighable = (item?.itemVariant.contentTracked || item?.itemVariant.weighMode === "NET") ?? false;
+  const areas = useAreas();
+  const areaList = (areas.data ?? []).filter((a) => a.status === "ACTIVE");
+  /**
+   * Which shelf this tally came from.
+   *
+   * Sticky across saves on purpose, and resetForm deliberately leaves it alone:
+   * a counter works one area at a time — the whole bar, then the lounge — so
+   * re-picking it for every bottle would be the most repeated action on the
+   * screen and the easiest to forget halfway down a shelf.
+   */
+  const [areaId, setAreaId] = useState<string>("");
+
   const activeMode = weighable ? mode : "FULL";
   // Weight outlier warning (docs/2026-08-01-weight-outlier-warning-plan.md,
   // phases doc Phase 3/4) — one fetch per picked item, shared by both the
@@ -304,6 +317,10 @@ function OpenSession({ session }: { session: SessionWithLines }) {
         return;
       }
     }
+    // Computed once and spread into every line shape below: an area that fell
+    // off only the weigh path would file those bottles in the wrong column,
+    // with nothing on screen to show it had happened.
+    const areaField = areaId ? { areaId } : {};
     try {
       // Edits go through the atomic PUT — one request updates the line in
       // place. Add-then-remove (or the reverse) leaves either a lost count or
@@ -311,7 +328,7 @@ function OpenSession({ session }: { session: SessionWithLines }) {
       if (activeMode === "FULL") {
         const n = Number(qty);
         if (qty === "" || !Number.isFinite(n) || n < 0) return toast.error("Enter the counted quantity");
-        const body = { locationItemId: item.id, countType: "FULL" as const, qtyFull: n };
+        const body = { locationItemId: item.id, ...areaField, countType: "FULL" as const, qtyFull: n };
         if (editingLineId) await mutations.updateLine.mutateAsync({ lineId: editingLineId, ...body });
         else await mutations.addLine.mutateAsync(body);
       } else if (activeMode === "OPEN") {
@@ -328,7 +345,7 @@ function OpenSession({ session }: { session: SessionWithLines }) {
           // stores the result as ordinary qtyFull / remainingContent.
           const n = Number(totalAmount);
           if (totalAmount === "" || !Number.isFinite(n) || n < 0) return toast.error("Enter the total amount");
-          const body = { locationItemId: item.id, countType: "WEIGH" as const, totalAmount: toStoredUnit(n) };
+          const body = { locationItemId: item.id, ...areaField, countType: "WEIGH" as const, totalAmount: toStoredUnit(n) };
           if (editingLineId) await mutations.updateLine.mutateAsync({ lineId: editingLineId, ...body });
           else await mutations.addLine.mutateAsync(body);
         } else {
@@ -336,7 +353,7 @@ function OpenSession({ session }: { session: SessionWithLines }) {
           // content set straight from what the counter typed.
           const n = Number(openAmount);
           if (openAmount === "" || !Number.isFinite(n) || n < 0) return toast.error("Enter the remaining amount");
-          const body = { locationItemId: item.id, countType: "WEIGH" as const, remainingContent: toStoredUnit(n) };
+          const body = { locationItemId: item.id, ...areaField, countType: "WEIGH" as const, remainingContent: toStoredUnit(n) };
           if (editingLineId) await mutations.updateLine.mutateAsync({ lineId: editingLineId, ...body });
           else await mutations.addLine.mutateAsync(body);
         }
@@ -346,6 +363,7 @@ function OpenSession({ session }: { session: SessionWithLines }) {
         }
         const body = {
           locationItemId: item.id,
+          ...areaField,
           countType: "WEIGH" as const,
           scaleWeight: preview.scale,
           scaleUnit: preview.unit as "g" | "oz",
@@ -401,6 +419,31 @@ function OpenSession({ session }: { session: SessionWithLines }) {
               <Button variant="ghost" size="sm" onClick={resetForm}>
                 Stop editing
               </Button>
+            </div>
+          )}
+          {/* Above the item, not below it: the area is the outer loop of how a
+              count is actually walked — pick the shelf, then work through it —
+              and it stays put while items cycle past. Hidden entirely when the
+              establishment keeps its stock in one place. */}
+          {areaList.length > 0 && (
+            <div className="mb-4 space-y-2">
+              <Label htmlFor="count-area">Area</Label>
+              <Select value={areaId || "__none__"} onValueChange={(v) => setAreaId(v === "__none__" ? "" : v)}>
+                <SelectTrigger id="count-area">
+                  <SelectValue placeholder="Not set" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">Not set</SelectItem>
+                  {areaList.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Stays selected as you count, so you can work through one area at a time.
+              </p>
             </div>
           )}
           <div className="space-y-2">

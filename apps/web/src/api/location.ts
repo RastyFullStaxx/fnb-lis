@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "react-router";
 import type { LocationItemAttach, LocationItemUpdate, MeClient, SupplierUpsert } from "@fnb/core";
-import { api, post, put } from "./http";
+import { api, del, post, put } from "./http";
 import { useMe } from "./auth";
 import type { AvailableVariant, LocationItem, Supplier } from "./types";
 
@@ -141,4 +141,50 @@ export function useUpdateSupplier() {
       put<Supplier>(`${base(locationId)}/suppliers/${id}`, body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["suppliers", locationId] }),
   });
+}
+
+/**
+ * Storage areas within this location — the columns on the paper count sheet.
+ *
+ * A location with none behaves exactly as before: pickers stay hidden, the
+ * sheet keeps its single tally column, and every count line carries a null
+ * area. Nothing here needs a feature flag for that reason.
+ */
+export interface LocationArea {
+  id: string;
+  locationId: string;
+  name: string;
+  sortOrder: number;
+  status: string;
+}
+
+export function useAreas() {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["areas", locationId],
+    queryFn: () => api<LocationArea[]>(`${base(locationId)}/areas`),
+    enabled: Boolean(locationId),
+  });
+}
+
+export function useAreaMutations() {
+  const locationId = useLocationId();
+  const qc = useQueryClient();
+  const done = { onSuccess: () => qc.invalidateQueries({ queryKey: ["areas", locationId] }) };
+  return {
+    create: useMutation({
+      mutationFn: (body: { name: string; sortOrder?: number }) =>
+        post<LocationArea>(`${base(locationId)}/areas`, body),
+      ...done,
+    }),
+    update: useMutation({
+      mutationFn: ({ id, ...body }: { id: string; name: string; sortOrder?: number }) =>
+        put<LocationArea>(`${base(locationId)}/areas/${id}`, body),
+      ...done,
+    }),
+    archive: useMutation({
+      mutationFn: (id: string) => del<{ ok: true }>(`${base(locationId)}/areas/${id}`),
+      ...done,
+    }),
+  };
 }

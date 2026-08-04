@@ -3288,3 +3288,91 @@ Design notes:
 Run on the dev database: **420 entries sealed**, chain verifies (425 linked, 0 unchained), re-run is
 a no-op, and editing a sealed historic row is caught at its exact seq. `verify:security` 119/119,
 `verify:seed` PASS, `verify:sync` PASS, restore drill PASS.
+
+---
+
+## 2026-08-04 — merged lily-phillips; storage areas on counts
+
+### Merge
+
+`origin/lily-phillips` (5 commits) merged into main. Two conflicts, both
+*both-sides-added*, resolved as unions rather than by picking a side:
+`schema.prisma` (main's MFA relations + their `itemUnitPreferences`) and
+`constants.ts` (MFA constants + weigh-outlier thresholds). Then `db:generate`
+and `migrate deploy` for their two pending migrations.
+
+The branch is good work. It touches `weighing.ts` — sacred — and does it
+correctly: every new warning is `blocking: false`, the arithmetic is untouched,
+and purity holds (`trailingAverage` is fetched by the caller). Both golden
+anchors reproduce unchanged. It closes client notes 1 (weight outlier warning,
+size floor + history ratio) and 2 (per-item display unit, admin default + staff
+override), and shipped a handoff doc whose findings match an independent read of
+the same code.
+
+### `verify:mirror` was broken — by MFA, not by the merge
+
+MFA is mandatory for OWNER. The harness signs in as `owner`, so **every**
+location-scoped route 403s, surfacing as the badly misleading "This computer
+isn't allowed to download data yet". Enrolling the demo owner does not help: an
+enrolled account then needs a *code* to open a device session, which a harness
+cannot supply. Run it against a server started with `FNB_REQUIRE_MFA=0`; the
+harness now says so on failure instead of pointing at revocation.
+
+**Same constraint applies to real onboarding:** an owner must finish MFA
+enrolment in the browser *before* provisioning a bar PC.
+
+### Storage areas (from the client's photos, not from his list)
+
+His paper count sheet has a column per area — MAIN BAR / COCKTAIL LOUNGE /
+BEER HALL / STOCK ROOM — tallied separately with the sum in the margin
+(J.W. Black Label, 21 June: 7 + 2 + 7 = 16). `CountLine` had no such concept,
+so four numbers collapsed into one: a generated sheet could not be imported back
+in their own working format, and a variance could not say *which shelf* to
+recount. Nobody had raised it; it was only visible in the photos.
+
+- `LocationArea` (name, sortOrder, archive-not-delete) + optional
+  `CountLine.areaId`. Additive migration; existing lines keep NULL, which is
+  identical to a location that keeps stock in one place.
+- **Safe for the reconciliation by construction:** `report-assembly` already
+  sums count lines per item (`agg.beginFullQty += line.qtyFull`), so four area
+  rows total exactly as one combined row did. Checked before writing any code,
+  and both anchors re-verified after.
+- Areas CRUD mounted inside the location-scoped group, so auth and client
+  scoping are inherited rather than re-implemented. Archiving, never deleting —
+  committed periods point at these rows and "where was this counted?" must still
+  answer for a period closed months ago.
+- Count sheet prints one column per area plus a Total (solid rule, not dashed —
+  the total is the number transcribed into the system).
+- Count screen gets an Area picker **above** the item and sticky across saves:
+  a counter walks one area at a time, so re-picking per bottle would be the most
+  repeated action on the screen. Hidden entirely when no areas exist.
+- Corrections keep the original area unless explicitly changed — a correction
+  means "this number was wrong", not "these bottles were elsewhere".
+- Managed under Settings → Establishment settings (it changes the paper the
+  whole building works from, not one person's screen).
+
+### Verified
+
+- Sheet headers render `Code · Item · Size · Main Bar · Cocktail Lounge ·
+  Beer Hall · Stock Room · Total · Open/scale · Notes` — their layout.
+- End-to-end: one item tallied 7 / 2 / 7 across three areas stored with the
+  right area on each line and totalled 16. Throwaway session voided afterwards.
+- `verify:seed` PASS · `verify:sync` PASS · anchors unchanged · typechecks clean
+  across server, web, desktop · production build clean.
+
+### Client answers received (2026-08-04)
+
+1. Unused bottles — **all three cases happen**, so entry must distinguish
+   customer-takes-home / house-keeps / stored-for-customer. The third must NOT
+   become sellable stock.
+2. Garnish — **both** bar and kitchen.
+3. Report tiers — follow the recommendation: an explicit enabled-reports set per
+   subscription, tier as a creation-time preset only.
+4. Local vs Main Database — follow the recommendation: keep the computation
+   visible, but where a weight comes from Main, show "standard — set your own"
+   rather than the number.
+
+### Next
+
+Blank printable/importable forms for sales, purchases and non-revenue — not
+started. The photos give the layouts.

@@ -37,6 +37,10 @@ const voidGuard = requirePermission("entries.void");
 const LINE_INCLUDE = {
   locationItem: { include: { itemVariant: { include: { unit: true, item: { include: { category: true } } } } } },
   correctionOf: true,
+  // The area's NAME, not just its id: every screen that lists a line shows
+  // where it came from, and a second lookup per row to turn ids into names is
+  // the kind of thing that quietly becomes an N+1.
+  area: { select: { id: true, name: true, sortOrder: true } },
 } as const;
 
 /**
@@ -329,6 +333,23 @@ async function logOutlierWarnings(
   }
 }
 
+/**
+ * An area must belong to the location being counted.
+ *
+ * Without this, a client could tag a line with another establishment's area id
+ * — harmless to the arithmetic, but it would put one bar's shelf name on
+ * another's count sheet, and the whole point of areas is telling a human where
+ * to go and recount.
+ */
+async function resolveAreaId(locationId: string, areaId: string | undefined): Promise<string | null> {
+  if (!areaId) return null;
+  const area = await prisma.locationArea.findUnique({ where: { id: areaId } });
+  if (!area || area.locationId !== locationId || area.status !== "ACTIVE") {
+    throw new AppError(400, "That storage area does not belong to this location");
+  }
+  return area.id;
+}
+
 export const countRoutes = new Hono<AppEnv>()
   .get("/counts", async (c) => {
     const location = c.get("location");
@@ -405,6 +426,7 @@ export const countRoutes = new Hono<AppEnv>()
     if (already) return c.json(already, 200);
 
     const { locationItem, data, entryPath } = await buildLineData(location.id, body);
+    const areaId = await resolveAreaId(location.id, body.areaId);
 
     const line = await prisma.countLine.create({
       data: {
@@ -412,6 +434,7 @@ export const countRoutes = new Hono<AppEnv>()
         occurredAt: body.occurredAt,
         countSessionId: session.id,
         locationItemId: locationItem.id,
+        areaId,
         ...data,
         // Price snapshots at ENTRY time. A device replaying an offline count
         // sends what the price was when the bottle was actually counted; the
@@ -446,10 +469,14 @@ export const countRoutes = new Hono<AppEnv>()
     if (!existing || existing.countSessionId !== session.id) throw new AppError(404, "Count line not found");
     const body = c.req.valid("json");
     const { locationItem, data, entryPath } = await buildLineData(location.id, body);
+    // Re-resolved on edit too: moving a tally to the right shelf is a normal
+    // correction, and the same cross-location guard has to apply.
+    const areaId = await resolveAreaId(location.id, body.areaId);
     const line = await prisma.countLine.update({
       where: { id: existing.id },
       data: {
         locationItemId: locationItem.id,
+        areaId,
         ...data,
         ...snapshotPrices(user, body, locationItem),
       },
@@ -593,6 +620,12 @@ export const countRoutes = new Hono<AppEnv>()
             occurredAt: body.occurredAt,
             countSessionId: session.id,
             locationItemId: locationItem.id,
+            // The correction stays on the shelf the original was counted on
+            // unless it explicitly says otherwise. A correction is "this number
+            // was wrong", not "these bottles were somewhere else", and silently
+            // relocating them would corrupt the one thing areas exist to
+            // answer — which shelf to go and recount.
+            areaId: body.areaId ? await resolveAreaId(location.id, body.areaId) : original.areaId,
             ...data,
             unitCost: original.unitCost, // corrections keep the original snapshot prices
             unitRetail: original.unitRetail,

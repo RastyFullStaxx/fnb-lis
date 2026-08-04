@@ -61,9 +61,21 @@ try {
     },
   });
 } catch (err) {
-  // The commonest failure by far, and the message alone does not say what to do
-  // about it in a DEV context.
-  if (String(err).includes("licence covers")) {
+  // The two commonest failures, neither of which says what to do about it in a
+  // DEV context.
+  //
+  // MFA first: since two-factor became mandatory for OWNER, this harness cannot
+  // reach any location-scoped route at all, and the message it surfaces
+  // ("isn't allowed to download data yet") points at the wrong thing entirely.
+  if (String(err).includes("two-factor") || String(err).includes("MFA_SETUP_REQUIRED")) {
+    console.error(
+      "\nThis check signs in as OWNER, and that role must hold a second factor\n" +
+        "(MFA_REQUIRED_ROLES). Enrolling the demo owner does NOT help — an enrolled\n" +
+        "account then needs a CODE to open a device session, which a harness cannot\n" +
+        "supply. Start the dev server with enforcement off for this run:\n\n" +
+        "  FNB_REQUIRE_MFA=0 npm run dev -w @fnb/server\n",
+    );
+  } else if (String(err).includes("licence covers")) {
     console.error(
       "\nThis check needs one free licence slot, and the desktop app is probably holding it.\n" +
         "Raise Subscription.maxDevices to 2 for the test client, or revoke the registered computer.",
