@@ -226,6 +226,27 @@ export const importRoutes = new Hono<AppEnv>()
     const row = await prisma.importRow.findUnique({ where: { id: c.req.param("rowId") } });
     if (!row || row.batchId !== batch.id) throw new AppError(404, "Row not found");
 
+    // A reviewer may only point a row at something this location owns. Checked
+    // here as well as at commit: commit is the gate that protects the ledger,
+    // but a wrong match accepted here sits in the review table looking approved
+    // until someone tries to commit the whole batch and gets it rejected.
+    if (body.matchedLocationItemId) {
+      const target = await prisma.locationItem.findUnique({
+        where: { id: body.matchedLocationItemId },
+        select: { locationId: true },
+      });
+      if (!target || target.locationId !== location.id) {
+        throw new AppError(404, "Item not found in this catalog");
+      }
+    }
+    if (body.matchedMenuItemId) {
+      const target = await prisma.menuItem.findUnique({
+        where: { id: body.matchedMenuItemId },
+        select: { locationId: true },
+      });
+      if (!target || target.locationId !== location.id) throw new AppError(404, "Menu item not found");
+    }
+
     const data: Record<string, unknown> = { ...body };
     // A manual match is exclusive (item XOR menu) and marks the row MANUAL.
     if (body.matchedLocationItemId !== undefined) {
@@ -264,12 +285,34 @@ export const importRoutes = new Hono<AppEnv>()
     // Price/cost/version lookups for the approved rows.
     const liIds = approved.map((r) => r.matchedLocationItemId).filter((x): x is string => Boolean(x));
     const menuIds = approved.map((r) => r.matchedMenuItemId).filter((x): x is string => Boolean(x));
+    // Scoped to THIS location. Unscoped, a `matchedLocationItemId` pointing at
+    // another establishment's catalog resolved fine here and was written
+    // straight onto the committed SaleRecord/PurchaseLine, taking its price
+    // from the foreign row.
     const [locationItems, menus] = await Promise.all([
-      prisma.locationItem.findMany({ where: { id: { in: liIds } } }),
-      prisma.menuItem.findMany({ where: { id: { in: menuIds } }, include: { versions: { take: 1, orderBy: { versionNo: "desc" } } } }),
+      prisma.locationItem.findMany({ where: { id: { in: liIds }, locationId: location.id } }),
+      prisma.menuItem.findMany({
+        where: { id: { in: menuIds }, locationId: location.id },
+        include: { versions: { take: 1, orderBy: { versionNo: "desc" } } },
+      }),
     ]);
     const liMap = new Map(locationItems.map((li) => [li.id, li]));
     const menuMap = new Map(menus.map((m) => [m.id, m]));
+
+    // Scoping alone would not be enough. Both price lookups below fall back to
+    // zero on a miss (`li?.retail ?? 0`, `li?.cost ?? 0`), so a filtered-out row
+    // would have committed silently at ₱0 instead of leaking — trading a
+    // cross-tenant read for corrupt figures in the reconciliation. Fail loudly
+    // instead: if a match no longer resolves inside this location, the batch
+    // does not commit.
+    for (const row of approved) {
+      if (row.matchedLocationItemId && !liMap.has(row.matchedLocationItemId)) {
+        throw new AppError(400, `Row "${row.itemText}" is matched to an item that isn't in this location's catalog — re-match it before committing.`);
+      }
+      if (row.matchedMenuItemId && !menuMap.has(row.matchedMenuItemId)) {
+        throw new AppError(400, `Row "${row.itemText}" is matched to a menu item that isn't in this location — re-match it before committing.`);
+      }
+    }
 
     const encoder = { createdById: user.id, createdByName: `${user.firstName} ${user.lastName}` };
     const fallbackDate = batch.businessDate ?? today();

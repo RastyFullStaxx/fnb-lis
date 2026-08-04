@@ -65,6 +65,23 @@
   --font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Geist Mono Variable", ui-monospace, "Cascadia Code", monospace;
 
+  /* The one easing curve DESIGN.md commits to (ease-out-quint family): fast
+     out of the gate, long settle, no bounce.
+     
+     It exists as a token because it was previously a literal repeated in eight
+     @keyframes rules and nowhere else — so every *utility-class* transition
+     (buttons, the sheet, tabs, the count progress bar) quietly used Tailwind's
+     default ease-in-out instead. Half the app honoured the motion contract and
+     half ignored it, with nothing to notice the difference. Generates the
+     `ease-brand` utility. */
+  --ease-brand: cubic-bezier(0.16, 1, 0.3, 1);
+  /* ...and make it the default for every `transition-*` utility, so honouring
+     the contract is the path of least resistance rather than something each
+     component has to remember. Keyframe animations (`animate-in`/`animate-out`)
+     read `--tw-ease`, which only an `ease-*` utility sets — those are opted in
+     explicitly on the overlay primitives. */
+  --default-transition-timing-function: var(--ease-brand);
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);

@@ -403,7 +403,13 @@ function ForfeitsTab() {
       <div className="flex min-h-0 flex-col lg:border-l lg:pl-6">
         <div className="mb-2 shrink-0 text-sm font-medium">Recent Returns</div>
         <div aria-live="polite" className="min-h-0 flex-1 divide-y overflow-y-auto max-lg:max-h-[28rem]">
-          {forfeits.isPending ? (
+          {/* Same guard the Deliveries tab already applies to `purchases` above.
+              Without it this tab answered a failed fetch with "No returned
+              bottles yet" — so one page taught two different truths about the
+              same kind of failure. */}
+          {queryFailed(forfeits) ? (
+            <TableFailure query={forfeits} title="Couldn't load returned bottles" />
+          ) : forfeits.isPending ? (
             <div className="divide-y">
               {Array.from({ length: 5 }).map((_, i) => (
                 <div key={i} className="space-y-1.5 px-4 py-2.5">

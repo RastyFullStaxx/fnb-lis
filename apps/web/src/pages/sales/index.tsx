@@ -19,7 +19,7 @@ import { variantLabel, type LocationItem, type SaleRecord } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { formatMoney, formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
-import { TableSurface, ToolbarField } from "@/components/table-surface";
+import { TableFailure, queryFailed, TableSurface, ToolbarField } from "@/components/table-surface";
 import { VoidDialog } from "@/components/void-dialog";
 import { EntryActions, EntryFact, EntryFacts } from "@/components/entry-fact";
 import {
@@ -138,7 +138,15 @@ export function SalesPage() {
           <div className="flex min-h-0 flex-col lg:border-l lg:pl-6">
             <div className="mb-2 shrink-0 text-sm font-medium">Recent Entries</div>
             <div aria-live="polite" className="min-h-0 flex-1 divide-y overflow-y-auto max-lg:max-h-[28rem]">
-            {sales.isPending ? (
+            {/* Failure before pending, and before the empty state. A failed
+                fetch used to fall through to "Nothing recorded yet for this
+                tab." — telling an encoder mid-shift that the sales they just
+                entered are gone, when the request simply did not come back.
+                On an audit tool a load failure must never render as an empty
+                result. */}
+            {queryFailed(sales) ? (
+              <TableFailure query={sales} title="Couldn't load recent entries" />
+            ) : sales.isPending ? (
               <div className="divide-y">
                 {Array.from({ length: 5 }).map((_, i) => (
                   <div key={i} className="space-y-1.5 px-4 py-2.5">

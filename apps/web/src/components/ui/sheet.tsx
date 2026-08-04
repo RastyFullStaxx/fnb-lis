@@ -60,7 +60,15 @@ function SheetContent({
       <SheetPrimitive.Content
         data-slot="sheet-content"
         className={cn(
-          "fixed z-50 flex flex-col gap-4 bg-background shadow-lg transition ease-in-out data-[state=closed]:animate-out data-[state=closed]:duration-300 data-[state=open]:animate-in data-[state=open]:duration-500",
+          // Stock shadcn ships 500ms open / 300ms close on ease-in-out. Both
+          // were left behind when DESIGN.md committed to "Dialog/sheet: 200 ms"
+          // — and this component drives the mobile sidebar and the Stocky
+          // panel, so half a second of slide sat between tapping the hamburger
+          // and being able to tap a nav link. ease-in-out also starts slow,
+          // which reads as lag on the way in.
+          // Exit is quicker than entry on purpose: the user has already decided
+          // to close, so there is nothing left to wait for.
+          "fixed z-50 flex flex-col gap-4 bg-background shadow-lg transition ease-brand data-[state=closed]:animate-out data-[state=closed]:duration-150 data-[state=open]:animate-in data-[state=open]:duration-200",
           side === "right" &&
             "inset-y-0 right-0 h-full w-3/4 border-l data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right sm:max-w-sm",
           side === "left" &&

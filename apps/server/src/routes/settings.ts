@@ -316,7 +316,11 @@ export const settingsRoutes = new Hono<AppEnv>()
     return c.json({ unit: row?.unit ?? null });
   })
 
-  .put("/item-unit-default/:itemId", zValidator("json", itemDisplayUnitBody), async (c) => {
+  // writeGuard was missing here while both siblings below had it — so the
+  // establishment-wide default display unit, which the comment above calls an
+  // "establishment policy set once for everyone", could be rewritten by any
+  // STAFF or read-only account with access to the client.
+  .put("/item-unit-default/:itemId", writeGuard, zValidator("json", itemDisplayUnitBody), async (c) => {
     const user = c.get("user")!;
     const itemId = c.req.param("itemId");
     const clientId = c.req.query("clientId") ?? "";

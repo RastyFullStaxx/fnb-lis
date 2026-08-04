@@ -139,10 +139,34 @@ export const locationItemRoutes = new Hono<AppEnv>()
     if (exists) {
       if (exists.isActive) throw new AppError(409, "This item is already in the location catalog");
       // Reactivate instead of duplicating.
-      const revived = await prisma.locationItem.update({
-        where: { id: exists.id },
-        data: { isActive: true, cost: body.cost, retail: body.retail, parLevel: body.parLevel ?? null, updatedById: user.id },
-        include: { itemVariant: { include: { unit: true, item: { include: { category: true } } } } },
+      //
+      // This writes cost and retail, so it is a price change and has to leave
+      // the same trail as one. It previously did neither — no transaction, no
+      // ActivityLog — which made "archive the item, re-add it at a different
+      // cost" the one way to move a valuation input with nothing recorded,
+      // while the create branch below and PUT /location-items/:id both log.
+      const revived = await prisma.$transaction(async (tx) => {
+        const row = await tx.locationItem.update({
+          where: { id: exists.id },
+          data: { isActive: true, cost: body.cost, retail: body.retail, parLevel: body.parLevel ?? null, updatedById: user.id },
+          include: { itemVariant: { include: { unit: true, item: { include: { category: true } } } } },
+        });
+        await logActivity(
+          {
+            user, clientId: location.clientId, locationId: location.id,
+            action: "locationItem.priceChange", entity: "LocationItem", entityId: row.id,
+            summary: `Restored ${row.itemVariant.item.name} ${row.itemVariant.size} ${row.itemVariant.unit.name} to catalog (cost ${exists.cost} → ${body.cost}, retail ${exists.retail} → ${body.retail})`,
+            // Same before/after shape PUT /location-items/:id records, so the
+            // dashboard's price-change counter and the Activity filter pick
+            // this up like any other price move.
+            details: {
+              old: { cost: exists.cost, retail: exists.retail, parLevel: exists.parLevel, isActive: false },
+              new: { cost: body.cost, retail: body.retail, parLevel: body.parLevel ?? null, isActive: true },
+            },
+          },
+          tx,
+        );
+        return row;
       });
       return c.json(revived, 200);
     }

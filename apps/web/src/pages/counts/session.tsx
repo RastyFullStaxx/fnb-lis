@@ -17,6 +17,7 @@ import { WeightReport } from "@/pages/stock/weight-report";
 import { VoidDialog } from "@/components/void-dialog";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { EntryActions, EntryFact, EntryFacts } from "@/components/entry-fact";
+import { TableFailure, queryFailed } from "@/components/table-surface";
 import { useWeighPreview, WeighPreviewStrip } from "@/components/weigh-calculator";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -64,18 +65,41 @@ export function CountSessionPage() {
   const session = useCountSession(sessionId!);
   const backHref = useBackHref(locationId);
 
-  if (session.isPending) return <SessionSkeleton />;
-  if (session.isError)
+  // Failure is checked BEFORE pending, deliberately — see the note on
+  // `queryFailed`. React Query leaves a query it cannot start in `pending` with
+  // `fetchStatus: "paused"`, so testing `isPending` first meant a count session
+  // opened on bad bar wifi sat on a skeleton indefinitely, with no message and
+  // nothing to press. This is the screen an encoder lives in all shift.
+  if (queryFailed(session))
     return (
-      <div className="flex flex-col items-center gap-3 py-24 text-center">
-        <p className="text-sm">Couldn't load this count session — it may have been removed.</p>
+      <div className="flex flex-col items-center gap-3 py-16">
+        {/* "may have been removed" only where that is actually true. A 404 means
+            the session is gone; anything else is a fetch that failed, and
+            telling someone their count was deleted because the wifi dropped is
+            a small heart attack on an audit tool. */}
+        <TableFailure
+          query={session}
+          title={
+            session.error instanceof ApiError && session.error.status === 404
+              ? "This count session no longer exists"
+              : "Couldn't load this count"
+          }
+          description={
+            session.error instanceof ApiError && session.error.status === 404
+              ? "It may have been removed. Go back to Counts to pick another."
+              : undefined
+          }
+        />
         <Button asChild variant="outline" size="sm">
           <Link to={backHref}>Back to Counts</Link>
         </Button>
       </div>
     );
-
+  // Anything still without data has not failed (that returned above), so it is
+  // loading — which also gives TypeScript the narrowing the old `isPending` /
+  // `isError` pair used to provide.
   const s = session.data;
+  if (!s) return <SessionSkeleton />;
   return s.status === "OPEN" ? <OpenSession session={s} /> : <ReadOnlySession session={s} />;
 }
 

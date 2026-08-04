@@ -197,6 +197,33 @@ export const saleRoutes = new Hono<AppEnv>()
     if (!original || original.locationId !== location.id) throw new AppError(404, "Record not found");
     if (original.status === "VOID") throw new AppError(409, "Record is already voided — create a new entry instead");
 
+    // Verifying the record belongs here is NOT enough — the replacement's target
+    // comes from the request body, and `saleCorrect` extends `saleCreate`, so
+    // both FKs are accepted here too. Without this the row lands with
+    // `locationId` = this location but pointing at another establishment's
+    // catalog: the Sales report joins `locationItem` and would print that
+    // establishment's item name, size and category, and the Full Audit would
+    // value usage against a catalog row this location does not own.
+    //
+    // Same checks POST /sales makes above; kept explicit rather than shared
+    // because create interleaves them with its price/recipe resolution.
+    if (body.locationItemId) {
+      const target = await prisma.locationItem.findUnique({
+        where: { id: body.locationItemId },
+        select: { locationId: true },
+      });
+      if (!target || target.locationId !== location.id) {
+        throw new AppError(404, "Item not found in this catalog");
+      }
+    }
+    if (body.menuItemId) {
+      const target = await prisma.menuItem.findUnique({
+        where: { id: body.menuItemId },
+        select: { locationId: true },
+      });
+      if (!target || target.locationId !== location.id) throw new AppError(404, "Menu item not found");
+    }
+
     const replacement = await prisma.$transaction(async (tx) => {
       await tx.saleRecord.update({
         where: { id: original.id },

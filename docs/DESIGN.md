@@ -63,6 +63,17 @@ One family: **Geist Variable** (`@fontsource-variable/geist`), with **Geist Mono
 
 State, not theater. 150–250 ms, `cubic-bezier(0.16, 1, 0.3, 1)` (ease-out-quint family), no bounce.
 
+The curve is a token — `--ease-brand` in `index.css`, generating the `ease-brand`
+utility — and it is also `--default-transition-timing-function`, so every
+`transition-*` utility inherits it without being asked. Keyframe animations
+(`animate-in`/`animate-out`) resolve `--tw-ease`, which only an explicit
+`ease-brand` sets; the overlay primitives (dialog, alert-dialog, popover,
+dropdown-menu, select, sheet) opt in, and every overlay in the app inherits from
+those six. Before the token existed the curve was a literal repeated across eight
+`@keyframes` and nowhere else, so utility-class transitions silently ran on
+Tailwind's default ease-in-out — half the app honoured the contract and half did
+not, with nothing able to tell the difference.
+
 - Dialog/sheet: 200 ms fade+scale(0.98→1) / slide. Popover/dropdown: 150 ms fade+2px rise.
 - Live weigh preview: number transitions with a 150 ms opacity/translate tick — visible feedback that the math ran.
 - Row void: 200 ms tint sweep to muted+strikethrough. Commit: button → check morph, then Sonner toast.
