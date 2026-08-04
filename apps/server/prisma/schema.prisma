@@ -31,12 +31,13 @@ model User {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
-  sessions      AuthSession[]
-  clientAccess  UserClientAccess[]
-  modules       UserModule[]
-  devicePin     DevicePin?
-  mfa           UserMfa?
-  mfaChallenges MfaChallenge[]
+  sessions            AuthSession[]
+  clientAccess        UserClientAccess[]
+  modules             UserModule[]
+  devicePin           DevicePin?
+  mfa                 UserMfa?
+  mfaChallenges       MfaChallenge[]
+  itemUnitPreferences UserItemUnitPreference[]
 }
 
 /**
@@ -258,6 +259,7 @@ model Client {
   aliases      ItemAlias[]
   subscription Subscription?
   devices      Device[]
+  itemUnitDefaults ClientItemUnitDefault[]
 }
 
 model Location {
@@ -425,6 +427,8 @@ model Item {
   updatedAt   DateTime @updatedAt
 
   variants ItemVariant[]
+  unitDefaults    ClientItemUnitDefault[]
+  unitPreferences UserItemUnitPreference[]
 
   @@index([categoryId])
 }
@@ -504,6 +508,12 @@ model LocationItem {
   status        String?     // data-driven list, Setting "statusOptions" — distinct from isActive
   remarks       String?
   isActive      Boolean     @default(true)
+  // Expected movement window (1-12, calendar month), clutter-item-removal
+  // plan. Null on both = no schedule, plain 12-month lookback applies.
+  // Outside the window, no movement is normal and the item is skipped as a
+  // candidate; inside it, no movement is a real signal.
+  scheduleStartMonth Int?
+  scheduleEndMonth   Int?
   updatedById   String?
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
@@ -518,6 +528,61 @@ model LocationItem {
   transferReceipts TransferReceiptLine[]
 
   @@unique([locationId, itemVariantId])
+}
+
+// Per-item display unit — admin default (client req 2026-07-31, see
+// docs/per-user-per-item-uom-plan.md). Presentation only, same as
+// preferredVolumeUnit/preferredMassUnit in Setting(prefs:<userId>) — storage
+// unit is still ItemVariant.unitId and nothing here feeds convert()/toBase().
+//
+// A manager sets one row per item; it applies to every user of that client
+// who has not set their own UserItemUnitPreference for the same item
+// (resolveDisplayUnit() in @fnb/core walks both). Scoped by clientId, not
+// locationId: the item's catalog identity is global but the "how do WE like
+// to see it" call is an establishment policy, same tier as Client.costBasis
+// and Client.varianceThresholdPct — hence master.write gating, not per-location.
+//
+// Server-only, one-way (server -> device, overwrite) — same sync
+// classification as LocationItem and pricing (sync-and-data-lifecycle.md §2,
+// §7.2 rule 3): a display default is "set at a desk", not a device-local write.
+model ClientItemUnitDefault {
+  id          String   @id @default(cuid())
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id])
+  itemId      String
+  item        Item     @relation(fields: [itemId], references: [id])
+  unit        String // one of PREFERENCE_UNITS in packages/core/src/units.ts
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([clientId, itemId])
+}
+
+// Per-item display unit — staff's own override (client req 2026-07-31, see
+// docs/per-user-per-item-uom-plan.md). Sits above ClientItemUnitDefault in
+// resolveDisplayUnit()'s order: a staffer's own pick for one item beats the
+// manager's default for that item, which beats their general
+// preferredVolumeUnit/preferredMassUnit, which beats the item's own unit.
+//
+// Own choice, no permission needed beyond being signed in — mirrors
+// preferences GET/PUT in routes/settings.ts (requireAuth only). Not scoped
+// by clientId: a user's personal pick for an item is theirs wherever they see
+// that item, same as preferredVolumeUnit/preferredMassUnit today.
+//
+// Server-only, one-way (server -> device, overwrite) — same classification as
+// ClientItemUnitDefault above; there is no offline write path for either.
+model UserItemUnitPreference {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  itemId    String
+  item      Item     @relation(fields: [itemId], references: [id])
+  unit      String // one of PREFERENCE_UNITS in packages/core/src/units.ts
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, itemId])
 }
 
 model Supplier {

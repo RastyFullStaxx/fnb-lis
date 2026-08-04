@@ -177,6 +177,12 @@ Build after the current round settles. No legacy precedent (greenfield), and it 
 
 Rough size: 1–2 days, front-end-weighted. Open question for the client: unknown-code behaviour (reject vs. assign — recommend assign) is decided above; confirm per-size codes (recommended) is acceptable.
 
+## Client request tracker — 2026-07-31 additions
+
+| # | Request | Status |
+|---|---|---|
+| F | **Per-item display unit** — a manager sets a default display unit per item; any staff member can override it for themselves, per item, without affecting anyone else; falls back to the staff member's general unit preference, then the item's own unit | ✅ Built. New server-only, one-way tables `ClientItemUnitDefault` (admin default, `master.write`) and `UserItemUnitPreference` (staff override, own choice) — see [sync-and-data-lifecycle.md §2](sync-and-data-lifecycle.md) and [architecture.md deviation #36](architecture.md). Resolution order implemented as one pure function, `resolveDisplayUnit()` in `@fnb/core`: staff override → admin default → staff's general `preferredVolumeUnit`/`preferredMassUnit` → item's own unit. Routes live in `settings.ts` (admin default gated `master.write`; staff override gated `requireAuth` only). Both pickers added to the Settings page: staff override under "Display" next to the existing volume/mass pickers, admin default under "Establishment settings" next to Inventory Cost Basis and Variance Highlight Threshold. Storage, calculation, reconciliation, weighing, pricing, and rounding are untouched — display only, per [per-user-per-item-uom-plan.md](per-user-per-item-uom-plan.md) |
+
 ## Open decisions — raise at the next client check-in
 
 1. **Transfers design sign-off.** Transfers have **no legacy precedent** — unlike everything else,

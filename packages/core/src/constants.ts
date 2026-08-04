@@ -380,6 +380,23 @@ export const MFA_CHALLENGE_TTL_MS = 5 * 60 * 1000;
 /** Single-use recovery codes handed out at enrolment. */
 export const MFA_BACKUP_CODE_COUNT = 10;
 
+/**
+ * Weight outlier warning thresholds (client req 2026-08-01,
+ * docs/2026-08-01-weight-outlier-warning-plan.md §5). A fixed constant for
+ * v1, same sequencing MATERIAL_VARIANCE_PCT followed before it became a
+ * per-establishment setting — ship a number first, promote only if real
+ * usage shows it needs tuning per client.
+ *
+ * Used two ways in packages/core/src/weighing.ts:
+ *  - Size-based floor (DENSITY items only): remainingContent below
+ *    WEIGH_OUTLIER_LOW_RATIO of the container's own size.
+ *  - History-based check (both weigh modes): a reading whose ratio to this
+ *    item's trailing average count falls under WEIGH_OUTLIER_LOW_RATIO or
+ *    over WEIGH_OUTLIER_HIGH_RATIO.
+ */
+export const WEIGH_OUTLIER_LOW_RATIO = 0.05; // below 5% of size or history: flag as unusually low
+export const WEIGH_OUTLIER_HIGH_RATIO = 5; // above 5x history: flag as unusually high
+
 export const PERMISSIONS = {
   // Cross-tenant system administration (every client, every location). ADMIN only —
   // an OWNER must never reach another establishment's data.

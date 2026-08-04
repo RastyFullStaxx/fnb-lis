@@ -59,6 +59,42 @@ export function preferredUnitDef(name: string): UnitDef | null {
 }
 
 /**
+ * Which unit a number is *displayed* in for one (user, item) pair.
+ *
+ * Client req 2026-07-31 (docs/per-user-per-item-uom-plan.md): admins set a
+ * default unit per item, staff can override it for themselves per item, and
+ * both sit above the staff's own general preferredVolumeUnit/preferredMassUnit
+ * and the item's own base unit. Most specific wins:
+ *
+ *   1. staffOverride   — UserItemUnitPreference for this (user, item)
+ *   2. adminDefault    — ClientItemUnitDefault for this (client, item)
+ *   3. staffPreference — preferredVolumeUnit / preferredMassUnit (by kind)
+ *   4. itemBaseUnit    — the item's own configured unit (ml / g / …)
+ *
+ * Same shape as `resolveBottleWeights`: a lookup rule over already-loaded
+ * values, not I/O — callers pass in whatever each level resolved to (or
+ * null/undefined if nothing was ever set) and get back the unit name plus
+ * which level supplied it. Deliberately NOT in weighing.ts or units.ts's
+ * convert()/toBase() path: this never changes what a quantity IS, only what
+ * unit a caller chooses to render it in via `convert()` afterward.
+ */
+export type DisplayUnitSource = "staffOverride" | "adminDefault" | "staffPreference" | "itemBaseUnit";
+
+export function resolveDisplayUnit(
+  levels: {
+    staffOverride?: string | null;
+    adminDefault?: string | null;
+    staffPreference?: string | null;
+  },
+  itemBaseUnit: string,
+): { unit: string; source: DisplayUnitSource } {
+  if (levels.staffOverride) return { unit: levels.staffOverride, source: "staffOverride" };
+  if (levels.adminDefault) return { unit: levels.adminDefault, source: "adminDefault" };
+  if (levels.staffPreference) return { unit: levels.staffPreference, source: "staffPreference" };
+  return { unit: itemBaseUnit, source: "itemBaseUnit" };
+}
+
+/**
  * Display only — never feeds a calculation.
  *
  * Snaps float dust to zero first: a variance of -8.9e-16 was printing as "-0",

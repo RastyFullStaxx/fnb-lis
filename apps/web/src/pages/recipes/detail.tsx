@@ -1,7 +1,8 @@
+import { useMemo } from "react";
 import { convert } from "@fnb/core";
 import { useMenu, type MenuSummary } from "@/api/menus";
 import { variantLabel } from "@/api/types";
-import { usePreferredUnit } from "@/lib/preferences";
+import { useItemDisplayUnit } from "@/lib/preferences";
 import { formatMoney } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -35,9 +36,15 @@ export function MenuDetailSheet({
   // Client req 2026-07-31: display only, same as any other report showing a
   // raw quantity with a unit label (45.3). Stored servingQty and every
   // frozen costAtPublish value are untouched — only how the number renders
-  // for the person currently viewing it.
-  const preferredVolume = usePreferredUnit("VOLUME");
-  const preferredMass = usePreferredUnit("MASS");
+  // for the person currently viewing it. Resolves all four levels (staff
+  // override → admin default → staff's general preference → item's own
+  // unit) for every ingredient across every version shown in this sheet.
+  const allItemIds = useMemo(
+    () =>
+      (detail.data?.versions ?? []).flatMap((v) => v.lines.map((l) => l.locationItem.itemVariant.item.id)),
+    [detail.data],
+  );
+  const { resolve: resolveDisplay } = useItemDisplayUnit(allItemIds);
 
   return (
     <Sheet open={menu !== null} onOpenChange={onOpenChange}>
@@ -86,9 +93,7 @@ export function MenuDetailSheet({
                 <div className="divide-y rounded-lg border">
                   {version.lines.map((line) => {
                     const variant = line.locationItem.itemVariant;
-                    const preferred =
-                      variant.unit.kind === "MASS" ? preferredMass : variant.unit.kind === "VOLUME" ? preferredVolume : null;
-                    const displayUnit = preferred && preferred.kind === variant.unit.kind ? preferred : variant.unit;
+                    const displayUnit = resolveDisplay(variant.item.id, variant.unit) ?? variant.unit;
                     const shownQty =
                       variant.contentTracked && displayUnit.kind === variant.unit.kind
                         ? convert(line.servingQty, variant.unit, displayUnit)

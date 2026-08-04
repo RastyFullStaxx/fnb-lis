@@ -14,18 +14,26 @@ import { useClearDevicePin, useDevicePin, useMe, useSetDevicePin } from "@/api/a
 import { useCurrentClient, useLocationId } from "@/api/location";
 import { useProductTypes } from "@/api/master";
 import {
+  useClearItemUnitPreference,
   useCompanyInfo,
   useCostBasis,
+  useItemUnitDefault,
+  useItemUnitPreference,
+  useSetItemUnitDefault,
+  useSetItemUnitPreference,
   useUpdateCompanyInfo,
   useUpdateCostBasis,
   useUpdateProductTypes,
   useUpdateVarianceThreshold,
   useVarianceThreshold,
   type CompanyInfo,
+  type ItemDisplayUnit,
 } from "@/api/settings";
 import { usePreferencesContext } from "@/lib/preferences";
 import { ApiError } from "@/api/http";
 import { PageHeader } from "@/components/page-header";
+import { ItemOnlyCombobox } from "@/components/item-only-combobox";
+import type { Item } from "@/api/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,6 +47,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+
+/** Same 8-value list the server accepts (itemDisplayUnitBody, routes/settings.ts). */
+const ITEM_DISPLAY_UNITS: ItemDisplayUnit[] = ["ml", "L", "fl oz", "gal", "g", "kg", "oz", "lb"];
 
 export function SettingsPage() {
   const me = useMe();
@@ -55,6 +66,7 @@ export function SettingsPage() {
           description="Only affect your own account. Nobody else sees a difference."
         >
           <DisplayPreferencesSection />
+          <StaffItemUnitSection />
           <DevicePinSection />
         </SettingsGroup>
 
@@ -65,6 +77,7 @@ export function SettingsPage() {
           <CompanySection />
           <CostBasisSection />
           <VarianceThresholdSection />
+          {can(role, "master.write") && <AdminItemUnitDefaultSection />}
           {can(role, "master.write") && <CatalogExportSection />}
           {can(role, "admin.manage") && <ProductTypesSection />}
         </SettingsGroup>
@@ -559,6 +572,219 @@ function DisplayPreferencesSection() {
         </div>
       </div>
     </SettingsSection>
+  );
+}
+
+/**
+ * Staff's own per-item display-unit overrides (client req 2026-07-31,
+ * docs/per-user-per-item-uom-plan.md). Direct sibling of the volume/mass
+ * pickers above — same helper-text convention, own choice, requireAuth only.
+ * A row here beats the admin default and this user's general
+ * preferredVolumeUnit/preferredMassUnit for that one item (see
+ * resolveDisplayUnit() in @fnb/core).
+ *
+ * There's no "list my overrides" endpoint (Phase 3 only ships per-item
+ * GET/PUT/DELETE), so this keeps an in-memory list of items the user has
+ * chosen to customize this session and fetches/saves each one individually —
+ * same shape as the admin default section below.
+ */
+function StaffItemUnitSection() {
+  const [rows, setRows] = useState<Item[]>([]);
+  const [picking, setPicking] = useState<Item | null>(null);
+
+  const addRow = (item: Item) => {
+    setRows((r) => (r.some((x) => x.id === item.id) ? r : [...r, item]));
+    setPicking(null);
+  };
+
+  const removeRow = (itemId: string) => setRows((r) => r.filter((x) => x.id !== itemId));
+
+  return (
+    <SettingsSection
+      title="Per-item display units"
+      description="Show a specific item in its own unit, just for you — overrides both your general preference above and any default your manager has set."
+    >
+      <div className="max-w-md space-y-4">
+        {rows.map((item) => (
+          <StaffItemUnitRow key={item.id} item={item} onRemove={() => removeRow(item.id)} />
+        ))}
+
+        <div className="space-y-2">
+          <Label>Add an item</Label>
+          <ItemOnlyCombobox
+            value={picking}
+            onSelect={addRow}
+            exclude={rows.map((r) => r.id)}
+            placeholder="Search items…"
+          />
+        </div>
+
+        {rows.length === 0 && (
+          <p className="text-xs text-muted-foreground">
+            No items customized yet. Pick one above to set a unit just for you.
+          </p>
+        )}
+      </div>
+    </SettingsSection>
+  );
+}
+
+function StaffItemUnitRow({ item, onRemove }: { item: Item; onRemove: () => void }) {
+  const saved = useItemUnitPreference(item.id);
+  const set = useSetItemUnitPreference(item.id);
+  const clear = useClearItemUnitPreference(item.id);
+
+  const current = saved.data?.unit ?? null;
+
+  const change = async (unit: ItemDisplayUnit) => {
+    try {
+      await set.mutateAsync(unit);
+      toast.success(`${item.name} now shows in ${unit} for you`);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not save that unit");
+    }
+  };
+
+  const reset = async () => {
+    try {
+      await clear.mutateAsync();
+      toast.success(`${item.name} reset to your general preference`);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not clear that unit");
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-2">
+      <span className="flex-1 truncate text-sm">{item.name}</span>
+      {saved.isPending ? (
+        <Skeleton className="h-9 w-28" />
+      ) : (
+        <Select value={current ?? undefined} onValueChange={(v) => void change(v as ItemDisplayUnit)} disabled={set.isPending}>
+          <SelectTrigger className="w-28" aria-label={`Display unit for ${item.name}`}>
+            <SelectValue placeholder="Default" />
+          </SelectTrigger>
+          <SelectContent>
+            {ITEM_DISPLAY_UNITS.map((u) => (
+              <SelectItem key={u} value={u}>
+                {u}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
+      {current && (
+        <Button variant="ghost" size="sm" onClick={() => void reset()} disabled={clear.isPending}>
+          Reset
+        </Button>
+      )}
+      <Button
+        variant="ghost"
+        size="icon"
+        className="size-8 shrink-0"
+        onClick={onRemove}
+        aria-label={`Remove ${item.name} from this list`}
+      >
+        <X className="size-3.5" />
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * Admin/manager default per-item display unit (client req 2026-07-31,
+ * docs/per-user-per-item-uom-plan.md). Same shape as Inventory Cost Basis and
+ * Variance Highlight Threshold above it — an establishment policy set once,
+ * gated master.write. Applies to every user of this client with no override
+ * of their own for that item (see resolveDisplayUnit() in @fnb/core).
+ */
+function AdminItemUnitDefaultSection() {
+  const [rows, setRows] = useState<Item[]>([]);
+  const [picking, setPicking] = useState<Item | null>(null);
+
+  const addRow = (item: Item) => {
+    setRows((r) => (r.some((x) => x.id === item.id) ? r : [...r, item]));
+    setPicking(null);
+  };
+
+  const removeRow = (itemId: string) => setRows((r) => r.filter((x) => x.id !== itemId));
+
+  return (
+    <SettingsSection
+      title="Per-item display unit defaults"
+      description="Set the unit an item shows in by default, for everyone at this establishment who hasn't picked their own unit for it."
+    >
+      <div className="max-w-md space-y-4">
+        {rows.map((item) => (
+          <AdminItemUnitDefaultRow key={item.id} item={item} onRemove={() => removeRow(item.id)} />
+        ))}
+
+        <div className="space-y-2">
+          <Label>Add an item</Label>
+          <ItemOnlyCombobox
+            value={picking}
+            onSelect={addRow}
+            exclude={rows.map((r) => r.id)}
+            placeholder="Search items…"
+          />
+        </div>
+
+        {rows.length === 0 && (
+          <p className="text-xs text-muted-foreground">
+            No item defaults set yet. Pick one above to set a default unit for everyone.
+          </p>
+        )}
+      </div>
+    </SettingsSection>
+  );
+}
+
+function AdminItemUnitDefaultRow({ item, onRemove }: { item: Item; onRemove: () => void }) {
+  const client = useCurrentClient();
+  const clientId = client?.id ?? "";
+  const saved = useItemUnitDefault(clientId, item.id);
+  const set = useSetItemUnitDefault(clientId, item.id);
+
+  const current = saved.data?.unit ?? null;
+
+  const change = async (unit: ItemDisplayUnit) => {
+    try {
+      await set.mutateAsync(unit);
+      toast.success(`Default display unit for ${item.name}: ${unit}`);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not save that default");
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-2">
+      <span className="flex-1 truncate text-sm">{item.name}</span>
+      {saved.isPending ? (
+        <Skeleton className="h-9 w-28" />
+      ) : (
+        <Select value={current ?? undefined} onValueChange={(v) => void change(v as ItemDisplayUnit)} disabled={set.isPending}>
+          <SelectTrigger className="w-28" aria-label={`Default display unit for ${item.name}`}>
+            <SelectValue placeholder="Item's own" />
+          </SelectTrigger>
+          <SelectContent>
+            {ITEM_DISPLAY_UNITS.map((u) => (
+              <SelectItem key={u} value={u}>
+                {u}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
+      <Button
+        variant="ghost"
+        size="icon"
+        className="size-8 shrink-0"
+        onClick={onRemove}
+        aria-label={`Remove ${item.name} from this list`}
+      >
+        <X className="size-3.5" />
+      </Button>
+    </div>
   );
 }
 

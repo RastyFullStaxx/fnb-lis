@@ -99,6 +99,22 @@ export const locationItemUpdate = z.object({
 });
 export type LocationItemUpdate = z.infer<typeof locationItemUpdate>;
 
+/**
+ * Movement schedule only, clutter-item-removal plan Phase 4. Separate from
+ * locationItemUpdate so the schedule route can gate on master.write without
+ * also opening cost/retail/weights to that permission.
+ */
+export const locationItemSchedule = z
+  .object({
+    scheduleStartMonth: z.number().int().min(1).max(12).nullable(),
+    scheduleEndMonth: z.number().int().min(1).max(12).nullable(),
+  })
+  .refine(
+    (v) => (v.scheduleStartMonth == null) === (v.scheduleEndMonth == null),
+    { message: "Set both start and end month, or clear both", path: ["scheduleEndMonth"] },
+  );
+export type LocationItemSchedule = z.infer<typeof locationItemSchedule>;
+
 export const supplierUpsert = z.object({
   name: z.string().trim().min(1).max(120),
   contactInfo: z.string().trim().max(500).nullable().optional(),

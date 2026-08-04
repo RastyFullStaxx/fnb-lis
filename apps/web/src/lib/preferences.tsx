@@ -1,12 +1,14 @@
-import { createContext, useContext, useEffect, type ReactNode } from "react";
-import { preferredUnitDef, type UnitDef, type UnitKind } from "@fnb/core";
+import { createContext, useContext, useEffect, useMemo, type ReactNode } from "react";
+import { preferredUnitDef, resolveDisplayUnit, type UnitDef, type UnitKind } from "@fnb/core";
 import {
   DEFAULT_PREFERENCES,
+  useItemDisplayUnits,
   usePreferences,
   useUpdatePreferences,
   type UserPreferences,
 } from "@/api/settings";
 import { useMe } from "@/api/auth";
+import { useCurrentClient } from "@/api/location";
 
 /**
  * App-wide access to the signed-in user's display preferences (font size,
@@ -73,4 +75,59 @@ export function usePreferredUnit(kind: UnitKind): UnitDef | null {
   if (kind === "COUNT") return null;
   const name = kind === "VOLUME" ? preferences.preferredVolumeUnit : preferences.preferredMassUnit;
   return preferredUnitDef(name);
+}
+
+/**
+ * Client req 2026-07-31 (docs/per-user-per-item-uom-plan.md): the unit to
+ * actually display a quantity in for one item, walking all four resolution
+ * levels via resolveDisplayUnit() (@fnb/core) — staff's own override for
+ * this item, then the admin's default for this item, then this user's
+ * general preferredVolumeUnit/preferredMassUnit, then the item's own unit.
+ *
+ * This is the piece that was missing: resolveDisplayUnit() existed and was
+ * correctly exported, but nothing called it — every screen that renders a
+ * quantity (counts/session.tsx, recipes/detail.tsx, recipes/builder.tsx)
+ * only ever read level 3 via usePreferredUnit(kind), so a manager's
+ * per-item default or a staffer's own per-item override had no effect
+ * anywhere they'd actually see a number. This hook is the replacement:
+ * pass every itemId a screen will render, get back a lookup function that
+ * folds in all four levels for any of them.
+ *
+ * Batches ALL items in one request (useItemDisplayUnits) rather than one
+ * request per row — a count session or recipe can have dozens of lines.
+ */
+export function useItemDisplayUnit(itemIds: string[]): {
+  isPending: boolean;
+  resolve: (itemId: string | undefined, itemUnit: UnitDef | null | undefined) => UnitDef | null;
+} {
+  const client = useCurrentClient();
+  const clientId = client?.id ?? "";
+  const preferredVolume = usePreferredUnit("VOLUME");
+  const preferredMass = usePreferredUnit("MASS");
+  const levels = useItemDisplayUnits(clientId, itemIds);
+
+  const resolve = useMemo(() => {
+    return (itemId: string | undefined, itemUnit: UnitDef | null | undefined): UnitDef | null => {
+      if (!itemUnit) return null;
+      const staffPreference = itemUnit.kind === "MASS" ? preferredMass : itemUnit.kind === "VOLUME" ? preferredVolume : null;
+      const itemLevels = itemId ? levels.data?.[itemId] : undefined;
+      const { unit } = resolveDisplayUnit(
+        {
+          staffOverride: itemLevels?.staffOverride ?? null,
+          adminDefault: itemLevels?.adminDefault ?? null,
+          staffPreference: staffPreference?.name ?? null,
+        },
+        itemUnit.name,
+      );
+      // resolveDisplayUnit() returns a plain unit name — turn it back into a
+      // UnitDef for convert(). A staffOverride/adminDefault of the wrong kind
+      // for this item (e.g. "kg" saved before a category change made this a
+      // VOLUME item) falls back to the item's own unit rather than throwing
+      // in convert()'s kind-mismatch guard.
+      const resolved = preferredUnitDef(unit);
+      return resolved && resolved.kind === itemUnit.kind ? resolved : itemUnit;
+    };
+  }, [levels.data, preferredVolume, preferredMass]);
+
+  return { isPending: levels.isPending, resolve };
 }

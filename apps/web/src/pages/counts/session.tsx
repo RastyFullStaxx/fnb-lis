@@ -1,12 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useParams } from "react-router";
 import { ArrowLeft, Check, Pencil } from "lucide-react";
 import { toast } from "sonner";
-import { can, convert, type Role } from "@fnb/core";
+import { can, checkContentVsHistory, convert, type Role, type UnitDef, type WeighWarning } from "@fnb/core";
 import { statusVariant } from "@/lib/status";
 import { useMe } from "@/api/auth";
-import { usePreferredUnit } from "@/lib/preferences";
-import { useLocationId, useLocationItems } from "@/api/location";
+import { useItemDisplayUnit } from "@/lib/preferences";
+import { useLocationId, useLocationItems, useTrailingAverage } from "@/api/location";
 import { useCountMutations, useCountSession } from "@/api/ops";
 import { variantLabel, type CountLine, type LocationItem } from "@/api/types";
 import { ApiError } from "@/api/http";
@@ -162,20 +162,60 @@ function OpenSession({ session }: { session: SessionWithLines }) {
 
   const weighable = (item?.itemVariant.contentTracked || item?.itemVariant.weighMode === "NET") ?? false;
   const activeMode = weighable ? mode : "FULL";
-  const preview = useWeighPreview(item, scale);
+  // Weight outlier warning (docs/2026-08-01-weight-outlier-warning-plan.md,
+  // phases doc Phase 3/4) — one fetch per picked item, shared by both the
+  // Weigh Partial preview below and the Open Amount check further down.
+  const trailingAverage = useTrailingAverage(item?.id ?? null).data?.trailingAverage;
+  const preview = useWeighPreview(item, scale, trailingAverage);
 
-  // Client req 2026-07-31: show and accept Open Amount / total in the
-  // user's own preferred unit, convert to the item's stored unit right at
-  // submit. The item's own unit stays the source of truth for storage —
-  // this only changes what the counter sees and types. Both kinds are
-  // fetched up front (not just the selected item's kind) so startEdit can
-  // resolve the right one for the LINE being opened without waiting on a
-  // render — item state has not updated yet at that point in the function.
-  const preferredVolume = usePreferredUnit("VOLUME");
-  const preferredMass = usePreferredUnit("MASS");
+  // Completeness. An item left out of a count is silently DROPPED from the
+  // reconciliation — it doesn't show as a shortage, the row just disappears —
+  // so the counter has to be able to see what is still outstanding before the
+  // period locks. Hoisted above the displayUnit resolution below: the item-id
+  // list for that resolver needs the whole catalog, not just the picked item,
+  // since Not Counted / Counted rows render every item in this session.
+  const catalog = useLocationItems();
+
+  // Client req 2026-07-31 (docs/per-user-per-item-uom-plan.md): show and
+  // accept Open Amount / total in the RESOLVED display unit for the picked
+  // item — staff's own override for this item, then the admin's default,
+  // then this user's general preference, then the item's own unit
+  // (resolveDisplayUnit() in @fnb/core). The item's own unit stays the
+  // source of truth for storage — this only changes what the counter sees
+  // and types. Resolves for every item in the catalog (not just the picked
+  // one) plus every item already in this session's lines — startEdit needs
+  // to resolve the unit for the LINE being opened without waiting on a
+  // render, and a line can reference an item that's since gone inactive in
+  // the catalog fetch.
+  const allItemIds = useMemo(
+    () => [
+      ...new Set([
+        ...(catalog.data ?? []).map((li) => li.itemVariant.item.id),
+        ...session.lines.map((l) => l.locationItem.itemVariant.item.id),
+      ]),
+    ],
+    [catalog.data, session.lines],
+  );
+  const { resolve: resolveDisplay } = useItemDisplayUnit(allItemIds);
   const itemUnit = item?.itemVariant.unit ?? null;
-  const preferredUnit = itemUnit?.kind === "MASS" ? preferredMass : itemUnit?.kind === "VOLUME" ? preferredVolume : null;
-  const displayUnit = preferredUnit ?? itemUnit;
+  const displayUnit = resolveDisplay(item?.itemVariant.item.id, itemUnit);
+
+  /**
+   * Open Amount's own outlier check (docs/2026-08-01-weight-outlier-warning-plan.md
+   * §6 step 3; phases doc Phase 4) — this entry mode has no live calculator,
+   * so there's no existing on-change computation to extend; this is the new
+   * one. History is compared in the item's own STORED unit, so the typed
+   * displayUnit value is converted first — the same conversion `save()`
+   * already applies at submit — otherwise a counter on "oz" preference would
+   * get compared against a history recorded in ml.
+   */
+  const openAmountWarning = useMemo((): WeighWarning | null => {
+    if (activeMode !== "OPEN" || useTotalAmount || openAmount === "") return null;
+    const n = Number(openAmount);
+    if (!Number.isFinite(n) || n < 0) return null;
+    const stored = itemUnit && displayUnit && displayUnit.kind === itemUnit.kind ? convert(n, displayUnit, itemUnit) : n;
+    return checkContentVsHistory(stored, trailingAverage);
+  }, [activeMode, useTotalAmount, openAmount, itemUnit, displayUnit, trailingAverage]);
 
   /**
    * Focus the entry field for the current mode. Picking an item left focus on
@@ -220,11 +260,12 @@ function OpenSession({ session }: { session: SessionWithLines }) {
       // as a fresh entry would expect to type in.
       target = "OPEN";
       setMode("OPEN");
+      const lineItemId = line.locationItem.itemVariant.item.id;
       const lineUnit = line.locationItem.itemVariant.unit;
-      const linePreferred = lineUnit.kind === "MASS" ? preferredMass : lineUnit.kind === "VOLUME" ? preferredVolume : null;
+      const lineDisplay = resolveDisplay(lineItemId, lineUnit) ?? lineUnit;
       const shown =
-        linePreferred && linePreferred.kind === lineUnit.kind
-          ? convert(line.remainingContent, lineUnit, linePreferred)
+        lineDisplay.kind === lineUnit.kind
+          ? convert(line.remainingContent, lineUnit, lineDisplay)
           : line.remainingContent;
       setOpenAmount(String(shown));
       setUseTotalAmount(false);
@@ -335,11 +376,10 @@ function OpenSession({ session }: { session: SessionWithLines }) {
 
   const activeLines = session.lines.filter((l) => l.status === "ACTIVE");
 
-  // Completeness. An item left out of a count is silently DROPPED from the
-  // reconciliation — it doesn't show as a shortage, the row just disappears —
-  // so the counter has to be able to see what is still outstanding before the
-  // period locks.
-  const catalog = useLocationItems();
+  // An item left out of a count is silently DROPPED from the reconciliation —
+  // it doesn't show as a shortage, the row just disappears — so the counter
+  // has to be able to see what is still outstanding before the period locks.
+  // (catalog itself is hoisted above, near the displayUnit resolver.)
   const countedIds = new Set(activeLines.map((l) => l.locationItemId));
   const remaining = (catalog.data ?? []).filter((li: LocationItem) => !countedIds.has(li.id));
   const total = catalog.data?.length ?? 0;
@@ -458,6 +498,14 @@ function OpenSession({ session }: { session: SessionWithLines }) {
                   <p className="text-xs text-muted-foreground">
                     Type the amount left in the open container — no scale or empty weight needed.
                   </p>
+                  {/* Same bg-warning/10 style as WeighPreviewStrip (phases doc
+                      4.2/4.3) — the two entry modes should look identical to
+                      the counter even though there's no live calculator here. */}
+                  {openAmountWarning && (
+                    <p className="rounded-md bg-warning/10 px-3 py-1.5 text-xs text-foreground">
+                      {openAmountWarning.message}
+                    </p>
+                  )}
                 </div>
               )}
             </div>
@@ -595,6 +643,7 @@ function OpenSession({ session }: { session: SessionWithLines }) {
                   line={line}
                   removable
                   editing={line.id === editingLineId}
+                  displayUnit={resolveDisplay(line.locationItem.itemVariant.item.id, line.locationItem.itemVariant.unit)}
                   onEdit={() => startEdit(line)}
                   onRemove={() =>
                     mutations.removeLine
@@ -667,6 +716,16 @@ function ReadOnlySession({ session }: { session: SessionWithLines }) {
   // rights — same rule as Sales.
   const canEdit = canVoid && can(role, "entries.create");
 
+  // Client req 2026-07-31 (docs/per-user-per-item-uom-plan.md): committed
+  // lines render in the resolved display unit too, not just the item's raw
+  // stored unit — same resolver OpenSession uses, called separately here
+  // since this is a sibling component, not a child, of OpenSession.
+  const allItemIds = useMemo(
+    () => [...new Set(session.lines.map((l) => l.locationItem.itemVariant.item.id))],
+    [session.lines],
+  );
+  const { resolve: resolveDisplay } = useItemDisplayUnit(allItemIds);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <SessionHeader session={session} />
@@ -677,6 +736,7 @@ function ReadOnlySession({ session }: { session: SessionWithLines }) {
             <LineRow
               key={line.id}
               line={line}
+              displayUnit={resolveDisplay(line.locationItem.itemVariant.item.id, line.locationItem.itemVariant.unit)}
               onVoid={canVoid && line.status === "ACTIVE" ? () => setVoiding(line) : undefined}
               onEdit={canEdit && line.status === "ACTIVE" ? () => setEditing(line) : undefined}
             />
@@ -737,8 +797,22 @@ function EditLineDialog({
   const [openAmount, setOpenAmount] = useState("");
   const [changeReason, setChangeReason] = useState("");
 
+  // Client req 2026-07-31 (docs/per-user-per-item-uom-plan.md): correcting a
+  // committed line should show and accept Open Amount in the same resolved
+  // display unit the counter used to enter it in the first place — staff's
+  // own override for this item, then the admin's default, then the
+  // general preference, then the item's own unit. Without this, a bartender
+  // who counted "Vodka" in oz would come back to correct it and find the
+  // field silently switched to ml — exactly the kind of unit mismatch that
+  // produces a wrong-by-a-conversion-factor entry from someone who is
+  // already here because something needed fixing.
+  const { resolve: resolveDisplay } = useItemDisplayUnit(line ? [line.locationItem.itemVariant.item.id] : []);
+  const itemUnit = line?.locationItem.itemVariant.unit ?? null;
+  const displayUnit = resolveDisplay(line?.locationItem.itemVariant.item.id, itemUnit);
+
   // Re-seed every field when a different line opens the dialog — same mapping
-  // the open-session Edit uses.
+  // the open-session Edit uses. Stored remainingContent is in the item's own
+  // unit; show it converted to displayUnit, same as a fresh entry would.
   useEffect(() => {
     if (!line) return;
     setChangeReason("");
@@ -749,7 +823,13 @@ function EditLineDialog({
       setOpenAmount("");
     } else if (line.scaleWeight == null) {
       setMode("OPEN");
-      setOpenAmount(String(line.remainingContent));
+      const lineUnit = line.locationItem.itemVariant.unit;
+      const lineDisplay = resolveDisplay(line.locationItem.itemVariant.item.id, lineUnit) ?? lineUnit;
+      const shown =
+        lineDisplay.kind === lineUnit.kind
+          ? convert(line.remainingContent, lineUnit, lineDisplay)
+          : line.remainingContent;
+      setOpenAmount(String(shown));
       setQty("");
       setScale("");
     } else {
@@ -758,13 +838,33 @@ function EditLineDialog({
       setQty("");
       setOpenAmount("");
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [line]);
 
   // Hooks stay above the early return — useWeighPreview handles a null item.
   const item = line?.locationItem ?? null;
-  const preview = useWeighPreview(item, scale);
+  // Weight outlier warning (docs/2026-08-01-weight-outlier-warning-plan.md,
+  // phases doc Phase 3/4) — same fetch OpenSession uses, shared by the
+  // Weigh Partial preview and the Open Amount check below.
+  const trailingAverage = useTrailingAverage(item?.id ?? null).data?.trailingAverage;
+  const preview = useWeighPreview(item, scale, trailingAverage);
   const weighable = (item?.itemVariant.contentTracked || item?.itemVariant.weighMode === "NET") ?? false;
   const activeMode = weighable ? mode : "FULL";
+  // Open Amount here saves in displayUnit like a fresh entry — convert to
+  // the item's own stored unit right at the edge, same toStoredUnit shape
+  // OpenSession's save() uses, so history comparisons stay in the stored
+  // unit regardless of what unit the counter is looking at.
+  const toStoredUnit = (typed: number): number => {
+    if (!itemUnit || !displayUnit || displayUnit.kind !== itemUnit.kind) return typed;
+    return convert(typed, displayUnit, itemUnit);
+  };
+  const openAmountWarning = useMemo((): WeighWarning | null => {
+    if (activeMode !== "OPEN" || openAmount === "") return null;
+    const n = Number(openAmount);
+    if (!Number.isFinite(n) || n < 0) return null;
+    const stored = itemUnit && displayUnit && displayUnit.kind === itemUnit.kind ? convert(n, displayUnit, itemUnit) : n;
+    return checkContentVsHistory(stored, trailingAverage);
+  }, [activeMode, openAmount, itemUnit, displayUnit, trailingAverage]);
 
   if (!line || !item) return null;
   const variant = item.itemVariant;
@@ -779,7 +879,7 @@ function EditLineDialog({
     } else if (activeMode === "OPEN") {
       const n = Number(openAmount);
       if (openAmount === "" || !Number.isFinite(n) || n < 0) return toast.error("Enter the remaining amount");
-      body = { locationItemId: item.id, countType: "WEIGH" as const, remainingContent: n };
+      body = { locationItemId: item.id, countType: "WEIGH" as const, remainingContent: toStoredUnit(n) };
     } else {
       if (!preview || !preview.ready || !preview.entered || preview.blocking) {
         return toast.error("Fix the scale reading first");
@@ -842,7 +942,7 @@ function EditLineDialog({
             </div>
           ) : activeMode === "OPEN" ? (
             <div className="space-y-2">
-              <Label htmlFor="ec-open">Remaining {variant.unit.name}</Label>
+              <Label htmlFor="ec-open">Remaining {displayUnit?.name ?? variant.unit.name}</Label>
               <QuantityInput
                 id="ec-open"
                 className="tnum"
@@ -850,6 +950,11 @@ function EditLineDialog({
                 value={openAmount}
                 onChange={(e) => setOpenAmount(e.target.value)}
               />
+              {openAmountWarning && (
+                <p className="rounded-md bg-warning/10 px-3 py-1.5 text-xs text-foreground">
+                  {openAmountWarning.message}
+                </p>
+              )}
             </div>
           ) : (
             <div className="space-y-2">
@@ -896,6 +1001,7 @@ function LineRow({
   onEdit,
   onRemove,
   onVoid,
+  displayUnit,
 }: {
   line: CountLine;
   removable?: boolean;
@@ -903,10 +1009,26 @@ function LineRow({
   onEdit?: () => void;
   onRemove?: () => void;
   onVoid?: () => void;
+  /**
+   * Resolved display unit for this line's item (client req 2026-07-31,
+   * docs/per-user-per-item-uom-plan.md) — staff override, then admin
+   * default, then general preference, then the item's own unit
+   * (resolveDisplayUnit() in @fnb/core, resolved by the caller). Optional
+   * and falls back to the item's own stored unit so this component still
+   * renders sensibly if a caller doesn't have a resolver wired up yet.
+   */
+  displayUnit?: UnitDef | null;
 }) {
   const variant = line.locationItem.itemVariant;
   const voided = line.status === "VOID";
   const [confirmRemove, setConfirmRemove] = useState(false);
+  // remainingContent is stored in the item's own unit; convert once here for
+  // display. The "X of {variantLabel}" fraction badge below stays on the raw
+  // stored value on purpose — that's a fraction of a bottle, not a quantity,
+  // and dividing by variant.size only makes sense in the item's own unit.
+  const shownUnit = displayUnit && displayUnit.kind === variant.unit.kind ? displayUnit : variant.unit;
+  const shownContent =
+    shownUnit.kind === variant.unit.kind ? convert(line.remainingContent, variant.unit, shownUnit) : line.remainingContent;
   return (
     <div
       className={cn(
@@ -929,11 +1051,11 @@ function LineRow({
             <EntryFact label="Count" value={`${line.qtyFull} full`} />
           ) : line.scaleWeight == null ? (
             // Direct open-amount entry — no scale/tare to show.
-            <EntryFact label="Open amount" value={`${line.remainingContent} ${variant.unit.name}`} />
+            <EntryFact label="Open amount" value={`${shownContent} ${shownUnit.name}`} />
           ) : (
             <EntryFact
               label="Weighed"
-              value={`${line.scaleWeight} ${line.scaleUnit} → ${line.remainingContent} ${variant.unit.name}`}
+              value={`${line.scaleWeight} ${line.scaleUnit} → ${shownContent} ${shownUnit.name}`}
             />
           )}
           {line.correctionOfId && <EntryFact label="Type" value="Correction" />}
