@@ -23,6 +23,8 @@ import { replay } from "../lib/idempotency";
 import { getTrailingAverage } from "../lib/weigh-history";
 import {
   assertExpectedStatus,
+  holdParentOpen,
+  transitionStatus,
   assertMayEditDraft,
   opAlreadyApplied,
   originOf,
@@ -428,24 +430,37 @@ export const countRoutes = new Hono<AppEnv>()
     const { locationItem, data, entryPath } = await buildLineData(location.id, body);
     const areaId = await resolveAreaId(location.id, body.areaId);
 
-    const line = await prisma.countLine.create({
-      data: {
-        id: body.id,
-        occurredAt: body.occurredAt,
-        countSessionId: session.id,
-        locationItemId: locationItem.id,
-        areaId,
-        ...data,
-        // Price snapshots at ENTRY time. A device replaying an offline count
-        // sends what the price was when the bottle was actually counted; the
-        // browser sends nothing and the live catalog is the same instant.
-        // Only a device session may override, so this is not a way to post
-        // arbitrary prices from a browser.
-        ...snapshotPrices(user, body, locationItem),
-        createdById: user.id,
-        createdByName: `${user.firstName} ${user.lastName}`,
-      },
-      include: LINE_INCLUDE,
+    // The OPEN check above ran outside any transaction, so on its own it only
+    // proves the session WAS open a moment ago. `holdParentOpen` re-proves it
+    // atomically and pins it for the insert — see its note in lib/two-way.ts.
+    const line = await prisma.$transaction(async (tx) => {
+      await holdParentOpen(
+        () =>
+          tx.countSession.updateMany({
+            where: { id: session.id, status: "OPEN" },
+            data: { status: "OPEN" },
+          }),
+        "count",
+      );
+      return tx.countLine.create({
+        data: {
+          id: body.id,
+          occurredAt: body.occurredAt,
+          countSessionId: session.id,
+          locationItemId: locationItem.id,
+          areaId,
+          ...data,
+          // Price snapshots at ENTRY time. A device replaying an offline count
+          // sends what the price was when the bottle was actually counted; the
+          // browser sends nothing and the live catalog is the same instant.
+          // Only a device session may override, so this is not a way to post
+          // arbitrary prices from a browser.
+          ...snapshotPrices(user, body, locationItem),
+          createdById: user.id,
+          createdByName: `${user.firstName} ${user.lastName}`,
+        },
+        include: LINE_INCLUDE,
+      });
     });
 
     // Server-side outlier enforcement (plan §6 step 4; phases doc Phase 5):
@@ -472,15 +487,23 @@ export const countRoutes = new Hono<AppEnv>()
     // Re-resolved on edit too: moving a tally to the right shelf is a normal
     // correction, and the same cross-location guard has to apply.
     const areaId = await resolveAreaId(location.id, body.areaId);
-    const line = await prisma.countLine.update({
-      where: { id: existing.id },
-      data: {
-        locationItemId: locationItem.id,
-        areaId,
-        ...data,
-        ...snapshotPrices(user, body, locationItem),
-      },
-      include: LINE_INCLUDE,
+    // Same race as create: a commit landing between the OPEN check and this
+    // write would edit a line inside a committed count.
+    const line = await prisma.$transaction(async (tx) => {
+      await holdParentOpen(
+        () => tx.countSession.updateMany({ where: { id: session.id, status: "OPEN" }, data: { status: "OPEN" } }),
+        "count",
+      );
+      return tx.countLine.update({
+        where: { id: existing.id },
+        data: {
+          locationItemId: locationItem.id,
+          areaId,
+          ...data,
+          ...snapshotPrices(user, body, locationItem),
+        },
+        include: LINE_INCLUDE,
+      });
     });
     // Same server-side outlier enforcement as create (phases doc Phase 5) —
     // an edit can turn a clean reading into an outlier just as easily.
@@ -495,7 +518,13 @@ export const countRoutes = new Hono<AppEnv>()
     assertMayEditDraft(session, c.get("user")!, "count");
     const existing = await prisma.countLine.findUnique({ where: { id: c.req.param("lineId") } });
     if (!existing || existing.countSessionId !== session.id) throw new AppError(404, "Count line not found");
-    await prisma.countLine.delete({ where: { id: existing.id } });
+    await prisma.$transaction(async (tx) => {
+      await holdParentOpen(
+        () => tx.countSession.updateMany({ where: { id: session.id, status: "OPEN" }, data: { status: "OPEN" } }),
+        "count",
+      );
+      await tx.countLine.delete({ where: { id: existing.id } });
+    });
     return c.json({ ok: true });
   })
 
@@ -521,10 +550,20 @@ export const countRoutes = new Hono<AppEnv>()
     if (lineCount === 0) throw new AppError(400, "Add at least one count line before committing");
 
     const committed = await prisma.$transaction(async (tx) => {
-      const updated = await tx.countSession.update({
-        where: { id: session.id },
-        data: { status: "COMMITTED", committedAt: new Date(), committedById: user.id },
-      });
+      // Compare-and-set, not a bare update: the `status !== "OPEN"` check above
+      // is outside this transaction, so two commits arriving together both
+      // passed it. The loser used to overwrite committedAt/committedById and
+      // the trail credited the wrong person at the wrong time.
+      await transitionStatus(
+        () =>
+          tx.countSession.updateMany({
+            where: { id: session.id, status: "OPEN" },
+            data: { status: "COMMITTED", committedAt: new Date(), committedById: user.id },
+          }),
+        "count",
+        "committed",
+      );
+      const updated = await tx.countSession.findUniqueOrThrow({ where: { id: session.id } });
       await recordOp(tx, op.data.opId, user, "CountSession", session.id, "commit");
       await logActivity(
         { user, clientId: location.clientId, locationId: location.id, action: "count.commit", entity: "CountSession", entityId: session.id, summary: `Committed count for ${session.countDate} (${lineCount} lines)` },
@@ -546,10 +585,18 @@ export const countRoutes = new Hono<AppEnv>()
 
     if (session.status === "VOID") throw new AppError(409, "Already voided");
     const voided = await prisma.$transaction(async (tx) => {
-      const updated = await tx.countSession.update({
-        where: { id: session.id },
-        data: { status: "VOID", voidedAt: new Date(), voidedById: user.id, voidReason: reason },
-      });
+      // Compare-and-set: void anything not already VOID, and let a concurrent
+      // void lose rather than overwrite the first one's reason and attribution.
+      await transitionStatus(
+        () =>
+          tx.countSession.updateMany({
+            where: { id: session.id, status: { not: "VOID" } },
+            data: { status: "VOID", voidedAt: new Date(), voidedById: user.id, voidReason: reason },
+          }),
+        "count",
+        "voided",
+      );
+      const updated = await tx.countSession.findUniqueOrThrow({ where: { id: session.id } });
       await recordOp(tx, opId, user, "CountSession", session.id, "void");
       await logActivity(
         { user, clientId: location.clientId, locationId: location.id, action: "count.void", entity: "CountSession", entityId: session.id, summary: `Voided count for ${session.countDate}: ${reason}` },

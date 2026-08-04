@@ -3912,11 +3912,6 @@ the floor — hence 5px.
 
 From the backend review, worth a decision rather than a silent patch:
 
-- **TOCTOU across the commit boundary** (`counts.ts`, `purchases.ts`,
-  `transfers.ts`): the parent-status check sits outside the transaction that
-  inserts the line, so a desktop replaying its outbox while a manager commits can
-  land a line on a COMMITTED session. Fix is to re-assert status inside the same
-  `$transaction` and make the commit flip an `updateMany` compare-and-set.
 - **Unvalidated `businessDate` on the import upload** (`imports.ts`): the only
   unvalidated business date on the server. `2026-13-45` commits sales that appear
   in no audit period, silently.
@@ -3926,3 +3921,70 @@ From the backend review, worth a decision rather than a silent patch:
 - Unvalidated `supplierId` on purchases; unlogged draft-line deletes and
   import-row approvals; one `toFixed` in a `menus.ts` log string; unbounded
   `findMany` in `verifyChain()`.
+
+## 2026-08-04 — TOCTOU across the commit boundary (sync §7.2 Rule 2)
+
+`assertExpectedStatus` answers "did this change while the device was offline?"
+It cannot answer "is it changing *right now*", because the status it compares was
+read outside any transaction. Every line route therefore had a real window: the
+`status !== "OPEN"` check passed, a commit landed, then the insert wrote —
+attaching a line to a **committed** count. Its ending quantity moves after the
+audit period closed and the `count.commit` summary's "(N lines)" is already
+wrong, and nothing downstream can detect it because the row looks ordinary.
+
+Rule 1 (draft ownership) makes this rare but does not cover the case the desktop
+actually creates: a device **replaying its outbox** is not the interactive editor
+Rule 1 reasons about, so its queued line can arrive while a manager commits the
+same count in the browser.
+
+### Two mechanisms, in `lib/two-way.ts` beside the other Rule 2 helpers
+
+- **`holdParentOpen`** — a *conditional self-write* on the parent before the line
+  write: `UPDATE … SET status = 'OPEN' WHERE id = ? AND status = 'OPEN'`. It
+  changes nothing, but it is a real write, so SQLite takes the row's write lock
+  and holds it for the transaction. Both orderings become correct rather than
+  merely unlikely: line-then-commit → the commit counts the line;
+  commit-then-line → zero rows matched, `409 STATUS_CONFLICT`.
+  (None of the three headers carries `@updatedAt`, so the self-write disturbs
+  nothing — the sync doc had already reasoned that column away as "a column
+  nothing read", which turns out to be why this technique is available at all.)
+- **`transitionStatus`** — the commit/void flip becomes compare-and-set, which is
+  what Rule 2 asked for in so many words. The flips were unconditional
+  `update({ where: { id } })`, so two commits arriving together both passed the
+  pre-check and both wrote — the second silently overwriting
+  `committedAt`/`committedById`, crediting the wrong person at the wrong time.
+
+Applied to line create, edit and delete, plus the header edit, on counts,
+purchases and transfers; and to all five commit/void flips. 22 call sites.
+
+### Verified — and the first two attempts did not verify it
+
+- 20 concurrent add-line/commit pairs: the line won all 20. A correct outcome,
+  but it never exercised the commit-first ordering, so it proved nothing.
+- 30 more with the commit dispatched first: the line was refused 30/30 — but by
+  the **outer pre-check**, not the guard. An HTTP race almost always ends there,
+  so it cannot demonstrate the guard at all.
+- What actually works: drive the two transactions directly and pin the
+  interleaving. New harness **`verify:races`** (throwaway db, same runner as the
+  other three) holds the parent lock across a 400 ms window with a commit firing
+  into it, and asserts the commit is serialised behind the insert rather than
+  slipping in. Also asserts the guard refuses on a COMMITTED parent *and* that
+  the line rolls back.
+
+> A check I wrote and then had to throw away: "no CountLine anywhere has
+> `createdAt` after its session's `committedAt`" reported **486 offenders**. They
+> are all seed data — the seeder stamps `committedAt` and writes the lines
+> milliseconds later (480 of 486 were sub-second gaps; the rest are deliberately
+> backdated sessions), and none were from the probe. `createdAt` is insertion
+> wall-clock, not evidence of route ordering, so the scan was unsound as a global
+> invariant. Scoped to rows that actually went through the routes, it passes.
+
+Happy paths re-checked end to end after the change (create → add line → edit →
+delete → commit, on all three documents, plus the 409 once committed): pass.
+`verify:seed` · `verify:sync` · `verify:security` · `verify:mirror` ·
+`verify:races` all pass, both golden anchors exact. Three workspaces typecheck.
+
+Still open from the audit: unvalidated `businessDate` on import upload;
+cross-tenant access deletion in `admin.ts`; unvalidated `supplierId` on
+purchases; unlogged draft-line deletes and import-row approvals; one `toFixed`
+in a `menus.ts` log string; unbounded `findMany` in `verifyChain()`.

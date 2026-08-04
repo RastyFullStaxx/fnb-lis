@@ -60,6 +60,20 @@ works once. The last check enumerates **every route the app registers** and prob
 unauthenticated, so a new endpoint that ships without a guard fails the build. See
 [docs/security.md](docs/security.md).
 
+After ANY change to a commit/void status transition, or to a route that mutates the lines of an
+OPEN/DRAFT document:
+
+```bash
+npm run verify:races -w @fnb/server   # same throwaway-db harness
+```
+
+The one guarantee that cannot be read off the code or caught by a golden fixture. Both parents of a
+line — count session, purchase, transfer — are held with a conditional self-write
+(`holdParentOpen`), and every commit/void is a compare-and-set (`transitionStatus`); see
+`src/lib/two-way.ts`. The self-write exists purely to take SQLite's row lock, so it looks removable
+to anyone who has not watched it fail. This harness drives the two transactions directly and pins
+the interleaving, rather than firing HTTP requests and hoping to land in a sub-millisecond window.
+
 Backups and their drill are scripted — and the drill re-runs the real reconciliation, so it catches
 a single altered count line, not just a corrupt file:
 

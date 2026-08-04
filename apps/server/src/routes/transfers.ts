@@ -16,6 +16,8 @@ import { AppError } from "../lib/errors";
 import { replay } from "../lib/idempotency";
 import {
   assertExpectedStatus,
+  holdParentOpen,
+  transitionStatus,
   assertMayEditDraft,
   opAlreadyApplied,
   originOf,
@@ -214,7 +216,15 @@ export const transferRoutes = new Hono<AppEnv>()
       }
       if (toLocation.status !== "ACTIVE") throw new AppError(400, "Destination location is archived");
     }
-    const updated = await prisma.transfer.update({ where: { id: transfer.id }, data: body });
+    // The DRAFT check ran outside any transaction; a commit landing in between
+    // would rewrite a committed transfer's header — including its destination.
+    const updated = await prisma.$transaction(async (tx) => {
+      await holdParentOpen(
+        () => tx.transfer.updateMany({ where: { id: transfer.id, status: "DRAFT" }, data: { status: "DRAFT" } }),
+        "transfer",
+      );
+      return tx.transfer.update({ where: { id: transfer.id }, data: body });
+    });
     return c.json(updated);
   })
 
@@ -237,19 +247,25 @@ export const transferRoutes = new Hono<AppEnv>()
     const locationItem = await prisma.locationItem.findUnique({ where: { id: body.locationItemId } });
     if (!locationItem || locationItem.locationId !== location.id) throw new AppError(404, "Item not found in this catalog");
     const unitCost = body.unitCost ?? locationItem.cost;
-    const line = await prisma.transferLine.create({
-      data: {
-        id: body.id,
-        occurredAt: body.occurredAt,
-        transferId: transfer.id,
-        locationItemId: body.locationItemId,
-        qty: body.qty,
-        unitCost,
-        lineTotal: lineTotal(body.qty, unitCost),
-        createdById: user.id,
-        createdByName: `${user.firstName} ${user.lastName}`,
-      },
-      include: LINE_INCLUDE,
+    const line = await prisma.$transaction(async (tx) => {
+      await holdParentOpen(
+        () => tx.transfer.updateMany({ where: { id: transfer.id, status: "DRAFT" }, data: { status: "DRAFT" } }),
+        "transfer",
+      );
+      return tx.transferLine.create({
+        data: {
+          id: body.id,
+          occurredAt: body.occurredAt,
+          transferId: transfer.id,
+          locationItemId: body.locationItemId,
+          qty: body.qty,
+          unitCost,
+          lineTotal: lineTotal(body.qty, unitCost),
+          createdById: user.id,
+          createdByName: `${user.firstName} ${user.lastName}`,
+        },
+        include: LINE_INCLUDE,
+      });
     });
     return c.json(line, 201);
   })
@@ -264,7 +280,13 @@ export const transferRoutes = new Hono<AppEnv>()
     // reach any TransferLine in the database, including other clients'.
     const line = await prisma.transferLine.findUnique({ where: { id: c.req.param("lineId") } });
     if (!line || line.transferId !== transfer.id) throw new AppError(404, "Transfer line not found");
-    await prisma.transferLine.delete({ where: { id: line.id } });
+    await prisma.$transaction(async (tx) => {
+      await holdParentOpen(
+        () => tx.transfer.updateMany({ where: { id: transfer.id, status: "DRAFT" }, data: { status: "DRAFT" } }),
+        "transfer",
+      );
+      await tx.transferLine.delete({ where: { id: line.id } });
+    });
     return c.json({ ok: true });
   })
 
@@ -303,10 +325,16 @@ export const transferRoutes = new Hono<AppEnv>()
     }
 
     const committed = await prisma.$transaction(async (tx) => {
-      const updated = await tx.transfer.update({
-        where: { id: transfer.id },
-        data: { status: "COMMITTED", committedAt: new Date(), committedById: user.id },
-      });
+      await transitionStatus(
+        () =>
+          tx.transfer.updateMany({
+            where: { id: transfer.id, status: "DRAFT" },
+            data: { status: "COMMITTED", committedAt: new Date(), committedById: user.id },
+          }),
+        "transfer",
+        "committed",
+      );
+      const updated = await tx.transfer.findUniqueOrThrow({ where: { id: transfer.id } });
       await recordOp(tx, op.data.opId, user, "Transfer", transfer.id, "commit");
       await logActivity(
         {
@@ -558,10 +586,16 @@ export const transferRoutes = new Hono<AppEnv>()
       if ((await activeReceiptCount(tx, { transferId: transfer.id })) > 0) {
         throw new AppError(409, "The destination has active receipts against this transfer — they must void those first");
       }
-      const updated = await tx.transfer.update({
-        where: { id: transfer.id },
-        data: { status: "VOID", voidedAt: new Date(), voidedById: user.id, voidReason: reason },
-      });
+      await transitionStatus(
+        () =>
+          tx.transfer.updateMany({
+            where: { id: transfer.id, status: { not: "VOID" } },
+            data: { status: "VOID", voidedAt: new Date(), voidedById: user.id, voidReason: reason },
+          }),
+        "transfer",
+        "voided",
+      );
+      const updated = await tx.transfer.findUniqueOrThrow({ where: { id: transfer.id } });
       await recordOp(tx, opId, user, "Transfer", transfer.id, "void");
       await logActivity(
         {

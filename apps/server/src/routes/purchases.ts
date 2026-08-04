@@ -16,6 +16,8 @@ import { AppError } from "../lib/errors";
 import { replay } from "../lib/idempotency";
 import {
   assertExpectedStatus,
+  holdParentOpen,
+  transitionStatus,
   assertMayEditDraft,
   opAlreadyApplied,
   originOf,
@@ -113,7 +115,15 @@ export const purchaseRoutes = new Hono<AppEnv>()
     if (purchase.status !== "DRAFT") throw new AppError(409, "Only drafts can be edited");
     assertMayEditDraft(purchase, c.get("user")!, "delivery");
     const body = c.req.valid("json");
-    const updated = await prisma.purchase.update({ where: { id: purchase.id }, data: body });
+    // The DRAFT check above is outside any transaction; a commit landing in
+    // between would edit a committed delivery's header.
+    const updated = await prisma.$transaction(async (tx) => {
+      await holdParentOpen(
+        () => tx.purchase.updateMany({ where: { id: purchase.id, status: "DRAFT" }, data: { status: "DRAFT" } }),
+        "delivery",
+      );
+      return tx.purchase.update({ where: { id: purchase.id }, data: body });
+    });
     return c.json(updated);
   })
 
@@ -135,19 +145,25 @@ export const purchaseRoutes = new Hono<AppEnv>()
 
     const locationItem = await prisma.locationItem.findUnique({ where: { id: body.locationItemId } });
     if (!locationItem || locationItem.locationId !== location.id) throw new AppError(404, "Item not found in this catalog");
-    const line = await prisma.purchaseLine.create({
-      data: {
-        id: body.id,
-        occurredAt: body.occurredAt,
-        purchaseId: purchase.id,
-        locationItemId: body.locationItemId,
-        qty: body.qty,
-        unitCost: body.unitCost,
-        lineTotal: lineTotal(body.qty, body.unitCost),
-        createdById: user.id,
-        createdByName: `${user.firstName} ${user.lastName}`,
-      },
-      include: LI_INCLUDE,
+    const line = await prisma.$transaction(async (tx) => {
+      await holdParentOpen(
+        () => tx.purchase.updateMany({ where: { id: purchase.id, status: "DRAFT" }, data: { status: "DRAFT" } }),
+        "delivery",
+      );
+      return tx.purchaseLine.create({
+        data: {
+          id: body.id,
+          occurredAt: body.occurredAt,
+          purchaseId: purchase.id,
+          locationItemId: body.locationItemId,
+          qty: body.qty,
+          unitCost: body.unitCost,
+          lineTotal: lineTotal(body.qty, body.unitCost),
+          createdById: user.id,
+          createdByName: `${user.firstName} ${user.lastName}`,
+        },
+        include: LI_INCLUDE,
+      });
     });
     return c.json(line, 201);
   })
@@ -161,7 +177,13 @@ export const purchaseRoutes = new Hono<AppEnv>()
     // PurchaseLine in the database, including other clients'.
     const line = await prisma.purchaseLine.findUnique({ where: { id: c.req.param("lineId") } });
     if (!line || line.purchaseId !== purchase.id) throw new AppError(404, "Purchase line not found");
-    await prisma.purchaseLine.delete({ where: { id: line.id } });
+    await prisma.$transaction(async (tx) => {
+      await holdParentOpen(
+        () => tx.purchase.updateMany({ where: { id: purchase.id, status: "DRAFT" }, data: { status: "DRAFT" } }),
+        "delivery",
+      );
+      await tx.purchaseLine.delete({ where: { id: line.id } });
+    });
     return c.json({ ok: true });
   })
 
@@ -180,10 +202,16 @@ export const purchaseRoutes = new Hono<AppEnv>()
     const lineCount = await prisma.purchaseLine.count({ where: { purchaseId: purchase.id } });
     if (lineCount === 0) throw new AppError(400, "Add at least one line before committing");
     const committed = await prisma.$transaction(async (tx) => {
-      const updated = await tx.purchase.update({
-        where: { id: purchase.id },
-        data: { status: "COMMITTED", committedAt: new Date(), committedById: user.id },
-      });
+      await transitionStatus(
+        () =>
+          tx.purchase.updateMany({
+            where: { id: purchase.id, status: "DRAFT" },
+            data: { status: "COMMITTED", committedAt: new Date(), committedById: user.id },
+          }),
+        "delivery",
+        "committed",
+      );
+      const updated = await tx.purchase.findUniqueOrThrow({ where: { id: purchase.id } });
       await recordOp(tx, op.data.opId, user, "Purchase", purchase.id, "commit");
       await logActivity(
         { user, clientId: location.clientId, locationId: location.id, action: "purchase.commit", entity: "Purchase", entityId: purchase.id, summary: `Committed purchase for ${purchase.purchaseDate} (${lineCount} lines)` },
@@ -205,10 +233,16 @@ export const purchaseRoutes = new Hono<AppEnv>()
 
     if (purchase.status === "VOID") throw new AppError(409, "Already voided");
     const voided = await prisma.$transaction(async (tx) => {
-      const updated = await tx.purchase.update({
-        where: { id: purchase.id },
-        data: { status: "VOID", voidedAt: new Date(), voidedById: user.id, voidReason: reason },
-      });
+      await transitionStatus(
+        () =>
+          tx.purchase.updateMany({
+            where: { id: purchase.id, status: { not: "VOID" } },
+            data: { status: "VOID", voidedAt: new Date(), voidedById: user.id, voidReason: reason },
+          }),
+        "delivery",
+        "voided",
+      );
+      const updated = await tx.purchase.findUniqueOrThrow({ where: { id: purchase.id } });
       await recordOp(tx, opId, user, "Purchase", purchase.id, "void");
       await logActivity(
         { user, clientId: location.clientId, locationId: location.id, action: "purchase.void", entity: "Purchase", entityId: purchase.id, summary: `Voided purchase for ${purchase.purchaseDate}: ${reason}` },

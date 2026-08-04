@@ -16,7 +16,8 @@
     "backup": "node scripts/backup.mjs",
     "restore-drill": "node scripts/restore-drill.mjs",
     "mfa:reset": "tsx scripts/mfa-reset.ts",
-    "seal-history": "tsx scripts/seal-activity-history.ts"
+    "seal-history": "tsx scripts/seal-activity-history.ts",
+    "verify:races": "node prisma/verify-races.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

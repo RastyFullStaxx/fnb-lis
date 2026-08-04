@@ -117,6 +117,71 @@ export function assertExpectedStatus(
   );
 }
 
+/**
+ * Assert, *atomically*, that a parent document is still open — and keep it open
+ * for the rest of the transaction.
+ *
+ * `assertExpectedStatus` above compares the client's belief against a status the
+ * route read a moment earlier, outside any transaction. That closes the
+ * offline-divergence case it was built for, but not a race: between the read and
+ * the write, another connection can commit the parent. The line insert then
+ * lands on a COMMITTED count — its ending quantity moves after the audit period
+ * closed, and the `count.commit` summary's "(N lines)" is already wrong. Nothing
+ * downstream can detect it, because the row looks perfectly ordinary.
+ *
+ * The guard is a CONDITIONAL SELF-WRITE: `UPDATE … SET status = 'OPEN' WHERE
+ * id = ? AND status = 'OPEN'`. It writes the value already there, so no data
+ * changes and none of these three models carries `@updatedAt` to disturb — but
+ * it is a real write, so SQLite takes the row's write lock and holds it until
+ * this transaction ends. A concurrent commit either waits (busy_timeout 5s) and
+ * then finds its own `WHERE status = 'OPEN'` still true, or it got there first
+ * and this matches zero rows.
+ *
+ * Both orderings are therefore correct rather than merely unlikely:
+ *   line-then-commit → the line is inside the count, commit counts it;
+ *   commit-then-line → zero rows matched, the insert is refused with a 409.
+ *
+ * Pass a thunk rather than a model name because Prisma's delegates are
+ * separately typed; the call site names the model and the open status it means.
+ */
+export async function holdParentOpen(
+  conditionalTouch: () => Promise<{ count: number }>,
+  what: string,
+): Promise<void> {
+  const { count } = await conditionalTouch();
+  if (count === 0) {
+    throw new AppError(
+      409,
+      `This ${what} was committed or voided while you were working on it. Nothing was saved — reload to see the current version.`,
+      "STATUS_CONFLICT",
+    );
+  }
+}
+
+/**
+ * The commit/void flip itself, as compare-and-set.
+ *
+ * The flips were unconditional `update({ where: { id } })`, so two commits
+ * arriving together both passed the pre-check and both wrote — the second
+ * silently overwriting `committedAt`/`committedById`, so the trail credited the
+ * wrong person at the wrong time. §7.2 Rule 2 asks for compare-and-set here in
+ * so many words; this makes the status transition itself do the deciding.
+ */
+export async function transitionStatus(
+  conditionalUpdate: () => Promise<{ count: number }>,
+  what: string,
+  to: string,
+): Promise<void> {
+  const { count } = await conditionalUpdate();
+  if (count === 0) {
+    throw new AppError(
+      409,
+      `This ${what} is no longer in a state that can be ${to}. Someone else changed it — reload to see the current version.`,
+      "STATUS_CONFLICT",
+    );
+  }
+}
+
 // ───────────────────── Rule 3: catalog stays server-authoritative ─────────────────────
 
 /**

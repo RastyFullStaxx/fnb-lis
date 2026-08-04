@@ -356,6 +356,7 @@ worse than one that fails loudly, because the count still balances — against t
 | `originDeviceId` on CountSession/Purchase/Transfer + `assertMayEditDraft` | Rule 1 | **Shipped** |
 | `POST /drafts/:entity/:id/release` | Rule 1 escape hatch — a dead machine must not freeze a count open forever | **Shipped** |
 | `SyncOp` + `opId` + `expectedStatus` (`assertExpectedStatus`) | Rule 2 | **Shipped** |
+| `holdParentOpen` + `transitionStatus` (`src/lib/two-way.ts`) | Rule 2, the *concurrent* half. `assertExpectedStatus` compares the client's belief against a status read **outside** any transaction, which closes offline divergence but not a race. See the note below. | **Shipped** |
 | `SyncOp` pruning on `/sync/ack` | §7.6 — a retention policy that exists only in a document is not one | **Shipped** |
 | `assertNotQueuedEdit` on catalog/supplier edits | Rule 3 | **Shipped** |
 | `originDeviceId` on SaleRecord/Forfeit + `GET /sync/duplicates` | §7.4 provenance and double-entry review | **Shipped** |
@@ -368,6 +369,38 @@ worse than one that fails loudly, because the count still balances — against t
 `updatedAt` on the three headers was planned here and **dropped**: `status` already *is* the version
 for these documents, and Rule 1 means an open draft has no concurrent editor. It would have been a
 column nothing read.
+
+### Why Rule 2 needed a second mechanism (2026-08-04)
+
+`assertExpectedStatus` answers "did this change while the device was offline?" It cannot answer
+"is it changing *right now*", because the status it compares was read outside any transaction. That
+left a real window on every line route: the `status !== "OPEN"` check passed, then a commit landed,
+then the insert wrote — attaching a line to a **committed** count. Its ending quantity moves after
+the audit period closed, and the `count.commit` summary's "(N lines)" is already wrong. Nothing
+downstream can detect it; the row looks entirely ordinary.
+
+Rule 1 makes this rare but not impossible, and the case it does not cover is exactly the one the
+desktop creates: a device **replaying its outbox** is not the interactive editor Rule 1 reasons
+about, so its queued line can arrive while a manager commits the same count in the browser.
+
+Two closures, both in `src/lib/two-way.ts`:
+
+- **`holdParentOpen`** — before the line write, a *conditional self-write* on the parent:
+  `UPDATE … SET status = 'OPEN' WHERE id = ? AND status = 'OPEN'`. It changes nothing (and none of
+  the three headers carries `@updatedAt` to disturb — see the paragraph above, which is why that
+  column's absence matters more than it looked), but it is a real write, so SQLite takes the row's
+  write lock and holds it for the rest of the transaction. Both orderings become correct rather than
+  merely unlikely: line-then-commit → the commit counts the line; commit-then-line → zero rows
+  matched, `409 STATUS_CONFLICT`.
+- **`transitionStatus`** — the commit/void flip itself becomes compare-and-set, as this rule asked
+  for in so many words. The flips were unconditional `update({ where: { id } })`, so two commits
+  arriving together both passed the pre-check and both wrote, the second silently overwriting
+  `committedAt`/`committedById` — the trail crediting the wrong person at the wrong time.
+
+Covered: line create, edit and delete, plus the header edit, on all three documents; and every
+commit and void flip. Proven by `npm run verify:races -w @fnb/server`, which drives the two
+transactions directly and pins the interleaving — an HTTP race almost always ends at the outer
+pre-check instead, so it cannot demonstrate the guard at all.
 
 > **Phase 39 (adversarial review) changed four things above.** The snapshot is
 > now **device-sessions-only** — it carries PIN hashes, and ordinary location
