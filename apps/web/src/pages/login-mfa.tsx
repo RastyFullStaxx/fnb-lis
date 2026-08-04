@@ -47,7 +47,7 @@ export function MfaChallengeForm({
           Enter your code
         </h1>
         <p className="mt-1 max-w-sm text-sm text-sidebar-foreground/70">
-          Open your authenticator app and enter the 6-digit code for FNB/LIS.
+          Open your authenticator app and enter the 6-digit code for Liquor Inventory Solution.
         </p>
       </div>
 

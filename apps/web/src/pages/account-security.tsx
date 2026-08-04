@@ -96,7 +96,7 @@ export function AccountSecurityPage() {
       <div className="mx-auto w-full max-w-xl">
         <div className="mb-6 flex items-center gap-2.5">
           <img src={lisLogo} alt="" className="size-14 object-contain" />
-          <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">FNB/LIS</span>
+          <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Liquor Inventory Solution</span>
           {/* Only offered once there is somewhere to go back TO. While
               enrolment is outstanding every other route refuses the request,
               so a back link would be a door onto a wall. */}

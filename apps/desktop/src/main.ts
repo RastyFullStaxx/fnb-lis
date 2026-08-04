@@ -108,17 +108,31 @@ function startHost(): Promise<number> {
  */
 let pendingRegistration: Awaited<ReturnType<typeof registerDevice>> | null = null;
 
+/**
+ * The name the person actually typed on the setup form.
+ *
+ * Held across the two IPC calls because `setup:finish` used to derive it from
+ * the OLD config with a `?? "This computer"` fallback — so a fresh setup, which
+ * by definition has no old config, discarded "Front bar PC" and stored the
+ * literal placeholder. The sign-in screen then read back "This computer: This
+ * computer", and the administrator's device list showed a machine with no
+ * distinguishing name at all.
+ */
+let pendingDeviceName: string | null = null;
+
 ipcMain.handle("setup:register", async (_e, input: SetupInput) => {
   const existing = readConfig();
+  pendingDeviceName = input.deviceName?.trim() || null;
   pendingRegistration = await registerDevice(input, existing?.fingerprint);
   return pendingRegistration.result;
 });
 
 ipcMain.handle("setup:finish", async (_e, { locationId, locationName }: { locationId: string; locationName: string }) => {
   if (!pendingRegistration) throw new Error("Connect to the server first");
-  const cfg = configFrom(pendingRegistration, locationId, locationName, pendingRegistration.result.deviceId
-    ? (readConfig()?.deviceName ?? "This computer")
-    : "This computer");
+  // Prefer what was just typed, then whatever a previous setup stored, and only
+  // then the placeholder.
+  const deviceName = pendingDeviceName ?? readConfig()?.deviceName ?? "This computer";
+  const cfg = configFrom(pendingRegistration, locationId, locationName, deviceName);
 
   const payload = await fetchSnapshot(
     pendingRegistration.remoteUrl,
@@ -187,6 +201,10 @@ async function createSetupWindow(): Promise<void> {
     titleBarStyle: "hidden",
     titleBarOverlay: { color: TITLE_BAR_COLOR, symbolColor: "#e8ecf8", height: TITLE_BAR_HEIGHT },
     backgroundColor: TITLE_BAR_COLOR,
+    // See the note on the main window — without this, Windows 11's Mica
+    // backdrop wins over backgroundColor and the caption strip renders
+    // translucent, showing the desktop wallpaper through it.
+    backgroundMaterial: "none",
     webPreferences: {
       preload: path.join(here, "preload.cjs"),
       contextIsolation: true,
@@ -292,6 +310,19 @@ async function createWindow(): Promise<void> {
     titleBarStyle: "hidden",
     titleBarOverlay: { color: TITLE_BAR_COLOR, symbolColor: "#e8ecf8", height: TITLE_BAR_HEIGHT },
     backgroundColor: TITLE_BAR_COLOR,
+    /**
+     * Opt OUT of the Windows 11 backdrop.
+     *
+     * `backgroundColor` alone did not hold the caption strip: Windows 11 applies
+     * a Mica backdrop to that region by default, which is TRANSLUCENT and paints
+     * over it — so the 32px above the page rendered as the user's wallpaper with
+     * the OS title drawn on top, while `titleBarOverlay` correctly coloured only
+     * the button strip on the right. One brand-navy bar with a mismatched
+     * translucent half is worse than no styling at all.
+     *
+     * "none" is the documented switch for "let my own background show".
+     */
+    backgroundMaterial: "none",
     webPreferences: {
       preload: path.join(here, "preload.cjs"),
       // The renderer is the untrusted surface even though we wrote it: it runs
@@ -358,7 +389,59 @@ async function createWindow(): Promise<void> {
     }
   });
 
-  win.once("ready-to-show", () => win?.show());
+  /**
+   * Paint the caption strip from the PAGE, because nothing else can.
+   *
+   * Measured: `getContentBounds().y === getBounds().y`, so the web contents
+   * already extend to the very top of the window — there is no reserved strip
+   * for `backgroundColor` or `backgroundMaterial` to fill. Windows keeps a
+   * caption for the Window Controls Overlay, `titleBarOverlay.color` reaches
+   * only the button strip on the right, and the OS paints its own backdrop and
+   * window title across whatever the page leaves unclaimed. Hence one bar with
+   * two different looks.
+   *
+   * So the page claims it: a fixed 32px band in the brand navy, marked
+   * `-webkit-app-region: drag` so the window still moves by that strip. Injected
+   * from here rather than added to the SPA because the same build serves the
+   * browser, where there is no caption to cover.
+   */
+  win.webContents.on("did-finish-load", () => {
+    void win?.webContents.insertCSS(`
+      html::before {
+        content: "";
+        position: fixed;
+        top: 0; left: 0; right: 0;
+        height: ${TITLE_BAR_HEIGHT}px;
+        background: ${TITLE_BAR_COLOR};
+        z-index: 2147483647;
+        -webkit-app-region: drag;
+        pointer-events: auto;
+      }
+    `);
+  });
+
+  win.once("ready-to-show", () => {
+    win?.show();
+    /**
+     * Re-apply the caption overlay AFTER the window is shown.
+     *
+     * The constructor options are honoured on the setup window, which is created
+     * visible — but this one is created with `show: false` and revealed later,
+     * and in that order Windows had already laid out a default caption by the
+     * time the overlay was meant to take effect. The result was a split bar:
+     * `titleBarOverlay` coloured the button strip brand navy, while the rest
+     * stayed system chrome with the window title drawn across it.
+     *
+     * Setting it again once the window actually exists on screen makes the whole
+     * strip take the same colour. Cheap, idempotent, and it runs once per launch.
+     */
+    win?.setTitleBarOverlay({
+      color: TITLE_BAR_COLOR,
+      symbolColor: "#e8ecf8",
+      height: TITLE_BAR_HEIGHT,
+    });
+
+  });
 
   // The landing page, same as the web front door. "Open the System" leads to
   // /login, which renders the PIN keypad in place of the username/password form

@@ -112,7 +112,18 @@ export function verifyTotpStep(secretB32: string, token: string, window = 1): nu
 }
 
 /** What the QR code encodes. Scanned, or typed by hand from the same secret. */
-export function otpauthUri(username: string, secretB32: string, issuer = "FNB/LIS"): string {
+/**
+ * `issuer` is what an authenticator app shows above the code, so it is brand
+ * copy, not an internal name. It was "FNB/LIS" — the repository's codename —
+ * which told a bar owner nothing and matched no label anywhere else in the
+ * product.
+ *
+ * Safe to change now and only now: the issuer is baked into each otpauth URI at
+ * ENROLMENT time, so altering it cannot rename an entry already in someone's
+ * phone. Every enrolment was cleared by the 2026-08-04 reseed, so there are
+ * none to leave stranded on the old label.
+ */
+export function otpauthUri(username: string, secretB32: string, issuer = "Liquor Inventory Solution"): string {
   const label = encodeURIComponent(`${issuer}:${username}`);
   return `otpauth://totp/${label}?secret=${secretB32}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=${DIGITS}&period=${STEP_SECONDS}`;
 }

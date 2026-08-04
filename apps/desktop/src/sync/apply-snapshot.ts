@@ -174,6 +174,23 @@ export function applySnapshot(
       if (one) tables[table] = upsertRows(db, table, [one]);
     }
 
+    /**
+     * Drop sessions whose user is not in this mirror.
+     *
+     * A device re-provisioned against a REBUILT server keeps its old
+     * `AuthSession` rows — they were issued by a database whose user ids no
+     * longer exist, so they can never authenticate anyone again. They are not
+     * merely useless: `getSessionUser` joins to `User`, and with foreign keys
+     * deliberately off (see above) that join yields null rather than an error,
+     * which turned every request into a 500 and replaced the whole app with
+     * `{"error":"Internal server error"}`.
+     *
+     * Scoped to provably-dead rows — `userId NOT IN (SELECT id FROM User)` —
+     * so a live session is never touched and this is safe on every pull, not
+     * just the first one.
+     */
+    db.prepare(`DELETE FROM "AuthSession" WHERE "userId" NOT IN (SELECT "id" FROM "User")`).run();
+
     for (const [key, table, nested] of TABLES) {
       const rows = pick(payload, key);
       if (!Array.isArray(rows)) continue;

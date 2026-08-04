@@ -76,6 +76,23 @@
       const msg = $("msg");
       let registration = null;
 
+      /**
+       * Electron wraps every rejected IPC call as
+       *   Error invoking remote method 'setup:register': Error: <the real one>
+       * so the server's carefully-worded message arrived buried behind two
+       * layers of plumbing the person reading it cannot act on. The whole point
+       * of a licence message naming what to do next is lost if it opens with an
+       * internal channel name.
+       */
+      function humanError(e) {
+        const raw = (e && e.message) || String(e || "");
+        const unwrapped = raw.replace(
+          /^Error invoking remote method '[^']*':\s*(?:[A-Za-z]*Error:\s*)?/,
+          "",
+        );
+        return unwrapped.trim() || "Something went wrong. Please try again.";
+      }
+
       function say(text, kind) {
         msg.textContent = text;
         msg.className = "msg " + kind;
@@ -110,7 +127,7 @@
           document.querySelector(".step2").style.display = "block";
           say("Computer registered. Now choose its location.", "ok");
         } catch (e) {
-          say(e.message || String(e), "err");
+          say(humanError(e), "err");
           btn.disabled = false;
         }
       });
@@ -127,7 +144,7 @@
           });
           say(`Done — ${r.total} records copied. Starting…`, "ok");
         } catch (e) {
-          say(e.message || String(e), "err");
+          say(humanError(e), "err");
           btn.disabled = false;
         }
       });

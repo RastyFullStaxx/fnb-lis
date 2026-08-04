@@ -4136,3 +4136,85 @@ Anchor worth keeping outside the database, per the tool's own advice:
 
 Old data recoverable from `data/pre-reseed-20260804-195357-fnb.db` or
 `data/backups/fnb-20260804-195339.db`.
+
+## 2026-08-04 — Desktop: caption strip, sign-in scroll, and two crashes
+
+### The caption strip — three wrong diagnoses before the measurement
+
+`titleBarStyle: "hidden"` + `titleBarOverlay` were already correct, which is why
+the window BUTTONS were brand navy while the rest of the strip showed wallpaper
+with the OS title across it. Two attempts missed:
+
+1. `backgroundMaterial: "none"` — on the theory that Windows 11's Mica backdrop
+   was beating `backgroundColor`. It is still correct to set, but changed nothing
+   here.
+2. Re-applying `setTitleBarOverlay` after `show()` — on the theory that creating
+   the window with `show: false` meant the constructor options missed. Also no.
+
+What settled it was measuring instead of theorising:
+`getContentBounds().y === getBounds().y`, **inset = 0**. The web contents already
+reach the very top of the window, so there is no reserved strip for any
+background colour to fill. Windows keeps a caption for the Window Controls
+Overlay, `titleBarOverlay.color` reaches only the button strip, and the OS paints
+its own backdrop and title across whatever the page leaves unclaimed.
+
+So the page claims it: a fixed 32px band in `#112555` marked
+`-webkit-app-region: drag`, injected with `insertCSS` on `did-finish-load`.
+Injected from the main process rather than added to the SPA because the same
+build serves the browser, where there is no caption to cover.
+
+### Sign-in scrolled with almost nothing in it
+
+Two rounds here too. First fix reduced padding — `pb-16` is **72px** at this
+app's 18px root, not 64, and with `lg:py-10` the panel measured 627px against a
+600px viewport. That fixed the password form and missed the point: the PIN
+variant lists every member of staff, so its height is DATA. No padding value
+survives a list of twenty.
+
+Now `lg:h-dvh lg:overflow-hidden` on the grid and `lg:min-h-0 lg:overflow-y-auto`
+on the panel — the window never scrolls, and the panel scrolls inside itself when
+it genuinely needs to. Below `lg` the columns stack and ordinary page scroll is
+correct.
+
+### Two crashes found on the way
+
+- **`{"error":"Internal server error"}` replacing the entire desktop app.**
+  `getSessionUser` did `session.user.status` where `session.user` was null. The
+  mirror was holding 14 `AuthSession` rows issued by the PRE-RESEED database —
+  user ids that no longer exist. Foreign keys are deliberately OFF in the mirror
+  (a partial view legitimately dangles), so the join returned null instead of
+  erroring, and every request 500'd. Two fixes: `getSessionUser` now treats a
+  dangling user as "not signed in" and deletes the row, and `applySnapshot`
+  purges `AuthSession WHERE userId NOT IN (SELECT id FROM User)` — scoped to
+  provably-dead rows, so it is safe on every pull, not just the first.
+- **"This computer: This computer".** `setup:finish` derived the device name from
+  the OLD config with a `?? "This computer"` fallback, so a fresh setup — which
+  by definition has no old config — discarded the name typed on the form. Now
+  carried across the two IPC calls.
+
+### Also
+
+- **Setup errors showed Electron's plumbing.** Every rejected IPC call arrives as
+  `Error invoking remote method 'setup:register': Error: <the real one>`, so a
+  licence message written to say what to do next opened with an internal channel
+  name. Unwrapped in `setup.html`.
+- **"FNB/LIS" → "Liquor Inventory Solution"** on four client-facing screens AND in
+  the **TOTP issuer**, which is what an authenticator app displays above the code.
+  The issuer is baked into each enrolment at signup, so it can never rename an
+  entry already on a phone — the reseed having cleared every enrolment made this
+  the one safe moment to change it.
+
+### Desktop re-registered
+
+Completed against the rebuilt database: `Front bar PC` ACTIVE under the preserved
+`front-bar-pc-fixed-0001` fingerprint, Main Bar, snapshot pulled, session
+encrypted at rest. The orphan row from the interrupted attempt was revoked
+through the admin route.
+
+`Subscription.maxDevices` raised to 2 — `verify-mirror.mjs` registers a
+"Provisioning rehearsal PC" against the REAL server under a fixed fingerprint, so
+a dev machine running both it and the app needs two slots, exactly as that file's
+header says. Noted: **no admin route can set `maxDevices`** —
+`subscriptionUpdateBody` accepts `maxEntities` and `maxUsers` but not this one, so
+a `PUT` returns 200 and silently changes nothing. Written directly; worth adding
+to the schema.

@@ -40,7 +40,7 @@ export function LandingPage() {
       <header className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
         <div className="-ml-3 flex items-center gap-2.5">
           <img src={lisLogo} alt="" className="size-[64px] object-contain" />
-          <span className="text-xs font-medium uppercase tracking-wide text-sidebar-foreground/60">FNB/LIS</span>
+          <span className="text-xs font-medium uppercase tracking-wide text-sidebar-foreground/60">Liquor Inventory Solution</span>
         </div>
         <Button
           asChild

@@ -96,13 +96,21 @@ export function LoginPage() {
   }
 
   return (
-    <div className="grid min-h-dvh lg:grid-cols-[7fr_9fr]">
+    // `lg:h-dvh lg:overflow-hidden` — the WINDOW never scrolls on desktop.
+    // `min-h-dvh` alone let the panel grow past the viewport and take the whole
+    // page with it, which is why a sign-in holding ~390px of content still had a
+    // scrollbar. It also could not cope with the variant that actually needs the
+    // room: the PIN screen lists every member of staff, so its height is data,
+    // not a constant — no amount of padding tuning fixes a list of twenty.
+    // So the page is pinned to the viewport and the panel scrolls INSIDE itself.
+    // Below `lg` the columns stack, where ordinary page scroll is correct.
+    <div className="grid min-h-dvh lg:h-dvh lg:overflow-hidden lg:grid-cols-[7fr_9fr]">
       {/* Form panel — now blue (sidebar color) */}
-      <div className="flex flex-col px-6 py-8 sm:px-12 lg:px-16 lg:py-10 bg-sidebar">
+      <div className="flex flex-col px-6 py-8 sm:px-12 lg:px-16 lg:py-10 bg-sidebar lg:min-h-0 lg:overflow-y-auto">
         <div className="-mt-2 -ml-3 flex items-center gap-2.5">
           <img src={lisLogo} alt="" className="size-[84px] object-contain" />
           <span className="text-xs font-medium tracking-wide text-sidebar-foreground/60 uppercase">
-            FNB/LIS
+            Liquor Inventory Solution
           </span>
           {/* A way back out. Without it the sign-in page is a dead end for
               anyone who arrived by accident or wants to re-read the landing
@@ -117,7 +125,13 @@ export function LoginPage() {
           </Link>
         </div>
 
-        <div className="flex flex-1 items-center pb-16">
+        {/* `min-h-0` so this block may SHRINK rather than force the panel taller
+            than the viewport, and a smaller optical offset than pb-16.
+            At this app's 18px root, pb-16 is 72px (not 64), and together with
+            lg:py-10 (45px a side) the panel measured 627px against a 600px
+            viewport — the desktop window's own minHeight — so the sign-in page
+            scrolled despite holding only ~390px of content. */}
+        <div className="flex min-h-0 flex-1 items-center pb-8 lg:pb-10">
           <div className="mx-auto w-full max-w-sm">
             {/* Above the branch, not inside one: the desktop signs in with a PIN
                 and used to land on the keypad with no word about WHY it had

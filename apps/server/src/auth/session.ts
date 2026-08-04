@@ -66,6 +66,23 @@ export async function getSessionUser(token: string): Promise<SessionUser | null>
     await prisma.authSession.delete({ where: { id: session.id } }).catch(() => {});
     return null;
   }
+  /**
+   * A session whose user row is GONE is "not signed in", never a crash.
+   *
+   * SQLite does not enforce foreign keys here, so a dangling `userId` yields
+   * `user: null` rather than an error — and dereferencing it threw a TypeError
+   * that surfaced as a 500 on EVERY request. On the desktop that replaced the
+   * whole application with `{"error":"Internal server error"}`, because the
+   * mirror was carrying sessions issued by a database that had since been
+   * rebuilt with new user ids.
+   *
+   * Deleted rather than merely rejected: the row can never become valid again,
+   * and leaving it means paying for the lookup on every request forever.
+   */
+  if (!session.user) {
+    await prisma.authSession.delete({ where: { id: session.id } }).catch(() => {});
+    return null;
+  }
   if (session.user.status !== "ACTIVE") return null;
   // Device revocation. This check on every request is what makes the year-long
   // device TTL acceptable: an admin who revokes a stolen or decommissioned
