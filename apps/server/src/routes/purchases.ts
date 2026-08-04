@@ -40,6 +40,24 @@ async function getOwnedPurchase(locationId: string, purchaseId: string) {
   return purchase;
 }
 
+/**
+ * A delivery may only name a supplier belonging to this establishment.
+ *
+ * `Supplier` is client-scoped, but both the create and the header PUT took
+ * `supplierId` straight from the body — and `GET /purchases/:id` returns
+ * `include: { supplier: true }`, i.e. the whole row: contact person, phone,
+ * email, address and payment terms. Setting another client's supplier id on
+ * your own draft read all of that back out.
+ *
+ * Every other foreign key in this file is checked; this one was missed. Kept as
+ * one function so the two call sites cannot drift apart again.
+ */
+async function assertSupplierInClient(supplierId: string | null | undefined, clientId: string): Promise<void> {
+  if (!supplierId) return;
+  const supplier = await prisma.supplier.findUnique({ where: { id: supplierId }, select: { clientId: true } });
+  if (!supplier || supplier.clientId !== clientId) throw new AppError(404, "Supplier not found");
+}
+
 export const purchaseRoutes = new Hono<AppEnv>()
   .get("/purchases", async (c) => {
     const location = c.get("location");
@@ -69,6 +87,8 @@ export const purchaseRoutes = new Hono<AppEnv>()
       (row) => row.locationId === location.id,
     );
     if (already) return c.json(already, 200);
+
+    await assertSupplierInClient(body.supplierId, location.clientId);
 
     const purchase = await prisma.$transaction(async (tx) => {
       const created = await tx.purchase.create({
@@ -115,6 +135,8 @@ export const purchaseRoutes = new Hono<AppEnv>()
     if (purchase.status !== "DRAFT") throw new AppError(409, "Only drafts can be edited");
     assertMayEditDraft(purchase, c.get("user")!, "delivery");
     const body = c.req.valid("json");
+    // `data: body` is a passthrough, so an unchecked supplierId lands directly.
+    await assertSupplierInClient(body.supplierId, location.clientId);
     // The DRAFT check above is outside any transaction; a commit landing in
     // between would edit a committed delivery's header.
     const updated = await prisma.$transaction(async (tx) => {
@@ -175,7 +197,7 @@ export const purchaseRoutes = new Hono<AppEnv>()
     assertMayEditDraft(purchase, c.get("user")!, "delivery");
     // The line must belong to THIS draft — a raw delete by id would reach any
     // PurchaseLine in the database, including other clients'.
-    const line = await prisma.purchaseLine.findUnique({ where: { id: c.req.param("lineId") } });
+    const line = await prisma.purchaseLine.findUnique({ where: { id: c.req.param("lineId") }, include: LI_INCLUDE });
     if (!line || line.purchaseId !== purchase.id) throw new AppError(404, "Purchase line not found");
     await prisma.$transaction(async (tx) => {
       await holdParentOpen(
@@ -183,6 +205,18 @@ export const purchaseRoutes = new Hono<AppEnv>()
         "delivery",
       );
       await tx.purchaseLine.delete({ where: { id: line.id } });
+      // Legitimate hard delete (nothing has reached the ledger pre-commit), but
+      // it was leaving no record at all — the only mutation class in this file
+      // that did. The row goes; what it was stays.
+      await logActivity(
+        {
+          user: c.get("user")!, clientId: location.clientId, locationId: location.id,
+          action: "purchaseLine.remove", entity: "PurchaseLine", entityId: line.id,
+          summary: `Removed ${line.locationItem.itemVariant.item.name} from the ${purchase.purchaseDate} delivery draft`,
+          details: { purchaseId: purchase.id, locationItemId: line.locationItemId, qty: line.qty, unitCost: line.unitCost },
+        },
+        tx,
+      );
     });
     return c.json({ ok: true });
   })

@@ -942,11 +942,37 @@ export const userAdminRoutes = new Hono<AppEnv>()
     await assertActorMayTouchUser(c, userId);
     await assertActorMayAssign(c, null, clientIds);
     await assertUserSeatsAvailable(clientIds, userId);
+
+    // The delete is scoped to the actor's OWN establishments.
+    //
+    // The two guards above do not cover it: `assertActorMayTouchUser` proves
+    // the target shares *one* client with the actor, and `assertActorMayAssign`
+    // validates only the ids being *supplied*. An unscoped
+    // `deleteMany({ userId })` therefore reached rows the actor administers
+    // nothing of — a user with access to establishments A and B lost B the
+    // moment the owner of A saved `{clientIds:["A"]}`, silently, from a screen
+    // that never showed B. Shared users are a real case here; the read at the
+    // user-list route already scopes `clientAccess` for exactly that reason.
+    //
+    // ADMIN keeps the full replace: they administer everything, so their
+    // supplied list genuinely is the whole intended set.
+    const scope = await actorScope(c);
     await prisma.$transaction(async (tx) => {
-      await tx.userClientAccess.deleteMany({ where: { userId } });
+      await tx.userClientAccess.deleteMany({
+        where: { userId, ...(scope.all ? {} : { clientId: { in: scope.clientIds } }) },
+      });
+      // Safe against the @@id([userId, clientId]) primary key: every id here is
+      // in-scope (assertActorMayAssign rejects foreign ones), and every in-scope
+      // row was just removed.
       await tx.userClientAccess.createMany({ data: clientIds.map((clientId) => ({ userId, clientId })) });
       await logActivity(
-        { user: actor, action: "user.access", entity: "User", entityId: userId, summary: "Updated client assignments", details: { clientIds } },
+        {
+          user: actor, action: "user.access", entity: "User", entityId: userId,
+          summary: "Updated client assignments",
+          // Records the scope actually applied, so the trail does not read as a
+          // full replacement when it was a partial one.
+          details: { clientIds, replacedWithinClientIds: scope.all ? "ALL" : scope.clientIds },
+        },
         tx,
       );
     });

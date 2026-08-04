@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Hono } from "hono";
 import { zValidator } from "../lib/validate";
-import { importRowUpdate, normalizeAlias } from "@fnb/core";
+import { dateString, importRowUpdate, normalizeAlias } from "@fnb/core";
 import { prisma, type Tx } from "../db";
 import { AppError } from "../lib/errors";
 import { logActivity } from "../services/activity";
@@ -119,7 +119,18 @@ export const importRoutes = new Hono<AppEnv>()
     if (!["SALES", "PURCHASES", "NON_REVENUE"].includes(kind)) {
       throw new AppError(400, "Choose an import type: SALES, PURCHASES, or NON_REVENUE");
     }
-    const businessDate = body.businessDate ? String(body.businessDate) : null;
+    // This route is multipart, so zod never sees the body and this was the one
+    // unvalidated business date on the server. It persists to
+    // `ImportBatch.businessDate` and becomes the commit-time fallback
+    // `saleDate`/`purchaseDate`, so an impossible day here silently produces
+    // committed sales that fall outside every audit window — see the note on
+    // `dateString`, which now rejects the calendar-impossible ones too.
+    let businessDate: string | null = null;
+    if (body.businessDate !== undefined && String(body.businessDate) !== "") {
+      const parsed = dateString.safeParse(String(body.businessDate));
+      if (!parsed.success) throw new AppError(400, "Enter the date as YYYY-MM-DD.");
+      businessDate = parsed.data;
+    }
 
     const file = body.file;
     if (!(file instanceof File)) throw new AppError(400, "No file uploaded");
@@ -262,7 +273,36 @@ export const importRoutes = new Hono<AppEnv>()
       data.confidence = 1;
       data.warning = null;
     }
-    const updated = await prisma.importRow.update({ where: { id: row.id }, data });
+    // Logged, in the same transaction as the write.
+    //
+    // This is the human-review step CLAUDE.md singles out — "imports/AI never
+    // mutate inventory without human review" — and it was the one part of that
+    // promise with no evidence behind it. Only the batch-level `import.commit`
+    // was recorded, so "who approved this row, and did they change the quantity
+    // on the way through?" had no answer. Only fields that actually moved are
+    // recorded, so re-saving an untouched row does not fill the trail with
+    // no-ops.
+    const changed: Record<string, { from: unknown; to: unknown }> = {};
+    for (const [key, next] of Object.entries(data)) {
+      const before = (row as Record<string, unknown>)[key];
+      if (before !== next) changed[key] = { from: before, to: next };
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const saved = await tx.importRow.update({ where: { id: row.id }, data });
+      if (Object.keys(changed).length > 0) {
+        await logActivity(
+          {
+            user: c.get("user")!, clientId: location.clientId, locationId: location.id,
+            action: "importRow.review", entity: "ImportRow", entityId: row.id,
+            summary: `Reviewed import row "${row.itemText}"${changed.status ? ` — ${String(changed.status.to).toLowerCase()}` : ""}`,
+            details: { batchId: batch.id, changed },
+          },
+          tx,
+        );
+      }
+      return saved;
+    });
     return c.json(updated);
   })
 

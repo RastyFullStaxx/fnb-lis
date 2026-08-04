@@ -278,7 +278,7 @@ export const transferRoutes = new Hono<AppEnv>()
     assertMayEditDraft(transfer, c.get("user")!, "transfer");
     // The line must actually belong to THIS draft — a raw delete by id would
     // reach any TransferLine in the database, including other clients'.
-    const line = await prisma.transferLine.findUnique({ where: { id: c.req.param("lineId") } });
+    const line = await prisma.transferLine.findUnique({ where: { id: c.req.param("lineId") }, include: LINE_INCLUDE });
     if (!line || line.transferId !== transfer.id) throw new AppError(404, "Transfer line not found");
     await prisma.$transaction(async (tx) => {
       await holdParentOpen(
@@ -286,6 +286,17 @@ export const transferRoutes = new Hono<AppEnv>()
         "transfer",
       );
       await tx.transferLine.delete({ where: { id: line.id } });
+      // Same reasoning as the count and delivery drafts: a pre-commit delete is
+      // fine, leaving no trace of it is not.
+      await logActivity(
+        {
+          user: c.get("user")!, clientId: location.clientId, locationId: location.id,
+          action: "transferLine.remove", entity: "TransferLine", entityId: line.id,
+          summary: `Removed ${line.locationItem.itemVariant.item.name} from the ${transfer.businessDate} transfer draft`,
+          details: { transferId: transfer.id, locationItemId: line.locationItemId, qty: line.qty },
+        },
+        tx,
+      );
     });
     return c.json({ ok: true });
   })

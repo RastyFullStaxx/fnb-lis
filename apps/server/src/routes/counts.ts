@@ -513,10 +513,14 @@ export const countRoutes = new Hono<AppEnv>()
 
   .delete("/counts/:id/lines/:lineId", createGuard, async (c) => {
     const location = c.get("location");
+    const user = c.get("user")!;
     const session = await getOwnedSession(location.id, c.req.param("id"));
     if (session.status !== "OPEN") throw new AppError(409, "Committed count lines cannot be removed — void instead");
-    assertMayEditDraft(session, c.get("user")!, "count");
-    const existing = await prisma.countLine.findUnique({ where: { id: c.req.param("lineId") } });
+    assertMayEditDraft(session, user, "count");
+    const existing = await prisma.countLine.findUnique({
+      where: { id: c.req.param("lineId") },
+      include: LINE_INCLUDE,
+    });
     if (!existing || existing.countSessionId !== session.id) throw new AppError(404, "Count line not found");
     await prisma.$transaction(async (tx) => {
       await holdParentOpen(
@@ -524,6 +528,26 @@ export const countRoutes = new Hono<AppEnv>()
         "count",
       );
       await tx.countLine.delete({ where: { id: existing.id } });
+      // A hard delete on a pre-commit draft is legitimate — nothing has entered
+      // the ledger yet, so there is no void chain to keep. But it was the ONE
+      // mutation class in this file that left no record at all, which means
+      // "the count was three bottles short when we opened it" had no answer.
+      // The row itself is gone; what it was is preserved here.
+      await logActivity(
+        {
+          user, clientId: location.clientId, locationId: location.id,
+          action: "countLine.remove", entity: "CountLine", entityId: existing.id,
+          summary: `Removed ${existing.locationItem.itemVariant.item.name} from the ${session.countDate} count before commit`,
+          details: {
+            countSessionId: session.id,
+            locationItemId: existing.locationItemId,
+            countType: existing.countType,
+            qtyFull: existing.qtyFull,
+            remainingContent: existing.remainingContent,
+          },
+        },
+        tx,
+      );
     });
     return c.json({ ok: true });
   })

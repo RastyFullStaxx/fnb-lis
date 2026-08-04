@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { zValidator } from "../lib/validate";
-import { menuCreate, recipeCost, recipePublish } from "@fnb/core";
+import { menuCreate, phpRound, recipeCost, recipePublish } from "@fnb/core";
 import { prisma } from "../db";
 import { AppError } from "../lib/errors";
 import { logActivity } from "../services/activity";
@@ -302,7 +302,7 @@ export const menuRoutes = new Hono<AppEnv>()
         include: VERSION_INCLUDE,
       });
       await logActivity(
-        { user, clientId: location.clientId, locationId: location.id, action: "menu.publish", entity: "RecipeVersion", entityId: created.id, summary: `Published "${menu.name}" v${versionNo} (SRP ${body.srp}, cost ${costAtPublish.toFixed(2)})` },
+        { user, clientId: location.clientId, locationId: location.id, action: "menu.publish", entity: "RecipeVersion", entityId: created.id, summary: `Published "${menu.name}" v${versionNo} (SRP ${body.srp}, cost ${phpRound(costAtPublish, 2)})` },
         tx,
       );
       return created;

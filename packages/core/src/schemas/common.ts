@@ -7,7 +7,28 @@ import { z } from "zod";
  */
 export const dateString = z
   .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD");
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD")
+  /**
+   * The shape check alone is not a date check: `2026-13-45`, `2026-02-30`,
+   * `2026-00-10` and `9999-99-99` all match four-two-two and were all accepted.
+   *
+   * That is not cosmetic. Every report window compares these lexicographically
+   * (`saleDate: { gte: from, lte: to }`), which is the whole reason the format
+   * is TEXT — so a sale dated `2026-13-45` sorts after `2026-12-31` and lands
+   * in **no** audit period at all. The revenue simply stops appearing in the
+   * reconciliation, with nothing raised anywhere.
+   *
+   * `Date.UTC` is used here to VALIDATE, never to convert: it normalises
+   * overflow (Feb 30 → Mar 2), so round-tripping and comparing the parts back
+   * against the input is what detects an impossible day. No value derived from
+   * this Date escapes the function, so the file-level warning above — never
+   * build a JS Date from a business date in domain code — still holds.
+   */
+  .refine((s) => {
+    const [y, m, d] = s.split("-").map(Number) as [number, number, number];
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+  }, "Not a real calendar date");
 
 export const id = z.string().min(1);
 

@@ -3984,7 +3984,108 @@ delete → commit, on all three documents, plus the 409 once committed): pass.
 `verify:seed` · `verify:sync` · `verify:security` · `verify:mirror` ·
 `verify:races` all pass, both golden anchors exact. Three workspaces typecheck.
 
-Still open from the audit: unvalidated `businessDate` on import upload;
-cross-tenant access deletion in `admin.ts`; unvalidated `supplierId` on
-purchases; unlogged draft-line deletes and import-row approvals; one `toFixed`
-in a `menus.ts` log string; unbounded `findMany` in `verifyChain()`.
+All six remaining audit findings are closed — see the next entry.
+
+## 2026-08-04 — The remaining six audit findings
+
+### 1. Business dates were never validated as dates — wider than reported
+
+The finding named the import upload. The real problem was one level down:
+`dateString` in `packages/core` was **regex-only**, and `^\d{4}-\d{2}-\d{2}$`
+happily matches `2026-13-45`, `2026-02-30`, `2026-00-10` and `9999-99-99`. Every
+business date field in the app accepted all of them.
+
+That is not cosmetic. Report windows compare these lexicographically
+(`saleDate: { gte: from, lte: to }`) — the whole reason the format is TEXT — so a
+sale dated `2026-13-45` sorts past `2026-12-31` and lands in **no** audit period.
+The revenue stops appearing in the reconciliation with nothing raised anywhere.
+
+Fixed at the root: `dateString` now round-trips through `Date.UTC` and compares
+the parts back, which is what catches an impossible day (`Date.UTC` normalises
+Feb 30 → Mar 2). Used only to validate — no derived value escapes — so the
+file's own "never build a JS Date from a business date" rule still holds.
+Leap years included: `2024-02-29` accepted, `2026-02-29` rejected.
+
+The import upload needed its own fix regardless: it is multipart, so zod never
+sees the body and it was the one date on the server with no validation at all.
+
+### 2. Cross-tenant access deletion (`admin.ts`)
+
+`PUT /users/:id/access` ran `deleteMany({ where: { userId } })` — unscoped.
+Neither guard covered it: `assertActorMayTouchUser` proves the target shares
+*one* client with the actor, `assertActorMayAssign` validates only the ids being
+*supplied*. So a user with access to establishments A and B lost B the moment
+the owner of A saved `{clientIds:["A"]}` — silently, from a screen that never
+showed B. The delete is now scoped to the actor's own establishments; ADMIN
+keeps the full replace, since their list genuinely is the whole intended set.
+
+**Verified as the attack**: seeded `owner` (scoped to Prime Hospitality) saved
+shared user `staff` as [Prime]. Aurora Asset Holdings access **survived**.
+
+### 3. Cross-tenant `supplierId` (`purchases.ts`)
+
+Create and the header PUT both took `supplierId` from the body unchecked, and
+`GET /purchases/:id` returns `include: { supplier: true }` — the whole row:
+contact person, phone, email, address, payment terms. One helper, called by both
+paths so they cannot drift apart again. Verified: another client's supplier →
+404 on create and on PUT; own supplier still works on both.
+
+### 4. Mutations that left no record
+
+- **Draft-line deletes** (counts, purchases, transfers). A hard delete before
+  commit is legitimate — nothing has entered the ledger, so there is no void
+  chain to keep — but these were the only mutation class in those files leaving
+  no trace at all, so "the count was three bottles short when we opened it" had
+  no answer. The row still goes; what it was is now recorded.
+- **Import-row review** (`imports.ts`). This is the human-review step CLAUDE.md
+  singles out — "imports/AI never mutate inventory without human review" — and it
+  was the part of that promise with no evidence behind it. Only the batch-level
+  `import.commit` was logged, so "who approved this row, and did they change the
+  quantity on the way through?" was unanswerable. Now logged in the same
+  transaction as the write, recording only fields that actually moved.
+
+### 5. `toFixed` in domain code
+
+One occurrence, in a `menus.ts` log string → `phpRound`. README rule 2 has no
+display exemption, and a half-cent rounds differently.
+
+### 6. `verifyChain()` loaded the whole table
+
+ActivityLog is the one table with no retention policy (§7.6 prunes SyncOp and
+nothing else), so it grows for the life of the install — and this loaded every
+row including every `detailsJson` inside the request timeout. Now paged at 2000.
+Paging is free because the walk is already strictly sequential: `prev`,
+`expectedSeq` and `gaps` carry across a page boundary exactly as across rows.
+
+**Verified by differential run**, since 497 rows would never have crossed a
+2000-row boundary: the verdict at page size 2000 (one page) and page size 37
+(~14 pages) is byte-identical.
+
+### ⚠️ I broke the dev database's audit chain
+
+That differential run surfaced something I caused. `verifyChain` now reports
+`ok: false`, a break at seq 486, and **71 missing rows** (seq runs 1–568, 497
+present).
+
+Those are my probe cleanups. Deleting the probes' *business* records was fine;
+deleting their **ActivityLog** rows was not — that is precisely what the hash
+chain exists to detect, and it detected it. `seal-history` will not repair this:
+it only seals rows with a null `seq` and deliberately leaves chained rows alone.
+
+Nothing functional depends on it (reports never read the chain; the harnesses all
+use throwaway databases, which is what I should have used). It affects
+`GET /api/activity/verify` on the dev database only. **Left for a human to
+decide** — re-seeding gives a clean chain, and rewriting it to agree would be
+forging audit history, which is not a thing to do unasked.
+
+Later cleanups in this session touched business rows only.
+
+### Verified
+
+- Live: impossible dates refused on both the JSON routes and the multipart
+  import (valid ones still accepted); foreign supplier refused on create and
+  PUT; shared user's second establishment survived a scoped owner;
+  `countLine.remove` appears in the activity trail.
+- `verify:seed` · `verify:sync` · `verify:security` · `verify:races` ·
+  `verify:mirror` all pass, both golden anchors exact. Three workspaces
+  typecheck. Desktop repackaged.
