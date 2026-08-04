@@ -142,6 +142,13 @@ const SECTIONS: Array<{ title: string; blurb: string; reports: Report[] }> = [
         description: "Computed current stock with cost and retail valuation.",
       },
       {
+        path: "blank-forms",
+        icon: ClipboardList,
+        title: "Blank Entry Forms",
+        description:
+          "Printable Sales, Purchase and Non-Revenue forms to fill in by hand — then import the file back, or let Stocky read it.",
+      },
+      {
         path: "count-sheet",
         icon: ClipboardList,
         title: "Physical Count Sheet",

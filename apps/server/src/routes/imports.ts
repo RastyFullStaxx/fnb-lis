@@ -382,12 +382,41 @@ async function commitSales(
         recipeVersionId,
         qty: row.qty!,
         unitPrice: kind === "SALE" ? unitPrice : 0,
+        // Only meaningful for non-revenue; a sale has no reason to carry.
+        reason: kind === "NON_REVENUE" ? reasonFromRaw(row.rawJson) : null,
         source: "IMPORT",
         ...encoder,
       },
     });
     await tx.importRow.update({ where: { id: row.id }, data: { status: "COMMITTED", resultType: "SALE", resultId: created.id } });
   }
+}
+
+/**
+ * The reason column out of an imported non-revenue row.
+ *
+ * Read from `rawJson` — the untouched source row, already stored — rather than
+ * a new ImportRow column. The parser deliberately keeps only the five fields
+ * every kind shares; a reason belongs to exactly one kind, and adding a column
+ * plus a migration to carry it would be schema for one caller's convenience.
+ *
+ * Without this the reason was simply dropped: their sheet records "Bleed" /
+ * "R&D" against every line, and an imported batch produced non-revenue records
+ * with `reason: null`, so the Non-Revenue report's whole by-reason breakdown
+ * was blank for anything not typed in by hand. `nonRevenueGroupOf` does the
+ * folding, so any synonym staff actually write lands in the right bucket.
+ */
+function reasonFromRaw(rawJson: string | null): string | null {
+  if (!rawJson) return null;
+  let raw: Record<string, unknown>;
+  try {
+    raw = JSON.parse(rawJson) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  const key = Object.keys(raw).find((k) => /reason|purpose|remark/i.test(k));
+  const value = key ? String(raw[key] ?? "").trim() : "";
+  return value || null;
 }
 
 async function commitPurchases(

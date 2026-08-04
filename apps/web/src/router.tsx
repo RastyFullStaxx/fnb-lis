@@ -23,6 +23,7 @@ import { TransferReportPage } from "./pages/reports/transfers";
 import { CostAnalysisPage } from "./pages/reports/cost-analysis";
 import { OnHandReportPage } from "./pages/reports/on-hand";
 import { ParLevelReportPage } from "./pages/reports/par-level";
+import { BlankFormsPage } from "./pages/reports/blank-forms";
 import { CountSheetPage } from "./pages/reports/count-sheet";
 import { NonMovingReportPage } from "./pages/reports/non-moving";
 import { AssetBreakageReportPage } from "./pages/reports/asset-breakage";
@@ -80,6 +81,7 @@ export const router = createBrowserRouter([
       { path: "reports/on-hand", element: <OnHandReportPage /> },
       { path: "reports/par-level", element: <ParLevelReportPage /> },
       { path: "reports/count-sheet", element: <CountSheetPage /> },
+      { path: "reports/blank-forms", element: <BlankFormsPage /> },
       { path: "reports/non-moving", element: <NonMovingReportPage /> },
       { path: "reports/asset-breakage", element: <AssetBreakageReportPage /> },
       { path: "reports/legacy-audit", element: <LegacyAuditPage /> },

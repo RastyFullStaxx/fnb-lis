@@ -3376,3 +3376,95 @@ recount. Nobody had raised it; it was only visible in the photos.
 
 Blank printable/importable forms for sales, purchases and non-revenue — not
 started. The photos give the layouts.
+
+### Blank entry forms (same day)
+
+Client req 2026-08-02: "pwede mag generate ng form si system na printable or
+soft copy … dun na lang mag input as options si user … then import nya yun
+file". Reports → **Blank Entry Forms**: Sales, Purchases, Non-Revenue.
+
+**The headings are a contract, not a design choice.** `services/import-parse.ts`
+finds its columns by regex — `/item|product|name|.../`, `/qty|quantity|.../`,
+`/price|srp|retail|amount|.../`, `/cost|unit ?cost|buy|.../`, `/date|day/` —
+so every heading was checked against those before it was written. Rename one to
+something prettier and the file still downloads, still prints, still looks
+right, and silently imports as a column of nulls. That is noted at the top of
+the file so the next person renaming a column knows what they are touching.
+
+- **Non-Revenue started as a copy of their sheet and should not have.** Their
+  paper is the source of what the columns must MEAN, not a layout to reproduce.
+  Corrected in the pass below.
+- **"Item names filled in"** is the option that makes the round trip actually
+  work: free-typed names have to survive fuzzy matching, names printed from this
+  location's own catalog match exactly.
+- CSV is generated client-side from a Blob — a blank template has no data to
+  fetch, and a server route to return empty rows would be a route that exists to
+  return nothing. PDF is the print view, exactly as the count sheet already does.
+
+**Verified end to end, not just rendered:** a generated Sales form filled with
+two catalog item names, uploaded through the real `/imports` endpoint —
+both rows parsed with date, quantity and price in the right columns, both
+matched `EXACT`, both auto-`APPROVED`.
+
+`verify:seed` PASS · `verify:sync` PASS · anchors unchanged · typechecks clean
+across all three workspaces · production build clean.
+
+**Housekeeping:** the round-trip test left import batch `sales-form.csv`
+(`NEEDS_REVIEW`) at Main Bar. There is no delete for an uncommitted batch and
+`reverse` only accepts a COMMITTED one, so it stays — it is inert, since an
+uncommitted batch feeds no report.
+
+### Correction: the client's sheets are input, not a spec
+
+Flagged by Rasty, and right. The first pass at the blank forms reproduced the
+Non-Revenue sheet "column for column" and argued *no retraining* for it. That is
+backwards — those photos show how the establishment works **today**, including
+what it currently loses. Copying the layout preserves the losses.
+
+Three things their Non-Revenue sheet does badly, now fixed:
+
+1. **Reason was free text in Remarks.** "Bleed", "R&D" and a sentence about a
+   broken bottle shared one column, so nothing could total them. Reason is now
+   its own column.
+2. **The system did not understand their words anyway.** `nonRevenueGroupOf`
+   matched exact-case codes (`SPILLAGE`, `TASTING`); **every** entry on their
+   sheet — Bleed, R&D — fell through to `OTHER`. It now folds their own
+   vocabulary, case- and spacing-insensitively, and
+   `NON_REVENUE_REASON_WORDS` is printed on the sheet so nobody has to guess.
+3. **The reason was discarded on import.** A NON_REVENUE batch created records
+   with `reason: null`, so the Non-Revenue report's by-reason breakdown covered
+   only hand-typed rows. `reasonFromRaw` reads it from the raw row already
+   stored in `ImportRow.rawJson` — no new column, no migration, because the data
+   was there and unused.
+
+Also dropped the per-row **Signature** column: blank on every row of the sheet
+they sent, while APPROVED BY at the foot was signed. A column nobody fills is
+width taken from the ones they do, and the system records the encoder anyway.
+
+**Raise with Lourd:** their sheet logs "Transfer to kitchen" as non-revenue.
+It classifies as OTHER and should — a transfer to the kitchen is a real
+inter-location **Transfer**, which the system already models on both sides.
+Recording it as non-revenue writes off stock the kitchen then never receives,
+so the kitchen's own count comes up short. Their paper cannot express that;
+ours can.
+
+### Verified
+
+- Reason survives the round trip: an optimised Non-Revenue form uploaded through
+  the real `/imports` endpoint parsed both rows `EXACT` + `APPROVED` with
+  "Bleed" and "R&D" intact in the stored raw row.
+- Classifier: Bleed / bleed / "BLEED " → SPOILAGE_SPILLAGE; R&D / r&d →
+  MARKETING_OTH; Trimming → TRIMMING; "Transfer to kitchen" → OTHER (correct).
+- Form renders `Date · Product · Quantity · Reason · Remarks` with the accepted
+  words printed beneath and the APPROVED BY line kept.
+- `verify:seed` PASS · `verify:sync` PASS · anchors unchanged · typechecks clean
+  across all three workspaces · build clean.
+
+### Desktop updated
+
+Rebuilt, reinstalled, launched. It **auto-applied 6 pending migrations to its
+own mirror** on boot — including `location_areas` — which is the migrate-on-boot
+path doing exactly what it exists for. Confirmed carrying: Blank Entry Forms,
+the reason legend, the storage-area picker, the Storage Areas settings section,
+`reasonFromRaw`, the BLEED classifier and the areas route. SPA 200,
+`/_desktop/people` 5 users, `host.log` clean.

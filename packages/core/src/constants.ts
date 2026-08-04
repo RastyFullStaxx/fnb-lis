@@ -158,22 +158,56 @@ export const ASSET_LOSS_REASON_LABELS: Record<AssetLossReason, string> = {
  * appear only in the unfiltered report, never silently inside a bucket.
  */
 export function nonRevenueGroupOf(reason: string | null | undefined): NonRevenueGroup | null {
-  switch (reason) {
+  // Case- and spacing-insensitive: these arrive from a typed form and from
+  // imported spreadsheets, where "Bleed", "bleed" and "BLEED " are the same
+  // event. Matching exact-case codes only meant every hand-entered row fell to
+  // OTHER, which is where a reason goes to stop being useful.
+  const key = reason?.trim().toUpperCase().replace(/[\s-]+/g, "_");
+  switch (key) {
     case "SPOILAGE_SPILLAGE":
     case "SPILLAGE":
     case "SPOILAGE":
     case "BREAKAGE":
+    // The establishment's own word for drawing off a beer line until it pours
+    // clean (their Non-Revenue sheet, June 2026 — the most frequent entry on
+    // it by far). Product destroyed, not given away: same bucket as spillage.
+    case "BLEED":
       return "SPOILAGE_SPILLAGE";
     case "TRIMMING":
       return "TRIMMING";
     case "MARKETING_OTH":
     case "COMPLIMENTARY":
     case "TASTING":
+    // "R&D" on their sheet — a bartender developing or testing a drink. Not
+    // spoilage; the product did its job. Sits with tasting and comps.
+    case "R&D":
+    case "R_D":
+    case "RND":
       return "MARKETING_OTH";
     default:
       return null;
   }
 }
+
+/**
+ * The reason words a form should offer, and a printed sheet should list.
+ *
+ * Deliberately the establishment's own vocabulary rather than the internal
+ * codes: staff write "Bleed" on paper today, and a form that demands
+ * "SPOILAGE_SPILLAGE" instead gets ignored or mis-typed. `nonRevenueGroupOf`
+ * folds every one of these into a canonical bucket, so the report is unaffected
+ * by which synonym somebody used.
+ */
+export const NON_REVENUE_REASON_WORDS = [
+  "Bleed",
+  "Spoilage",
+  "Spillage",
+  "Breakage",
+  "Trimming",
+  "Tasting",
+  "Complimentary",
+  "R&D",
+] as const;
 
 // ── Subscription / Package constants ──
 
