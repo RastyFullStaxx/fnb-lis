@@ -62,7 +62,7 @@ export function NonRevenueReportPage() {
   }, [report.data]);
 
   return (
-    <div>
+    <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader
         title="Non-Revenue Report"
         actions={
@@ -85,7 +85,6 @@ export function NonRevenueReportPage() {
       />
 
       <TableSurface
-        className="max-h-[70vh]"
         filters={
           <>
             {/* A Select, not tabs: five long reason labels plus the date range

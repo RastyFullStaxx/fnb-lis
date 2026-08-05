@@ -75,7 +75,7 @@ export function TransferReportPage() {
   }, [report.data]);
 
   return (
-    <div>
+    <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader
         title="Transfers Report"
         actions={
@@ -89,7 +89,6 @@ export function TransferReportPage() {
       />
 
       <TableSurface
-        className="max-h-[70vh]"
         filters={
           <>
             <ToolbarField label="Direction">

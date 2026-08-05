@@ -52,7 +52,7 @@ export function PurchaseReportPage() {
   }, [report.data]);
 
   return (
-    <div>
+    <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader
         title="Purchase Report"
         actions={
@@ -66,7 +66,6 @@ export function PurchaseReportPage() {
       />
 
       <TableSurface
-        className="max-h-[70vh]"
         filters={
           <>
             <ToolbarSearch label="Search" value={query} onChange={setQuery} placeholder="Find an item or supplier…" />
