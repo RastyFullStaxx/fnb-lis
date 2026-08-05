@@ -123,6 +123,18 @@ function ShellLayout({ me, current }: { me: MeResponse; current: CurrentLocation
 
   return (
     <SidebarProvider defaultOpen={defaultSidebarOpen()}>
+      {/* First element in the tree on purpose: a skip link that is not the
+          first tab stop is decoration. It previously sat inside SidebarInset,
+          which the whole sidebar precedes in DOM order, so Tab reached it only
+          after the seventeen links it exists to skip. */}
+      {/* First element in the tree: a skip link that is not the first tab stop
+          is decoration. Styling lives in `.skip-link` (index.css) — the plain
+          `:focus` rule every site uses, rather than Tailwind's
+          `sr-only`/`focus:not-sr-only` pair, which left `clip-path: inset(50%)`
+          applied while focused. */}
+      <a href="#page-content" className="skip-link">
+        Skip to content
+      </a>
       <TopProgress />
       <Sidebar collapsible="icon">
         <SidebarHeader>
@@ -148,7 +160,12 @@ function ShellLayout({ me, current }: { me: MeResponse; current: CurrentLocation
           horizontal scroll and pushes the header actions off-screen. */}
       <SidebarInset className="min-w-0">
         <Topbar current={current} navItems={[...mainNav, ...catalogNav, ...adminNav]} />
-        <div data-slot="page-content" className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4 sm:p-6">
+        <div
+          id="page-content"
+          tabIndex={-1}
+          data-slot="page-content"
+          className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4 sm:p-6"
+        >
           <RouteGuard role={role} />
         </div>
         <ReadonlyWatermark role={role} name={`${me.user.firstName} ${me.user.lastName}`} />

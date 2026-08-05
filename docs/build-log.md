@@ -4507,3 +4507,53 @@ the hard-coded "a second machine is refused", this change would have broken it a
 second time.
 
 All five harnesses pass; three workspaces typecheck.
+
+## 2026-08-05 — Group 1 of 5: arrival & shell
+
+### The public landing page was unreachable
+
+A visitor with no cookies going to `/` was redirected to `/login?expired=1` and
+told **"Your session ended — sign in again to continue."** They had never had a
+session, and they never saw the landing page at all — the exact opposite of
+DESIGN.md, where `/` is the public front door and only SIGNED-IN visitors are
+bounced away.
+
+Cause: the global 401 handler in `main.tsx` exempted `/login` (a failed sign-in
+is a 401 too) but not `/`. The landing page's own session probe 401s for every
+signed-out visitor, so the front door redirected past itself. Now exempt —
+matched exactly, since every real app route lives under `/l/:id` and a prefix
+test would exempt the whole application.
+
+Verified: `/` renders "Your partner in inventory management" with the Full Audit
+verdict card, no false notice.
+
+### No skip-to-content link
+
+A keyboard user crossed seventeen sidebar links before reaching the page on every
+navigation — on an app whose STAFF persona is "keyboard-first speed". Added as
+the first element in the tree; `#page-content` gained `tabIndex={-1}` so focus
+actually lands.
+
+> Three attempts, and the first two were wrong in a way worth recording.
+> `sr-only` + `focus:not-sr-only` left `clip-path: inset(50%)` applied while
+> focused — a keyboard stop nobody could see, worse than none. A Tailwind
+> `focus:` transform variant behaved the same. I then built a React-state
+> version before realising the browser pane reports a **0×0 viewport** and
+> fires no focus events: every geometric measurement I had taken was an
+> artifact, and I was debugging the harness. Reverted to the plain CSS
+> `:focus` rule and verified in the BUILT stylesheet instead —
+> `.skip-link{transform:translateY(-250%)}` / `.skip-link:focus{transform:translateY(0)}`,
+> same layer, `:focus` winning on specificity.
+
+### Walked and sound
+
+Command palette (Ctrl+K): 46 entries across Navigate / Reports / Items / Menus /
+Suppliers. Dashboard: audit stage, next action, attention list and bell all
+agree. Location switcher carries its `aria-label` from the previous pass.
+
+### Caveat
+
+Visual/geometric verification is not currently possible in this browser pane
+(0×0 viewport, no compositing, no focus events). Copy, structure, DOM state and
+built CSS were checked instead; anything genuinely visual in the remaining
+groups needs a human eye or a working pane.

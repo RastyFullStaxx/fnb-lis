@@ -125,6 +125,34 @@
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
+@layer components {
+  /**
+   * Skip link. Hidden off-screen until focused, then a real, visible button.
+   *
+   * Written as plain CSS after `sr-only` + `focus:not-sr-only` left
+   * `clip-path: inset(50%)` applied even while focused — the link was a
+   * keyboard stop nobody could see, which is worse than not having one. Two
+   * Tailwind attempts behaved differently from what the class names implied;
+   * six lines of CSS do exactly what they say.
+   */
+  .skip-link {
+    position: absolute;
+    top: 0.5rem;
+    left: 0.5rem;
+    z-index: 50;
+    transform: translateY(-250%);
+    border-radius: var(--radius-md);
+    background: var(--primary);
+    color: var(--primary-foreground);
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+  .skip-link:focus {
+    transform: translateY(0);
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
