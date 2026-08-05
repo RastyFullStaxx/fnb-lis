@@ -32,6 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Dialog,
   DialogContent,
@@ -345,6 +346,65 @@ export function LocationModulesField({
 // API, not removable here). `onAdd` lets the caller decide how "add" behaves;
 // everything else — chip rendering, the input, the limit banner — is shared.
 
+function LocationModulesPopover({
+  modules,
+  ceiling,
+  onChange,
+}: {
+  modules: ModuleType[];
+  ceiling: readonly ModuleType[];
+  onChange: (v: ModuleType[]) => void;
+}) {
+  const toggleModule = (m: ModuleType, checked: boolean) => {
+    if (checked) {
+      if (!modules.includes(m)) onChange([...modules, m]);
+    } else {
+      if (modules.length > 1) onChange(modules.filter((x) => x !== m));
+    }
+  };
+
+  const label =
+    modules.length === 0
+      ? "No modules"
+      : modules.map((m) => MODULE_TYPE_LABELS[m] ?? m).join(" + ");
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="h-6 shrink-0 gap-1 rounded-md px-1 text-[10px] uppercase tracking-wide text-muted-foreground hover:text-foreground"
+        >
+          {label}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-56 p-3" align="end">
+        <p className="mb-2 text-xs font-semibold">Modules</p>
+        <div className="flex flex-col gap-2">
+          {MODULE_TYPES.map((m) => {
+            const inCeiling = ceiling.includes(m);
+            const checked = modules.includes(m);
+            return (
+              <label
+                key={m}
+                className={`flex items-center gap-2 text-sm ${inCeiling ? "" : "opacity-40"}`}
+                title={inCeiling ? undefined : "Not in this client's subscription"}
+              >
+                <Checkbox
+                  checked={checked}
+                  onCheckedChange={(v) => toggleModule(m, v === true)}
+                  disabled={!inCeiling || (checked && modules.length === 1)}
+                />
+                {MODULE_TYPE_LABELS[m]}
+              </label>
+            );
+          })}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export interface LocationChip {
   key: string;
   name: string;
@@ -352,6 +412,12 @@ export interface LocationChip {
   kind?: string | null;
   /** When present, the chip shows a compact kind selector (persisted locations only). */
   onKindChange?: (kind: string | null) => void;
+  /** This location's OWN modules (Fix Plan §2.3) — must stay a subset of `moduleCeiling`. */
+  modules?: ModuleType[];
+  /** The client's licensed modules — bounds what can be picked for this location. */
+  moduleCeiling?: readonly ModuleType[];
+  /** When present (with `modules`/`moduleCeiling`), the chip shows a compact module picker. */
+  onModulesChange?: (modules: ModuleType[]) => void;
   inactive?: boolean;
   onRemove?: () => void;
 }
@@ -613,6 +679,13 @@ export function LocationsField({
               <span className="shrink-0 w-auto">
                 <KindSelect value={loc.kind ?? null} onChange={loc.onKindChange} />
               </span>
+            )}
+            {loc.onModulesChange && loc.modules && loc.moduleCeiling && (
+              <LocationModulesPopover
+                modules={loc.modules}
+                ceiling={loc.moduleCeiling}
+                onChange={loc.onModulesChange}
+              />
             )}
             {loc.inactive && <span className="text-xs text-muted-foreground shrink-0">(inactive)</span>}
             {loc.onRemove && (

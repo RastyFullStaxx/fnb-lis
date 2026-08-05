@@ -29,6 +29,7 @@ import {
   useAddLocation,
   useAdminClients,
   useUpdateLocation,
+  useUpdateLocationModules,
   useCancelSubscription,
   useCreateFullClient,
   useCreateSubscription,
@@ -415,6 +416,7 @@ function ClientDetailBody({ client }: { client: AdminClient }) {
   const updateSub = useUpdateSubscription();
   const addLocation = useAddLocation();
   const updateLocation = useUpdateLocation();
+  const updateLocationModules = useUpdateLocationModules();
   const markPaid = useMarkPaid();
   const unmarkPaid = useUnmarkPaid();
   const [name, setName] = useState(client.name);
@@ -559,6 +561,17 @@ function ClientDetailBody({ client }: { client: AdminClient }) {
               .mutateAsync({ locationId: loc.id, kind })
               .then(() => toast.success(`"${loc.name}" labeled ${kind ? kind.toLowerCase() : "none"}`))
               .catch((err) => toast.error(err instanceof ApiError ? err.message : "Could not update location")),
+          // Ceiling is the live (possibly unsaved) module selection above —
+          // same reasoning as `atLimit` using live maxEntities: a picker
+          // built against the last-saved ceiling would let someone check a
+          // module here that Save is about to remove from the subscription.
+          modules: loc.modules as ModuleType[],
+          moduleCeiling: modules,
+          onModulesChange: (locModules) =>
+            updateLocationModules
+              .mutateAsync({ locationId: loc.id, modules: locModules })
+              .then(() => toast.success(`"${loc.name}" modules updated`))
+              .catch((err) => toast.error(err instanceof ApiError ? err.message : "Could not update location modules")),
           inactive: loc.status !== "ACTIVE",
         }))}
         newLocName={newLocName}
