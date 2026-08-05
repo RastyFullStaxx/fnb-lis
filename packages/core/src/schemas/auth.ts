@@ -183,6 +183,13 @@ export interface MeClientSubscription {
   packageType: string;
   modules: string[];
   status: string;
+  /**
+   * This subscription's enabled report slugs (docs/2026-08-04-report-tier-gating-plan.md)
+   * — the same `SubscriptionReport` rows `canViewReportForSubscription()` checks
+   * server-side. Exposed here so the hub and RouteGuard can filter/guard with
+   * the identical set the server enforces, never a guess.
+   */
+  reports: string[];
 }
 
 /**

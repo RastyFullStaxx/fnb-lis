@@ -9,7 +9,8 @@ import {
   NON_REVENUE_GROUP_LABELS,
   NON_REVENUE_GROUPS,
   type CostBasis,
-  type NonRevenueGroup, canViewReport, isAuditViewer, type Role } from "@fnb/core";
+  type NonRevenueGroup, canViewReport, canViewReportForSubscription, isAuditViewer, type Role } from "@fnb/core";
+import { prisma } from "../db";
 import { AppError } from "../lib/errors";
 import { requirePermission, type AppEnv } from "../middleware/auth";
 import { buildFullAudit, committedCountDates } from "../services/report-assembly";
@@ -225,6 +226,38 @@ export const reportRoutes = new Hono<AppEnv>()
       // belong to the full-audit report — take the first segment after it.
       const slug = c.req.path.split("/reports/")[1]?.split("/")[0]?.split("?")[0];
       if (slug && slug !== "count-dates" && !canViewReport(user.role as Role, slug)) {
+        throw new AppError(404, "Not found");
+      }
+    }
+    await next();
+  })
+  /**
+   * Tier gate (docs/2026-08-04-report-tier-gating-plan.md): may this CLIENT'S
+   * subscription open this report at all, independent of the role gate above.
+   * A report must clear both — this middleware composes with, not replaces,
+   * the audit-viewer narrowing (`canViewReportForSubscription` in @fnb/core).
+   *
+   * ADMIN bypasses, same as every other gate in this file (billing lockout,
+   * download switch). Every other role — including the establishment's own
+   * OWNER — is checked against the CLIENT's `SubscriptionReport` rows, not a
+   * preset looked up by tier label, because an admin may have hand-edited
+   * that set away from the tier default (Phase 5 of the companion doc).
+   *
+   * 404, not 403 — identical convention to the role gate immediately above:
+   * a report this client's tier may never open should look like one that
+   * does not exist, not like a locked door.
+   */
+  .use("/reports/*", async (c, next) => {
+    const user = c.get("user")!;
+    const slug = c.req.path.split("/reports/")[1]?.split("/")[0]?.split("?")[0];
+    if (slug && slug !== "count-dates" && user.role !== "ADMIN") {
+      const client = c.get("client");
+      const enabled = await prisma.subscriptionReport.findMany({
+        where: { subscription: { clientId: client.id } },
+        select: { reportSlug: true },
+      });
+      const enabledSlugs = enabled.map((r) => r.reportSlug);
+      if (!canViewReportForSubscription(user.role as Role, slug, enabledSlugs)) {
         throw new AppError(404, "Not found");
       }
     }

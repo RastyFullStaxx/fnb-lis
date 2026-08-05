@@ -27,6 +27,11 @@ export interface AdminSubscription {
   billingCycle: string;
   /** The client's licensed ceiling (Fix Plan §2.2) — atomic modules, any non-empty subset. */
   modules: string[];
+  /** Enabled report slugs (report tier gating, Phase 0/5.2) — the
+   * SubscriptionReport rows canViewReportForSubscription() actually checks.
+   * Seeded from the tier preset at creation, hand-editable after via
+   * PUT /clients/:id/subscription/reports (SubscriptionReportsDialog). */
+  reports: string[];
   maxEntities: number;
   /** Max user accounts (client req 2026-07-21); 0 = no cap saved (legacy rows). */
   maxUsers: number;
@@ -63,11 +68,22 @@ function toModuleList(modules: ModuleRow[] | undefined | null): string[] {
   return modules?.map((m) => m.module) ?? [];
 }
 
+/** Raw shape of a SubscriptionReport join-table row as returned by the server. */
+interface ReportRow {
+  reportSlug: string;
+}
+
+/** Normalizes the server's `{ reports: [{reportSlug}, ...] }` include shape into a flat `string[]`. */
+function toReportList(reports: ReportRow[] | undefined | null): string[] {
+  return reports?.map((r) => r.reportSlug) ?? [];
+}
+
 interface AdminLocationWire extends Omit<AdminLocation, "modules"> {
   modules?: ModuleRow[];
 }
-interface AdminSubscriptionWire extends Omit<AdminSubscription, "modules"> {
+interface AdminSubscriptionWire extends Omit<AdminSubscription, "modules" | "reports"> {
   modules?: ModuleRow[];
+  reports?: ReportRow[];
 }
 interface AdminClientWire extends Omit<AdminClient, "locations" | "subscription"> {
   locations: AdminLocationWire[];
@@ -79,7 +95,11 @@ function normalizeClient(client: AdminClientWire): AdminClient {
     ...client,
     locations: client.locations.map((l) => ({ ...l, modules: toModuleList(l.modules) })),
     subscription: client.subscription
-      ? { ...client.subscription, modules: toModuleList(client.subscription.modules) }
+      ? {
+          ...client.subscription,
+          modules: toModuleList(client.subscription.modules),
+          reports: toReportList(client.subscription.reports),
+        }
       : null,
   };
 }
@@ -224,6 +244,30 @@ export function useUpdateLocationModules() {
   });
 }
 
+// Report tier gating, Phase 5.3.4 (docs/2026-08-04-report-tier-gating-phases.md).
+// Sets a client's full enabled-report set — same replace-the-whole-set shape
+// as useUpdateLocationModules above, backing SubscriptionReportsDialog's Save
+// (client-form-fields.tsx). Keyed by clientId, matching the server route
+// (PUT /clients/:id/subscription/reports, Phase 5.2), not subscriptionId.
+//
+// Invalidates ["me"] as well as ["admin", "clients"]: the reports hub filter
+// (Phase 4.1, pages/reports/index.tsx) reads `client?.subscription?.reports`
+// off useMe()'s cached client data, not off the admin client list — so
+// without this, an admin who just tightened a client's reports would still
+// see the old (wider) set on that client's own next hub visit until some
+// unrelated action happened to refetch `me`.
+export function useUpdateSubscriptionReports() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ clientId, reportSlugs }: { clientId: string; reportSlugs: string[] }) =>
+      put<AdminSubscriptionWithClientWire>(`/api/admin/clients/${clientId}/subscription/reports`, { reportSlugs }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "clients"] });
+      qc.invalidateQueries({ queryKey: ["me"] });
+    },
+  });
+}
+
 // ── Users ──────────────────────────────────────────────────────────────────
 
 interface AdminUserClientAccessWire extends Omit<AdminUserClientAccess, "client"> {
@@ -358,11 +402,12 @@ export function useRevokeUserSession(userId: string | null) {
 export interface AdminSubscriptionWithClient extends AdminSubscription {
   client: { id: string; name: string; status: string };
 }
-interface AdminSubscriptionWithClientWire extends Omit<AdminSubscriptionWithClient, "modules"> {
+interface AdminSubscriptionWithClientWire extends Omit<AdminSubscriptionWithClient, "modules" | "reports"> {
   modules?: ModuleRow[];
+  reports?: ReportRow[];
 }
 function normalizeSubscription(sub: AdminSubscriptionWithClientWire): AdminSubscriptionWithClient {
-  return { ...sub, modules: toModuleList(sub.modules) };
+  return { ...sub, modules: toModuleList(sub.modules), reports: toReportList(sub.reports) };
 }
 
 export function useAdminSubscriptions() {

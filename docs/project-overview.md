@@ -41,6 +41,21 @@ decimals for per-gram items. Near-duplicate item names are caught at creation. T
 surfaces that hid their primary button (recipe builder, item form, and a Transfer receipt dialog
 that could not be completed at all) are fixed at the primitives.
 
+**Report access by subscription tier shipped** (client request #3, docs
+2026-08-04-report-tier-gating-plan.md / -phases.md): which of the 22 reports a client can even
+**see** is now gated by an explicit per-subscription enabled-report set (`SubscriptionReport`), not
+by the derived `packageType` label directly — a `maxUsers` bump that silently changes a client's
+badge from Medium to Full can no longer silently unlock reports as a side effect. Four tier presets
+(Basic/Medium/Full/Standalone) seed the set at subscription creation from the client's approved
+checklist; an admin can hand-edit a client's set afterward via a dedicated "Manage Reports" dialog,
+and a later tier change never overwrites a hand-edited set. `canViewReportForSubscription()`
+composes with the existing role gate (client round 4, above) rather than replacing it — a report
+must clear both to be visible — and is enforced in the same three places the role gate already was
+(server route middleware, the hub filter, the client route guard), so a tier-blocked report 404s by
+direct URL exactly like a role-blocked one. Every subscription that existed before this shipped was
+backfilled with its derived tier's preset (`backfill:subscription-reports`); the seeder produces the
+rows directly so a from-scratch database never ships with every report gated dark.
+
 **Offline-desktop groundwork shipped** (build-log Phase 35): the server half of the Electron mirror
 is done — device registration and revocation, year-long device-bound sessions, idempotent pushes on
 every create route, `occurredAt` for device time, and a whole-location snapshot endpoint. The

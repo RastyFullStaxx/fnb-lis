@@ -14,6 +14,7 @@
  * caller (verify-seed.mjs) creates and deletes.
  */
 import { prisma } from "../src/db";
+import { REPORT_TIER_PRESETS } from "@fnb/core";
 import { buildFullAudit } from "../src/services/report-assembly";
 import { nonMovingReport } from "../src/services/report-lists";
 
@@ -58,6 +59,13 @@ const main = async () => {
     ["users", prisma.user.count()],
     ["clients", prisma.client.count()],
     ["subscriptions", prisma.subscription.count()],
+    // Report tier gating, Phase 6.2 — every seeded subscription must come out
+    // with SubscriptionReport rows attached (seed.ts's upsertClientWithSubscription
+    // now seeds them directly, mirroring the Phase 6.1 backfill script's shape).
+    // A regression here means a fresh database would ship with every report
+    // gated dark for every non-ADMIN role, same failure the Phase 6.1 backfill
+    // exists to prevent for pre-existing databases.
+    ["subscription reports (report tier gating)", prisma.subscriptionReport.count()],
     ["locations", prisma.location.count()],
     ["categories", prisma.category.count()],
     ["units", prisma.unit.count()],
@@ -86,6 +94,39 @@ const main = async () => {
     const n = await p;
     ok(label, n > 0, `${n} rows`);
   }
+
+  console.log("\nCoverage — every subscription has SubscriptionReport rows (report tier gating, Phase 6)");
+  // A blanket n > 0 above only proves SOME rows exist; a subscription with
+  // zero rows would still pass that check as long as another one had rows.
+  // This is the actual claim Phase 6 needs verified: no subscription — old,
+  // new, or re-seeded — is left with an empty enabled-report set, since that
+  // is exactly the state that gates every report dark for every non-ADMIN
+  // role (canViewReportForSubscription, @fnb/core).
+  const subsMissingReports = await prisma.subscription.count({ where: { reports: { none: {} } } });
+  ok("no subscription has zero enabled reports", subsMissingReports === 0, `${subsMissingReports} subscription(s) with none`);
+
+  // Spot-check the two tiers the demo data actually exercises (Prime = Full,
+  // Casa Verde = Medium) against REPORT_TIER_PRESETS directly, so a preset
+  // that drifts from what seed.ts actually wrote is caught here rather than
+  // only surfacing later as a report that unexpectedly 404s for a demo user.
+  const primeSub = await prisma.subscription.findFirst({
+    where: { client: { name: "Prime Hospitality Group" } },
+    include: { reports: true },
+  });
+  ok(
+    "Prime (Full tier) has every report enabled",
+    !!primeSub && primeSub.reports.length === REPORT_TIER_PRESETS.FULL.length,
+    primeSub ? `${primeSub.reports.length} rows (want ${REPORT_TIER_PRESETS.FULL.length})` : "no subscription found",
+  );
+  const casaSub = await prisma.subscription.findFirst({
+    where: { client: { name: "Casa Verde Restaurant" } },
+    include: { reports: true },
+  });
+  ok(
+    "Casa Verde (Medium tier) matches the Medium preset",
+    !!casaSub && casaSub.reports.length === REPORT_TIER_PRESETS.MEDIUM.length,
+    casaSub ? `${casaSub.reports.length} rows (want ${REPORT_TIER_PRESETS.MEDIUM.length})` : "no subscription found",
+  );
 
   console.log("\nCoverage — report-specific shapes");
   const sales = await prisma.saleRecord.groupBy({ by: ["kind"], _count: true });

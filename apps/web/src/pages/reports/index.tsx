@@ -1,7 +1,7 @@
 import { Link } from "react-router";
-import { canViewReport, type Role, allowedProductTypes } from "@fnb/core";
+import { canViewReport, canViewReportForSubscription, type Role, allowedProductTypes } from "@fnb/core";
 import { useMe } from "@/api/auth";
-import { useCurrentLocation } from "@/api/location";
+import { useCurrentClient, useCurrentLocation } from "@/api/location";
 import {
   ArrowLeftRight,
   BarChart3,
@@ -233,19 +233,28 @@ export function ReportsPage() {
   // card that 404s. Everyone running the establishment sees all of them.
   const me = useMe();
   const role = (me.data?.user.role ?? "AUDIT_VIEWER_LIMITED") as Role;
-  // Two filters, same mechanism. Role: an audit-service viewer reads the
+  // Three filters, same mechanism, all independent — a report needs to clear
+  // every one of them to show a card. Role: an audit-service viewer reads the
   // reconciliation and nothing else. Module: an Asset-only warehouse has no use
   // for "Sales by Item (Shot & Bottle)", and the hub was offering all nineteen
-  // regardless — every irrelevant one opening to an empty table.
+  // regardless — every irrelevant one opening to an empty table. Tier: the
+  // client's subscription may not include this report at all
+  // (docs/2026-08-04-report-tier-gating-plan.md) — mirrors the server's
+  // canViewReportForSubscription() so nothing shows a card that then 404s.
   const location = useCurrentLocation();
   const allowedTypes = allowedProductTypes(location?.modules);
+  const client = useCurrentClient();
+  const enabledReportSlugs = client?.subscription?.reports ?? [];
   const sections = SECTIONS.map((section) => ({
     ...section,
-    reports: section.reports.filter(
-      (r) =>
-        canViewReport(role, r.path.split("?")[0]!) &&
-        (!r.requiresProductTypes || !allowedTypes || r.requiresProductTypes.some((t) => allowedTypes.includes(t))),
-    ),
+    reports: section.reports.filter((r) => {
+      const slug = r.path.split("?")[0]!;
+      return (
+        canViewReport(role, slug) &&
+        canViewReportForSubscription(role, slug, enabledReportSlugs) &&
+        (!r.requiresProductTypes || !allowedTypes || r.requiresProductTypes.some((t) => allowedTypes.includes(t)))
+      );
+    }),
   })).filter((section) => section.reports.length > 0);
 
   // Section headers exist to make nineteen reports findable. Below a handful

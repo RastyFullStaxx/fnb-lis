@@ -4,6 +4,7 @@ import {
   Building2,
   CalendarDays,
   CheckCircle2,
+  ClipboardList,
   MapPin,
   Package,
   Plus,
@@ -21,7 +22,7 @@ import {
   type ModuleType,
   type PackageType,
 } from "@fnb/core";
-import { PackageAndModulesFields, LocationsField, NegotiatedPriceField } from "@/components/client-form-fields";
+import { PackageAndModulesFields, LocationsField, NegotiatedPriceField, ConnectedSubscriptionReportsDialog } from "@/components/client-form-fields";
 import {
   deriveAccessState,
   daysUntilDue,
@@ -414,6 +415,7 @@ function ClientDetailBody({ client }: { client: AdminClient }) {
   const [name, setName] = useState(client.name);
   const [newLocName, setNewLocName] = useState("");
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
+  const [reportsDialogOpen, setReportsDialogOpen] = useState(false);
 
   const sub = client.subscription;
   const activeLocations = client.locations.filter((l) => l.status === "ACTIVE").length;
@@ -558,6 +560,35 @@ function ClientDetailBody({ client }: { client: AdminClient }) {
         limitMessage={`Location limit reached (${maxEntities} max). Raise "Max locations" below to add more.`}
       />
 
+      {/* ── Reports (Phase 5.3.5) — separate dialog + save cycle from the rest
+          of this form (5.3.2 Option A), so it sits beside Locations rather
+          than inside PackageAndModulesFields' dirty state. Disabled, not
+          hidden, in both no-subscription and cancelled states, so an admin
+          always sees the entry point exists even when it can't be used yet —
+          matching how the module picker locks to a read-only display instead
+          of disappearing (SubscriptionPanel's modulesLocked={cancelled}). */}
+      <div className="space-y-2">
+        <Label>Reports</Label>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          onClick={() => setReportsDialogOpen(true)}
+          disabled={!sub || cancelled}
+          title={
+            !sub
+              ? "Create a subscription first — reports have nothing to attach to yet."
+              : cancelled
+                ? "Subscription is cancelled — reports are locked along with the rest of the plan."
+                : undefined
+          }
+        >
+          <ClipboardList className="size-4" />
+          Manage Reports
+        </Button>
+      </div>
+
       {/* ── Actions: paid status on its own line, then Mark as Paid / Cancel
           (left) + Save (right) together on one row. ── */}
       {sub && !cancelled && (
@@ -621,6 +652,16 @@ function ClientDetailBody({ client }: { client: AdminClient }) {
           onOpenChange={setCancelConfirmOpen}
           sub={sub}
           clientName={client.name}
+        />
+      )}
+
+      {sub && (
+        <ConnectedSubscriptionReportsDialog
+          open={reportsDialogOpen}
+          onClose={() => setReportsDialogOpen(false)}
+          clientId={client.id}
+          clientName={client.name}
+          currentSlugs={sub.reports}
         />
       )}
     </div>

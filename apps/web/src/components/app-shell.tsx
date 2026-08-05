@@ -8,12 +8,13 @@ import {
   useParams,
 } from "react-router";
 import { Check, ChevronsUpDown, Lock, LogOut, Sparkles } from "lucide-react";
-import { can, canViewReport, LOCATION_KIND_LABELS, type LocationKind, type MeResponse, type Role } from "@fnb/core";
+import { can, canViewReport, canViewReportForSubscription, LOCATION_KIND_LABELS, type LocationKind, type MeResponse, type Role } from "@fnb/core";
 import { useLogout, useMe } from "@/api/auth";
 import { ApiError } from "@/api/http";
 import { BootError, BootSkeleton } from "@/components/full-page-spinner";
 import { ADMIN_NAV, CATALOG_NAV, MAIN_NAV, permissionForPath, visibleNav, type NavItem } from "@/lib/nav";
 import { EmptyState } from "@/components/empty-state";
+import { useCurrentClient } from "@/api/location";
 import {
   Sidebar,
   SidebarContent,
@@ -186,17 +187,46 @@ function RouteGuard({ role }: { role: Role }) {
   const { locationId } = useParams();
   const relative = locationId ? pathname.split(`/l/${locationId}/`)[1] ?? "" : "";
   const needed = permissionForPath(relative);
+  const client = useCurrentClient();
 
   // Reports are gated per report, not just per section: an audit-service
   // viewer may open the reconciliation set and nothing else. Same predicate the
   // hub filters with and the server enforces.
-  const reportSlug = relative.startsWith("reports/") ? relative.slice("reports/".length).split("/")[0] : null;
+  //
+  // A report path can carry a query-like suffix on its own segment
+  // (`full-audit?variance=only`), same as the hub's `r.path.split("?")[0]`,
+  // so the slug taken from the URL is split the same way before either gate
+  // sees it — otherwise "full-audit?variance=only" would never match a slug
+  // in AUDIT_VIEWER_REPORTS or a subscription's enabled set.
+  const reportSlug = relative.startsWith("reports/")
+    ? (relative.slice("reports/".length).split("/")[0] ?? "").split("?")[0] || null
+    : null;
   if (reportSlug && !canViewReport(role, reportSlug)) {
     return (
       <EmptyState
         icon={Lock}
         title="This report isn't part of your access"
         description="Your account covers the reconciliation reports. Ask the establishment owner or your LIS administrator if you need more."
+        action={
+          <Button asChild variant="outline">
+            <Link to={`/l/${locationId}/reports`}>Back to Reports</Link>
+          </Button>
+        }
+      />
+    );
+  }
+
+  // Tier gate (docs/2026-08-04-report-tier-gating-plan.md, phases doc 4.2):
+  // same composed check and same source (`client.subscription.reports`) as
+  // the hub filter and the server middleware, so a report hidden from the
+  // hub for tier reasons can't still be opened by typing its URL.
+  const enabledReportSlugs = client?.subscription?.reports ?? [];
+  if (reportSlug && !canViewReportForSubscription(role, reportSlug, enabledReportSlugs)) {
+    return (
+      <EmptyState
+        icon={Lock}
+        title="This report isn't part of your access"
+        description="Your subscription doesn't include this report. Ask your LIS administrator if you need more."
         action={
           <Button asChild variant="outline">
             <Link to={`/l/${locationId}/reports`}>Back to Reports</Link>
