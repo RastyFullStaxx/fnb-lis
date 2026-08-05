@@ -307,7 +307,7 @@ function SupplierDialog({
           )}
           <DialogFooter>
             <Button type="submit" disabled={create.isPending || update.isPending}>
-              {supplier ? "Save changes" : "Add supplier"}
+              {supplier ? "Save Changes" : "Add Supplier"}
             </Button>
           </DialogFooter>
         </form>

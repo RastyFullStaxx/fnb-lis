@@ -300,7 +300,7 @@ export function RecipeBuilderSheet({
 
         <SheetFooter>
           <Button onClick={publish} disabled={mutations.publish.isPending || mutations.create.isPending}>
-            {mutations.publish.isPending ? "Publishing…" : menu ? "Publish new version" : "Create & publish v1"}
+            {mutations.publish.isPending ? "Publishing…" : menu ? "Publish New Version" : "Create & Publish v1"}
           </Button>
         </SheetFooter>
       </SheetContent>

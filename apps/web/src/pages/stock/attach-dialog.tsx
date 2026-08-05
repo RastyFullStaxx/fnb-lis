@@ -162,7 +162,7 @@ export function AttachItemDialog({
             Done
           </Button>
           <Button onClick={save} disabled={!selected || attach.isPending}>
-            {attach.isPending ? "Adding…" : "Add to catalog"}
+            {attach.isPending ? "Adding…" : "Add to Catalog"}
           </Button>
         </DialogFooter>
       </DialogContent>

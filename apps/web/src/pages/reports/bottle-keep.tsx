@@ -253,7 +253,7 @@ export function BottleKeepPage() {
                             current state, so it looks like a label that has
                             somehow become clickable. */}
                         <Button size="xs" variant="outline" onClick={() => void act("claim", r.id, r.customerName)}>
-                          Mark claimed
+                          Mark Claimed
                         </Button>
                         {/* Only offered once it is actually due — the server
                             refuses an early forfeit, and a button that exists

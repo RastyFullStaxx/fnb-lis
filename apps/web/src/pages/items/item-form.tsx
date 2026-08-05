@@ -446,7 +446,7 @@ export function ItemFormSheet({
 
           <SheetFooter className="px-0">
             <Button type="submit" disabled={createItem.isPending}>
-              {createItem.isPending ? "Saving…" : "Save item"}
+              {createItem.isPending ? "Saving…" : "Save Item"}
             </Button>
           </SheetFooter>
         </form>
@@ -649,7 +649,7 @@ export function ItemEditSheet({
 
           <SheetFooter className="px-0">
             <Button type="submit" disabled={updateItem.isPending}>
-              {updateItem.isPending ? "Saving…" : "Save changes"}
+              {updateItem.isPending ? "Saving…" : "Save Changes"}
             </Button>
           </SheetFooter>
         </form>

@@ -295,7 +295,7 @@ function NewPurchaseDialog({ open, onOpenChange }: { open: boolean; onOpenChange
         </div>
         <DialogFooter>
           <Button onClick={start} disabled={!purchaseDate || create.isPending}>
-            {create.isPending ? "Starting…" : "Start draft"}
+            {create.isPending ? "Starting…" : "Start Draft"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -395,7 +395,7 @@ function ForfeitsTab() {
         )}
         <div className="flex justify-end">
           <Button onClick={save} disabled={!item || create.isPending}>
-            <Undo2 className="size-4" /> {create.isPending ? "Saving…" : "Record return"}
+            <Undo2 className="size-4" /> {create.isPending ? "Saving…" : "Record Return"}
           </Button>
         </div>
       </div>

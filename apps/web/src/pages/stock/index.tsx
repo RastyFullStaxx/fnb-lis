@@ -397,7 +397,7 @@ function CopyFromDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
         </Select>
         <DialogFooter>
           <Button onClick={run} disabled={!sourceId || copyFrom.isPending}>
-            {copyFrom.isPending ? "Copying…" : "Copy catalog"}
+            {copyFrom.isPending ? "Copying…" : "Copy Catalog"}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -304,7 +304,7 @@ function CategoryDialog({
           )}
           <DialogFooter>
             <Button type="submit" disabled={createCategory.isPending || updateCategory.isPending}>
-              {category ? "Save changes" : "Add category"}
+              {category ? "Save Changes" : "Add Category"}
             </Button>
           </DialogFooter>
         </form>

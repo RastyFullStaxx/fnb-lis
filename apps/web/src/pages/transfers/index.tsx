@@ -228,9 +228,12 @@ function CreateTransferDialog({ open, onOpenChange }: { open: boolean; onOpenCha
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label>Destination</Label>
+            {/* `htmlFor` + a matching id: without them a screen reader announces
+                an unlabelled combobox, and clicking the word "Destination" does
+                nothing. Every other select on this page is wired this way. */}
+            <Label htmlFor="t-destination">Destination</Label>
             <Select value={toLocationId} onValueChange={setToLocationId}>
-              <SelectTrigger>
+              <SelectTrigger id="t-destination">
                 <SelectValue placeholder={destinations.length ? "Choose a location" : "No other locations for this client"} />
               </SelectTrigger>
               <SelectContent>

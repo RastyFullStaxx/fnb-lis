@@ -4344,3 +4344,45 @@ Three workspaces typecheck.
   in grams.
 - The location switcher has no `aria-label` — a screen reader hears the client
   and location names with no indication it is a control.
+
+## 2026-08-04 — First-timer walkthrough, part 2
+
+Purchases, transfers, imports, reports and admin, walked the same way.
+
+### Fixed
+
+- **Purchase line `Qty` carried no unit.** A delivery is precisely where cases
+  and bottles get conflated — "12" of a 1 L Cola could be a dozen bottles or a
+  dozen cases, and the Unit Cost beside it only means something once that is
+  settled. Now names the variant.
+- **Two selects had labels bound to nothing.** Transfers' **Destination** and
+  Imports' **Import Type** rendered `<Label>` with no `htmlFor` over a trigger
+  with no `id`: a screen reader announces an unlabelled combobox and clicking the
+  word does nothing. Every other select on those pages was already wired
+  correctly, so these were oversights, not a convention.
+- **The Full Audit never explained its own notation.** Begin and End read
+  `1 + 0.97` with nothing anywhere saying what the two halves are — on the report
+  the client trusts above all others. A number nobody can read is a number nobody
+  can check. Now stated under the period explainer.
+- **Sentence-case buttons, 12 of them.** DESIGN.md specifies Title Case for
+  buttons and the identical string was shipping both ways ("Save Changes" on
+  Sales and Transfers, "Save changes" on Counts and Items). Swept.
+
+### Walked and found sound — not re-auditing these
+
+- **Import review** is the best screen in the app: bulk actions, per-row
+  Approve/Decline, EXACT/ALIAS badges, "No confident match. Choose an item or
+  reject.", and an explicit "Duplicate POS line" flag.
+- **Reports hub** — every report carries a plain-language line saying what
+  question it answers, with the Full Audit leading at its own weight.
+- **Purchases** — draft-first ordering, item picker autofocused, "Receive a
+  Delivery" dialog correctly marks Supplier and Invoice optional.
+- **Users** — destructive actions live behind Edit rather than on the list.
+- The earlier `xs` hit-target fix carries into the import review's per-row
+  buttons: 27px painted, **34px** effective target.
+
+### Still open
+
+- Every seeded tare weight is in ounces for a Philippine client (from part 1).
+- The location switcher has no `aria-label`.
+- The desktop app was not walked.

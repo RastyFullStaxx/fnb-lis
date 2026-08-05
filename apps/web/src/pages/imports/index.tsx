@@ -225,9 +225,9 @@ function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (op
       <div>
         <div className="mb-4 flex flex-wrap items-end gap-3">
           <div className="space-y-1.5">
-            <Label>Import Type</Label>
+            <Label htmlFor="i-kind">Import Type</Label>
             <Select value={kind} onValueChange={(v) => setKind(v as ImportKind)}>
-              <SelectTrigger className="w-44">
+              <SelectTrigger id="i-kind" className="w-44">
                 <SelectValue />
             </SelectTrigger>
             <SelectContent>

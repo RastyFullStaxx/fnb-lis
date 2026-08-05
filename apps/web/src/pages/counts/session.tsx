@@ -674,8 +674,8 @@ function OpenSession({ session }: { session: SessionWithLines }) {
               {mutations.addLine.isPending || mutations.removeLine.isPending
                 ? "Saving…"
                 : editingLineId
-                  ? "Save changes"
-                  : "Save line"}
+                  ? "Save Changes"
+                  : "Save Line"}
             </Button>
           </div>
 

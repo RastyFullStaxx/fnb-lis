@@ -183,7 +183,11 @@ export function PurchaseEditorPage() {
                   <ItemCombobox id="pl-item" ref={comboRef} value={item} onSelect={pickItem} autoFocus />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="pl-qty">Qty</Label>
+                  {/* A delivery is exactly where cases and bottles get
+                      conflated — "12" of a 1 L Cola could be a dozen bottles or
+                      a dozen cases, and the cost per unit below only makes sense
+                      once that is settled. Naming the unit removes the guess. */}
+                  <Label htmlFor="pl-qty">Qty{item ? ` (${variantLabel(item.itemVariant)})` : ""}</Label>
                   <QuantityInput id="pl-qty" className="tnum bg-background" value={qty} onChange={(e) => setQty(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addLine()} />
                 </div>
                 <div className="space-y-2">

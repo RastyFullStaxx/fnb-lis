@@ -595,6 +595,14 @@ function VerdictStrip({ report, begin, end }: { report: Report; begin: string; e
             previous period. Date-range reports like Sales include both end dates, so their totals
             will differ.
           </p>
+          {/* The Begin/End columns read like "1 + 0.97" and nothing said what
+              the two halves are. It is the report the client trusts above all
+              else, and a number nobody can read is a number nobody can check. */}
+          <p className="text-xs leading-5 text-muted-foreground">
+            Begin and End are written <span className="tnum font-medium">sealed + open</span> — so{" "}
+            <span className="tnum font-medium">1 + 0.97</span> means one unopened container plus a
+            partly-used one that is 97% full. Usage and Variance are totals of both.
+          </p>
         </div>
         {categories.length > 0 ? (
           <div className="min-w-0">
