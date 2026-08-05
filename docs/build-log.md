@@ -4478,3 +4478,32 @@ and `the machine past the cap is refused — status 403`. The invariant is the
 same; it is no longer pinned to one number.
 
 All five harnesses pass; three workspaces typecheck.
+
+## 2026-08-04 — Dev desktop's device row seeded
+
+The seed now pre-registers `front-bar-pc-fixed-0001` as "Front bar PC" at Main
+Bar — the fingerprint the installed desktop persists in its config and reuses
+across reinstalls (`apps/desktop/src/config.ts`: a random id generated once,
+deliberately not derived from hardware). `resolveDevice` recognises the machine
+on first login instead of registering it afresh, so repeated database rebuilds
+stop leaving a trail of orphan rows eating licence slots.
+
+**It does not remove the setup wizard, and it was never going to.** The desktop's
+stored `locationId` and session belong to the previous database, and locations
+are created with generated ids, so the config is stale after any rebuild whatever
+the Device table says. Going further would mean pinning stable ids across client,
+location and device *and* seeding a known `DevicePin` — a chain of demo fiction
+ending in a published PIN hash. Not worth it.
+
+Seeded deliberately WITHOUT a session or a PIN: the row asserts "this machine is
+known", never "this machine is signed in". Verified on a fresh database —
+`AuthSession` 0, `DevicePin` 0.
+
+The `verify:sync` cap test absorbed this without edits, because it had just been
+rewritten to read `maxDevices` and count existing ACTIVE devices rather than
+assume a starting state: `the licence covers 2 machine(s), and all 2 register —
+2 of 2`, `the machine past the cap is refused — status 403`. Had it still been
+the hard-coded "a second machine is refused", this change would have broken it a
+second time.
+
+All five harnesses pass; three workspaces typecheck.
