@@ -12,7 +12,7 @@ import { ApiError } from "@/api/http";
 import { formatMoney, formatDate } from "@/lib/utils";
 import { EntryActions } from "@/components/entry-fact";
 import { ItemCombobox } from "@/components/item-combobox";
-import { TableSurface } from "@/components/table-surface";
+import { TableFailure, TableSurface, queryPaused } from "@/components/table-surface";
 import { VoidDialog } from "@/components/void-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -71,6 +71,24 @@ export function PurchaseEditorPage() {
   const [editingLine, setEditingLine] = useState<PurchaseLine | null>(null);
   const comboRef = useRef<HTMLButtonElement>(null);
 
+  // Same split the Transfer editor makes: unreachable is not "removed", and a
+  // paused query never leaves `isPending` — without this the editor sat on a
+  // skeleton forever the moment the server went away.
+  if (queryPaused(purchase))
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="mb-4 flex items-center gap-3">
+          <Button asChild variant="ghost" size="icon" aria-label="Back">
+            <Link to={backHref}>
+              <ArrowLeft className="size-4" />
+            </Link>
+          </Button>
+        </div>
+        <TableSurface>
+          <TableFailure query={purchase} title="Couldn't load this delivery" />
+        </TableSurface>
+      </div>
+    );
   if (purchase.isPending) return <EditorSkeleton />;
   if (purchase.isError)
     return (

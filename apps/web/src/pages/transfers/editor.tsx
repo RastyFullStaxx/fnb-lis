@@ -13,7 +13,7 @@ import { formatMoney } from "@/lib/utils";
 import { EntryActions } from "@/components/entry-fact";
 import { ItemCombobox } from "@/components/item-combobox";
 import { VoidDialog } from "@/components/void-dialog";
-import { TableFailure, TableLoading, TableSurface } from "@/components/table-surface";
+import { TableFailure, TableLoading, TableSurface, queryPaused } from "@/components/table-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { QuantityInput } from "@/components/quantity-input";
@@ -69,7 +69,7 @@ export function TransferEditorPage() {
   // A paused query is still `pending`, so the skeleton would run forever;
   // and "it may have been removed" is the wrong story for an unreachable
   // service — it blames the record for a network problem.
-  if (transfer.fetchStatus === "paused" && document.hasFocus()) {
+  if (queryPaused(transfer)) {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="mb-4 flex items-center gap-3">
@@ -218,8 +218,8 @@ export function TransferEditorPage() {
           isDraft && isSource ? (
             <div className="grid w-full grid-cols-[minmax(0,1fr)_7rem_auto] items-end gap-2">
               <div className="space-y-2">
-                <Label>Item (from this location's catalog)</Label>
-                <ItemCombobox ref={comboRef} value={item} onSelect={setItem} autoFocus />
+                <Label htmlFor="tl-item">Item (from this location's catalog)</Label>
+                <ItemCombobox id="tl-item" ref={comboRef} value={item} onSelect={setItem} autoFocus />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="tl-qty">Qty</Label>

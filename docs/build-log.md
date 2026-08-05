@@ -4596,3 +4596,72 @@ relationship — the header is the only place with room to say it.
 - No unassociated labels anywhere in this group.
 
 `verify:seed` · `verify:races` pass; three workspaces typecheck.
+
+## 2026-08-05 — Groups 4 & 5 of 5: review/reports, admin/settings
+
+Thin pickings, which is the useful result: both areas are in better shape than
+Groups 1 and 2 were.
+
+### Fixed
+
+- **Import drop zone was unnamed to a screen reader.** The visible control is a
+  `role="button"` div; the real `<input type="file">` is hidden and clicked
+  programmatically. Sighted users read "Drop a file here, or click to choose" —
+  assistive tech got an unnamed button and a second unnamed file input. The
+  wrapper now carries an `aria-label` naming the accepted formats, and the
+  hidden input is removed from the a11y tree so it stops being a phantom
+  duplicate.
+- **Settings: two "Add an item" labels bound to nothing**, in the per-item
+  display-unit sections. Given distinct ids (`unit-add-item`,
+  `client-unit-add-item`) — the two blocks are identical markup on one page, so
+  a shared id would have pointed both labels at the same control.
+
+### Checked and sound
+
+- **Report tiering is coherent.** `/reports/variance` refuses with "This report
+  isn't part of your access", and the hub genuinely does not offer it — the
+  Variance Report is `full-audit?variance=only`, a filtered Full Audit. I had
+  reached a slug the hub never advertises. 21 reports enabled for Prime; every
+  one of the hub's 19 cards resolves.
+- **Sales report** renders chart, stat tiles and Excel/CSV/PDF.
+- **Activity** — When / Who / Action / Summary with human summaries beside the
+  action codes, which DESIGN.md sanctions specifically in the trail.
+- **Settings** carries an "Offline desktop PIN" section, so the desktop
+  dead-end guidance added in Group 1 ("open Settings, choose a 6-digit PIN")
+  points at something real. Preferred unit reads "Metric (g / kg)", consistent
+  with the seeded grams.
+
+> A probe of mine produced ten false failures: I called every report endpoint
+> with `begin`/`end`, but several take `from`/`to` and three
+> (bottle-keep, blank-forms, count-sheet) are client-rendered pages with no API
+> endpoint at all. Checked through the UI instead. Worth recording because the
+> failure mode — a malformed probe reading as a broken app — is the same one
+> that produced the 486 "corrupted" rows earlier in this session.
+
+Three workspaces typecheck; `verify:seed` and `verify:races` pass.
+
+## Group 3 — Daily entry (2026-08-06)
+
+The last of the five simulation groups, and the one people touch every shift.
+
+- **The three record kinds now say what they are for.** Sales / Non-Revenue /
+  Production named themselves and nothing else. Picking the wrong one puts the
+  stock in the wrong half of the reconciliation, so each tab carries a line:
+  paid for · left with no money against it · used up making something in-house.
+  Same treatment the count screen's three modes already had.
+- **Receive-transfer grid: the per-row inputs had no accessible name.** A column
+  header does not label a control, so the whole dialog read as anonymous text
+  boxes. Each now names its item.
+- **Its Note column claimed "required when short"; the rule is "when it
+  differs"** — an over-receipt was refused by a validator the header denied
+  existed.
+- **The purchase editor sat on a skeleton forever when the server went away.**
+  A paused query stays `isPending`, and this editor checked only that. The
+  Transfer editor already made the split; the check it hand-rolled is now
+  `queryPaused()` in `table-surface`, used by both.
+- **Four form controls with a dangling `<Label>`** — the transfer editor's item
+  picker, and Password / Role (both dialogs) in Users. `ItemCombobox` already
+  forwarded an `id` for exactly this; `RoleSelect` now does too.
+
+`verify:seed` passes; web typechecks.
+

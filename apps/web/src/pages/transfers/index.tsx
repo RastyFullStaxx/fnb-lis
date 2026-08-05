@@ -414,13 +414,14 @@ function ReceiveDialog({ transferId, onClose }: { transferId: string; onClose: (
                     <TableHead>Item</TableHead>
                     <TableHead className="w-20 text-right">Sent</TableHead>
                     <TableHead className="w-28">Received</TableHead>
-                    <TableHead>Note (required when short)</TableHead>
+                    <TableHead>Note (required when it differs)</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {pending.map((line) => {
                     const value = quantities[line.id] ?? String(line.qty);
                     const differs = Number(value) !== line.qty;
+                    const what = `${line.locationItem.itemVariant.item.name} ${variantLabel(line.locationItem.itemVariant)}`;
                     return (
                       <TableRow key={line.id}>
                         <TableCell>
@@ -432,6 +433,7 @@ function ReceiveDialog({ transferId, onClose }: { transferId: string; onClose: (
                         <TableCell className="tnum text-right">{line.qty}</TableCell>
                         <TableCell>
                           <QuantityInput
+                            aria-label={`Quantity received — ${what}`}
                             className={cn("tnum h-8", differs && "border-warning")}
                             value={value}
                             onChange={(e) => setQuantities((q) => ({ ...q, [line.id]: e.target.value }))}
@@ -439,6 +441,7 @@ function ReceiveDialog({ transferId, onClose }: { transferId: string; onClose: (
                         </TableCell>
                         <TableCell>
                           <Input
+                            aria-label={`Note — ${what}`}
                             className="h-8"
                             placeholder={differs ? "e.g. broken in transit" : ""}
                             value={notes[line.id] ?? ""}

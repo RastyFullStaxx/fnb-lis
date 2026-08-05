@@ -611,8 +611,9 @@ function StaffItemUnitSection() {
         ))}
 
         <div className="space-y-2">
-          <Label>Add an item</Label>
+          <Label htmlFor="unit-add-item">Add an item</Label>
           <ItemOnlyCombobox
+            id="unit-add-item"
             value={picking}
             onSelect={addRow}
             exclude={rows.map((r) => r.id)}
@@ -721,8 +722,9 @@ function AdminItemUnitDefaultSection() {
         ))}
 
         <div className="space-y-2">
-          <Label>Add an item</Label>
+          <Label htmlFor="client-unit-add-item">Add an item</Label>
           <ItemOnlyCombobox
+            id="client-unit-add-item"
             value={picking}
             onSelect={addRow}
             exclude={rows.map((r) => r.id)}

@@ -463,7 +463,7 @@ function ModuleCheckboxes({
   );
 }
 
-function RoleSelect({ value, onChange }: { value: Role; onChange: (r: Role) => void }) {
+function RoleSelect({ id, value, onChange }: { id: string; value: Role; onChange: (r: Role) => void }) {
   const me = useMe();
   // An owner can only create roles below him — the server enforces the same
   // ceiling (OWNER_ASSIGNABLE_ROLES); this just avoids offering a doomed pick.
@@ -471,7 +471,7 @@ function RoleSelect({ value, onChange }: { value: Role; onChange: (r: Role) => v
     me.data?.user.role === "ADMIN" ? ROLES : (OWNER_ASSIGNABLE_ROLES as readonly Role[]);
   return (
     <Select value={value} onValueChange={(v) => onChange(v as Role)}>
-      <SelectTrigger>
+      <SelectTrigger id={id}>
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
@@ -608,9 +608,9 @@ function CreateUserDialog({
             </div>
           </div>
           <div className="space-y-2">
-            <Label>Password</Label>
+            <Label htmlFor="nu-password">Password</Label>
             <div className="flex gap-2">
-              <Input value={password} onChange={(e) => setPassword(e.target.value)} className="font-mono" />
+              <Input id="nu-password" value={password} onChange={(e) => setPassword(e.target.value)} className="font-mono" />
               <Button type="button" variant="outline" size="icon" onClick={() => setPassword(generatePassword())} title="Generate">
                 <RefreshCw className="size-4" />
               </Button>
@@ -626,8 +626,8 @@ function CreateUserDialog({
             </div>
           </div>
           <div className="space-y-2">
-            <Label>Role</Label>
-            <RoleSelect value={role} onChange={setRole} />
+            <Label htmlFor="nu-role">Role</Label>
+            <RoleSelect id="nu-role" value={role} onChange={setRole} />
           </div>
           {role !== "ADMIN" && (
             <div className="space-y-2">
@@ -757,8 +757,8 @@ function EditUserDialog({
 
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label>Role</Label>
-            <RoleSelect value={role} onChange={setRole} />
+            <Label htmlFor="eu-role">Role</Label>
+            <RoleSelect id="eu-role" value={role} onChange={setRole} />
           </div>
 
           {role !== "ADMIN" && (
