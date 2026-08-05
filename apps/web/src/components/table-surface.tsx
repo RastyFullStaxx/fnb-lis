@@ -171,14 +171,17 @@ export function TableError({
   description = "Check your connection and try again.",
   onRetry,
   retrying = false,
+  className,
 }: {
   title?: string;
   description?: string;
   onRetry: () => void;
   retrying?: boolean;
+  /** Override the fill's padding when it sits somewhere tighter than a table body. */
+  className?: string;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 px-6 py-16 text-center">
+    <div className={cn("flex flex-col items-center justify-center gap-2 px-6 py-16 text-center", className)}>
       <p className="text-sm font-medium">{title}</p>
       <p className="max-w-sm text-sm text-muted-foreground">{description}</p>
       <Button size="sm" variant="outline" className="mt-2" onClick={onRetry} disabled={retrying}>
@@ -250,16 +253,19 @@ export function TableFailure({
   query,
   title,
   description,
+  className,
 }: {
   /** One query, or every query the screen needs — retry hits all of them. */
   query: FailableQuery | FailableQuery[];
   title?: string;
   description?: string;
+  className?: string;
 }) {
   const queries = Array.isArray(query) ? query : [query];
   const paused = queries.some((q) => q.fetchStatus === "paused");
   return (
     <TableError
+      className={className}
       title={title}
       description={
         paused

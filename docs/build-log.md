@@ -4659,6 +4659,10 @@ The last of the five simulation groups, and the one people touch every shift.
   A paused query stays `isPending`, and this editor checked only that. The
   Transfer editor already made the split; the check it hand-rolled is now
   `queryPaused()` in `table-surface`, used by both.
+- **The Users dialog's client picker had both bugs at once** — a skeleton that
+  never resolved while unreachable, and "No clients exist yet" if the fetch
+  errored. `TableError`/`TableFailure` take a `className` now so the same fill
+  can sit in a dialog field instead of a table body.
 - **Four form controls with a dangling `<Label>`** — the transfer editor's item
   picker, and Password / Role (both dialogs) in Users. `ItemCombobox` already
   forwarded an `id` for exactly this; `RoleSelect` now does too.

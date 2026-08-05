@@ -399,6 +399,12 @@ function ClientCheckboxes({
   disabled?: boolean;
 }) {
   const clients = useAdminClients();
+  if (queryFailed(clients))
+    return (
+      <div className="rounded-md border">
+        <TableFailure query={clients} title="Couldn't load the client list" className="gap-1.5 px-4 py-6" />
+      </div>
+    );
   if (clients.isPending) return <Skeleton className="h-20 w-full" />;
   if ((clients.data ?? []).length === 0)
     return <p className="text-sm text-muted-foreground">No clients exist yet.</p>;
