@@ -2,7 +2,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useParams } from "react-router";
 import { ArrowLeft, Check, Pencil } from "lucide-react";
 import { toast } from "sonner";
-import { can, checkContentVsHistory, convert, type Role, type UnitDef, type WeighWarning } from "@fnb/core";
+// phpRound for DISPLAY of the stored reading: entering in grams converts to the
+// item's own unit, which lands on values like 28.642457103059293. The stored
+// number stays exact — only what is shown is shortened.
+import { can, checkContentVsHistory, convert, phpRound, type Role, type UnitDef, type WeighWarning } from "@fnb/core";
 import { statusVariant } from "@/lib/status";
 import { useMe } from "@/api/auth";
 import { useItemDisplayUnit } from "@/lib/preferences";
@@ -204,7 +207,11 @@ function OpenSession({ session }: { session: SessionWithLines }) {
   // phases doc Phase 3/4) — one fetch per picked item, shared by both the
   // Weigh Partial preview below and the Open Amount check further down.
   const trailingAverage = useTrailingAverage(item?.id ?? null).data?.trailingAverage;
-  const preview = useWeighPreview(item, scale, trailingAverage);
+  // What the counter is TYPING in. Starts as the item's own unit and is theirs
+  // to change — a bar's scale reads grams whatever unit the bottle was
+  // originally weighed in, and before this the field could not accept that.
+  const [scaleUnit, setScaleUnit] = useState<"g" | "oz" | null>(null);
+  const preview = useWeighPreview(item, scale, trailingAverage, scaleUnit);
 
   // Completeness. An item left out of a count is silently DROPPED from the
   // reconciliation — it doesn't show as a shortage, the row just disappears —
@@ -391,7 +398,10 @@ function OpenSession({ session }: { session: SessionWithLines }) {
           ...areaField,
           countType: "WEIGH" as const,
           scaleWeight: preview.scale,
-          scaleUnit: preview.unit as "g" | "oz",
+          // `preview.scale` is already converted into the item's own tare unit
+          // (see toTareUnit), so the label stored beside it must be that unit —
+          // not whichever one the counter happened to type in.
+          scaleUnit: preview.nativeUnit as "g" | "oz",
           tareWeight: preview.tare,
           densityFactor: preview.density ?? undefined,
         };
@@ -497,24 +507,43 @@ function OpenSession({ session }: { session: SessionWithLines }) {
           <BottleKeepInline item={item} countDate={session.countDate} />
 
           {weighable && (
-            <Tabs value={activeMode} onValueChange={(v) => setMode(v as "FULL" | "WEIGH" | "OPEN")}>
-              <TabsList className="w-full">
-                <TabsTrigger value="FULL" className="flex-1">
-                  Full Units
-                </TabsTrigger>
-                <TabsTrigger value="WEIGH" className="flex-1">
-                  Weigh Partial
-                </TabsTrigger>
-                <TabsTrigger value="OPEN" className="flex-1">
-                  Open Amount
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
+            <div className="space-y-1.5">
+              <Tabs value={activeMode} onValueChange={(v) => setMode(v as "FULL" | "WEIGH" | "OPEN")}>
+                <TabsList className="w-full">
+                  <TabsTrigger value="FULL" className="flex-1">
+                    Full Units
+                  </TabsTrigger>
+                  <TabsTrigger value="WEIGH" className="flex-1">
+                    Weigh Partial
+                  </TabsTrigger>
+                  <TabsTrigger value="OPEN" className="flex-1">
+                    Open Amount
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+              {/* Three modes with nothing saying when to use which. Obvious once
+                  someone has been shown; pure guesswork on a first shift — and
+                  guessing wrong is what puts a wrong number into the audit.
+                  Entry pane only: the correction dialog is used by someone who
+                  has already learned the difference. */}
+              <p className="text-xs text-muted-foreground">
+                {activeMode === "FULL"
+                  ? "Sealed bottles — count them and type how many."
+                  : activeMode === "WEIGH"
+                    ? "An opened bottle: put it on the scale, type what the scale shows."
+                    : "An opened bottle with no scale: type how much you judge is left."}
+              </p>
+            </div>
           )}
 
           {activeMode === "FULL" ? (
             <div className="space-y-2">
-              <Label htmlFor="count-qty">Counted Quantity</Label>
+              <Label htmlFor="count-qty">
+                Counted Quantity
+                {/* Sealed bottles are counted in BOTTLES, but the variant's unit
+                    is "ml" — so an unlabelled box invited someone to type 700. */}
+                {item ? (item.itemVariant.unit.kind === "VOLUME" || item.itemVariant.unit.kind === "MASS" ? " (whole units)" : ` (${item.itemVariant.unit.name})`) : ""}
+              </Label>
               <QuantityInput
                 id="count-qty"
                 className="tnum h-11 text-lg"
@@ -585,7 +614,31 @@ function OpenSession({ session }: { session: SessionWithLines }) {
             </div>
           ) : (
             <div className="space-y-2">
-              <Label htmlFor="count-scale">Scale reading{preview?.ready ? ` (${preview.unit})` : ""}</Label>
+              <div className="flex items-end justify-between gap-2">
+                <Label htmlFor="count-scale">Scale reading{preview?.ready ? ` (${preview.unit})` : ""}</Label>
+                {/* Whatever unit the bottle was originally weighed in, the scale
+                    on this bar's counter reads what it reads. Before this the
+                    field was locked to the item's stored unit, so a gram scale
+                    could not be entered at all — and typing grams into an ounce
+                    field produced a wildly over-full reading whose warning sent
+                    the counter to go edit master data they cannot edit. */}
+                {preview?.ready && (
+                  <Tabs
+                    value={preview.unit}
+                    onValueChange={(v) => setScaleUnit(v as "g" | "oz")}
+                    className="w-auto"
+                  >
+                    <TabsList className="h-7">
+                      <TabsTrigger value="g" className="px-2 text-xs">
+                        g
+                      </TabsTrigger>
+                      <TabsTrigger value="oz" className="px-2 text-xs">
+                        oz
+                      </TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                )}
+              </div>
               <QuantityInput
                 id="count-scale"
                 className="tnum h-11 text-lg"
@@ -594,6 +647,13 @@ function OpenSession({ session }: { session: SessionWithLines }) {
                 onChange={(e) => setScale(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && save()}
               />
+              {preview?.ready && preview.entered && preview.looksLikeOtherUnit && (
+                <p className="text-sm text-warning-text">
+                  That reading is far more than this bottle holds, but it fits if it is in{" "}
+                  {preview.otherUnit === "g" ? "grams" : "ounces"}. Switch the unit above rather than
+                  changing the bottle's weights.
+                </p>
+              )}
               <WeighPreviewStrip
                 preview={preview}
                 size={item?.itemVariant.size ?? 0}
@@ -962,7 +1022,7 @@ function EditLineDialog({
         locationItemId: item.id,
         countType: "WEIGH" as const,
         scaleWeight: preview.scale,
-        scaleUnit: preview.unit as "g" | "oz",
+        scaleUnit: preview.nativeUnit as "g" | "oz",
         tareWeight: preview.tare,
         densityFactor: preview.density ?? undefined,
       };
@@ -1129,7 +1189,7 @@ function LineRow({
           ) : (
             <EntryFact
               label="Weighed"
-              value={`${line.scaleWeight} ${line.scaleUnit} → ${shownContent} ${shownUnit.name}`}
+              value={`${phpRound(line.scaleWeight ?? 0, 2)} ${line.scaleUnit} → ${shownContent} ${shownUnit.name}`}
             />
           )}
           {line.correctionOfId && <EntryFact label="Type" value="Correction" />}

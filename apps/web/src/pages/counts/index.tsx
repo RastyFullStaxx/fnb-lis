@@ -186,12 +186,25 @@ export function CountsPage() {
         )}
       </TableSurface>
 
-      <NewCountDialog open={createOpen} onOpenChange={setCreateOpen} />
+      <NewCountDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        openSessions={(sessions.data ?? []).filter((s) => s.status === "OPEN")}
+      />
     </div>
   );
 }
 
-function NewCountDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+function NewCountDialog({
+  open,
+  onOpenChange,
+  openSessions,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** Counts already in progress here — see the note in the dialog body. */
+  openSessions: Array<{ id: string; countDate: string }>;
+}) {
   const navigate = useNavigate();
   const locationId = useLocationId();
   const { createSession } = useCountMutations();
@@ -215,6 +228,32 @@ function NewCountDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
             The count date anchors reports: activity from this date onward belongs to the new period.
           </DialogDescription>
         </DialogHeader>
+        {openSessions.length > 0 && (
+          // Starting a second count while one is unfinished is allowed — two
+          // dates can legitimately be mid-count — but doing it BY ACCIDENT is
+          // the common case, and nothing here used to mention it. Neither count
+          // reaches a report until it is committed, so the cost of the mistake
+          // is a half-finished count nobody notices.
+          <div className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2.5 text-sm">
+            <p>
+              {openSessions.length === 1
+                ? `A count for ${formatDate(openSessions[0]!.countDate)} is still unfinished.`
+                : `${openSessions.length} counts are still unfinished.`}{" "}
+              Continue that one instead of starting another, unless this really is a different day.
+            </p>
+            {openSessions.length === 1 && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-2"
+                onClick={() => navigate(`/l/${locationId}/counts/${openSessions[0]!.id}`)}
+              >
+                Continue {formatDate(openSessions[0]!.countDate)}
+              </Button>
+            )}
+          </div>
+        )}
+
         <div className="space-y-2">
           <Label htmlFor="count-date">Count Date</Label>
           <Input

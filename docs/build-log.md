@@ -4261,3 +4261,86 @@ to guess at.
 > this machine holds Vite's default 5173. Note that Vite ignores the assigned
 > port and picks its own next free one (it does not read `PORT`), so the
 > preview URL and the real one can differ — it landed on 5174.
+
+## 2026-08-04 — Walking the app as a first-timer
+
+Drove the real app end to end pretending to know nothing: landing → sign-in →
+dashboard → start a count → pick an item → weigh it → save; plus the Sales entry
+pane. Findings and fixes below. **Not a complete sweep** — purchases, transfers,
+imports, the reports hub and the admin screens were not walked.
+
+### The one that would have produced wrong numbers
+
+**The scale unit could not be changed, and getting it wrong blamed the wrong
+thing.** The weigh field takes whatever unit the ITEM's tare is stored in, with
+no way to switch. Every seeded tare is in **ounces** — for a Philippine bar,
+where the scale on the counter reads grams.
+
+Typing `812` (grams, what the scale shows) into the ounce field gave:
+
+> `(scale 812 − empty 16.9 oz) × Liquid Weight 30.12 = 23,948 ml` ·
+> `fills ≈ 3,421% of the 700 ml bottle` ·
+> *"That's more than a full container holds — check the Liquid Weight or empty weight."*
+
+The warning sends the counter to go check master data they cannot edit, for a
+problem that is not in the master data. And with no unit toggle, a gram scale
+simply could not be used.
+
+Two fixes:
+
+- **A g/oz toggle on the scale field.** Deliberately an INPUT convenience: the
+  typed value is converted into the item's own unit before anything else sees
+  it, so the value sent to the server, and `remainingContent` on both sides,
+  keep working in one unit. That matters because `buildLineData` subtracts tare
+  from scale with no conversion of its own — a toggle that changed the wire
+  format would have made the server quietly disagree with the preview.
+- **Name the likely cause.** When the reading overflows the bottle but fits in
+  the other unit, say so: *"That reading is far more than this bottle holds, but
+  it fits if it is in grams. Switch the unit above rather than changing the
+  bottle's weights."*
+
+Verified end to end: 812 g → hint appears → switch to g →
+`(scale 28.64 − empty 16.9 oz) × 30.12 = 354 ml`, `51% of 700 ml` → saved → the
+SERVER stored `354 ml`, matching the preview exactly.
+
+> **Two bugs in my own first attempt, both caught by testing rather than
+> reading.** The hint was keyed on `blocking`, but CONTENT_EXCEEDS_SIZE is an
+> amber warning by design and never sets it — so it never fired. And the formula
+> strip labelled the tare with the TYPED unit, printing "empty 16.9 g" when the
+> empty weight is 16.9 oz: the arithmetic was right and the caption was a lie,
+> which is worse than the original problem. Both fixed; `nativeUnit` is now
+> carried on every preview branch.
+
+### The rest
+
+- **Sales rapid-entry was not autofocused** (`document.activeElement` was
+  `BODY`). DESIGN.md's signature pattern specifies an autofocused picker and
+  Counts does it; Sales is the other rapid-entry screen and the STAFF persona is
+  keyboard-first, so every session and every tab switch started on the mouse.
+- **Three counting modes, no guidance.** Full Units / Weigh Partial / Open
+  Amount carried no tooltip and no hint. Obvious once shown, guesswork on a
+  first shift — and guessing wrong is what puts a wrong number in the audit.
+  One line under the tabs, changing with the mode.
+- **"Counted Quantity" had no unit.** For a 700 ml bottle, an unlabelled box
+  invites someone to type 700. Now says what it counts.
+- **A second count started silently** while one was already unfinished. Allowed
+  — two dates can legitimately be mid-count — but doing it by accident is the
+  common case, and neither count reaches a report until committed, so the
+  mistake is invisible. The dialog now names the open one and offers to continue
+  it.
+- **Converted readings displayed as `28.642457103059293 oz`.** Stored value
+  stays exact; only the display is shortened, via `phpRound`.
+
+### Verified
+
+`verify:seed` · `verify:races` · `verify:mirror` pass, golden anchors exact.
+Three workspaces typecheck.
+
+### Found, not fixed
+
+- **Every seeded tare weight is in ounces** for a Philippine client. Demo data
+  the client replaces, but it shapes the out-of-box experience and is why the
+  unit bug was invisible until someone tried to use a real scale. Worth reseeding
+  in grams.
+- The location switcher has no `aria-label` — a screen reader hears the client
+  and location names with no indication it is a control.

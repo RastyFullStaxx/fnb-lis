@@ -33,7 +33,32 @@ import { defaultWeighUnit, useUnitSystem } from "@/lib/preferences";
  * yet) flows straight through to validateWeigh/validateNetWeigh, which stay
  * silent on the history check rather than guessing.
  */
-export function useWeighPreview(item: LocationItem | null, scaleText: string, trailingAverage?: number | null) {
+/** Grams in one ounce. Exact, not the 28.35 approximation. */
+const G_PER_OZ = 28.349523125;
+
+/**
+ * Convert a scale reading the counter typed into the unit the ITEM's tare is
+ * stored in.
+ *
+ * The unit toggle is an input convenience only: everything downstream — this
+ * preview, the value sent to the server, and `remainingContent` on both sides —
+ * keeps working in the tare's own unit. That matters because the server
+ * subtracts tare from scale with no conversion of its own
+ * (`routes/counts.ts` buildLineData), so sending a reading in a different unit
+ * would silently produce a different answer there than the one shown here.
+ */
+export function toTareUnit(value: number, from: "g" | "oz", tareUnit: "g" | "oz"): number {
+  if (from === tareUnit) return value;
+  return from === "g" ? value / G_PER_OZ : value * G_PER_OZ;
+}
+
+export function useWeighPreview(
+  item: LocationItem | null,
+  scaleText: string,
+  trailingAverage?: number | null,
+  /** What the counter is TYPING in. Defaults to the item's own tare unit. */
+  enteredUnit?: "g" | "oz" | null,
+) {
   const unitSystem = useUnitSystem();
   const units = useUnits();
   // Fallback only for items that have no tare unit configured yet — a
@@ -63,7 +88,7 @@ export function useWeighPreview(item: LocationItem | null, scaleText: string, tr
       const unitName = resolved.tareWeightUnit ?? fallbackUnit;
       const scale = Number(scaleText);
       if (scaleText === "" || !Number.isFinite(scale)) {
-        return { ready: true as const, entered: false as const, mode, tare, density: null, unit: unitName, fromLocal: resolved.fromLocal };
+        return { ready: true as const, entered: false as const, mode, tare, density: null, unit: unitName, nativeUnit: unitName, fromLocal: resolved.fromLocal };
       }
       // Blocking check first — SCALE_BELOW_TARE only needs scale/tare, so it
       // doesn't wait on the quantity below.
@@ -95,6 +120,7 @@ export function useWeighPreview(item: LocationItem | null, scaleText: string, tr
         density: null,
         fromLocal: resolved.fromLocal,
         unit: unitName,
+        nativeUnit: unitName,
         scale,
         remaining,
         equivalent: remaining,
@@ -110,8 +136,10 @@ export function useWeighPreview(item: LocationItem | null, scaleText: string, tr
     if (!density || tare === null) {
       return { ready: false as const, missing: !density ? "liquid weight" : "empty weight" };
     }
-    const scale = Number(scaleText);
-    if (scaleText === "" || !Number.isFinite(scale)) {
+    const nativeUnit = (resolved.tareWeightUnit ?? fallbackUnit) as "g" | "oz";
+    const typedUnit = enteredUnit ?? nativeUnit;
+    const typed = Number(scaleText);
+    if (scaleText === "" || !Number.isFinite(typed)) {
       return {
         ready: true as const,
         entered: false as const,
@@ -119,27 +147,50 @@ export function useWeighPreview(item: LocationItem | null, scaleText: string, tr
         tare,
         density,
         fromLocal: resolved.fromLocal,
-        unit: resolved.tareWeightUnit ?? fallbackUnit,
+        unit: typedUnit,
+        nativeUnit,
       };
     }
+    const scale = toTareUnit(typed, typedUnit, nativeUnit);
     const input = { scaleWeight: scale, tareWeight: tare, densityFactor: density };
     const warnings = validateWeigh(input, variant.size, trailingAverage);
     const blocking = warnings.some((w) => w.blocking);
     const remaining = blocking ? 0 : remainingContent(input);
+    /**
+     * Would the SAME digits read sensibly in the other unit?
+     *
+     * A bartender whose scale shows grams typing 812 into an ounce field gets
+     * "3,421% of a 700 ml bottle" and a warning telling them to go check the
+     * master data — which is not the problem and not theirs to edit. When the
+     * other interpretation lands inside the bottle, say so instead.
+     */
+    const otherUnit: "g" | "oz" = typedUnit === "g" ? "oz" : "g";
+    const asOther = toTareUnit(typed, otherUnit, nativeUnit);
+    // Keyed on "the reading overflows the bottle", NOT on `blocking`:
+    // CONTENT_EXCEEDS_SIZE is deliberately an amber warning (DESIGN.md), so it
+    // never sets blocking and the hint would never have fired.
+    const overflows = remaining > variant.size;
+    const asOtherRemaining =
+      asOther > tare ? remainingContent({ scaleWeight: asOther, tareWeight: tare, densityFactor: density }) : -1;
+    const looksLikeOtherUnit = overflows && asOtherRemaining > 0 && asOtherRemaining <= variant.size;
+
     return {
       ready: true as const,
       entered: true as const,
       mode,
       tare,
       density,
-      unit: resolved.tareWeightUnit ?? fallbackUnit,
+      unit: typedUnit,
+      nativeUnit,
+      looksLikeOtherUnit,
+      otherUnit,
       scale,
       remaining,
       equivalent: blocking ? 0 : openEquivalent(remaining, variant.size, true),
       warnings,
       blocking,
     };
-  }, [item, scaleText, fallbackUnit, units.data, trailingAverage]);
+  }, [item, scaleText, fallbackUnit, units.data, trailingAverage, enteredUnit]);
 }
 
 export function WeighPreviewStrip({
@@ -197,8 +248,8 @@ export function WeighPreviewStrip({
         {!showsMainValues
           ? "Using the standard weights for this bottle — set your own in the Local Database to see the figures. Type the scale weight."
           : preview.mode === "NET"
-            ? `Empty weight ${preview.tare} ${preview.unit} · weighed by net weight — type the scale weight.`
-            : `Empty weight ${preview.tare} ${preview.unit} · Liquid Weight ×${preview.density} — type the scale weight.`}
+            ? `Empty weight ${preview.tare} ${preview.nativeUnit} · weighed by net weight — type the scale weight.`
+            : `Empty weight ${preview.tare} ${preview.nativeUnit} · Liquid Weight ×${preview.density} — type the scale weight.`}
       </p>
     );
   }
@@ -228,10 +279,10 @@ export function WeighPreviewStrip({
                     constant is named rather than printed. */}
                 {preview.mode === "NET"
                   ? showsMainValues
-                    ? `scale ${fmt(preview.scale)} − empty ${fmt(preview.tare)} ${preview.unit}`
+                    ? `scale ${fmt(preview.scale)} − empty ${fmt(preview.tare)} ${preview.nativeUnit}`
                     : `scale ${fmt(preview.scale)} − standard empty weight`
                   : showsMainValues
-                    ? `(scale ${fmt(preview.scale)} − empty ${fmt(preview.tare)} ${preview.unit}) × Liquid Weight ${fmt(preview.density)}`
+                    ? `(scale ${fmt(preview.scale)} − empty ${fmt(preview.tare)} ${preview.nativeUnit}) × Liquid Weight ${fmt(preview.density)}`
                     : `(scale ${fmt(preview.scale)} − standard empty weight) × standard liquid weight`}
               </span>{" "}
               ={" "}

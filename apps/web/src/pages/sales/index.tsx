@@ -544,7 +544,12 @@ function QuickEntry({ kind }: { kind: SaleKind }) {
       <div className="grid gap-3 @xs:grid-cols-[minmax(0,1fr)_auto]">
         <div className="space-y-2">
           <Label htmlFor="s-target">Item or Menu</Label>
-          <SaleTargetCombobox id="s-target" ref={comboRef} value={target} onSelect={pickTarget} />
+          {/* Autofocused, like the count screen's picker. This is the other
+              rapid-entry surface in the app and the STAFF persona is
+              keyboard-first, but every session — and every tab switch between
+              Sales / Non-revenue / Production — used to start with a reach for
+              the mouse. */}
+          <SaleTargetCombobox id="s-target" ref={comboRef} value={target} onSelect={pickTarget} autoFocus />
         </div>
         <div className="space-y-2">
           <Label htmlFor="s-date">Date</Label>
@@ -684,8 +689,8 @@ function QuickEntry({ kind }: { kind: SaleKind }) {
 
 const SaleTargetCombobox = forwardRef<
   HTMLButtonElement,
-  { value: SaleTarget | null; onSelect: (target: SaleTarget) => void; id?: string }
->(function SaleTargetCombobox({ value, onSelect, id }, ref) {
+  { value: SaleTarget | null; onSelect: (target: SaleTarget) => void; id?: string; autoFocus?: boolean }
+>(function SaleTargetCombobox({ value, onSelect, id, autoFocus }, ref) {
   const [open, setOpen] = useState(false);
   const items = useLocationItems();
   const menus = useMenus();
@@ -701,7 +706,7 @@ const SaleTargetCombobox = forwardRef<
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button id={id} ref={ref} variant="outline" role="combobox" aria-expanded={open} className="w-full justify-between font-normal">
+        <Button id={id} ref={ref} autoFocus={autoFocus} variant="outline" role="combobox" aria-expanded={open} className="w-full justify-between font-normal">
           {label ? (
             <span className="truncate" title={label}>
               {value?.type === "menu" && <Martini className="mr-1.5 inline size-3.5 text-primary" />}
