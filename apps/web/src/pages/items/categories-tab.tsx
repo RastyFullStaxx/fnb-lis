@@ -200,7 +200,12 @@ function CategoryDialog({
           <DialogDescription>
             {isAsset
               ? "Asset categories group equipment for the register — no weighing is involved."
-              : "The Liquid Weight formula (density factor) converts scale weight into remaining content — e.g. Vodka is 30.12 ml per oz."}
+              // Deliberately no fixed example: the number is millilitres per ONE
+              // unit of whatever the bottle's empty weight is recorded in, so a
+              // hard-coded "Vodka is 30.12 ml per oz" was flatly wrong the moment
+              // the demo catalog moved to grams and the field started showing
+              // 1.0625. Stating the relationship survives either unit.
+              : "Liquid Weight (density factor) turns a scale reading into remaining content: millilitres per unit of whatever the bottle's empty weight is recorded in — per gram if the empty weight is in grams."}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={onSubmit} className="space-y-4">
@@ -299,6 +304,7 @@ function CategoryDialog({
             />
             <p className="text-xs text-muted-foreground">
               Applied to items in this category that don't set their own Liquid Weight value.
+              Spirits sit near 1.06 ml per gram; syrups are lower because they are denser.
             </p>
           </div>
           )}

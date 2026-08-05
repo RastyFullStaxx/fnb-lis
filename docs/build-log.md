@@ -4557,3 +4557,42 @@ Visual/geometric verification is not currently possible in this browser pane
 (0×0 viewport, no compositing, no focus events). Copy, structure, DOM state and
 built CSS were checked instead; anything genuinely visual in the remaining
 groups needs a human eye or a working pane.
+
+## 2026-08-05 — Group 2 of 5: catalog & master data
+
+### My own grams change left stale copy behind
+
+The New/Edit Category dialog explained Liquid Weight as *"e.g. Vodka is 30.12 ml
+per oz"* while the field beside it now reads **1.0625**. Anyone reading the help
+text against the data would conclude one of them was broken.
+
+Rewritten without a fixed example, because the number is millilitres per ONE unit
+of whatever the bottle's empty weight is recorded in — any hard-coded example is
+wrong for half the installations. Now: *"millilitres per unit of whatever the
+bottle's empty weight is recorded in — per gram if the empty weight is in
+grams"*, with a magnitude hint (spirits ≈ 1.06 ml/g, syrups lower).
+
+The same staleness sat in `packages/core/src/weighing.ts`'s doc comment for
+`densityFactor`. Corrected — comment only, no arithmetic touched, golden anchors
+re-verified (−330.6857142857142 / −537).
+
+> Worth noting: this is the second-order cost of the unit change, and only a
+> walkthrough finds it. Nothing typechecks a sentence.
+
+### Local Database column read as an unexplained number
+
+`Tare / Liquid Wt` rendered `479.1 g / 1.0625`, the second value bare. Renamed to
+**Empty Weight / ml per unit** with a title attribute spelling out the
+relationship — the header is the only place with room to say it.
+
+### Walked and sound
+
+- **Item form** — "Changes apply everywhere this item appears", "Sizes are fixed
+  once created", per-variant "Open content · empty 479.1 g". Grams flow through.
+- **Suppliers** — every field labelled and associated, name autofocused, payment
+  terms humanised ("C.O.D.", "7 Days" rather than `NET_7`).
+- **Recipes** — cost, SRP, margin and sales per menu, with History and New
+  version; versioning is legible without explanation.
+- No unassociated labels anywhere in this group.
+
+`verify:seed` · `verify:races` pass; three workspaces typecheck.

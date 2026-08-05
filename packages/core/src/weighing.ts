@@ -11,7 +11,12 @@ import { WEIGH_OUTLIER_LOW_RATIO, WEIGH_OUTLIER_HIGH_RATIO } from "./constants";
 export interface WeighInput {
   scaleWeight: number;
   tareWeight: number;
-  /** Content units (ml) per weight unit — e.g. Vodka 30.12 ml per oz. */
+  /**
+   * Content units (ml) per ONE unit of whatever `tareWeight`/`scaleWeight` are
+   * expressed in — grams here if the bottle's empty weight is in grams
+   * (spirits ≈ 1.06), ounces if it is in ounces (≈ 30.1). Comment only: the
+   * arithmetic below is unit-agnostic and unchanged.
+   */
   densityFactor: number;
 }
 
