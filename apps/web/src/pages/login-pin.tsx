@@ -143,6 +143,22 @@ export function DesktopPinSignIn() {
           </p>
         </div>
 
+        {/* A freshly provisioned bar PC has no PINs at all: five greyed names,
+            "no PIN" beside each, and clicking one does nothing. Staff arrive for
+            a shift and the computer is a dead end that never says why — or that
+            the fix is a two-minute job on the web app, done by each person for
+            themselves. */}
+        {people.length > 0 && people.every((p) => !p.hasPin) && (
+          <div className="mb-3 rounded-md border border-warning/40 bg-warning/10 px-3 py-2.5 text-sm text-sidebar-foreground">
+            <p className="font-medium">No one has set a PIN on this computer yet.</p>
+            <p className="mt-0.5 text-sidebar-foreground/80">
+              A PIN is what signs you in here when there's no internet. Each person sets their own:
+              sign in to LIS in a web browser, open Settings, and choose a {PIN_LENGTH}-digit PIN.
+              It only needs doing once.
+            </p>
+          </div>
+        )}
+
         <div className="grid gap-2">
           {people.map((p) => {
             const unavailable = !p.hasPin || p.status !== "ACTIVE";

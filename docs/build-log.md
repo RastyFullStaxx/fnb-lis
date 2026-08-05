@@ -4386,3 +4386,35 @@ Purchases, transfers, imports, reports and admin, walked the same way.
 - Every seeded tare weight is in ounces for a Philippine client (from part 1).
 - The location switcher has no `aria-label`.
 - The desktop app was not walked.
+
+## 2026-08-04 — Desktop walkthrough
+
+### The blocker
+
+A freshly provisioned bar PC is **unusable and never says why**. Every staff name
+renders greyed with "no PIN", clicking one does nothing at all, and no text
+anywhere mentions that a PIN exists, what it is for, or how to get one. Staff
+arrive for a shift and the computer is a dead end.
+
+The fix is a two-minute job nobody could discover: `POST /auth/pin` is
+self-service, so each person sets their own from Settings in the web app. The
+PIN screen now says exactly that when nobody has one.
+
+Not a regression from the reseed — the reseed only made it visible. Any genuinely
+new installation starts in this state, which is every real deployment's first day.
+
+### Verified good
+
+Title bar solid navy edge to edge, device name reads "Front bar PC", no
+scrollbar — the part-1 and caption fixes all hold in the packaged app.
+
+### Also found: the Prisma client was stale
+
+`@fnb/desktop` typecheck failed on `apps/server/src/routes/admin.ts` — the schema
+declares `reports SubscriptionReport[]` (the report-tiers work, commit 81b9adb)
+but the generated client had never been regenerated. Exactly the documented
+Windows gotcha: `prisma migrate` does not regenerate the client. `db:generate`
+fixed it; all three workspaces typecheck.
+
+Worth noting it surfaced only because the desktop typechecks the server sources —
+`@fnb/server`'s own typecheck had been passing against the stale client all along.
