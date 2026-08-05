@@ -4418,3 +4418,38 @@ fixed it; all three workspaces typecheck.
 
 Worth noting it surfaced only because the desktop typechecks the server sources —
 `@fnb/server`'s own typecheck had been passing against the stale client all along.
+
+## 2026-08-04 — Demo catalog seeded in grams; switcher labelled
+
+### Grams
+
+The demo catalog is still AUTHORED in ounces — that is how the reference sheets
+were written — but it is now SEEDED in grams, because the client is a Philippine
+bar and the scale on their counter reads grams. Left in ounces, a counter had to
+convert every reading in their head before typing it.
+
+Tare scales up and the density factor scales down by the same constant, so the
+millilitres are identical either way:
+
+    (s·k − t·k) × (d/k)  ≡  (s − t) × d
+
+The golden-fixture count lines are deliberately NOT converted. Each carries its
+own explicit scale/tare/density — a snapshot of how that bottle was actually
+weighed — so they stay internally consistent in ounces and the anchors cannot
+move. Mixed units across catalog and history is not a smell here; per-line
+snapshots are the design.
+
+Verified: `479.1 g` tare, Vodka density `1.0625`, and a bartender typing `812`
+now gets **354 ml / 51%** with no unit switching — the same physical answer the
+ounce path produced. Both anchors unmoved (−330.6857142857142 / −537).
+
+The g/oz toggle stays: it is what rescues a bottle weighed on the other kind of
+scale, and it is now the exception rather than the price of entry.
+
+### Switcher
+
+`aria-label` on the establishment/location control. It had none, so a screen
+reader heard two names and the logo's alt text with nothing saying it switches
+anything — and collapsed to the icon rail there is no visible text at all.
+
+All five harnesses pass; three workspaces typecheck.

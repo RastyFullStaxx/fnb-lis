@@ -307,6 +307,11 @@ function LocationSwitcher({ me, current }: { me: MeResponse; current: CurrentLoc
           <DropdownMenuTrigger asChild>
             <SidebarMenuButton
               size="lg"
+              // Without this a screen reader hears only the two names and the
+              // logo's alt text, with nothing saying the control switches
+              // establishment or location — and collapsed to the icon rail there
+              // is no visible text at all.
+              aria-label={`Establishment and location: ${current.clientName}, ${current.name}. Switch`}
               className="group/icon-hover data-[state=open]:bg-sidebar-accent group-data-[collapsible=icon]:hover:bg-transparent! group-data-[collapsible=icon]:data-[state=open]:bg-transparent! group-data-[collapsible=icon]:h-12! pl-1"
             >
               <div className="flex size-8 shrink-0 items-center justify-center rounded-md transition-opacity group-data-[collapsible=icon]:group-hover/icon-hover:opacity-80 group-data-[collapsible=icon]:group-data-[state=open]/icon-hover:opacity-80">

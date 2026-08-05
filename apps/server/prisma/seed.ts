@@ -278,10 +278,10 @@ async function seedCategories() {
       where: { name: cat.name },
       update: {
         productType: cat.productType,
-        defaultDensityFactor: cat.defaultDensityFactor ?? null,
+        defaultDensityFactor: cat.defaultDensityFactor != null ? densityPerGram(cat.defaultDensityFactor) : null,
         sortOrder: cat.sortOrder,
       },
-      create: { ...cat, defaultDensityFactor: cat.defaultDensityFactor ?? null },
+      create: { ...cat, defaultDensityFactor: cat.defaultDensityFactor != null ? densityPerGram(cat.defaultDensityFactor) : null },
     });
   }
 }
@@ -414,9 +414,9 @@ async function seedItems() {
           size: v.size,
           unitId: unit.id,
           contentTracked: v.contentTracked ?? false,
-          tareWeight: v.tareWeight ?? null,
-          tareWeightUnit: v.tareWeight ? "oz" : null,
-          densityFactor: v.densityFactor ?? null,
+          tareWeight: v.tareWeight != null ? gramsFromOz(v.tareWeight) : null,
+          tareWeightUnit: v.tareWeight != null ? "g" : null,
+          densityFactor: v.densityFactor != null ? densityPerGram(v.densityFactor) : null,
           barcode: v.barcode ?? null,
         },
       });
@@ -1361,6 +1361,24 @@ async function seedActivity() {
     }
   }
 }
+
+/**
+ * The demo catalog is authored in OUNCES because that is how the reference
+ * sheets were written, but it is seeded in GRAMS — the client is a Philippine
+ * bar and the scale on their counter reads grams. Left in ounces, a counter had
+ * to convert every reading in their head before typing it.
+ *
+ * Tare scales up and the density factor scales down by the same constant, so
+ * `(scale − tare) × density` yields the identical millilitres either way:
+ *   (s·k − t·k) × (d/k) ≡ (s − t) × d
+ *
+ * The golden-fixture count lines are NOT touched: each carries its own explicit
+ * scale/tare/density (a snapshot of how that bottle was actually weighed), so
+ * they stay internally consistent in ounces and the anchor numbers cannot move.
+ */
+const G_PER_OZ = 28.349523125;
+const gramsFromOz = (oz: number) => Math.round(oz * G_PER_OZ * 10) / 10;
+const densityPerGram = (perOz: number) => Math.round((perOz / G_PER_OZ) * 10000) / 10000;
 
 async function main() {
   await seedUsers();
