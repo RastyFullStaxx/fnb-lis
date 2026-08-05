@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { MapPin, Plus, X } from "lucide-react";
+import { toast } from "sonner";
 import {
   BILLING_CYCLE_LABELS,
   BILLING_CYCLES,
@@ -9,11 +10,16 @@ import {
   MODULE_TYPES,
   PACKAGE_LABELS,
   PACKAGE_MAX_USERS,
+  REPORT_METADATA,
+  REPORT_SLUGS,
   derivePackageType,
   type BillingCycle,
   type ModuleType,
   type PackageType,
+  type ReportSlug,
 } from "@fnb/core";
+import { ApiError } from "@/api/http";
+import { useUpdateSubscriptionReports } from "@/api/admin";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -26,6 +32,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 // ── Package + Inventory modules picker ──────────────────────────────────────
 // Shared by CreateClientDialog, CreateSubscriptionPanel, and SubscriptionPanel
@@ -358,6 +371,201 @@ export interface LocationChip {
   onKindChange?: (kind: string | null) => void;
   inactive?: boolean;
   onRemove?: () => void;
+}
+
+// ── Subscription reports checklist — where it lives (Phase 5.3.2) ───────────
+// Decision: Option A, a separate dialog, opened from a button/link on
+// ClientDetailBody next to the Locations block — not a section inside
+// ManageClientDialog.
+//
+// Why: ManageClientDialog is a `sm:max-w-lg`, already-scrolling dialog
+// (Name + Subscription + Locations + Actions stacked in it), built around one
+// shared `save()` / `isDirty` covering name + subscription together
+// (ClientDetailBody, apps/web/src/pages/admin/clients.tsx). The reports
+// checklist is 21 checkboxes across 5 group headers (REPORT_METADATA,
+// @fnb/core) — a flat addition at that count pushes the dialog well past a
+// comfortable scroll length. It also already has its own endpoint
+// (`PUT /clients/:id/subscription/reports`, Phase 5.2) and will have its own
+// dirty state, so folding it into the shared Save would either break the
+// "one Save" model or require restructuring ClientDetailBody around two
+// independent save cycles. A focused sub-dialog for a big-enough sub-task
+// costs less than that restructuring and keeps ManageClientDialog's existing
+// height and single-Save model untouched.
+//
+// This fixes the component boundary for Phase 5.3.3: a new
+// `SubscriptionReportsDialog` component, opened imperatively (open/onClose
+// props, same shape as ManageClientDialog itself) from a "Manage Reports"
+// trigger placed beside the Locations block in ClientDetailBody. It owns its
+// own checked-slugs state, its own dirty check, and its own Save button —
+// none of it routes through ClientDetailBody's `save()` / `isDirty`.
+//
+// Phase 5.3.3 builds the component itself: grouping, checkboxes, local dirty
+// state. Phase 5.3.4 wires the actual save call
+// (`useUpdateSubscriptionReports()`); Phase 5.3.5 adds the entry point and
+// the no-subscription / cancelled-subscription guards. Until 5.3.4 lands,
+// `onSave` is a plain callback prop the caller supplies — this component
+// doesn't know or care whether that callback hits the network yet.
+
+/** REPORT_SLUGS grouped by REPORT_METADATA's `group`, in REPORT_SLUGS' own
+ * order — so the checklist's section order matches the report hub's
+ * SECTIONS order (both ultimately sourced from the same place, Phase 5.3.1),
+ * without hardcoding a second group-order list here that could drift. */
+function groupedReportSlugs(): Array<{ group: string; slugs: ReportSlug[] }> {
+  const order: string[] = [];
+  const bySlug = new Map<string, ReportSlug[]>();
+  for (const slug of REPORT_SLUGS) {
+    const { group } = REPORT_METADATA[slug];
+    if (!bySlug.has(group)) {
+      bySlug.set(group, []);
+      order.push(group);
+    }
+    bySlug.get(group)!.push(slug);
+  }
+  return order.map((group) => ({ group, slugs: bySlug.get(group)! }));
+}
+
+const REPORT_GROUPS = groupedReportSlugs();
+
+/** Sorted-array equality for the dirty check — same
+ * `JSON.stringify([...x].sort())` comparison `ClientDetailBody` already uses
+ * for the modules array (Phase 5.3.3 spec). */
+function sameSlugSet(a: readonly string[], b: readonly string[]): boolean {
+  return JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
+}
+
+export function SubscriptionReportsChecklist({
+  enabledSlugs,
+  onChange,
+}: {
+  enabledSlugs: ReportSlug[];
+  onChange: (v: ReportSlug[]) => void;
+}) {
+  const toggle = (slug: ReportSlug, checked: boolean) => {
+    if (checked) {
+      if (!enabledSlugs.includes(slug)) onChange([...enabledSlugs, slug]);
+    } else {
+      onChange(enabledSlugs.filter((s) => s !== slug));
+    }
+  };
+
+  return (
+    <div className="space-y-5">
+      {REPORT_GROUPS.map(({ group, slugs }) => (
+        <div key={group} className="space-y-2">
+          <p className="text-sm font-semibold">{group}</p>
+          <div className="space-y-1.5">
+            {slugs.map((slug) => {
+              const checked = enabledSlugs.includes(slug);
+              return (
+                <label key={slug} className="flex items-center gap-2 text-sm">
+                  <Checkbox checked={checked} onCheckedChange={(v) => toggle(slug, v === true)} />
+                  {REPORT_METADATA[slug].label}
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function SubscriptionReportsDialog({
+  open,
+  onClose,
+  clientName,
+  currentSlugs,
+  onSave,
+  saving = false,
+}: {
+  open: boolean;
+  onClose: () => void;
+  clientName: string;
+  /** The subscription's currently-saved SubscriptionReport slugs. */
+  currentSlugs: readonly string[];
+  /** Called with the full desired slug list on Save (Phase 5.3.4 wires the
+   * actual `PUT /clients/:id/subscription/reports` call here). */
+  onSave: (slugs: ReportSlug[]) => void | Promise<void>;
+  saving?: boolean;
+}) {
+  const [checked, setChecked] = useState<ReportSlug[]>(currentSlugs as ReportSlug[]);
+
+  // Re-sync when the dialog opens for a (possibly different) client, or when
+  // the saved set changes underneath it (e.g. a fresh refetch after save) —
+  // same external-reset pattern NegotiatedPriceField already uses above.
+  const currentKey = [...currentSlugs].sort().join(",");
+  useEffect(() => {
+    if (open) setChecked(currentSlugs as ReportSlug[]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, currentKey]);
+
+  const isDirty = !sameSlugSet(checked, currentSlugs);
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Manage Reports — {clientName}</DialogTitle>
+        </DialogHeader>
+
+        <SubscriptionReportsChecklist enabledSlugs={checked} onChange={setChecked} />
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Close
+          </Button>
+          <Button onClick={() => onSave(checked)} disabled={!isDirty || saving}>
+            Save
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Phase 5.3.4 — wires SubscriptionReportsDialog's onSave to the actual
+// PUT /clients/:id/subscription/reports call via useUpdateSubscriptionReports().
+// Kept separate from SubscriptionReportsDialog itself so that component stays
+// a plain, network-agnostic props-in/callback-out shell (5.3.3's design);
+// this wrapper is what 5.3.5's entry point should actually render.
+//
+// On success the dialog is left open (per 5.3.4 spec) — an admin adjusting
+// reports may want to immediately confirm the checklist reflects what was
+// just saved — so there is no onClose() call in the success path here.
+export function ConnectedSubscriptionReportsDialog({
+  open,
+  onClose,
+  clientId,
+  clientName,
+  currentSlugs,
+}: {
+  open: boolean;
+  onClose: () => void;
+  clientId: string;
+  clientName: string;
+  currentSlugs: readonly string[];
+}) {
+  const updateReports = useUpdateSubscriptionReports();
+
+  return (
+    <SubscriptionReportsDialog
+      open={open}
+      onClose={onClose}
+      clientName={clientName}
+      currentSlugs={currentSlugs}
+      saving={updateReports.isPending}
+      onSave={(reportSlugs) =>
+        updateReports.mutate(
+          { clientId, reportSlugs },
+          {
+            onSuccess: () => toast.success(`Enabled reports updated for "${clientName}"`),
+            onError: (err) =>
+              toast.error(err instanceof ApiError ? err.message : "Could not update enabled reports"),
+          },
+        )
+      }
+    />
+  );
 }
 
 const KIND_NONE = "__none__";

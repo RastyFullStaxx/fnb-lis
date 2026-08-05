@@ -8,10 +8,12 @@ import {
   subscriptionCreateBody,
   subscriptionUpdateBody,
   locationModulesBody,
+  subscriptionReportsBody,
   moduleType,
   LOCATION_KINDS,
   OWNER_ASSIGNABLE_ROLES,
   voidRequest,
+  REPORT_TIER_PRESETS,
   type BillingCycle,
 } from "@fnb/core";
 import { prisma } from "../db";
@@ -167,7 +169,11 @@ export const adminRoutes = new Hono<AppEnv>()
       include: {
         locations: { include: { modules: true } },
         access: { include: { user: { select: CLIENT_ACCESS_USER_FIELDS } } },
-        subscription: { include: { modules: true } },
+        // reports: true feeds the SubscriptionReportsDialog's currentSlugs
+        // (Phase 5.3.3/5.3.4, client-form-fields.tsx) — without it the admin
+        // client list would 404's own precondition (no rows to diff against)
+        // rather than showing the client's actual saved report set.
+        subscription: { include: { modules: true, reports: true } },
       },
       orderBy: { name: "asc" },
     });
@@ -358,10 +364,11 @@ export const adminRoutes = new Hono<AppEnv>()
     const client = await prisma.$transaction(async (tx) => {
       const created = await tx.client.create({ data: { name } });
 
+      const packageType = derivePackageType(subscription.billingCycle, maxEntities, subscription.maxUsers);
       const sub = await tx.subscription.create({
         data: {
           clientId: created.id,
-          packageType: derivePackageType(subscription.billingCycle, maxEntities, subscription.maxUsers),
+          packageType,
           billingCycle: subscription.billingCycle,
           maxEntities,
           maxUsers: subscription.maxUsers,
@@ -374,6 +381,10 @@ export const adminRoutes = new Hono<AppEnv>()
           paid: false,
           lastPaidAt: null,
           modules: { create: subscription.modules.map((module) => ({ module })) },
+          // Seed the tier's default enabled reports at creation time only
+          // (docs/2026-08-04-report-tier-gating-phases.md 5.1). A later tier
+          // change never re-seeds this — see 5.4 / the PUT route below.
+          reports: { create: REPORT_TIER_PRESETS[packageType].map((reportSlug) => ({ reportSlug })) },
         },
       });
 
@@ -411,7 +422,7 @@ export const adminRoutes = new Hono<AppEnv>()
         include: {
           locations: { include: { modules: true } },
           access: { include: { user: { select: CLIENT_ACCESS_USER_FIELDS } } },
-          subscription: { include: { modules: true } },
+          subscription: { include: { modules: true, reports: true } },
         },
       });
     });
@@ -440,10 +451,11 @@ export const adminRoutes = new Hono<AppEnv>()
     if (existing) throw new AppError(409, "This client already has a subscription. Update it instead.");
 
     const sub = await prisma.$transaction(async (tx) => {
+      const packageType = derivePackageType(body.billingCycle, body.maxEntities, body.maxUsers);
       const created = await tx.subscription.create({
         data: {
           clientId: body.clientId,
-          packageType: derivePackageType(body.billingCycle, body.maxEntities, body.maxUsers),
+          packageType,
           billingCycle: body.billingCycle,
           maxEntities: body.maxEntities,
           maxUsers: body.maxUsers,
@@ -457,6 +469,10 @@ export const adminRoutes = new Hono<AppEnv>()
           paid: false,
           lastPaidAt: null,
           modules: { create: body.modules.map((module) => ({ module })) },
+          // Seed the tier's default enabled reports at creation time only
+          // (docs/2026-08-04-report-tier-gating-phases.md 5.1). A later tier
+          // change never re-seeds this — see 5.4 / the PUT route below.
+          reports: { create: REPORT_TIER_PRESETS[packageType].map((reportSlug) => ({ reportSlug })) },
         },
         include: { client: { select: { id: true, name: true } }, modules: true },
       });
@@ -685,6 +701,69 @@ export const adminRoutes = new Hono<AppEnv>()
           entity: "Subscription",
           entityId: id,
           summary: `Reactivated subscription for "${sub.client.name}" (payment state reset)`,
+        },
+        tx,
+      );
+      return u;
+    });
+    return c.json(updated);
+  })
+
+  // Report tier gating, Phase 5.2 (docs/2026-08-04-report-tier-gating-phases.md).
+  // Sets a client's full enabled-report set — the SubscriptionReport rows
+  // canViewReportForSubscription() actually checks. Same replace-the-whole-set
+  // shape as PUT /locations/:id/modules: the caller sends the complete desired
+  // list, the handler diffs it against what's enabled now and writes both the
+  // rows and the audit entry in one transaction.
+  //
+  // Keyed by :id = CLIENT id, not subscription id, matching the
+  // /subscriptions/:clientId/check convention just above and the plan doc's
+  // route shape (PUT /clients/:id/subscription/reports) — an admin thinks of
+  // this as "this client's reports", not "row N's reports". Mounted under
+  // /clients/*, so it's covered by the same requirePermission("admin.manage")
+  // guard as the rest of this block (see the .use() list at the top of this
+  // router — see security.md M-3 on why that placement matters).
+  //
+  // Unlike location modules, there is no ceiling to enforce here: reports
+  // are gated directly off this row set, not off a broader subscription-level
+  // set the way LocationModule is bounded by SubscriptionModule. Any slug in
+  // REPORT_SLUGS is acceptable input; zod (subscriptionReportsBody) is the
+  // only validation needed.
+  .put("/clients/:id/subscription/reports", zValidator("json", subscriptionReportsBody), async (c) => {
+    const clientId = c.req.param("id");
+    const { reportSlugs } = c.req.valid("json");
+    const user = c.get("user")!;
+
+    const client = await prisma.client.findUnique({
+      where: { id: clientId },
+      include: { subscription: { include: { reports: true } } },
+    });
+    if (!client) throw new AppError(404, "Client not found");
+    if (!client.subscription) throw new AppError(409, `"${client.name}" has no subscription yet — create one first.`);
+
+    const subscriptionId = client.subscription.id;
+    const before = client.subscription.reports.map((r) => r.reportSlug);
+
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.subscriptionReport.deleteMany({ where: { subscriptionId } });
+      if (reportSlugs.length > 0) {
+        await tx.subscriptionReport.createMany({
+          data: reportSlugs.map((reportSlug) => ({ subscriptionId, reportSlug })),
+        });
+      }
+      const u = await tx.subscription.findUniqueOrThrow({
+        where: { id: subscriptionId },
+        include: { client: { select: { id: true, name: true } }, reports: true },
+      });
+      await logActivity(
+        {
+          user,
+          clientId,
+          action: "subscription.reportsUpdate",
+          entity: "Subscription",
+          entityId: subscriptionId,
+          summary: `Set "${client.name}" enabled reports to [${reportSlugs.join(", ")}]`,
+          details: { old: before, new: reportSlugs },
         },
         tx,
       );

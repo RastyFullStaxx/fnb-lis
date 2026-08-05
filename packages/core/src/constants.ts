@@ -586,6 +586,154 @@ export function isMissingPrice(
 }
 
 /**
+ * Every report slug the hub can show (`apps/web/src/pages/reports/index.tsx`
+ * `path` values, stripped of any query string — `full-audit?variance=only`
+ * shares `full-audit`'s slug and therefore its gate, same as it shares the
+ * role gate today). Cross-checked against that file 2026-08-04: 20 checklist
+ * rows resolve to 19 distinct slugs once Variance Report folds into
+ * `full-audit`, plus the two reports the client confirmed YES on every tier
+ * that were missing from the original checklist (`bottle-keep`,
+ * `blank-forms`) — 21 total.
+ *
+ * This is the source list report-tier gating is built from
+ * (docs/2026-08-04-report-tier-gating-plan.md). Nothing reads it yet — Phase
+ * 2 adds the function that checks a slug against a subscription's enabled
+ * set.
+ */
+export const REPORT_SLUGS = [
+  "full-audit",
+  "legacy-audit",
+  "usage-cost",
+  "cost-snapshot",
+  "sales",
+  "sales-by-item",
+  "top-sellers",
+  "cost-analysis",
+  "purchases",
+  "transfers",
+  "on-hand",
+  "bottle-keep",
+  "blank-forms",
+  "count-sheet",
+  "par-level",
+  "non-moving",
+  "non-revenue",
+  "forfeits",
+  "asset-breakage",
+  "asset-register",
+  "asset-inventory",
+] as const;
+export type ReportSlug = (typeof REPORT_SLUGS)[number];
+
+/**
+ * The default enabled-report set per subscription tier, from the client's
+ * approved checklist (docs/2026-08-04-report-tier-gating-plan.md), plus
+ * `bottle-keep` and `blank-forms` on every tier per the client's confirmation
+ * that both default to YES across the board.
+ *
+ * These are DEFAULTS applied once, at subscription creation (Phase 5) — the
+ * actual gate is the subscription's own `SubscriptionReport` rows, which an
+ * admin may hand-edit afterward without a later tier change reverting them.
+ * See the plan doc's "Decision" section for why this is not gated on the
+ * derived `packageType` label directly.
+ */
+export const REPORT_TIER_PRESETS: Record<PackageType, readonly ReportSlug[]> = {
+  BASIC: [
+    "full-audit",
+    "legacy-audit",
+    "top-sellers",
+    "transfers",
+    "count-sheet",
+    "par-level",
+    "forfeits",
+    "bottle-keep",
+    "blank-forms",
+  ],
+  MEDIUM: [
+    "full-audit",
+    "legacy-audit",
+    "usage-cost",
+    "cost-snapshot",
+    "sales-by-item",
+    "top-sellers",
+    "purchases",
+    "transfers",
+    "count-sheet",
+    "par-level",
+    "non-revenue",
+    "forfeits",
+    "bottle-keep",
+    "blank-forms",
+  ],
+  FULL: [...REPORT_SLUGS],
+  ONE_TIME: [
+    "full-audit",
+    "legacy-audit",
+    "cost-snapshot",
+    "sales",
+    "sales-by-item",
+    "top-sellers",
+    "purchases",
+    "transfers",
+    "on-hand",
+    "count-sheet",
+    "par-level",
+    "non-revenue",
+    "forfeits",
+    "asset-breakage",
+    "asset-register",
+    "asset-inventory",
+    "bottle-keep",
+    "blank-forms",
+  ],
+};
+
+/**
+ * Display label + group per report slug, for the admin reports checklist
+ * (docs/2026-08-04-report-tier-gating-phases.md, Phase 5.3.1).
+ *
+ * Sourced from the hub page's own `SECTIONS` constant
+ * (apps/web/src/pages/reports/index.tsx) so the admin checklist's labels and
+ * grouping can never drift from what the report hub itself shows — same five
+ * group titles (Reconciliation, Sales & Revenue, Stock & Movement, Losses &
+ * Returns, Asset), same per-report titles, in the hub's own display order.
+ *
+ * `full-audit` is labeled plainly "Full Audit", not "Variance Report" — the
+ * checklist's Variance Report row and the hub's standalone Full Audit card
+ * both resolve to this one slug and therefore this one gate (Phase 1.1), so
+ * the admin checklist shows one row for it, not two, and a client's
+ * "Variance Report: YES" expectation reads as "Full Audit" being enabled.
+ *
+ * Keys must exactly match `REPORT_SLUGS` — same length (21), same values. A
+ * slug present in one but not the other fails silently as a missing
+ * checkbox, not an error, so this is checked by hand against `REPORT_SLUGS`
+ * whenever either list changes.
+ */
+export const REPORT_METADATA: Record<ReportSlug, { label: string; group: string }> = {
+  "full-audit": { label: "Full Audit", group: "Reconciliation" },
+  "legacy-audit": { label: "Full Audit by Category", group: "Reconciliation" },
+  "usage-cost": { label: "Usage Cost", group: "Reconciliation" },
+  "cost-snapshot": { label: "Beginning / Ending Cost", group: "Reconciliation" },
+  sales: { label: "Sales", group: "Sales & Revenue" },
+  "sales-by-item": { label: "Sales by Item (Shot & Bottle)", group: "Sales & Revenue" },
+  "top-sellers": { label: "Top Sellers", group: "Sales & Revenue" },
+  "cost-analysis": { label: "Cost Analysis", group: "Sales & Revenue" },
+  purchases: { label: "Purchases", group: "Stock & Movement" },
+  transfers: { label: "Transfers (Requisition)", group: "Stock & Movement" },
+  "on-hand": { label: "Inventory on Hand", group: "Stock & Movement" },
+  "bottle-keep": { label: "Bottle Keep & Forfeited Inventory", group: "Stock & Movement" },
+  "blank-forms": { label: "Blank Entry Forms", group: "Stock & Movement" },
+  "count-sheet": { label: "Physical Count Sheet", group: "Stock & Movement" },
+  "par-level": { label: "Par Level", group: "Stock & Movement" },
+  "non-moving": { label: "Non-Moving Items", group: "Stock & Movement" },
+  "non-revenue": { label: "Non-Revenue", group: "Losses & Returns" },
+  forfeits: { label: "Forfeited Bottles", group: "Losses & Returns" },
+  "asset-breakage": { label: "Asset Breakage", group: "Losses & Returns" },
+  "asset-register": { label: "Asset Register", group: "Asset" },
+  "asset-inventory": { label: "Asset Inventory", group: "Asset" },
+};
+
+/**
  * The reports a 3rd-party audit-service viewer may open (client req 2026-07-28).
  *
  * These accounts exist to read the reconciliation and nothing else — they are
@@ -619,5 +767,29 @@ export function canViewReport(role: Role, slug: string): boolean {
   if (!can(role, "reports.view")) return false;
   if (!isAuditViewer(role)) return true;
   return (AUDIT_VIEWER_REPORTS as readonly string[]).includes(slug);
+}
+
+/**
+ * May this role open this report given the CLIENT'S subscription — the tier
+ * gate (docs/2026-08-04-report-tier-gating-plan.md). Independent of, and
+ * composed with, `canViewReport()` above: a report must clear both the role
+ * gate (audit viewer narrowing) and this one. Neither replaces the other.
+ *
+ * ADMIN bypasses this gate the same way it bypasses the three download gates
+ * today — the LIS operator is never tier-restricted. Every other role is
+ * checked against the subscription's own enabled set, not against a preset
+ * looked up by tier label, because that set is what an admin may have
+ * hand-edited away from the tier default (Phase 5).
+ *
+ * Call site composes both gates:
+ *   canViewReport(role, slug) && canViewReportForSubscription(role, slug, enabledReportSlugs)
+ */
+export function canViewReportForSubscription(
+  role: Role,
+  slug: string,
+  enabledReportSlugs: readonly string[],
+): boolean {
+  if (role === "ADMIN") return true;
+  return enabledReportSlugs.includes(slug);
 }
 

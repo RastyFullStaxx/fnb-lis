@@ -1,6 +1,6 @@
 import { prisma } from "../src/db";
 import { hashPassword } from "../src/auth/password";
-import { allowedProductTypes, derivePackageType } from "@fnb/core";
+import { allowedProductTypes, derivePackageType, REPORT_TIER_PRESETS } from "@fnb/core";
 import { seedDemoHistory } from "./seed-demo";
 import { generateAssetCode } from "../src/services/asset-supplier";
 import { ASSET_ITEMS, ASSET_CATEGORY_COST, ASSET_BREAKAGE } from "./asset-seed-data";
@@ -127,10 +127,11 @@ async function upsertClientWithSubscription(
   // broken through every re-seed.
   const client = existing ?? (await prisma.client.create({ data: { name } }));
   if (await prisma.subscription.findUnique({ where: { clientId: client.id } })) return client;
+  const packageType = derivePackageType(sub.billingCycle, sub.maxEntities, sub.maxUsers);
   await prisma.subscription.create({
     data: {
       clientId: client.id,
-      packageType: derivePackageType(sub.billingCycle, sub.maxEntities, sub.maxUsers),
+      packageType,
       billingCycle: sub.billingCycle,
       maxEntities: sub.maxEntities,
       maxUsers: sub.maxUsers,
@@ -140,6 +141,16 @@ async function upsertClientWithSubscription(
       paid: false,
       lastPaidAt: null,
       modules: { create: sub.modules.map((module) => ({ module })) },
+      // Report tier gating, Phase 6.2 (docs/2026-08-04-report-tier-gating-phases.md):
+      // seed rows directly here rather than shelling out to the backfill
+      // script — verify-seed.mjs's throwaway database only ever runs
+      // `migrate deploy` -> `seed.ts` -> `verify-seed.ts`, so seed.ts is the
+      // one place that needs to produce these rows for a from-scratch
+      // database. Same shape Phase 5.1 uses at real subscription creation
+      // (routes/admin.ts) and the same preset the Phase 6.1 backfill script
+      // applies to pre-existing rows — one source (REPORT_TIER_PRESETS) for
+      // all three paths so they can never drift apart.
+      reports: { create: REPORT_TIER_PRESETS[packageType].map((reportSlug) => ({ reportSlug })) },
     },
   });
   return client;

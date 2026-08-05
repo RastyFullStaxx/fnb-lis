@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PACKAGE_TYPES, BILLING_CYCLES, MODULE_TYPES, SUBSCRIPTION_STATUSES } from "../constants";
+import { PACKAGE_TYPES, BILLING_CYCLES, MODULE_TYPES, SUBSCRIPTION_STATUSES, REPORT_SLUGS } from "../constants";
 
 export const packageType = z.enum(PACKAGE_TYPES);
 export const billingCycle = z.enum(BILLING_CYCLES);
@@ -93,3 +93,20 @@ export const locationModulesBody = z.object({
   modules: z.array(moduleType).min(1, "Select at least one module"),
 });
 export type LocationModulesBody = z.infer<typeof locationModulesBody>;
+
+export const reportSlug = z.enum(REPORT_SLUGS);
+
+/**
+ * A client's full enabled-report set (report tier gating, Phase 5.2 —
+ * docs/2026-08-04-report-tier-gating-phases.md). Same replace-the-whole-set
+ * shape as locationModulesBody: the caller sends the complete desired list,
+ * not a delta, and the handler diffs it against what's currently enabled.
+ *
+ * Unlike locationModulesBody, empty is allowed — an admin can deliberately
+ * gate a client down to zero reports (e.g. a suspended/negotiated account),
+ * which is not true of a location's own module set.
+ */
+export const subscriptionReportsBody = z.object({
+  reportSlugs: z.array(reportSlug),
+});
+export type SubscriptionReportsBody = z.infer<typeof subscriptionReportsBody>;

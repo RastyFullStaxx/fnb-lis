@@ -514,7 +514,7 @@ async function buildMe(user: MeResponse["user"]): Promise<MeResponse> {
           where: { status: "ACTIVE" },
           include: {
             locations: { where: { status: "ACTIVE" }, include: { modules: true } },
-            subscription: { select: { packageType: true, status: true, modules: true, billingCycle: true, startDate: true, paid: true, lastPaidAt: true } },
+            subscription: { select: { packageType: true, status: true, modules: true, reports: true, billingCycle: true, startDate: true, paid: true, lastPaidAt: true } },
           },
           orderBy: { name: "asc" },
         })
@@ -525,7 +525,7 @@ async function buildMe(user: MeResponse["user"]): Promise<MeResponse> {
               client: {
                 include: {
                   locations: { where: { status: "ACTIVE" }, include: { modules: true } },
-                  subscription: { select: { packageType: true, status: true, modules: true, billingCycle: true, startDate: true, paid: true, lastPaidAt: true } },
+                  subscription: { select: { packageType: true, status: true, modules: true, reports: true, billingCycle: true, startDate: true, paid: true, lastPaidAt: true } },
                 },
               },
             },
@@ -583,6 +583,7 @@ async function buildMe(user: MeResponse["user"]): Promise<MeResponse> {
             packageType: cl.subscription.packageType,
             status: cl.subscription.status,
             modules: cl.subscription.modules.map((m) => m.module),
+            reports: cl.subscription.reports.map((r) => r.reportSlug),
           }
         : null,
     }))

@@ -469,6 +469,7 @@ model Subscription {
   cancelledById   String?
 
   modules SubscriptionModule[]
+  reports SubscriptionReport[]
 }
 
 // The ceiling: every atomic module (BAR | KITCHEN | ASSET) this client is
@@ -480,6 +481,21 @@ model SubscriptionModule {
   module         String // BAR | KITCHEN | ASSET
 
   @@unique([subscriptionId, module])
+}
+
+// Which report slugs (`apps/web/src/pages/reports/index.tsx` `path` values)
+// this client's subscription may open — client req #3 (2026-08-02 brief), see
+// docs/2026-08-04-report-tier-gating-plan.md. Same shape as SubscriptionModule:
+// one row per enabled report, seeded from a tier preset at subscription
+// creation and hand-editable per client after (decision in the plan doc —
+// gate on this explicit set, not on the derived packageType label).
+model SubscriptionReport {
+  id             String       @id @default(cuid())
+  subscriptionId String
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id])
+  reportSlug     String
+
+  @@unique([subscriptionId, reportSlug])
 }
 
 // ───────────────────────── Master data (global) ─────────────────────────
