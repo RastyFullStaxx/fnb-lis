@@ -18,6 +18,18 @@ export const subscriptionCreateBody = z.object({
   // Max user accounts (client req 2026-07-21). Monthly tiers cap it
   // (Basic 1 / Medium 5 / Full 10); Standalone owners set their own.
   maxUsers: z.number().int().min(0).default(0),
+  /**
+   * How many offline desktop computers this establishment may register.
+   *
+   * 0 = unlimited, matching maxEntities — `resolveDevice` skips the cap check
+   * entirely when it is 0. Defaults to 1, the shipped assumption of "one client
+   * computer"; a dev machine that also runs the mirror rehearsal needs 2.
+   *
+   * NOT an input to `derivePackageType` — the tier is billingCycle + maxEntities
+   * + maxUsers, and adding a fourth axis would let the badge move for a reason
+   * the pricing table does not mention.
+   */
+  maxDevices: z.number().int().min(0).default(1),
   negotiatedPrice: z.number().min(0).optional().nullable(), // per-client/per-deal price, if tracked at all
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD"),
   endDate: z
@@ -37,6 +49,17 @@ export const subscriptionUpdateBody = z.object({
   modules: z.array(moduleType).min(1, "Select at least one module").optional(),
   maxEntities: z.number().int().min(0).optional(),
   maxUsers: z.number().int().min(0).optional(),
+  /**
+   * Omitted here until 2026-08-04, which made the licence uneditable: a `PUT`
+   * carrying it returned 200 and silently changed nothing, because zod stripped
+   * the field before the handler's `{ ...rest }` passthrough ever saw it.
+   *
+   * Narrowing needs no cascade, unlike `modules`. The cap is read only when a
+   * NEW machine registers, so lowering it leaves already-registered computers
+   * working and simply blocks the next one — the same way maxEntities and
+   * maxUsers behave.
+   */
+  maxDevices: z.number().int().min(0).optional(),
   negotiatedPrice: z.number().min(0).optional().nullable(),
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   endDate: z

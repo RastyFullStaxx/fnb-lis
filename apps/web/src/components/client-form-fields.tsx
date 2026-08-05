@@ -50,6 +50,8 @@ export function PackageAndModulesFields({
   onMaxEntitiesChange,
   maxUsers,
   onMaxUsersChange,
+  maxDevices,
+  onMaxDevicesChange,
   locked = false,
   modulesLocked = false,
 }: {
@@ -63,6 +65,9 @@ export function PackageAndModulesFields({
   /** Max user accounts (client req 2026-07-21); 0 = no cap saved. */
   maxUsers: number;
   onMaxUsersChange: (v: number) => void;
+  /** Offline desktop computers this client may register; 0 = unlimited. */
+  maxDevices: number;
+  onMaxDevicesChange: (v: number) => void;
   locked?: boolean;
   modulesLocked?: boolean;
 }) {
@@ -170,6 +175,24 @@ export function PackageAndModulesFields({
               </ReadOnlyField>
             </div>
           )}
+
+          <div className="space-y-2">
+            <Label htmlFor="max-devices">Max Computers</Label>
+            <QuantityInput
+              id="max-devices"
+              className="tnum"
+              value={String(maxDevices || "")}
+              placeholder="e.g. 1"
+              onChange={(e) => {
+                const n = Number(e.target.value);
+                onMaxDevicesChange(e.target.value === "" || !Number.isFinite(n) ? 0 : Math.max(0, Math.trunc(n)));
+              }}
+            />
+            <p className="text-xs text-muted-foreground">
+              Offline desktop installs. Blank or 0 means no limit. Lowering it never disconnects a
+              computer already registered — it only stops the next one.
+            </p>
+          </div>
 
           {(isStandalone || tier !== "BASIC") && (
             <div className="space-y-2">

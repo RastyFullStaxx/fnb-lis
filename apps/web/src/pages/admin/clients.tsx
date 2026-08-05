@@ -265,6 +265,8 @@ function CreateClientDialog({ open, onOpenChange }: { open: boolean; onOpenChang
   const [billingCycle, setBillingCycle] = useState<BillingCycle>(PACKAGE_DEFAULT_BILLING_CYCLE.BASIC);
   const [maxEntities, setMaxEntities] = useState<number>(PACKAGE_DEFAULT_MAX_ENTITIES.BASIC);
   const [maxUsers, setMaxUsers] = useState<number>(PACKAGE_MAX_USERS.BASIC);
+  // 1 = the shipped assumption of "one client computer" (see the schema note).
+  const [maxDevices, setMaxDevices] = useState<number>(1);
   const [negotiatedPrice, setNegotiatedPrice] = useState<number | null>(null);
 
   const totalLocations = 1 + extraLocations.length; // "Main" + extras
@@ -307,6 +309,7 @@ function CreateClientDialog({ open, onOpenChange }: { open: boolean; onOpenChang
           modules,
           maxEntities,
           maxUsers,
+          maxDevices,
           negotiatedPrice,
           startDate: today(),
           endDate: null,
@@ -348,6 +351,8 @@ function CreateClientDialog({ open, onOpenChange }: { open: boolean; onOpenChang
           onMaxEntitiesChange={setMaxEntities}
           maxUsers={maxUsers}
           onMaxUsersChange={setMaxUsers}
+          maxDevices={maxDevices}
+          onMaxDevicesChange={setMaxDevices}
         />
 
         <NegotiatedPriceField value={negotiatedPrice} onChange={setNegotiatedPrice} />
@@ -424,6 +429,7 @@ function ClientDetailBody({ client }: { client: AdminClient }) {
   const [billingCycle, setBillingCycle] = useState<BillingCycle>((sub?.billingCycle as BillingCycle) ?? "MONTHLY");
   const [maxEntities, setMaxEntities] = useState<number>(sub?.maxEntities ?? 1);
   const [maxUsers, setMaxUsers] = useState<number>(sub?.maxUsers ?? 0);
+  const [maxDevices, setMaxDevices] = useState<number>(sub?.maxDevices ?? 1);
   const [negotiatedPrice, setNegotiatedPrice] = useState<number | null>(sub?.negotiatedPrice ?? null);
 
   // Uses the live, not-yet-saved maxEntities (same as CreateClientDialog) so
@@ -438,6 +444,7 @@ function ClientDetailBody({ client }: { client: AdminClient }) {
       billingCycle !== sub.billingCycle ||
       maxEntities !== sub.maxEntities ||
       maxUsers !== sub.maxUsers ||
+      maxDevices !== sub.maxDevices ||
       negotiatedPrice !== sub.negotiatedPrice);
   const isDirty = nameDirty || subDirty;
 
@@ -455,7 +462,7 @@ function ClientDetailBody({ client }: { client: AdminClient }) {
         await updateClient.mutateAsync({ id: client.id, name: name.trim() });
       }
       if (subDirty && sub) {
-        await updateSub.mutateAsync({ id: sub.id, billingCycle, modules, maxEntities, maxUsers, negotiatedPrice });
+        await updateSub.mutateAsync({ id: sub.id, billingCycle, modules, maxEntities, maxUsers, maxDevices, negotiatedPrice });
       }
       toast.success("Client updated");
     } catch (err) {
@@ -528,6 +535,8 @@ function ClientDetailBody({ client }: { client: AdminClient }) {
           onMaxEntitiesChange={setMaxEntities}
           maxUsers={maxUsers}
           onMaxUsersChange={setMaxUsers}
+          maxDevices={maxDevices}
+          onMaxDevicesChange={setMaxDevices}
           negotiatedPrice={negotiatedPrice}
           onNegotiatedPriceChange={setNegotiatedPrice}
           narrowing={narrowing}
@@ -639,6 +648,8 @@ function SubscriptionPanel({
   onMaxEntitiesChange,
   maxUsers,
   onMaxUsersChange,
+  maxDevices,
+  onMaxDevicesChange,
   negotiatedPrice,
   onNegotiatedPriceChange,
   narrowing,
@@ -652,6 +663,8 @@ function SubscriptionPanel({
   onMaxEntitiesChange: (v: number) => void;
   maxUsers: number;
   onMaxUsersChange: (v: number) => void;
+  maxDevices: number;
+  onMaxDevicesChange: (v: number) => void;
   negotiatedPrice: number | null;
   onNegotiatedPriceChange: (v: number | null) => void;
   narrowing: boolean;
@@ -698,6 +711,8 @@ function SubscriptionPanel({
         onMaxEntitiesChange={onMaxEntitiesChange}
         maxUsers={maxUsers}
         onMaxUsersChange={onMaxUsersChange}
+        maxDevices={maxDevices}
+        onMaxDevicesChange={onMaxDevicesChange}
         locked={cancelled}
         modulesLocked={cancelled}
       />
@@ -736,6 +751,7 @@ function CreateSubscriptionPanel({ clientId, onDone }: { clientId: string; onDon
   const [billingCycle, setBillingCycle] = useState<BillingCycle>(PACKAGE_DEFAULT_BILLING_CYCLE.BASIC);
   const [maxEntities, setMaxEntities] = useState<number>(PACKAGE_DEFAULT_MAX_ENTITIES.BASIC);
   const [maxUsers, setMaxUsers] = useState<number>(PACKAGE_MAX_USERS.BASIC);
+  const [maxDevices, setMaxDevices] = useState<number>(1);
   const [negotiatedPrice, setNegotiatedPrice] = useState<number | null>(null);
 
   const submit = async () => {
@@ -746,6 +762,7 @@ function CreateSubscriptionPanel({ clientId, onDone }: { clientId: string; onDon
         modules,
         maxEntities,
         maxUsers,
+        maxDevices,
         negotiatedPrice,
         startDate: today(),
         endDate: null,
@@ -775,6 +792,8 @@ function CreateSubscriptionPanel({ clientId, onDone }: { clientId: string; onDon
         onMaxEntitiesChange={setMaxEntities}
         maxUsers={maxUsers}
         onMaxUsersChange={setMaxUsers}
+        maxDevices={maxDevices}
+        onMaxDevicesChange={setMaxDevices}
       />
 
       <NegotiatedPriceField value={negotiatedPrice} onChange={setNegotiatedPrice} />

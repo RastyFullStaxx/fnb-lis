@@ -4218,3 +4218,46 @@ header says. Noted: **no admin route can set `maxDevices`** —
 `subscriptionUpdateBody` accepts `maxEntities` and `maxUsers` but not this one, so
 a `PUT` returns 200 and silently changes nothing. Written directly; worth adding
 to the schema.
+
+## 2026-08-04 — `maxDevices` is editable
+
+Closing the gap from the previous entry: the device cap was enforced but no
+route could set it. `subscriptionUpdateBody` omitted the field, so a `PUT`
+carrying it returned **200 and changed nothing** — zod stripped it before the
+handler's `{ ...rest }` passthrough ever saw it. That passthrough is also why the
+schema was the only blocker: adding the field is enough for the update to land.
+
+Added to **both** bodies, not just update — a create that cannot set what an
+update can is the same trap one step earlier. `subscriptionCreateBody` gets
+`.default(1)`, matching the Prisma column and the shipped "one client computer"
+assumption; the create route needed an explicit `maxDevices: body.maxDevices`
+because it lists fields rather than spreading.
+
+Two decisions worth recording:
+
+- **Not an input to `derivePackageType`.** The tier is billingCycle + maxEntities
+  + maxUsers. A fourth axis would let the badge move for a reason the pricing
+  table does not mention. Verified: editing the cap left FULL as FULL.
+- **No narrowing guard.** `modules` has one because narrowing there cascades a
+  delete. The device cap is read only when a NEW machine registers, so lowering
+  it leaves registered computers working and blocks the next one — exactly how
+  `maxEntities` and `maxUsers` already behave. Inventing a stricter rule for this
+  one field would be the inconsistency, not the safety.
+
+UI: a **Max Computers** field beside Max Users in the client dialog, wired
+through all three call sites (create client, create subscription, edit). The
+helper says what the number does and that lowering it never disconnects a
+machine already registered — the question an administrator would otherwise have
+to guess at.
+
+### Verified
+
+- API: `PUT maxDevices=3` → persisted, survived a fresh read, tier unchanged.
+- UI: typed 4 in the Manage dialog, saved, confirmed in the database (Aurora
+  1 → 4), then restored. This exercised the hand-wired dirty check and payload.
+- All five harnesses pass; three workspaces typecheck.
+
+> `.claude/launch.json` — `autoPort: true` on the `web` entry. Another project on
+> this machine holds Vite's default 5173. Note that Vite ignores the assigned
+> port and picks its own next free one (it does not read `PORT`), so the
+> preview URL and the real one can differ — it landed on 5174.

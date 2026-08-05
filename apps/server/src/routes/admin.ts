@@ -447,6 +447,7 @@ export const adminRoutes = new Hono<AppEnv>()
           billingCycle: body.billingCycle,
           maxEntities: body.maxEntities,
           maxUsers: body.maxUsers,
+          maxDevices: body.maxDevices,
           negotiatedPrice: body.negotiatedPrice ?? null,
           startDate: body.startDate,
           endDate: body.endDate ?? null,

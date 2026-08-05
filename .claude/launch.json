@@ -11,7 +11,9 @@
       "name": "web",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "-w", "@fnb/web"],
-      "port": 5173
+      "port": 5173,
+      "// autoPort": "Another project on this machine also uses Vite's default 5173. Nothing here needs that exact port — the API origin is configured separately — so let the harness assign a free one.",
+      "autoPort": true
     },
     {
       "// api-prod": "Serves the BUILT SPA from apps/web/dist on the API origin — the only mode where the CSP in middleware/security.ts actually reaches the HTML. Run `npm run build` first. Used to verify hardening headers don't break the real app.",

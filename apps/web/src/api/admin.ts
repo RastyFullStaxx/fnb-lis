@@ -30,6 +30,8 @@ export interface AdminSubscription {
   maxEntities: number;
   /** Max user accounts (client req 2026-07-21); 0 = no cap saved (legacy rows). */
   maxUsers: number;
+  /** Offline desktop computers this client may register; 0 = unlimited. */
+  maxDevices: number;
   /** Optional per-client/per-deal price, if tracked at all (Fix Plan §4 open question #2). */
   negotiatedPrice: number | null;
   status: string;
@@ -151,6 +153,8 @@ export interface CreateFullClientBody {
     maxEntities: number;
     /** Max user accounts (client req 2026-07-21); 0 = no cap saved. */
     maxUsers: number;
+  /** Offline desktop computers this client may register; 0 = unlimited. */
+  maxDevices: number;
     /** Optional per-client deal price, if tracked at all. */
     negotiatedPrice?: number | null;
     startDate: string;
@@ -381,6 +385,8 @@ export interface CreateSubscriptionBody {
   maxEntities: number;
   /** Max user accounts (client req 2026-07-21); 0 = no cap saved. */
   maxUsers: number;
+  /** Offline desktop computers this client may register; 0 = unlimited. */
+  maxDevices: number;
   /** Optional per-client deal price, if tracked at all. */
   negotiatedPrice?: number | null;
   startDate: string;
@@ -407,6 +413,7 @@ export interface UpdateSubscriptionBody {
   maxEntities?: number;
   /** Max user accounts (client req 2026-07-21); 0 = no cap saved. */
   maxUsers?: number;
+  maxDevices?: number;
   /** Optional per-client deal price, if tracked at all. */
   negotiatedPrice?: number | null;
   startDate?: string;
