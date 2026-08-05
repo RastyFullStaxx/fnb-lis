@@ -41,7 +41,12 @@ async function seedClients() {
   // KITCHEN only.
   const prime = await upsertClientWithSubscription(
     "Prime Hospitality Group",
-    { billingCycle: "MONTHLY", modules: ["BAR", "KITCHEN"], maxEntities: 5, maxUsers: 10 },
+    // maxDevices 2, not the shipped default of 1: this is the demo client a dev
+    // machine points at, and `verify:mirror` registers its own "Provisioning
+    // rehearsal PC" against the REAL server under a fixed fingerprint. With one
+    // slot the rehearsal and the actual desktop install fight over it, and every
+    // re-seed strands whichever lost — see verify-mirror.mjs's own header.
+    { billingCycle: "MONTHLY", modules: ["BAR", "KITCHEN"], maxEntities: 5, maxUsers: 10, maxDevices: 2 },
     admin?.id,
   );
   // Prime legitimately splits one operation into two locations — "Main Bar"
@@ -117,7 +122,14 @@ async function seedClients() {
 
 async function upsertClientWithSubscription(
   name: string,
-  sub: { billingCycle: "MONTHLY" | "STANDALONE"; modules: readonly string[]; maxEntities: number; maxUsers: number },
+  sub: {
+    billingCycle: "MONTHLY" | "STANDALONE";
+    modules: readonly string[];
+    maxEntities: number;
+    maxUsers: number;
+    /** Omitted = the Prisma default of 1, which is the shipped assumption. */
+    maxDevices?: number;
+  },
   createdById?: string,
 ) {
   const existing = await prisma.client.findFirst({ where: { name } });
@@ -135,6 +147,7 @@ async function upsertClientWithSubscription(
       billingCycle: sub.billingCycle,
       maxEntities: sub.maxEntities,
       maxUsers: sub.maxUsers,
+      ...(sub.maxDevices !== undefined ? { maxDevices: sub.maxDevices } : {}),
       status: "ACTIVE",
       startDate: "2026-01-01",
       createdById: createdById ?? null,

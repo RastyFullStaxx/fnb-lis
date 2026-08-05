@@ -172,17 +172,43 @@ const main = async () => {
   const daysOut = session ? (session.expiresAt.getTime() - Date.now()) / 86_400_000 : 0;
   ok("its session outlasts the 7-day browser TTL", daysOut > 300, `${Math.round(daysOut)} days`);
 
-  // The licence is one computer by default (proposal §18).
-  const secondMachine = agent();
-  const overCap = await secondMachine.call("/api/auth/login", {
+  // The licence cap refuses the machine AFTER the last one it covers (proposal
+  // §18). The cap is read from the subscription rather than assumed to be 1:
+  // the demo client is seeded with 2 so a dev box can run both the mirror
+  // rehearsal and a real desktop install, and hard-coding "the second machine
+  // is refused" quietly became false the moment that changed.
+  const primeSub = await prisma.subscription.findFirst({
+    where: { client: { name: { contains: "Prime" } } },
+  });
+  const cap = primeSub?.maxDevices ?? 1;
+  const alreadyActive = await prisma.device.count({
+    where: { clientId: primeSub!.clientId, status: "ACTIVE" },
+  });
+  // Fill whatever the licence still covers — each of these must be ACCEPTED.
+  let filled = alreadyActive;
+  for (let i = alreadyActive; i < cap; i++) {
+    const res = await agent().call("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({
+        username: "owner",
+        password: PASSWORD,
+        device: { fingerprint: `MACHINE-FILL-${i}`, name: `Filler PC ${i}` },
+      }),
+    });
+    if (res.status === 200) filled += 1;
+  }
+  ok(`the licence covers ${cap} machine(s), and all ${cap} register`, filled === cap, `${filled} of ${cap}`);
+
+  // One past the cap must be refused.
+  const overCap = await agent().call("/api/auth/login", {
     method: "POST",
     body: JSON.stringify({
       username: "owner",
       password: PASSWORD,
-      device: { fingerprint: "MACHINE-SECOND-02", name: "Second PC" },
+      device: { fingerprint: "MACHINE-OVER-CAP", name: "One Too Many PC" },
     }),
   });
-  ok("a second machine is refused by the licence cap", overCap.status === 403, `status ${overCap.status}`);
+  ok("the machine past the cap is refused", overCap.status === 403, `status ${overCap.status}`);
 
   // ── 4. Snapshot ──
   console.log("\nSnapshot — everything a mirror needs to reconcile offline");

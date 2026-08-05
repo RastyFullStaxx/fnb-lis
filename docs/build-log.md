@@ -4453,3 +4453,28 @@ reader heard two names and the logo's alt text with nothing saying it switches
 anything — and collapsed to the icon rail there is no visible text at all.
 
 All five harnesses pass; three workspaces typecheck.
+
+## 2026-08-04 — Demo client seeded with maxDevices 2
+
+Prime Hospitality now seeds `maxDevices: 2`; Aurora and Casa Verde keep the
+shipped default of 1. Prime is the client a dev box points at, and
+`verify:mirror` registers its own "Provisioning rehearsal PC" against the REAL
+server under a fixed fingerprint — with one slot, the rehearsal and an actual
+desktop install fight over it, and every re-seed stranded whichever lost. This
+removes one of the three manual steps a database rebuild used to require.
+
+### It broke a harness, and that was the useful part
+
+`verify:sync` asserted *"a second machine is refused by the licence cap"* — the
+cap being 1 was baked in as a constant, so raising it turned a real assertion
+into a failing one. Bumping the number would have been the wrong fix: the test
+would then assert nothing about the cap it claims to check the moment the seed
+changed again.
+
+It now reads `maxDevices` off the subscription, fills exactly that many slots
+(each of which must be ACCEPTED), and asserts the machine *past* the cap is
+refused. Output: `the licence covers 2 machine(s), and all 2 register — 2 of 2`
+and `the machine past the cap is refused — status 403`. The invariant is the
+same; it is no longer pinned to one number.
+
+All five harnesses pass; three workspaces typecheck.
