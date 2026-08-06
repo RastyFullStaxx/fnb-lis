@@ -238,7 +238,8 @@ export function AdminUsersPage() {
               <TableRow className="bg-muted hover:bg-muted">
                 <TableHead>User</TableHead>
                 <TableHead>Role</TableHead>
-                <TableHead>Clients / Packages</TableHead>
+                <TableHead className="w-64">Clients / Packages</TableHead>
+                <TableHead className="w-40">Modules</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="w-16" />
               </TableRow>
@@ -255,7 +256,7 @@ export function AdminUsersPage() {
                   <TableCell>
                     <Badge variant="secondary">{ROLE_LABELS[u.role] ?? u.role}</Badge>
                   </TableCell>
-                  <TableCell className="max-w-72 text-sm">
+                  <TableCell className="w-64 text-sm">
                     {u.role === "ADMIN" ? (
                       <span className="text-muted-foreground">All clients (admin)</span>
                     ) : u.clientAccess.length === 0 ? (
@@ -276,13 +277,25 @@ export function AdminUsersPage() {
                                 No package
                               </Badge>
                             )}
-                            {a.client.subscription && (
-                              <span className="text-xs text-muted-foreground">
-                                {a.client.subscription.modules
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </TableCell>
+                  <TableCell className="w-40 text-sm">
+                    {u.role === "ADMIN" ? (
+                      <span className="text-muted-foreground">—</span>
+                    ) : u.clientAccess.length === 0 ? (
+                      <span className="text-muted-foreground">—</span>
+                    ) : (
+                      <div className="space-y-1">
+                        {u.clientAccess.map((a) => (
+                          <div key={a.clientId} className="text-xs text-muted-foreground">
+                            {a.client.subscription
+                              ? a.client.subscription.modules
                                   .map((m) => MODULE_TYPE_LABELS[m as ModuleType] ?? m)
-                                  .join(" + ")}
-                              </span>
-                            )}
+                                  .join(" + ")
+                              : "—"}
                           </div>
                         ))}
                       </div>

@@ -45,7 +45,7 @@ export function AssetBreakageReportPage() {
   );
 
   return (
-    <div>
+    <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader
         title="Asset Breakage"
         actions={
@@ -59,7 +59,6 @@ export function AssetBreakageReportPage() {
       />
 
       <TableSurface
-        className="max-h-[70vh]"
         filters={<DateRangeControl from={from} to={to} onFrom={setFrom} onTo={setTo} />}
       >
         {queryFailed(report) ? (

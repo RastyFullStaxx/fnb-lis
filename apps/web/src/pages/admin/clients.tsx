@@ -29,6 +29,7 @@ import {
   useAddLocation,
   useAdminClients,
   useUpdateLocation,
+  useUpdateLocationModules,
   useCancelSubscription,
   useCreateFullClient,
   useCreateSubscription,
@@ -373,7 +374,7 @@ function CreateClientDialog({ open, onOpenChange }: { open: boolean; onOpenChang
           onNewLocNameChange={setNewLocName}
           onAdd={addLoc}
           atLimit={atLimit}
-          limitMessage={`Location limit reached (${maxEntities} max). Raise "Max locations" to add more.`}
+          limitMessage={`Location limit reached (${maxEntities} max)`}
           helperText={'"Main" is created automatically for every client.'}
         />
 
@@ -415,6 +416,7 @@ function ClientDetailBody({ client }: { client: AdminClient }) {
   const updateSub = useUpdateSubscription();
   const addLocation = useAddLocation();
   const updateLocation = useUpdateLocation();
+  const updateLocationModules = useUpdateLocationModules();
   const markPaid = useMarkPaid();
   const unmarkPaid = useUnmarkPaid();
   const [name, setName] = useState(client.name);
@@ -559,6 +561,17 @@ function ClientDetailBody({ client }: { client: AdminClient }) {
               .mutateAsync({ locationId: loc.id, kind })
               .then(() => toast.success(`"${loc.name}" labeled ${kind ? kind.toLowerCase() : "none"}`))
               .catch((err) => toast.error(err instanceof ApiError ? err.message : "Could not update location")),
+          // Ceiling is the live (possibly unsaved) module selection above —
+          // same reasoning as `atLimit` using live maxEntities: a picker
+          // built against the last-saved ceiling would let someone check a
+          // module here that Save is about to remove from the subscription.
+          modules: loc.modules as ModuleType[],
+          moduleCeiling: modules,
+          onModulesChange: (locModules) =>
+            updateLocationModules
+              .mutateAsync({ locationId: loc.id, modules: locModules })
+              .then(() => toast.success(`"${loc.name}" modules updated`))
+              .catch((err) => toast.error(err instanceof ApiError ? err.message : "Could not update location modules")),
           inactive: loc.status !== "ACTIVE",
         }))}
         newLocName={newLocName}
@@ -566,7 +579,7 @@ function ClientDetailBody({ client }: { client: AdminClient }) {
         onAdd={addLoc}
         adding={addLocation.isPending}
         atLimit={!!atLimit}
-        limitMessage={`Location limit reached (${maxEntities} max). Raise "Max locations" below to add more.`}
+        limitMessage={`Location limit reached (${maxEntities} max)`}
       />
 
       {/* ── Reports (Phase 5.3.5) — separate dialog + save cycle from the rest
@@ -718,8 +731,18 @@ function SubscriptionPanel({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <Label>Subscription</Label>
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <span className="flex items-center gap-3">
+          <span className="flex items-center gap-1">
+            <CalendarDays className="size-3.5" /> Started {sub.startDate}
+          </span>
+          {sub.endDate && <span>Ends {sub.endDate}</span>}
+          {cancelled && (
+            <span>
+              Cancelled{sub.cancelledAt ? ` ${localDate(sub.cancelledAt as unknown as string)}` : ""}
+            </span>
+          )}
+        </span>
         {!cancelled && <AccessStateBadge sub={sub} />}
       </div>
 
@@ -765,20 +788,6 @@ function SubscriptionPanel({
       )}
 
       <NegotiatedPriceField value={negotiatedPrice} onChange={onNegotiatedPriceChange} disabled={cancelled} />
-
-      {/* Meta only — paid status, mark-paid, cancel, and save all now live
-          together in the single action row at the bottom of ClientDetailBody. */}
-      <div className="text-xs text-muted-foreground flex gap-3 pt-1">
-        <span className="flex items-center gap-1">
-          <CalendarDays className="size-3.5" /> Started {sub.startDate}
-        </span>
-        {sub.endDate && <span>Ends {sub.endDate}</span>}
-        {cancelled && (
-          <span>
-            Cancelled{sub.cancelledAt ? ` ${localDate(sub.cancelledAt as unknown as string)}` : ""}
-          </span>
-        )}
-      </div>
     </div>
   );
 }

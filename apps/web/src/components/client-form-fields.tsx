@@ -32,6 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Dialog,
   DialogContent,
@@ -159,52 +160,39 @@ export function PackageAndModulesFields({
       </div>
 
       {!locked && (
-        <div className="grid grid-cols-2 gap-3">
-          {isStandalone ? (
-            // Standalone: the owner sets his own ceiling so user accounts can't
-            // be generated without his knowledge (client req 2026-07-21).
+        <>
+          <div className={isStandalone ? "grid grid-cols-2 gap-3" : ""}>
+            {isStandalone && (
+              // Standalone: the owner sets his own ceiling so user accounts can't
+              // be generated without his knowledge (client req 2026-07-21).
+              <div className="space-y-2">
+                <Label htmlFor="max-users">Max Users</Label>
+                <QuantityInput
+                  id="max-users"
+                  className="tnum"
+                  value={String(maxUsers || "")}
+                  placeholder="e.g. 5"
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    onMaxUsersChange(e.target.value === "" || !Number.isFinite(n) ? 0 : Math.max(0, Math.trunc(n)));
+                  }}
+                />
+              </div>
+            )}
+
             <div className="space-y-2">
-              <Label htmlFor="max-users">Max Users</Label>
+              <Label htmlFor="max-devices">Max Computers</Label>
               <QuantityInput
-                id="max-users"
+                id="max-devices"
                 className="tnum"
-                value={String(maxUsers || "")}
-                placeholder="e.g. 5"
+                value={String(maxDevices || "")}
+                placeholder="e.g. 1"
                 onChange={(e) => {
                   const n = Number(e.target.value);
-                  onMaxUsersChange(e.target.value === "" || !Number.isFinite(n) ? 0 : Math.max(0, Math.trunc(n)));
+                  onMaxDevicesChange(e.target.value === "" || !Number.isFinite(n) ? 1 : Math.max(1, Math.trunc(n)));
                 }}
               />
-              <p className="text-xs text-muted-foreground">How many accounts this installation may create.</p>
             </div>
-          ) : (
-            <div className="space-y-2">
-              <Label>Max Users</Label>
-              <ReadOnlyField>
-                {(() => {
-                  const n = maxUsers || PACKAGE_MAX_USERS[tier];
-                  return `${n} ${n === 1 ? "user" : "users"}`;
-                })()}
-              </ReadOnlyField>
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <Label htmlFor="max-devices">Max Computers</Label>
-            <QuantityInput
-              id="max-devices"
-              className="tnum"
-              value={String(maxDevices || "")}
-              placeholder="e.g. 1"
-              onChange={(e) => {
-                const n = Number(e.target.value);
-                onMaxDevicesChange(e.target.value === "" || !Number.isFinite(n) ? 0 : Math.max(0, Math.trunc(n)));
-              }}
-            />
-            <p className="text-xs text-muted-foreground">
-              Offline desktop installs. Blank or 0 means no limit. Lowering it never disconnects a
-              computer already registered — it only stops the next one.
-            </p>
           </div>
 
           {(isStandalone || tier !== "BASIC") && (
@@ -220,12 +208,9 @@ export function PackageAndModulesFields({
                   onMaxEntitiesChange(e.target.value === "" || !Number.isFinite(n) ? 0 : Math.max(0, Math.trunc(n)));
                 }}
               />
-              {isStandalone && (
-                <p className="text-xs text-muted-foreground">Any number the admin sets — 0 means unlimited locations.</p>
-              )}
             </div>
           )}
-        </div>
+        </>
       )}
 
       <div className="space-y-2">
@@ -255,8 +240,7 @@ export function PackageAndModulesFields({
           </div>
         )}
         <p className="text-xs text-muted-foreground">
-          Composable — select any combination this client is licensed for. Individual locations can then
-          be narrowed to a subset of these (e.g. a "Main Bar" location using just Bar).
+          Locations can be narrowed to a subset of these.
         </p>
       </div>
     </>
@@ -362,6 +346,65 @@ export function LocationModulesField({
 // API, not removable here). `onAdd` lets the caller decide how "add" behaves;
 // everything else — chip rendering, the input, the limit banner — is shared.
 
+function LocationModulesPopover({
+  modules,
+  ceiling,
+  onChange,
+}: {
+  modules: ModuleType[];
+  ceiling: readonly ModuleType[];
+  onChange: (v: ModuleType[]) => void;
+}) {
+  const toggleModule = (m: ModuleType, checked: boolean) => {
+    if (checked) {
+      if (!modules.includes(m)) onChange([...modules, m]);
+    } else {
+      if (modules.length > 1) onChange(modules.filter((x) => x !== m));
+    }
+  };
+
+  const label =
+    modules.length === 0
+      ? "No modules"
+      : modules.map((m) => MODULE_TYPE_LABELS[m] ?? m).join(" + ");
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="h-6 shrink-0 gap-1 rounded-md px-1 text-[10px] uppercase tracking-wide text-muted-foreground hover:text-foreground"
+        >
+          {label}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-56 p-3" align="end">
+        <p className="mb-2 text-xs font-semibold">Modules</p>
+        <div className="flex flex-col gap-2">
+          {MODULE_TYPES.map((m) => {
+            const inCeiling = ceiling.includes(m);
+            const checked = modules.includes(m);
+            return (
+              <label
+                key={m}
+                className={`flex items-center gap-2 text-sm ${inCeiling ? "" : "opacity-40"}`}
+                title={inCeiling ? undefined : "Not in this client's subscription"}
+              >
+                <Checkbox
+                  checked={checked}
+                  onCheckedChange={(v) => toggleModule(m, v === true)}
+                  disabled={!inCeiling || (checked && modules.length === 1)}
+                />
+                {MODULE_TYPE_LABELS[m]}
+              </label>
+            );
+          })}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export interface LocationChip {
   key: string;
   name: string;
@@ -369,6 +412,12 @@ export interface LocationChip {
   kind?: string | null;
   /** When present, the chip shows a compact kind selector (persisted locations only). */
   onKindChange?: (kind: string | null) => void;
+  /** This location's OWN modules (Fix Plan §2.3) — must stay a subset of `moduleCeiling`. */
+  modules?: ModuleType[];
+  /** The client's licensed modules — bounds what can be picked for this location. */
+  moduleCeiling?: readonly ModuleType[];
+  /** When present (with `modules`/`moduleCeiling`), the chip shows a compact module picker. */
+  onModulesChange?: (modules: ModuleType[]) => void;
   inactive?: boolean;
   onRemove?: () => void;
 }
@@ -616,23 +665,34 @@ export function LocationsField({
   return (
     <div className="space-y-2">
       <Label htmlFor={inputId}>Locations</Label>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-col gap-2">
         {locations.map((loc) => (
           <span
             key={loc.key}
-            className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm ${
+            className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm ${
               loc.inactive ? "opacity-50 bg-muted/20" : "bg-muted/40"
             }`}
           >
-            <MapPin className="size-3.5 text-muted-foreground" />
-            {loc.name}
-            {loc.onKindChange && <KindSelect value={loc.kind ?? null} onChange={loc.onKindChange} />}
-            {loc.inactive && <span className="text-xs text-muted-foreground">(inactive)</span>}
+            <MapPin className="size-3.5 text-muted-foreground shrink-0" />
+            <span className="flex-1 min-w-0 truncate">{loc.name}</span>
+            {loc.onKindChange && (
+              <span className="shrink-0 w-auto">
+                <KindSelect value={loc.kind ?? null} onChange={loc.onKindChange} />
+              </span>
+            )}
+            {loc.onModulesChange && loc.modules && loc.moduleCeiling && (
+              <LocationModulesPopover
+                modules={loc.modules}
+                ceiling={loc.moduleCeiling}
+                onChange={loc.onModulesChange}
+              />
+            )}
+            {loc.inactive && <span className="text-xs text-muted-foreground shrink-0">(inactive)</span>}
             {loc.onRemove && (
               <button
                 type="button"
                 onClick={loc.onRemove}
-                className="text-muted-foreground hover:text-foreground"
+                className="text-muted-foreground hover:text-foreground shrink-0"
                 aria-label={`Remove ${loc.name}`}
               >
                 <X className="size-3.5" />
