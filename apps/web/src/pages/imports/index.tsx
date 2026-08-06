@@ -239,9 +239,13 @@ function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (op
         </div>
       </div>
 
+      {/* The drop zone IS the control — the real <input type="file"> is hidden
+          and clicked programmatically. Sighted users read "Drop a file here";
+          a screen reader had only an unnamed role="button". */}
       <div
         role="button"
         tabIndex={0}
+        aria-label={`Choose a file to import. ${aiEnabled ? "CSV, Excel, PDF or image" : "CSV or Excel"}.`}
         aria-disabled={upload.isPending}
         onClick={() => !upload.isPending && inputRef.current?.click()}
         onKeyDown={(e) => !upload.isPending && (e.key === "Enter" || e.key === " ") && inputRef.current?.click()}
@@ -271,6 +275,10 @@ function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (op
         <input
           ref={inputRef}
           type="file"
+          // Hidden from the a11y tree too: the wrapper above is the labelled
+          // control, so exposing this as a second unnamed one is noise.
+          aria-hidden="true"
+          tabIndex={-1}
           hidden
           accept={aiEnabled ? ".csv,.xlsx,.xls,.pdf,.png,.jpg,.jpeg,.webp" : ".csv,.xlsx,.xls"}
           onChange={(e) => {

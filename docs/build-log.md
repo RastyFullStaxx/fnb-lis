@@ -4453,3 +4453,219 @@ reader heard two names and the logo's alt text with nothing saying it switches
 anything — and collapsed to the icon rail there is no visible text at all.
 
 All five harnesses pass; three workspaces typecheck.
+
+## 2026-08-04 — Demo client seeded with maxDevices 2
+
+Prime Hospitality now seeds `maxDevices: 2`; Aurora and Casa Verde keep the
+shipped default of 1. Prime is the client a dev box points at, and
+`verify:mirror` registers its own "Provisioning rehearsal PC" against the REAL
+server under a fixed fingerprint — with one slot, the rehearsal and an actual
+desktop install fight over it, and every re-seed stranded whichever lost. This
+removes one of the three manual steps a database rebuild used to require.
+
+### It broke a harness, and that was the useful part
+
+`verify:sync` asserted *"a second machine is refused by the licence cap"* — the
+cap being 1 was baked in as a constant, so raising it turned a real assertion
+into a failing one. Bumping the number would have been the wrong fix: the test
+would then assert nothing about the cap it claims to check the moment the seed
+changed again.
+
+It now reads `maxDevices` off the subscription, fills exactly that many slots
+(each of which must be ACCEPTED), and asserts the machine *past* the cap is
+refused. Output: `the licence covers 2 machine(s), and all 2 register — 2 of 2`
+and `the machine past the cap is refused — status 403`. The invariant is the
+same; it is no longer pinned to one number.
+
+All five harnesses pass; three workspaces typecheck.
+
+## 2026-08-04 — Dev desktop's device row seeded
+
+The seed now pre-registers `front-bar-pc-fixed-0001` as "Front bar PC" at Main
+Bar — the fingerprint the installed desktop persists in its config and reuses
+across reinstalls (`apps/desktop/src/config.ts`: a random id generated once,
+deliberately not derived from hardware). `resolveDevice` recognises the machine
+on first login instead of registering it afresh, so repeated database rebuilds
+stop leaving a trail of orphan rows eating licence slots.
+
+**It does not remove the setup wizard, and it was never going to.** The desktop's
+stored `locationId` and session belong to the previous database, and locations
+are created with generated ids, so the config is stale after any rebuild whatever
+the Device table says. Going further would mean pinning stable ids across client,
+location and device *and* seeding a known `DevicePin` — a chain of demo fiction
+ending in a published PIN hash. Not worth it.
+
+Seeded deliberately WITHOUT a session or a PIN: the row asserts "this machine is
+known", never "this machine is signed in". Verified on a fresh database —
+`AuthSession` 0, `DevicePin` 0.
+
+The `verify:sync` cap test absorbed this without edits, because it had just been
+rewritten to read `maxDevices` and count existing ACTIVE devices rather than
+assume a starting state: `the licence covers 2 machine(s), and all 2 register —
+2 of 2`, `the machine past the cap is refused — status 403`. Had it still been
+the hard-coded "a second machine is refused", this change would have broken it a
+second time.
+
+All five harnesses pass; three workspaces typecheck.
+
+## 2026-08-05 — Group 1 of 5: arrival & shell
+
+### The public landing page was unreachable
+
+A visitor with no cookies going to `/` was redirected to `/login?expired=1` and
+told **"Your session ended — sign in again to continue."** They had never had a
+session, and they never saw the landing page at all — the exact opposite of
+DESIGN.md, where `/` is the public front door and only SIGNED-IN visitors are
+bounced away.
+
+Cause: the global 401 handler in `main.tsx` exempted `/login` (a failed sign-in
+is a 401 too) but not `/`. The landing page's own session probe 401s for every
+signed-out visitor, so the front door redirected past itself. Now exempt —
+matched exactly, since every real app route lives under `/l/:id` and a prefix
+test would exempt the whole application.
+
+Verified: `/` renders "Your partner in inventory management" with the Full Audit
+verdict card, no false notice.
+
+### No skip-to-content link
+
+A keyboard user crossed seventeen sidebar links before reaching the page on every
+navigation — on an app whose STAFF persona is "keyboard-first speed". Added as
+the first element in the tree; `#page-content` gained `tabIndex={-1}` so focus
+actually lands.
+
+> Three attempts, and the first two were wrong in a way worth recording.
+> `sr-only` + `focus:not-sr-only` left `clip-path: inset(50%)` applied while
+> focused — a keyboard stop nobody could see, worse than none. A Tailwind
+> `focus:` transform variant behaved the same. I then built a React-state
+> version before realising the browser pane reports a **0×0 viewport** and
+> fires no focus events: every geometric measurement I had taken was an
+> artifact, and I was debugging the harness. Reverted to the plain CSS
+> `:focus` rule and verified in the BUILT stylesheet instead —
+> `.skip-link{transform:translateY(-250%)}` / `.skip-link:focus{transform:translateY(0)}`,
+> same layer, `:focus` winning on specificity.
+
+### Walked and sound
+
+Command palette (Ctrl+K): 46 entries across Navigate / Reports / Items / Menus /
+Suppliers. Dashboard: audit stage, next action, attention list and bell all
+agree. Location switcher carries its `aria-label` from the previous pass.
+
+### Caveat
+
+Visual/geometric verification is not currently possible in this browser pane
+(0×0 viewport, no compositing, no focus events). Copy, structure, DOM state and
+built CSS were checked instead; anything genuinely visual in the remaining
+groups needs a human eye or a working pane.
+
+## 2026-08-05 — Group 2 of 5: catalog & master data
+
+### My own grams change left stale copy behind
+
+The New/Edit Category dialog explained Liquid Weight as *"e.g. Vodka is 30.12 ml
+per oz"* while the field beside it now reads **1.0625**. Anyone reading the help
+text against the data would conclude one of them was broken.
+
+Rewritten without a fixed example, because the number is millilitres per ONE unit
+of whatever the bottle's empty weight is recorded in — any hard-coded example is
+wrong for half the installations. Now: *"millilitres per unit of whatever the
+bottle's empty weight is recorded in — per gram if the empty weight is in
+grams"*, with a magnitude hint (spirits ≈ 1.06 ml/g, syrups lower).
+
+The same staleness sat in `packages/core/src/weighing.ts`'s doc comment for
+`densityFactor`. Corrected — comment only, no arithmetic touched, golden anchors
+re-verified (−330.6857142857142 / −537).
+
+> Worth noting: this is the second-order cost of the unit change, and only a
+> walkthrough finds it. Nothing typechecks a sentence.
+
+### Local Database column read as an unexplained number
+
+`Tare / Liquid Wt` rendered `479.1 g / 1.0625`, the second value bare. Renamed to
+**Empty Weight / ml per unit** with a title attribute spelling out the
+relationship — the header is the only place with room to say it.
+
+### Walked and sound
+
+- **Item form** — "Changes apply everywhere this item appears", "Sizes are fixed
+  once created", per-variant "Open content · empty 479.1 g". Grams flow through.
+- **Suppliers** — every field labelled and associated, name autofocused, payment
+  terms humanised ("C.O.D.", "7 Days" rather than `NET_7`).
+- **Recipes** — cost, SRP, margin and sales per menu, with History and New
+  version; versioning is legible without explanation.
+- No unassociated labels anywhere in this group.
+
+`verify:seed` · `verify:races` pass; three workspaces typecheck.
+
+## 2026-08-05 — Groups 4 & 5 of 5: review/reports, admin/settings
+
+Thin pickings, which is the useful result: both areas are in better shape than
+Groups 1 and 2 were.
+
+### Fixed
+
+- **Import drop zone was unnamed to a screen reader.** The visible control is a
+  `role="button"` div; the real `<input type="file">` is hidden and clicked
+  programmatically. Sighted users read "Drop a file here, or click to choose" —
+  assistive tech got an unnamed button and a second unnamed file input. The
+  wrapper now carries an `aria-label` naming the accepted formats, and the
+  hidden input is removed from the a11y tree so it stops being a phantom
+  duplicate.
+- **Settings: two "Add an item" labels bound to nothing**, in the per-item
+  display-unit sections. Given distinct ids (`unit-add-item`,
+  `client-unit-add-item`) — the two blocks are identical markup on one page, so
+  a shared id would have pointed both labels at the same control.
+
+### Checked and sound
+
+- **Report tiering is coherent.** `/reports/variance` refuses with "This report
+  isn't part of your access", and the hub genuinely does not offer it — the
+  Variance Report is `full-audit?variance=only`, a filtered Full Audit. I had
+  reached a slug the hub never advertises. 21 reports enabled for Prime; every
+  one of the hub's 19 cards resolves.
+- **Sales report** renders chart, stat tiles and Excel/CSV/PDF.
+- **Activity** — When / Who / Action / Summary with human summaries beside the
+  action codes, which DESIGN.md sanctions specifically in the trail.
+- **Settings** carries an "Offline desktop PIN" section, so the desktop
+  dead-end guidance added in Group 1 ("open Settings, choose a 6-digit PIN")
+  points at something real. Preferred unit reads "Metric (g / kg)", consistent
+  with the seeded grams.
+
+> A probe of mine produced ten false failures: I called every report endpoint
+> with `begin`/`end`, but several take `from`/`to` and three
+> (bottle-keep, blank-forms, count-sheet) are client-rendered pages with no API
+> endpoint at all. Checked through the UI instead. Worth recording because the
+> failure mode — a malformed probe reading as a broken app — is the same one
+> that produced the 486 "corrupted" rows earlier in this session.
+
+Three workspaces typecheck; `verify:seed` and `verify:races` pass.
+
+## Group 3 — Daily entry (2026-08-06)
+
+The last of the five simulation groups, and the one people touch every shift.
+
+- **The three record kinds now say what they are for.** Sales / Non-Revenue /
+  Production named themselves and nothing else. Picking the wrong one puts the
+  stock in the wrong half of the reconciliation, so each tab carries a line:
+  paid for · left with no money against it · used up making something in-house.
+  Same treatment the count screen's three modes already had.
+- **Receive-transfer grid: the per-row inputs had no accessible name.** A column
+  header does not label a control, so the whole dialog read as anonymous text
+  boxes. Each now names its item.
+- **Its Note column claimed "required when short"; the rule is "when it
+  differs"** — an over-receipt was refused by a validator the header denied
+  existed.
+- **The purchase editor sat on a skeleton forever when the server went away.**
+  A paused query stays `isPending`, and this editor checked only that. The
+  Transfer editor already made the split; the check it hand-rolled is now
+  `queryPaused()` in `table-surface`, used by both.
+- **The Users dialog's client picker had both bugs at once** — a skeleton that
+  never resolved while unreachable, and "No clients exist yet" if the fetch
+  errored. `TableError`/`TableFailure` take a `className` now so the same fill
+  can sit in a dialog field instead of a table body.
+- **Four form controls with a dangling `<Label>`** — the transfer editor's item
+  picker, and Password / Role (both dialogs) in Users. `ItemCombobox` already
+  forwarded an `id` for exactly this; `RoleSelect` now does too.
+
+`verify:seed` passes; web typechecks.
+

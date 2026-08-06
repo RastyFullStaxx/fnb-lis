@@ -222,7 +222,12 @@ export function StockPage() {
                 {/* The weigh control lives in this cell rather than a column of
                     its own — a reserved column costs horizontal scroll on a
                     laptop, which is where counting actually happens. */}
-                <TableHead className="text-right">Tare / Liquid Wt</TableHead>
+                {/* The second number is millilitres per unit of the first, and
+                    rendered bare it read as an unexplained "1.0625". The header
+                    is the only place with room to say so. */}
+                <TableHead className="text-right" title="Empty bottle weight, and millilitres of content per unit of that weight">
+                  Empty Weight / ml per unit
+                </TableHead>
                 <TableHead className="text-right">Status</TableHead>
                 {showAssetDetails && <TableHead className="text-right">Asset Details</TableHead>}
               </TableRow>

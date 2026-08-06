@@ -171,14 +171,17 @@ export function TableError({
   description = "Check your connection and try again.",
   onRetry,
   retrying = false,
+  className,
 }: {
   title?: string;
   description?: string;
   onRetry: () => void;
   retrying?: boolean;
+  /** Override the fill's padding when it sits somewhere tighter than a table body. */
+  className?: string;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 px-6 py-16 text-center">
+    <div className={cn("flex flex-col items-center justify-center gap-2 px-6 py-16 text-center", className)}>
       <p className="text-sm font-medium">{title}</p>
       <p className="max-w-sm text-sm text-muted-foreground">{description}</p>
       <Button size="sm" variant="outline" className="mt-2" onClick={onRetry} disabled={retrying}>
@@ -225,8 +228,19 @@ interface FailableQuery {
  * while the window IS focused means something is genuinely wrong — offline, or
  * a retryer that never resumed — and that deserves saying out loud.
  */
+/**
+ * Offline/unreachable, as opposed to "the server answered with an error".
+ *
+ * Split out because a record editor has to tell the two apart: a paused query
+ * is never a missing record, and it stays `isPending` forever — so an editor
+ * that only checks `isPending` shows a skeleton that never resolves.
+ */
+export function queryPaused(q: FailableQuery): boolean {
+  return q.fetchStatus === "paused" && document.hasFocus();
+}
+
 export function queryFailed(q: FailableQuery): boolean {
-  return q.isError || (q.fetchStatus === "paused" && document.hasFocus());
+  return q.isError || queryPaused(q);
 }
 
 /**
@@ -239,16 +253,19 @@ export function TableFailure({
   query,
   title,
   description,
+  className,
 }: {
   /** One query, or every query the screen needs — retry hits all of them. */
   query: FailableQuery | FailableQuery[];
   title?: string;
   description?: string;
+  className?: string;
 }) {
   const queries = Array.isArray(query) ? query : [query];
   const paused = queries.some((q) => q.fetchStatus === "paused");
   return (
     <TableError
+      className={className}
       title={title}
       description={
         paused

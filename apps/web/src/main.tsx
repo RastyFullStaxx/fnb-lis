@@ -52,8 +52,21 @@ const onApiError = (error: unknown) => {
   }
 
   if (error.status !== 401) return;
-  // Already there — a failed sign-in is a 401 too, and must not bounce.
-  if (window.location.pathname.startsWith("/login")) return;
+  /**
+   * Routes where a 401 is the NORMAL state, not a lost session.
+   *
+   * `/login` was already here — a failed sign-in is a 401 too, and must not
+   * bounce. `/` was not, and it is the public marketing landing: its session
+   * probe 401s for every signed-out visitor, so the front door redirected
+   * first-time arrivals straight past itself and greeted them with "Your
+   * session ended — sign in again to continue." They had never had one, and
+   * they never saw the landing page at all.
+   *
+   * Exact match on "/" on purpose: every real app route lives under `/l/:id`,
+   * and a prefix test would exempt the whole application.
+   */
+  const path = window.location.pathname;
+  if (path === "/" || path.startsWith("/login")) return;
   window.location.assign("/login?expired=1");
 };
 

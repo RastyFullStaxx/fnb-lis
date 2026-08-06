@@ -41,7 +41,12 @@ async function seedClients() {
   // KITCHEN only.
   const prime = await upsertClientWithSubscription(
     "Prime Hospitality Group",
-    { billingCycle: "MONTHLY", modules: ["BAR", "KITCHEN"], maxEntities: 5, maxUsers: 10 },
+    // maxDevices 2, not the shipped default of 1: this is the demo client a dev
+    // machine points at, and `verify:mirror` registers its own "Provisioning
+    // rehearsal PC" against the REAL server under a fixed fingerprint. With one
+    // slot the rehearsal and the actual desktop install fight over it, and every
+    // re-seed strands whichever lost — see verify-mirror.mjs's own header.
+    { billingCycle: "MONTHLY", modules: ["BAR", "KITCHEN"], maxEntities: 5, maxUsers: 10, maxDevices: 2 },
     admin?.id,
   );
   // Prime legitimately splits one operation into two locations — "Main Bar"
@@ -49,8 +54,40 @@ async function seedClients() {
   // Food). This is the real, supported "one location per module" pattern
   // (packaging-model-fix-plan.md §1.2): each location's own LocationModule
   // set is a strict subset of Prime's {BAR, KITCHEN} subscription ceiling.
-  await upsertLocationWithModules(prime.id, "Main Bar", ["BAR"]);
+  const mainBar = await upsertLocationWithModules(prime.id, "Main Bar", ["BAR"]);
   await upsertLocationWithModules(prime.id, "Kitchen", ["KITCHEN"]);
+
+  /**
+   * The dev desktop's machine, pre-registered.
+   *
+   * `front-bar-pc-fixed-0001` is the fingerprint the installed app persists in
+   * its config and reuses across reinstalls (see apps/desktop/src/config.ts —
+   * a random id generated once, deliberately NOT derived from hardware). Seeding
+   * a Device with it means `resolveDevice` recognises the machine on first login
+   * instead of registering it afresh, so repeated database rebuilds stop leaving
+   * a trail of orphan rows eating licence slots.
+   *
+   * What this does NOT do is spare the setup wizard: the desktop's stored
+   * `locationId` and session belong to the previous database, and locations are
+   * created with generated ids, so the config is stale regardless. Removing the
+   * wizard step as well would mean pinning stable ids across client, location
+   * AND device, and seeding a known DevicePin — a chain of demo fiction ending
+   * in a published PIN hash, which is not worth it.
+   *
+   * No session and no PIN is issued here: this row asserts "this machine is
+   * known", never "this machine is signed in".
+   */
+  await prisma.device.upsert({
+    where: { fingerprint: "front-bar-pc-fixed-0001" },
+    update: { clientId: prime.id, locationId: mainBar.id, status: "ACTIVE" },
+    create: {
+      clientId: prime.id,
+      locationId: mainBar.id,
+      name: "Front bar PC",
+      fingerprint: "front-bar-pc-fixed-0001",
+      status: "ACTIVE",
+    },
+  });
 
   const casa = await upsertClientWithSubscription(
     "Casa Verde Restaurant",
@@ -117,7 +154,14 @@ async function seedClients() {
 
 async function upsertClientWithSubscription(
   name: string,
-  sub: { billingCycle: "MONTHLY" | "STANDALONE"; modules: readonly string[]; maxEntities: number; maxUsers: number },
+  sub: {
+    billingCycle: "MONTHLY" | "STANDALONE";
+    modules: readonly string[];
+    maxEntities: number;
+    maxUsers: number;
+    /** Omitted = the Prisma default of 1, which is the shipped assumption. */
+    maxDevices?: number;
+  },
   createdById?: string,
 ) {
   const existing = await prisma.client.findFirst({ where: { name } });
@@ -135,6 +179,7 @@ async function upsertClientWithSubscription(
       billingCycle: sub.billingCycle,
       maxEntities: sub.maxEntities,
       maxUsers: sub.maxUsers,
+      ...(sub.maxDevices !== undefined ? { maxDevices: sub.maxDevices } : {}),
       status: "ACTIVE",
       startDate: "2026-01-01",
       createdById: createdById ?? null,

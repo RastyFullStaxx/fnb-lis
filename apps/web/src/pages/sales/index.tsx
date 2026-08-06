@@ -55,19 +55,29 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
-const KIND_COPY: Record<SaleKind, { title: string; button: string; saved: string }> = {
+/**
+ * `hint` exists because three tabs sat here naming themselves and nothing else.
+ * "Sales" is self-evident; "Non-revenue" and "Production" are the establishment's
+ * own vocabulary, and picking the wrong one puts the stock in the wrong half of
+ * the reconciliation — it still leaves the shelf either way, but only one of
+ * them is expected to have money against it.
+ */
+const KIND_COPY: Record<SaleKind, { title: string; hint: string; button: string; saved: string }> = {
   SALE: {
     title: "Record a Sale",
+    hint: "Stock a customer paid for.",
     button: "Save Sale",
     saved: "Sale recorded",
   },
   NON_REVENUE: {
     title: "Record Non-Revenue Use",
+    hint: "Stock that left with no money against it — comped, spilled, staff drinks, spoilage.",
     button: "Save Non-Revenue",
     saved: "Non-revenue use recorded",
   },
   PRODUCTION: {
     title: "Record Production Use",
+    hint: "Stock used up making something else in-house, like a batch of syrup or juice.",
     button: "Save Production",
     saved: "Production use recorded",
   },
@@ -540,6 +550,7 @@ function QuickEntry({ kind }: { kind: SaleKind }) {
     // you've measured against the real pane at the real root size.
     <div className="@container space-y-5">
       <h3 className="font-medium">{copy.title}</h3>
+      <p className="-mt-1 text-xs text-muted-foreground">{copy.hint}</p>
 
       <div className="grid gap-3 @xs:grid-cols-[minmax(0,1fr)_auto]">
         <div className="space-y-2">
