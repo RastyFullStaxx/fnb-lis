@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { zValidator } from "../lib/validate";
 import {
   checkContentVsHistory,
+  checkQtyVsHistory,
   commitRequest,
   countLineCreate,
   countSessionCreate,
@@ -20,7 +21,7 @@ import {
 import { prisma, type Tx } from "../db";
 import { AppError } from "../lib/errors";
 import { replay } from "../lib/idempotency";
-import { getTrailingAverage } from "../lib/weigh-history";
+import { getTrailingAverage, getTrailingFullQty } from "../lib/weigh-history";
 import {
   assertExpectedStatus,
   holdParentOpen,
@@ -258,17 +259,34 @@ async function checkOutlierWarnings(
   locationItem: { id: string; itemVariant: { size: number; weighMode: string | null; contentTracked: boolean } },
   data: {
     countType: string;
+    qtyFull: number;
     remainingContent: number;
     scaleWeight: number | null;
     tareWeight: number | null;
     densityFactor: number | null;
   },
   entryPath: "scale" | "openAmount" | "totalAmount" | "full",
+  /** The row just written -- kept out of its own baseline, see weigh-history.ts. */
+  lineId?: string,
 ): Promise<WeighWarning[]> {
+  /**
+   * FULL lines -- the shelf count -- were excluded from every check until now,
+   * which left the product's most-used entry path as its least guarded one. An
+   * extra digit here does not look wrong on screen and lands straight in a
+   * report anchor.
+   *
+   * Checked server-side and not only in the browser for the same reason the
+   * weigh paths are: a device push or a direct API call never renders a live
+   * preview, and the anchor it writes is just as load-bearing.
+   */
+  if (data.countType === "FULL") {
+    const warning = checkQtyVsHistory(data.qtyFull, await getTrailingFullQty(locationItem.id, lineId));
+    return warning ? [warning] : [];
+  }
   if (data.countType !== "WEIGH") return [];
   if (entryPath === "totalAmount") return [];
 
-  const trailingAverage = await getTrailingAverage(locationItem.id);
+  const trailingAverage = await getTrailingAverage(locationItem.id, lineId);
 
   // Weigh Partial (scale reading present): re-run the same validator the
   // live preview used, from the stored scale/tare/density — recomputing
@@ -308,6 +326,7 @@ async function logOutlierWarnings(
   locationItem: { id: string; itemVariant: { size: number; weighMode: string | null; contentTracked: boolean; item: { name: string } } },
   data: {
     countType: string;
+    qtyFull: number;
     remainingContent: number;
     scaleWeight: number | null;
     tareWeight: number | null;
@@ -317,18 +336,24 @@ async function logOutlierWarnings(
   lineId: string,
   tx?: Tx,
 ): Promise<void> {
-  const warnings = await checkOutlierWarnings(locationItem, data, entryPath);
+  const warnings = await checkOutlierWarnings(locationItem, data, entryPath, lineId);
   for (const warning of warnings) {
     await logActivity(
       {
         user,
         clientId: location.clientId,
         locationId: location.id,
-        action: "countLine.weighOutlier",
+        action: warning.code === "QTY_UNUSUAL_VS_HISTORY" ? "countLine.qtyOutlier" : "countLine.weighOutlier",
         entity: "CountLine",
         entityId: lineId,
-        summary: `Weigh outlier on ${locationItem.itemVariant.item.name}: ${warning.message}`,
-        details: { code: warning.code, remainingContent: data.remainingContent },
+        summary:
+          warning.code === "QTY_UNUSUAL_VS_HISTORY"
+            ? `Count outlier on ${locationItem.itemVariant.item.name}: ${warning.message}`
+            : `Weigh outlier on ${locationItem.itemVariant.item.name}: ${warning.message}`,
+        details:
+          warning.code === "QTY_UNUSUAL_VS_HISTORY"
+            ? { code: warning.code, qtyFull: data.qtyFull }
+            : { code: warning.code, remainingContent: data.remainingContent },
       },
       tx,
     );

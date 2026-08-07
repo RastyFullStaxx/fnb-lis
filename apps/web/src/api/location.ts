@@ -55,7 +55,7 @@ export function useTrailingAverage(locationItemId: string | null) {
   return useQuery({
     queryKey: ["trailingAverage", locationId, locationItemId],
     queryFn: () =>
-      api<{ trailingAverage: number | null }>(`${base(locationId)}/location-items/${locationItemId}/trailing-average`),
+      api<{ trailingAverage: number | null; trailingFullQty: number | null }>(`${base(locationId)}/location-items/${locationItemId}/trailing-average`),
     enabled: locationItemId != null,
   });
 }

@@ -5,7 +5,7 @@ import { clutterCandidates } from "../services/report-lists";
 import { prisma } from "../db";
 import { AppError } from "../lib/errors";
 import { assertNotQueuedEdit } from "../lib/two-way";
-import { getTrailingAverage } from "../lib/weigh-history";
+import { getTrailingAverage, getTrailingFullQty } from "../lib/weigh-history";
 import { logActivity } from "../services/activity";
 import { generateAssetCode } from "../services/asset-supplier";
 import { requirePermission, type AppEnv } from "../middleware/auth";
@@ -217,8 +217,11 @@ export const locationItemRoutes = new Hono<AppEnv>()
     const itemId = c.req.param("id");
     const existing = await prisma.locationItem.findUnique({ where: { id: itemId } });
     if (!existing || existing.locationId !== location.id) throw new AppError(404, "Catalog item not found");
-    const trailingAverage = await getTrailingAverage(itemId);
-    return c.json({ trailingAverage });
+    const [trailingAverage, trailingFullQty] = await Promise.all([
+      getTrailingAverage(itemId),
+      getTrailingFullQty(itemId),
+    ]);
+    return c.json({ trailingAverage, trailingFullQty });
   })
 
   .put("/location-items/:id", priceGuard, zValidator("json", locationItemUpdate), async (c) => {
