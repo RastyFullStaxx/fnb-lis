@@ -628,11 +628,41 @@ export const countRoutes = new Hono<AppEnv>()
         },
         select: { id: true },
       });
-      if (rival) {
+      /**
+       * A BROWSER commit is refused; a DEVICE push is accepted and surfaced.
+       *
+       * The refusal is the right answer for someone sitting in front of the
+       * app: they can see the other count, and the message tells them how to
+       * resolve it. It is the wrong answer for a desktop replaying its outbox.
+       * That machine was offline when it counted; the rival appeared while it
+       * could not see the server. Refusing gives it an operation that can never
+       * succeed, and per the ordered-outbox rule a failed operation stops its
+       * whole chain -- one unlucky count would wedge every later record behind
+       * it. So the push lands and the duplicate goes to the review surface
+       * instead, which is what sync-and-data-lifecycle §7.4 says to do with a
+       * double entry no algorithm can adjudicate: surface it, let a human
+       * decide, never resolve it silently.
+       */
+      if (rival && !user.deviceId) {
         throw new AppError(
           409,
           `A count for ${session.countDate} has already been committed at this location. Two committed counts for one date would be added together, not compared. Void that one first, or move this count to a different date.`,
           "DUPLICATE_COUNT_DATE",
+        );
+      }
+      if (rival) {
+        await logActivity(
+          {
+            user,
+            clientId: location.clientId,
+            locationId: location.id,
+            action: "count.duplicateDate",
+            entity: "CountSession",
+            entityId: session.id,
+            summary: `Second count committed for ${session.countDate} from an offline machine — both are in the report until someone voids one`,
+            details: { rivalId: rival.id, countDate: session.countDate },
+          },
+          tx,
         );
       }
       // Compare-and-set, not a bare update: the `status !== "OPEN"` check above

@@ -37,6 +37,16 @@ export interface DashboardData {
         silently didn't — a half-entered transfer holds stock in limbo at BOTH
         ends until it is committed. */
     draftTransfers: number;
+    /**
+     * Dates carrying MORE THAN ONE committed count. The browser can no longer
+     * create this; it arrives from a machine that counted while offline and
+     * pushed afterwards (sync doc §7.4). It sits in the bell rather than being
+     * refused because a refused push wedges that device's whole outbox -- and
+     * because the report is wrong until a person picks which count is real:
+     * the anchor sums both sessions, so the period's beginning or ending
+     * inventory is inflated meanwhile.
+     */
+    duplicateCountDates: number;
     /** locationItem.priceChange rows (cost actually changed, see 46.1's
         guard) at this location since `since` was passed to buildDashboard —
         this user's own activityViewedAt preference, not a global count
@@ -116,6 +126,7 @@ export async function buildDashboard(
     priceChangeRows,
     bottleKeepsDue,
     draftTransfers,
+    committedByDate,
   ] = await Promise.all([
     committedCountDates(locationId),
     prisma.locationItem.findMany({
@@ -223,6 +234,13 @@ export async function buildDashboard(
     // owns it and is the only side that can edit or commit it (§7.2). Counting
     // it at the destination would badge someone who cannot act on it.
     prisma.transfer.count({ where: { fromLocationId: locationId, status: "DRAFT" } }),
+    // One row per date that has a committed count, with how many. More than
+    // one is the §7.4 duplicate: the report's anchor sums them.
+    prisma.countSession.groupBy({
+      by: ["countDate"],
+      where: { locationId, status: "COMMITTED" },
+      _count: { _all: true },
+    }),
   ]);
 
   const lastCountDate = dates.at(-1) ?? null;
@@ -304,6 +322,7 @@ export async function buildDashboard(
       latest,
     },
     attention: {
+      duplicateCountDates: committedByDate.filter((row) => row._count._all > 1).length,
       missingPrices,
       missingWeights,
       weightReviews,

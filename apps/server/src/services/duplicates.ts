@@ -16,7 +16,7 @@ import { prisma } from "../db";
  */
 
 export interface DuplicateGroup {
-  kind: "SALE" | "PURCHASE";
+  kind: "SALE" | "PURCHASE" | "COUNT";
   businessDate: string;
   itemName: string;
   qty: number;
@@ -129,6 +129,59 @@ export async function suspectedDuplicates(locationId: string, from?: string): Pr
         createdAt: l.createdAt,
         createdByName: l.createdByName,
         source: label(l.purchase.originDeviceId),
+      })),
+    });
+  }
+
+  /**
+   * Two COMMITTED counts on one date -- the worst of the three, and the reason
+   * this surface now covers counts at all.
+   *
+   * Sales and deliveries duplicate ADDITIVELY: one extra row overstates that
+   * item by its own quantity. A count is an ANCHOR: `buildFullAudit` selects
+   * by {locationId, countDate, status} and sums every line it finds, so a
+   * second session does not sit beside the first, it inflates the beginning or
+   * ending inventory of the whole period. Measured before the guard landed, a
+   * stray line took one item from 1 to 100 and reported a 99-unit short.
+   *
+   * The browser can no longer create this (routes/counts.ts refuses). It
+   * arrives only from a machine that was offline when it counted, which is
+   * exactly the case §7.4 says to surface rather than adjudicate.
+   *
+   * No "different sources" test here, unlike the two above. For a sale that
+   * filter is what keeps the list short -- two identical rounds of drinks from
+   * one browser are usually real. Two committed counts for one date are never
+   * fine, whatever wrote them.
+   */
+  const sessions = await prisma.countSession.findMany({
+    where: { locationId, status: "COMMITTED", countDate: from ? { gte: from } : undefined },
+    select: {
+      id: true,
+      countDate: true,
+      createdAt: true,
+      createdByName: true,
+      originDeviceId: true,
+      _count: { select: { lines: true } },
+    },
+  });
+  const byDate = new Map<string, typeof sessions>();
+  for (const cs of sessions) {
+    const list = byDate.get(cs.countDate);
+    if (list) list.push(cs);
+    else byDate.set(cs.countDate, [cs]);
+  }
+  for (const [countDate, list] of byDate) {
+    if (list.length < 2) continue;
+    groups.push({
+      kind: "COUNT",
+      businessDate: countDate,
+      itemName: `Whole count for ${countDate}`,
+      qty: list.reduce((total, cs) => total + cs._count.lines, 0),
+      records: list.map((cs) => ({
+        id: cs.id,
+        createdAt: cs.createdAt,
+        createdByName: cs.createdByName,
+        source: label(cs.originDeviceId),
       })),
     });
   }

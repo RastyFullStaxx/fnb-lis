@@ -4811,3 +4811,107 @@ scopes the checks to Weigh Partial and Open Amount. Reusing the existing
 trailing-average machinery for full counts would be a small feature, and it is
 the client's call, not a bug to fix quietly.
 
+## Outlier warning for full counts (2026-08-06)
+
+Requested after the last audit flagged it. The shelf count -- the most-used
+entry path -- had no sanity check of any kind, so an extra digit landed
+straight in a report anchor.
+
+- `checkQtyVsHistory()` in `@fnb/core`, sibling of `checkContentVsHistory` and
+  the same shape: pure, caller supplies the average, silent without history.
+- `COUNT_OUTLIER_HIGH_RATIO = 5`, its own constant. **High side only.** A low
+  count is ordinary bar life -- an item sells out and zero is the right answer
+  -- and a warning that fires on every stockout would be ignored within a week,
+  taking the weigh warnings sharing that strip down with it. An extra digit only
+  ever reads high.
+- Live at entry (same warning strip as Open Amount, so all three modes look
+  alike) and again at save, which is the only coverage a device push or a direct
+  API call gets. `countLine.qtyOutlier` in the trail, distinct from
+  `countLine.weighOutlier` so an auditor filtering for scale trouble is not
+  handed shelf-count noise.
+
+Verified: quiet at 13 against a history of ~13, logged at 1300; on screen,
+quiet at 2 and warning at 200 for an item averaging 2.
+
+### The bug the probe found: the outlier polluted its own baseline
+
+The first probe logged nothing. The save-time check runs AFTER the row is
+written, so the new value sat inside its own trailing average -- and the
+arithmetic caps the ratio at the sample size. With N = 5 and one value V against
+four others summing to s, the ratio is 5V/(V+s): it approaches 5 from below and
+never reaches it. **100,000 bottles against a history of 13 scores 4.99**, and
+the high threshold IS 5.
+
+So the save-time high-side check could never fire on any input -- and that is
+**pre-existing**: the weigh path has run this way since it shipped. The live
+preview was always right (it runs before the row exists); only the server copy,
+the one covering the paths with no preview at all, was dead.
+
+Both queries now exclude the row being checked. Re-probed: a 27,000-bottle count
+logs `countLine.qtyOutlier`, and a 40x weigh reading logs
+`CONTENT_UNUSUAL_VS_HISTORY` for the first time.
+
+### And lines from voided sessions were still history
+
+Voiding a session flips the SESSION; its lines keep `status: "ACTIVE"`. So a
+count thrown away as a mistake went on shaping every future warning for those
+items. Measured on my own probe rows: one voided session had moved an item's
+baseline from 13 to 5,717. Both history queries now skip voided sessions --
+the same baseline reads 15.2 afterwards.
+
+### verify:sync: the ownership test shared a date with the anchor rule
+
+`verify:sync` opened a browser-owned and a desktop-owned count on the SAME date
+to test draft ownership, then committed both -- so the anchor rule refused the
+second and the bodyless-commit assertion after it read as a regression. The
+dates are now different; that block tests who may edit and commit, and sharing a
+date was incidental to it.
+
+**Open question for the client/build, not settled here:** sync-and-data-lifecycle
+§7 already names "two sessions for one date" as the §7.4 duplicate problem, and
+§7.4's stated approach is to surface duplicates for a human, never to auto-refuse.
+The anchor rule refuses instead. For a browser user that is right -- the refusal
+is the human decision point. For a DEVICE replaying an outbox it may not be: a
+commit that can never succeed wedges that chain. Worth deciding before the
+Electron outbox lands.
+
+All five harnesses pass; both workspaces typecheck.
+
+## Duplicate count dates: refuse the browser, surface the device (2026-08-06)
+
+Resolves the open question logged above. The anchor rule stands, but it now
+answers its two callers differently.
+
+**Browser: still refused.** The person is looking at the app, can see the other
+count, and the message names both ways out. That refusal IS the human decision
+point §7.4 asks for.
+
+**Device: accepted, then surfaced.** A desktop replaying its outbox counted
+while offline; the rival appeared where it could not see it. Refusing hands that
+machine an operation that can never succeed, and under the ordered-outbox rule a
+failed operation stops its whole chain -- one unlucky count would wedge every
+record queued behind it. So the push lands and the duplicate goes to review,
+which is what §7.4 says to do with a double entry no algorithm can adjudicate.
+
+Three places it now shows up, because a review surface nobody opens catches
+nothing:
+
+- `count.duplicateDate` in the activity trail, written in the commit
+  transaction.
+- `GET /sync/duplicates` gained a **COUNT** kind. No "different sources" filter,
+  unlike SALE and PURCHASE: for a sale that filter is what keeps the list short
+  (two identical rounds of drinks from one browser are usually real), but two
+  committed counts for one date are never fine, whatever wrote them.
+- The **attention bell**, under *Needs review*, gated on `entries.void` -- the
+  only right there is to fix it. Everything else in that list is work waiting to
+  happen; this one is a number already being read, so it sits at the top.
+
+Verified in `verify:sync`, which owns a real device session: the browser's
+second commit for the date is refused 409, the device's lands 200, the trail
+carries one `count.duplicateDate` row, and the group reaches
+`/sync/duplicates` as kind COUNT. In the browser, the Depot -- which carries two
+seeded duplicate dates -- shows *"2 dates have two committed counts — the report
+adds both"* on the dashboard and in the bell.
+
+All five harnesses pass; both workspaces typecheck.
+

@@ -429,7 +429,13 @@ const main = async () => {
   const deskCount = await desk2.call(`/api/locations/${loc.id}/counts`, {
     method: "POST",
     headers: { "x-acting-user": staffUser!.id },
-    body: JSON.stringify({ countDate: "2026-07-29", name: "Desktop-owned count" }),
+    // A DIFFERENT date from the browser-owned count above. This block tests
+    // draft OWNERSHIP -- who may add lines, who may commit -- and sharing a
+    // date was incidental to that. It stopped being free once the anchor rule
+    // landed (one committed count per location per date, routes/counts.ts):
+    // both sessions commit here, so the second was refused and the bodyless
+    // commit below read as a regression it was not.
+    body: JSON.stringify({ countDate: "2026-07-30", name: "Desktop-owned count" }),
   });
   const deskCountId = (deskCount.body as { id: string }).id;
   ok("desktop opens a count", deskCount.status === 201, `status ${deskCount.status}`);
@@ -485,6 +491,72 @@ const main = async () => {
   });
   ok("commit still works with no body (unchanged browser behaviour)", bareCommit.status === 200, `status ${bareCommit.status}`);
 
+  // ── The anchor rule, and why the two callers are treated differently ──
+  //
+  // One committed count per location per date: `buildFullAudit` selects by
+  // {locationId, countDate, status} and SUMS what it finds, so a second session
+  // inflates the period's beginning or ending inventory rather than sitting
+  // beside the first.
+  //
+  // A browser commit is refused -- the person can see the other count and the
+  // message says how to fix it. A DEVICE push is accepted, because refusing it
+  // hands that machine an operation that can never succeed, and the ordered
+  // outbox stops the whole chain behind a failed one: a single unlucky count
+  // would wedge every record queued after it. The duplicate goes to the review
+  // surface instead (§7.4 -- surface it, let a human decide, never silently).
+  console.log("\nAnchor rule — one committed count per date, per caller");
+  const DUP = "2026-07-31";
+  const dupWeb = await browser.call(`/api/locations/${loc.id}/counts`, {
+    method: "POST",
+    body: JSON.stringify({ countDate: DUP, name: "Browser count" }),
+  });
+  const dupWebId = (dupWeb.body as { id: string }).id;
+  await browser.call(`/api/locations/${loc.id}/counts/${dupWebId}/lines`, {
+    method: "POST",
+    body: JSON.stringify({ locationItemId: item.id, countType: "FULL", qtyFull: 2 }),
+  });
+  ok("browser commits the first count for the date",
+    (await browser.call(`/api/locations/${loc.id}/counts/${dupWebId}/commit`, { method: "POST" })).status === 200);
+
+  const dupWeb2 = await browser.call(`/api/locations/${loc.id}/counts`, {
+    method: "POST",
+    body: JSON.stringify({ countDate: DUP, name: "Browser second count" }),
+  });
+  const dupWeb2Id = (dupWeb2.body as { id: string }).id;
+  await browser.call(`/api/locations/${loc.id}/counts/${dupWeb2Id}/lines`, {
+    method: "POST",
+    body: JSON.stringify({ locationItemId: item.id, countType: "FULL", qtyFull: 3 }),
+  });
+  const secondBrowser = await browser.call(`/api/locations/${loc.id}/counts/${dupWeb2Id}/commit`, { method: "POST" });
+  ok("a SECOND browser commit for that date is refused", secondBrowser.status === 409, `status ${secondBrowser.status}`);
+
+  const dupDesk = await desk2.call(`/api/locations/${loc.id}/counts`, {
+    method: "POST",
+    headers: { "x-acting-user": staffUser!.id },
+    body: JSON.stringify({ countDate: DUP, name: "Offline machine count" }),
+  });
+  const dupDeskId = (dupDesk.body as { id: string }).id;
+  await desk2.call(`/api/locations/${loc.id}/counts/${dupDeskId}/lines`, {
+    method: "POST",
+    headers: { "x-acting-user": staffUser!.id },
+    body: JSON.stringify({ locationItemId: item.id, countType: "FULL", qtyFull: 4 }),
+  });
+  const deskCommit = await desk2.call(`/api/locations/${loc.id}/counts/${dupDeskId}/commit`, {
+    method: "POST",
+    headers: { "x-acting-user": staffUser!.id },
+  });
+  ok("but the DEVICE push lands, so its outbox is not wedged", deskCommit.status === 200, `status ${deskCommit.status}`);
+
+  const flagged = await prisma.activityLog.count({
+    where: { action: "count.duplicateDate", entityId: dupDeskId },
+  });
+  ok("and it is flagged in the trail, not swallowed", flagged === 1, `rows: ${flagged}`);
+
+  const dupReview = await browser.call(`/api/locations/${loc.id}/sync/duplicates`);
+  const dupGroups = (dupReview.body as { groups: Array<{ kind: string; businessDate: string }> }).groups ?? [];
+  ok("and it reaches the duplicate review surface",
+    dupGroups.some((g) => g.kind === "COUNT" && g.businessDate === DUP),
+    `groups: ${dupGroups.map((g) => g.kind).join(",") || "none"}`);
   console.log("\nRule 3 — catalog edits cannot be queued offline");
   // NO acting-user header: the actor is the owner, who HAS prices.edit. With a
   // STAFF acting user this returned 403 from the permission guard and never
