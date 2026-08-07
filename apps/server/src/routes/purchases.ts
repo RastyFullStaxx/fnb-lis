@@ -13,6 +13,7 @@ import {
 } from "@fnb/core";
 import { prisma } from "../db";
 import { AppError } from "../lib/errors";
+import { assertPeriodOpen } from "../lib/period-lock";
 import { replay } from "../lib/idempotency";
 import {
   assertExpectedStatus,
@@ -34,9 +35,11 @@ const LI_INCLUDE = {
   locationItem: { include: { itemVariant: { include: { unit: true, item: { include: { category: true } } } } } },
 } as const;
 
+/** Mutation chokepoint — see the note in routes/counts.ts. */
 async function getOwnedPurchase(locationId: string, purchaseId: string) {
   const purchase = await prisma.purchase.findUnique({ where: { id: purchaseId } });
   if (!purchase || purchase.locationId !== locationId) throw new AppError(404, "Purchase not found");
+  await assertPeriodOpen(locationId, purchase.purchaseDate, "delivery");
   return purchase;
 }
 
@@ -78,6 +81,7 @@ export const purchaseRoutes = new Hono<AppEnv>()
 
   .post("/purchases", createGuard, zValidator("json", purchaseCreate), async (c) => {
     const location = c.get("location");
+    await assertPeriodOpen(location.id, c.req.valid("json").purchaseDate, "delivery");
     const user = c.get("user")!;
     const body = c.req.valid("json");
 
@@ -382,6 +386,7 @@ export const purchaseRoutes = new Hono<AppEnv>()
 
   .post("/forfeits", createGuard, zValidator("json", forfeitCreate), async (c) => {
     const location = c.get("location");
+    await assertPeriodOpen(location.id, c.req.valid("json").forfeitDate, "returned bottle");
     const user = c.get("user")!;
     const body = c.req.valid("json");
 
@@ -468,6 +473,7 @@ export const purchaseRoutes = new Hono<AppEnv>()
     const { reason } = c.req.valid("json");
     const forfeit = await prisma.forfeit.findUnique({ where: { id: c.req.param("id") }, include: LI_INCLUDE });
     if (!forfeit || forfeit.locationId !== location.id) throw new AppError(404, "Record not found");
+    await assertPeriodOpen(location.id, forfeit.forfeitDate, "returned bottle");
     if (forfeit.status === "VOID") throw new AppError(409, "Already voided");
     const voided = await prisma.$transaction(async (tx) => {
       const updated = await tx.forfeit.update({

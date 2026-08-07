@@ -11,6 +11,15 @@ import {
   type Role,
 } from "@fnb/core";
 import { useClearDevicePin, useDevicePin, useMe, useSetDevicePin } from "@/api/auth";
+import { usePeriodLockMutations, usePeriodLocks, type PeriodLock } from "@/api/reports";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useAreaMutations, useAreas, useCurrentClient, useLocationId } from "@/api/location";
 import { useProductTypes } from "@/api/master";
 import {
@@ -80,6 +89,7 @@ export function SettingsPage() {
           {can(role, "master.write") && <AdminItemUnitDefaultSection />}
           {can(role, "master.write") && <StorageAreasSection />}
           {can(role, "master.write") && <CatalogExportSection />}
+          {can(role, "entries.void") && <ClosedPeriodsSection />}
           {can(role, "admin.manage") && <ProductTypesSection />}
         </SettingsGroup>
       </div>
@@ -1079,6 +1089,144 @@ function ProductTypesSection() {
           </Button>
         </div>
       )}
+    </SettingsSection>
+  );
+}
+
+/**
+ * Closed periods (Phase 2, 2026-08-06).
+ *
+ * The client asked whether a revised Final Report can be compared against the
+ * original. The Versions screen answers that. This section answers the question
+ * underneath it: why did a final report get revised at all? Because nothing
+ * ever said the period was finished.
+ *
+ * Sits in "Establishment settings" beside Cost Basis and Variance Threshold —
+ * the other two controls whose effect is felt by everyone, on every screen.
+ */
+function ClosedPeriodsSection() {
+  const locks = usePeriodLocks();
+  const { lock, release } = usePeriodLockMutations();
+  const [begin, setBegin] = useState("");
+  const [end, setEnd] = useState("");
+  const [reason, setReason] = useState("");
+  const [releasing, setReleasing] = useState<PeriodLock | null>(null);
+  const [releaseReason, setReleaseReason] = useState("");
+
+  const rows = locks.data?.locks ?? [];
+  const closed = rows.filter((l) => l.status === "LOCKED");
+
+  const submit = async () => {
+    if (!begin || !end) return toast.error("Pick both dates");
+    if (end < begin) return toast.error("The closing date cannot be before the opening date");
+    try {
+      await lock.mutateAsync({ begin, end, reason: reason.trim() || undefined });
+      toast.success(`Closed ${begin} → ${end}`);
+      setBegin(""); setEnd(""); setReason("");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not close the period");
+    }
+  };
+
+  const submitRelease = async () => {
+    if (releaseReason.trim().length < 3) return toast.error("Say why the period is being reopened");
+    try {
+      await release.mutateAsync({ id: releasing!.id, reason: releaseReason.trim() });
+      toast.success("Reopened — the reason is on the record");
+      setReleasing(null); setReleaseReason("");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not reopen the period");
+    }
+  };
+
+  return (
+    <SettingsSection
+      title="Closed Periods"
+      description="Closing a period freezes its figures: no counts, sales, deliveries, transfers or returns inside those dates can be added, corrected or voided. Reopening is allowed, needs a reason, and is recorded."
+    >
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="space-y-2">
+            <Label htmlFor="lock-begin">From</Label>
+            <Input id="lock-begin" type="date" className="tnum w-44" value={begin} onChange={(e) => setBegin(e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="lock-end">To</Label>
+            <Input id="lock-end" type="date" className="tnum w-44" value={end} onChange={(e) => setEnd(e.target.value)} />
+          </div>
+          <div className="min-w-[14rem] flex-1 space-y-2">
+            <Label htmlFor="lock-reason">Reason (optional)</Label>
+            <Input id="lock-reason" placeholder="e.g. Signed off with the client" value={reason} onChange={(e) => setReason(e.target.value)} />
+          </div>
+          <Button onClick={submit} disabled={lock.isPending || !begin || !end}>
+            {lock.isPending ? "Closing…" : "Close Period"}
+          </Button>
+        </div>
+
+        {closed.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No periods are closed. Every date is open for entry.</p>
+        ) : (
+          <div className="rounded-md border">
+            {closed.map((l) => (
+              <div key={l.id} className="flex flex-wrap items-center gap-3 border-b px-3 py-2.5 text-sm last:border-b-0">
+                <span className="tnum font-medium">{l.begin} → {l.end}</span>
+                <span className="text-muted-foreground">
+                  closed by {l.lockedByName}
+                  {l.reason ? ` · ${l.reason}` : ""}
+                </span>
+                <Button variant="outline" size="xs" className="ml-auto" onClick={() => setReleasing(l)}>
+                  Reopen
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Reopened periods stay listed. A period that was closed and then
+            reopened is a more interesting fact than one that was never closed,
+            and deleting the row would hide exactly that. */}
+        {rows.some((l) => l.status === "RELEASED") && (
+          <details className="text-sm">
+            <summary className="cursor-pointer text-muted-foreground">Previously closed, since reopened</summary>
+            <div className="mt-2 space-y-1.5">
+              {rows.filter((l) => l.status === "RELEASED").map((l) => (
+                <p key={l.id} className="text-muted-foreground">
+                  <span className="tnum">{l.begin} → {l.end}</span> — reopened
+                  {l.releaseReason ? `: ${l.releaseReason}` : ""}
+                </p>
+              ))}
+            </div>
+          </details>
+        )}
+      </div>
+
+      <Dialog open={releasing !== null} onOpenChange={(o) => !o && setReleasing(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reopen {releasing?.begin} → {releasing?.end}?</DialogTitle>
+            <DialogDescription>
+              Entries in these dates become editable again, and every report covering them can move. The reason
+              below goes on the permanent record.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="release-reason">Why is it being reopened?</Label>
+            <Input
+              id="release-reason"
+              placeholder="e.g. Client disputed the ending count"
+              value={releaseReason}
+              onChange={(e) => setReleaseReason(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && void submitRelease()}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReleasing(null)}>Keep It Closed</Button>
+            <Button onClick={submitRelease} disabled={release.isPending}>
+              {release.isPending ? "Reopening…" : "Reopen Period"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </SettingsSection>
   );
 }

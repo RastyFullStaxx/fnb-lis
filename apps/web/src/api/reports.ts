@@ -1,5 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
-import type { CostBasis, PaymentTerms } from "@fnb/core";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { CostBasis, PaymentTerms, ReconReport, ReportDiff } from "@fnb/core";
 import { api } from "./http";
 import { useLocationId } from "./location";
 
@@ -445,6 +445,219 @@ export function useFullAuditDrill(begin: string, end: string, locationItemId: st
         `${base(locationId)}/reports/full-audit/drill?begin=${begin}&end=${end}&locationItemId=${locationItemId}`,
       ),
     enabled: Boolean(begin && end && locationItemId),
+  });
+}
+
+// ── What-if scenarios (Phase 3, 2026-08-06) ──
+
+export type ScenarioKind = "SALE" | "NON_REVENUE" | "PRODUCTION" | "PURCHASE" | "FORFEIT";
+
+export interface Scenario {
+  id: string;
+  begin: string;
+  end: string;
+  name: string;
+  note: string | null;
+  status: string;
+  createdAt: string;
+  createdByName: string;
+  _count?: { entries: number };
+}
+
+export interface ScenarioEntry {
+  id: string;
+  kind: ScenarioKind;
+  locationItemId: string;
+  businessDate: string;
+  qty: number;
+  unitCost: number | null;
+  unitPrice: number | null;
+  note: string | null;
+  itemName: string;
+}
+
+export function useScenarios() {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["scenarios", locationId],
+    queryFn: () => api<{ scenarios: Scenario[] }>(`${base(locationId)}/scenarios`),
+  });
+}
+
+export function useScenario(id: string | null) {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["scenario", locationId, id],
+    queryFn: () => api<{ scenario: Scenario; entries: ScenarioEntry[] }>(`${base(locationId)}/scenarios/${id}`),
+    enabled: Boolean(id),
+  });
+}
+
+export function useScenarioReport(id: string | null) {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["scenario-report", locationId, id],
+    queryFn: () => api<{ scenario: Scenario; report: ReconReport }>(`${base(locationId)}/scenarios/${id}/report`),
+    enabled: Boolean(id),
+  });
+}
+
+export function useScenarioCompare(id: string | null) {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["scenario-compare", locationId, id],
+    queryFn: () => api<{ scenario: Scenario; diff: ReportDiff }>(`${base(locationId)}/scenarios/${id}/compare`),
+    enabled: Boolean(id),
+  });
+}
+
+export function useScenarioMutations(scenarioId?: string) {
+  const locationId = useLocationId();
+  const qc = useQueryClient();
+  // Any entry change moves both the scenario report and its comparison, so
+  // both go — showing one refreshed and the other stale would be worse than
+  // showing neither.
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: ["scenario", locationId, scenarioId] });
+    void qc.invalidateQueries({ queryKey: ["scenario-report", locationId, scenarioId] });
+    void qc.invalidateQueries({ queryKey: ["scenario-compare", locationId, scenarioId] });
+    void qc.invalidateQueries({ queryKey: ["scenarios", locationId] });
+  };
+  return {
+    create: useMutation({
+      mutationFn: (body: { begin: string; end: string; name: string; note?: string; seedFromLive?: boolean }) =>
+        api<Scenario & { seededEntries: number }>(`${base(locationId)}/scenarios`, {
+          method: "POST",
+          body: JSON.stringify(body),
+        }),
+      onSuccess: refresh,
+    }),
+    addEntry: useMutation({
+      mutationFn: (body: {
+        kind: ScenarioKind;
+        locationItemId: string;
+        businessDate: string;
+        qty: number;
+        unitCost?: number;
+        unitPrice?: number;
+      }) =>
+        api<ScenarioEntry>(`${base(locationId)}/scenarios/${scenarioId}/entries`, {
+          method: "POST",
+          body: JSON.stringify(body),
+        }),
+      onSuccess: refresh,
+    }),
+    removeEntry: useMutation({
+      mutationFn: (entryId: string) =>
+        api<{ ok: true }>(`${base(locationId)}/scenarios/${scenarioId}/entries/${entryId}`, { method: "DELETE" }),
+      onSuccess: refresh,
+    }),
+    discard: useMutation({
+      mutationFn: (id: string) =>
+        api<Scenario>(`${base(locationId)}/scenarios/${id}/discard`, { method: "POST" }),
+      onSuccess: refresh,
+    }),
+  };
+}
+
+// ── Closed periods (Phase 2, 2026-08-06) ──
+
+export interface PeriodLock {
+  id: string;
+  begin: string;
+  end: string;
+  status: "LOCKED" | "RELEASED";
+  reason: string | null;
+  lockedAt: string;
+  lockedByName: string;
+  releasedAt: string | null;
+  releaseReason: string | null;
+}
+
+export function usePeriodLocks() {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["period-locks", locationId],
+    queryFn: () => api<{ locks: PeriodLock[] }>(`${base(locationId)}/period-locks`),
+  });
+}
+
+export function usePeriodLockMutations() {
+  const locationId = useLocationId();
+  const qc = useQueryClient();
+  // Closing or reopening a period changes what every entry screen will accept,
+  // so the whole cache goes — a stale "this saves fine" is the one wrong answer
+  // this feature must not give.
+  const settled = { onSuccess: () => qc.invalidateQueries() };
+  return {
+    lock: useMutation({
+      mutationFn: (body: { begin: string; end: string; reason?: string }) =>
+        api<PeriodLock>(`${base(locationId)}/period-locks`, { method: "POST", body: JSON.stringify(body) }),
+      ...settled,
+    }),
+    release: useMutation({
+      mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+        api<PeriodLock>(`${base(locationId)}/period-locks/${id}/release`, {
+          method: "POST",
+          body: JSON.stringify({ reason }),
+        }),
+      ...settled,
+    }),
+  };
+}
+
+// ── Report snapshots: the Full Audit frozen, and two of them compared ──
+// (client request G, 2026-08-06 — mirrors apps/server/src/services/snapshots.ts)
+
+export interface SnapshotSummary {
+  id: string;
+  slug: string;
+  label: string | null;
+  note: string | null;
+  takenAt: string;
+  takenByName: string;
+  params: { begin: string; end: string; productType?: string; costBasis: string; varianceThresholdPct: number };
+  supersedesId: string | null;
+  totals: ReconReport["totals"];
+  rowCount: number;
+}
+
+export interface SnapshotComparison {
+  a: SnapshotSummary;
+  b: SnapshotSummary;
+  diff: ReportDiff;
+  activity: Array<{ id: string; ts: string; userName: string | null; action: string; summary: string }>;
+}
+
+export function useSnapshots() {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["snapshots", locationId],
+    queryFn: () => api<{ snapshots: SnapshotSummary[] }>(`${base(locationId)}/reports/full-audit/snapshots`),
+  });
+}
+
+export function useSnapshotCompare(a: string | null, b: string | null) {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["snapshot-compare", locationId, a, b],
+    queryFn: () => api<SnapshotComparison>(`${base(locationId)}/reports/full-audit/compare?a=${a}&b=${b}`),
+    // Same id on both sides is a 400, not a comparison — the picker prevents it,
+    // but a stale deep link should not fire a doomed request either.
+    enabled: Boolean(a && b && a !== b),
+  });
+}
+
+export function useSaveSnapshot() {
+  const locationId = useLocationId();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { begin: string; end: string; label?: string; note?: string; productType?: string }) =>
+      api<SnapshotSummary>(`${base(locationId)}/reports/full-audit/snapshot`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["snapshots", locationId] }),
   });
 }
 

@@ -13,20 +13,27 @@ import { weightedAverageCosts } from "./valuation";
  * covers (see @fnb/core `allowedProductTypes`). This is purely an input
  * filter — reconcile()'s formulas are untouched.
  */
-export async function buildFullAudit(
-  locationId: string,
-  beginDate: string,
-  endDate: string,
-  productType?: string,
-  allowedProductTypes?: readonly string[] | null,
-  /**
-   * Valuation basis for the beginning/ending stock-VALUE columns only (client
-   * setting, 2026-07-20). Omitted or "PRICE" ⇒ count-line snapshot costs, the
-   * behaviour every shipped number and golden fixture was computed with.
-   * Variance, usage and non-revenue costs never read this.
-   */
-  costBasis: CostBasis = "PRICE",
-): Promise<ReconReport> {
+/**
+ * The seven transactional datasets a Full Audit is computed from.
+ *
+ * Named as a type so they can come from somewhere other than the database —
+ * which is the whole of what makes what-if scenarios possible (Phase 3,
+ * 2026-08-06). Everything after `loadAuditInputs` is pure aggregation over
+ * these arrays, so a scenario swaps the arrays and reuses every formula
+ * unchanged rather than growing a second, drifting copy of the math.
+ */
+export interface AuditInputs {
+  beginLines: Array<{ locationItemId: string; countType: string; qtyFull: number; remainingContent: number; unitCost: number }>;
+  endLines: AuditInputs["beginLines"];
+  purchaseLines: Array<{ locationItemId: string; qty: number; lineTotal: number }>;
+  forfeits: Array<{ locationItemId: string; remainingContent: number; qty: number }>;
+  sales: Awaited<ReturnType<typeof loadAuditInputs>>["sales"];
+  transferOutLines: Array<{ locationItemId: string; qty: number }>;
+  transferReceipts: Array<{ toLocationItemId: string; qtyReceived: number }>;
+}
+
+/** Everything the report reads from the database, and nothing it computes. */
+export async function loadAuditInputs(locationId: string, beginDate: string, endDate: string) {
   const [beginLines, endLines, purchaseLines, forfeits, sales, transferOutLines, transferReceipts] = await Promise.all([
     prisma.countLine.findMany({
       where: {
@@ -77,6 +84,35 @@ export async function buildFullAudit(
       select: { toLocationItemId: true, qtyReceived: true },
     }),
   ]);
+  return { beginLines, endLines, purchaseLines, forfeits, sales, transferOutLines, transferReceipts };
+}
+
+export async function buildFullAudit(
+  locationId: string,
+  beginDate: string,
+  endDate: string,
+  productType?: string,
+  allowedProductTypes?: readonly string[] | null,
+  /**
+   * Valuation basis for the beginning/ending stock-VALUE columns only (client
+   * setting, 2026-07-20). Omitted or "PRICE" ⇒ count-line snapshot costs, the
+   * behaviour every shipped number and golden fixture was computed with.
+   * Variance, usage and non-revenue costs never read this.
+   */
+  costBasis: CostBasis = "PRICE",
+  /**
+   * Pre-loaded inputs, for a what-if. Omitted, the live ones are fetched — so
+   * every existing caller behaves exactly as before, which is what the golden
+   * fixtures check.
+   *
+   * Catalog metadata and weighted-average costs are NOT injectable and are
+   * always read live: a scenario asks "what if these movements were different",
+   * never "what if this bottle were a different size".
+   */
+  inputs?: AuditInputs,
+): Promise<ReconReport> {
+  const { beginLines, endLines, purchaseLines, forfeits, sales, transferOutLines, transferReceipts } =
+    inputs ?? (await loadAuditInputs(locationId, beginDate, endDate));
 
   type Agg = {
     beginFullQty: number;
@@ -192,7 +228,7 @@ export async function buildFullAudit(
     include: { itemVariant: { include: { unit: true, item: { include: { category: true } } } } },
   });
 
-  const inputs: ReconItemInput[] = [];
+  const itemInputs: ReconItemInput[] = [];
   // Weighted-average valuation (opt-in per client). Two as-of dates because a
   // running average moves with each purchase. Both maps are empty on the
   // default PRICE basis, so the spread below adds nothing.
@@ -206,7 +242,7 @@ export async function buildFullAudit(
     if (productType && category.productType !== productType) continue;
     if (allowedProductTypes && !allowedProductTypes.includes(category.productType)) continue;
     const agg = aggs.get(li.id)!;
-    inputs.push({
+    itemInputs.push({
       locationItemId: li.id,
       itemName: `${li.itemVariant.item.name} ${li.itemVariant.size} ${li.itemVariant.unit.name}`,
       categoryName: category.name,
@@ -223,7 +259,7 @@ export async function buildFullAudit(
     });
   }
 
-  return reconcile(inputs, { beginDate, endDate });
+  return reconcile(itemInputs, { beginDate, endDate });
 }
 
 /** Distinct committed count dates — the anchors report pickers are constrained to. */

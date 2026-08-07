@@ -42,31 +42,28 @@ model User {
 
 /**
  * How a person signs in on the offline desktop when there is no network to ask.
- *
  * A SEPARATE credential from the password, and that separation is the whole
  * point. The obvious design — ship `User.passwordHash` to the device and verify
  * it locally — turns the theft of one bar PC into remote compromise of the web
  * application, because the cracked secret is the same secret. A PIN is accepted
  * ONLY by a registered desktop and never by the server, so the same theft yields
  * something that unlocks a machine the thief already physically holds.
- *
  * Be clear about what this does and does not do. Four to eight digits will not
  * survive an offline attack on the file, and it is not meant to: whoever holds
  * the machine holds the mirror, and encryption at rest is the answer to that,
  * not a longer PIN. What the PIN buys is (a) casual-access control at the bar,
  * (b) attribution — which member of staff recorded this count — and (c) a blast
  * radius that stops at one revocable device.
- *
  * Failure counts and lockouts are deliberately NOT here: they are device-local
  * state, since a device that cannot reach the server cannot increment a counter
  * on it. The device tracks them in its own mirror and pushes an ActivityLog row
  * on the next sync.
  */
 model DevicePin {
-  userId String @id
-  user   User   @relation(fields: [userId], references: [id])
+  userId             String @id
+  user               User   @relation(fields: [userId], references: [id])
   // Same scrypt format as passwordHash (auth/password.ts).
-  pinHash String
+  pinHash            String
   /**
    * Break-glass for "no network, forgot the PIN, and the closing count still has
    * to happen". Free text the user writes themselves rather than a canned list —
@@ -82,46 +79,42 @@ model DevicePin {
 
 /**
  * Second factor for the web login (TOTP — Google Authenticator, Authy, 1Password).
- *
  * Required for ADMIN and OWNER, optional for everyone else (client decision
  * 2026-08-01). STAFF are deliberately excluded from the requirement: they sign
  * in on a shared bar PC mid-shift, already hold a device PIN, and are already
  * restricted to appends — a second factor buys little there at real cost to a
  * counting workflow.
- *
  * Absence of a row means "not enrolled", so existing accounts need no backfill.
- *
  * This protects the BROWSER login only. The offline desktop is unaffected by
  * design: it authenticates a machine, its PIN check happens locally with no
  * network, and demanding a phone code from a bar PC that may have no signal
  * would break the one thing the desktop exists to do.
  */
 model UserMfa {
-  userId String @id
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       String    @id
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   /**
    * AES-256-GCM ciphertext of the base32 TOTP secret, as iv:tag:ciphertext hex.
    * ENCRYPTED, not hashed — verification needs the plaintext back — under a key
    * (FNB_MFA_KEY) that lives outside the database, so a leaked database file
    * alone yields no working second factors.
    */
-  secretEnc String
+  secretEnc    String
   /**
    * Null until the user proves one working code. Enrolment that stopped at the
    * QR screen must not count as enrolled, or a mis-scan locks someone out of
    * their own account with no way back in.
    */
-  confirmedAt DateTime?
+  confirmedAt  DateTime?
   /**
    * Newline-separated scrypt hashes of single-use recovery codes (same format
    * as passwordHash). Hashed rather than encrypted because these are only ever
    * compared, never displayed again after enrolment.
    */
-  backupCodes String
+  backupCodes  String
   /**
    * The last 30-second step accepted for this user, so a code cannot be spent
    * twice (RFC 6238 §5.2).
-   *
    * Without it, `window = 1` leaves one 6-digit code valid for ~90 seconds —
    * long enough for anyone who watched it being typed, or captured it in
    * transit, to replay it. Storing the step rather than the code keeps nothing
@@ -135,13 +128,11 @@ model UserMfa {
 
 /**
  * The gap between "password accepted" and "second factor accepted".
- *
  * A row here is NOT a session and cannot be mistaken for one — that is why it
  * is a separate table rather than a flag on AuthSession. A half-authenticated
  * row living in the session table would need every reader to remember to check
  * the flag, and forgetting once fails OPEN. Nothing issues a session cookie
  * until the second factor lands.
- *
  * The device payload and rememberMe ride along because step two is what
  * actually completes the login: resolving a device in step one would register
  * a machine (consuming a licence slot) for someone who has only proved half
@@ -228,18 +219,18 @@ model Device {
 }
 
 model Client {
-  id        String   @id @default(cuid())
-  name      String
-  status    String   @default("ACTIVE") // ACTIVE | ARCHIVED
+  id                   String  @id @default(cuid())
+  name                 String
+  status               String  @default("ACTIVE") // ACTIVE | ARCHIVED
   // Inventory cost basis for VALUATION reports (see @fnb/core COST_BASES).
   // PRICE = count-line snapshot cost (default, matches everything shipped so
   // far); AVERAGE = periodic weighted average. Never affects variance.
-  costBasis String   @default("PRICE") // PRICE | AVERAGE
+  costBasis            String  @default("PRICE") // PRICE | AVERAGE
   // Over/short materiality threshold (%) for the Full Audit highlight — an
   // audit policy, so it is per-establishment (client req 2026-07-21). Default
   // 11 = @fnb/core MATERIAL_VARIANCE_PCT. Presentation only; never touches the
   // reconciliation math.
-  varianceThresholdPct Float @default(11)
+  varianceThresholdPct Float   @default(11)
   // Whether this establishment may SEE bottle tare / liquid weights (client
   // decision 2026-07-25). Off by default: that calibration library is LIS's
   // own IP, shown to a client only when the LIS admin turns it on for them.
@@ -250,15 +241,15 @@ model Client {
 
   // Superseded 2026-07-25: clients weigh their own bottles into LocationItem
   // overrides and always see them. Column kept — migrations stay additive.
-  showBottleWeights Boolean @default(false)
-  createdAt DateTime @default(now())
+  showBottleWeights Boolean  @default(false)
+  createdAt         DateTime @default(now())
 
-  locations    Location[]
-  access       UserClientAccess[]
-  suppliers    Supplier[]
-  aliases      ItemAlias[]
-  subscription Subscription?
-  devices      Device[]
+  locations        Location[]
+  access           UserClientAccess[]
+  suppliers        Supplier[]
+  aliases          ItemAlias[]
+  subscription     Subscription?
+  devices          Device[]
   itemUnitDefaults ClientItemUnitDefault[]
 }
 
@@ -315,65 +306,65 @@ model Location {
 /// behind it — the variance noise that stops people trusting the Full Audit.
 /// It becomes stock only on expiry, through the existing zero-cost Forfeit.
 model BottleKeep {
-  id               String        @id @default(cuid())
-  locationId       String
-  location         Location      @relation(fields: [locationId], references: [id])
+  id             String        @id @default(cuid())
+  locationId     String
+  location       Location      @relation(fields: [locationId], references: [id])
   /// Where the bottle physically sits — the client asked for exactly this
   /// ("Main Bar or Satellite bar 1"), and it is the same shelf list counts
   /// already use, so no second vocabulary.
-  areaId           String?
-  area             LocationArea? @relation(fields: [areaId], references: [id])
-  locationItemId   String
-  locationItem     LocationItem  @relation(fields: [locationItemId], references: [id])
+  areaId         String?
+  area           LocationArea? @relation(fields: [areaId], references: [id])
+  locationItemId String
+  locationItem   LocationItem  @relation(fields: [locationItemId], references: [id])
 
   /// Whose bottle it is. Free text on purpose: bars know guests by name, not by
   /// an account, and demanding a customer record would stop the bartender
   /// recording it at all.
-  customerName     String
-  customerContact  String?
+  customerName    String
+  customerContact String?
 
-  qty              Float         @default(1)
+  qty              Float @default(1)
   /// Partial bottles come back on keep too — a guest leaves half a bottle.
-  remainingContent Float         @default(0)
+  remainingContent Float @default(0)
 
-  keptDate         String // YYYY-MM-DD
+  keptDate  String // YYYY-MM-DD
   /// Stored as a DATE, not "days from kept".
   ///
   /// A day count would be re-evaluated against whatever the default is today,
   /// so changing the house policy from 30 to 60 days would silently move the
   /// expiry of every bottle already on the shelf — including ones already past
   /// it. The date this bottle was promised is a fact about that bottle.
-  expiresOn        String // YYYY-MM-DD
+  expiresOn String // YYYY-MM-DD
 
-  status           String        @default("ACTIVE") // ACTIVE | CLAIMED | FORFEITED | VOID
-  claimedAt        DateTime?
-  claimedById      String?
-  forfeitedAt      DateTime?
+  status      String    @default("ACTIVE") // ACTIVE | CLAIMED | FORFEITED | VOID
+  claimedAt   DateTime?
+  claimedById String?
+  forfeitedAt DateTime?
   /// The zero-cost stock-in created when it expired, so the report can show
   /// where the bottle went and the two can never disagree.
-  forfeitId        String?       @unique
-  forfeit          Forfeit?      @relation(fields: [forfeitId], references: [id])
+  forfeitId   String?   @unique
+  forfeit     Forfeit?  @relation(fields: [forfeitId], references: [id])
 
-  note             String?
-  voidReason       String?
-  createdById      String
-  createdByName    String
-  createdAt        DateTime      @default(now())
+  note          String?
+  voidReason    String?
+  createdById   String
+  createdByName String
+  createdAt     DateTime @default(now())
 
   @@index([locationId, status, expiresOn])
   @@index([locationId, customerName])
 }
 
 model LocationArea {
-  id         String     @id @default(cuid())
+  id         String   @id @default(cuid())
   locationId String
-  location   Location   @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id])
   name       String
   /// Print/display order — the paper sheet has a fixed column order and the
   /// screen must match it, or checking one against the other is guesswork.
-  sortOrder  Int        @default(0)
-  status     String     @default("ACTIVE") // ACTIVE | ARCHIVED
-  createdAt  DateTime   @default(now())
+  sortOrder  Int      @default(0)
+  status     String   @default("ACTIVE") // ACTIVE | ARCHIVED
+  createdAt  DateTime @default(now())
 
   countLines  CountLine[]
   bottleKeeps BottleKeep[]
@@ -511,11 +502,11 @@ model Unit {
 }
 
 model Category {
-  id                   String @id @default(cuid())
-  name                 String @unique
+  id                   String  @id @default(cuid())
+  name                 String  @unique
   productType          String // data-driven list in Setting "productTypes"
   defaultDensityFactor Float? // ml per weight-unit for weigh counts (e.g. Vodka 30.12/oz)
-  sortOrder            Int    @default(0)
+  sortOrder            Int     @default(0)
   // Asset-only, nullable (client req 2026-07-24). Set once per category
   // (e.g. "Dental Equipment" -> Dental) rather than per LocationItem —
   // every asset in a category shares one industry/vertical by design.
@@ -536,7 +527,7 @@ model Item {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  variants ItemVariant[]
+  variants        ItemVariant[]
   unitDefaults    ClientItemUnitDefault[]
   unitPreferences UserItemUnitPreference[]
 
@@ -544,24 +535,24 @@ model Item {
 }
 
 model ItemVariant {
-  id             String  @id @default(cuid())
-  itemId         String
-  item           Item    @relation(fields: [itemId], references: [id])
-  size           Float // e.g. 700 (ml), 1 (kg), 1 (pack)
-  unitId         String
-  unit           Unit    @relation(fields: [unitId], references: [id])
-  contentTracked Boolean @default(false) // true: open amounts divide by size (bottles); false: raw counts
+  id               String    @id @default(cuid())
+  itemId           String
+  item             Item      @relation(fields: [itemId], references: [id])
+  size             Float // e.g. 700 (ml), 1 (kg), 1 (pack)
+  unitId           String
+  unit             Unit      @relation(fields: [unitId], references: [id])
+  contentTracked   Boolean   @default(false) // true: open amounts divide by size (bottles); false: raw counts
   // How this variant is weighed on a scale (client req #16):
   //   null    → legacy inference: contentTracked ⇒ DENSITY, else not weighable
   //   DENSITY → (scale − tare) × densityFactor ⇒ content in ml (bar bottles;
   //             also Food items sold by liquid content)
   //   NET     → (scale − tare) converted to the variant's unit ⇒ quantity
   //             directly (kitchen: net weight IS the count; MASS units only)
-  weighMode      String? // DENSITY | NET
-  tareWeight     Float?
-  tareWeightUnit String? // g | oz
-  densityFactor  Float? // per-item override of Category.defaultDensityFactor
-  barcode        String?
+  weighMode        String? // DENSITY | NET
+  tareWeight       Float?
+  tareWeightUnit   String? // g | oz
+  densityFactor    Float? // per-item override of Category.defaultDensityFactor
+  barcode          String?
   // An open "this weight looks wrong" report from a client (client req
   // 2026-07-25). Clients cannot edit the weight library, so this is how they
   // ask: a note raised by their owner/manager, cleared by the LIS admin when
@@ -574,9 +565,9 @@ model ItemVariant {
   // Asset-only, nullable (architecture.md deviation #26) — intrinsic to the
   // product line, so these live here rather than on LocationItem. Ignored by
   // Bar/Kitchen/Supplies rows, same treatment as weighMode above for non-Bar items.
-  brand          String?
-  model          String?
-  isActive       Boolean @default(true)
+  brand    String?
+  model    String?
+  isActive Boolean @default(true)
 
   locationItems LocationItem[]
 
@@ -586,14 +577,14 @@ model ItemVariant {
 // ───────────────────────── Per-location catalog ─────────────────────────
 
 model LocationItem {
-  id            String      @id @default(cuid())
-  locationId    String
-  location      Location    @relation(fields: [locationId], references: [id])
-  itemVariantId String
-  itemVariant   ItemVariant @relation(fields: [itemVariantId], references: [id])
-  cost          Float       @default(0)
-  retail        Float       @default(0)
-  parLevel      Float?
+  id             String      @id @default(cuid())
+  locationId     String
+  location       Location    @relation(fields: [locationId], references: [id])
+  itemVariantId  String
+  itemVariant    ItemVariant @relation(fields: [itemVariantId], references: [id])
+  cost           Float       @default(0)
+  retail         Float       @default(0)
+  parLevel       Float?
   // Per-location bottle weights (client decision 2026-07-25: "sila na mag
   // timbang… dapat din makita nila. Since Local Database lang naman ang
   // nakikita ni User at hindi whole Main Database").
@@ -611,22 +602,22 @@ model LocationItem {
   // human-readable AST-### register number: unique when set, sequential across
   // the whole client, not per-category (see asset-module-proposal.md). `cost`
   // above doubles as "current cost"; initialCost is the fixed purchase price.
-  assetCode     String?     @unique
-  initialCost   Float?
-  serialNo      String?     // per asset TYPE not per unit — see asset-module-proposal.md
-  condition     String?     // data-driven list, Setting "conditionOptions"
-  status        String?     // data-driven list, Setting "statusOptions" — distinct from isActive
-  remarks       String?
-  isActive      Boolean     @default(true)
+  assetCode          String?  @unique
+  initialCost        Float?
+  serialNo           String? // per asset TYPE not per unit — see asset-module-proposal.md
+  condition          String? // data-driven list, Setting "conditionOptions"
+  status             String? // data-driven list, Setting "statusOptions" — distinct from isActive
+  remarks            String?
+  isActive           Boolean  @default(true)
   // Expected movement window (1-12, calendar month), clutter-item-removal
   // plan. Null on both = no schedule, plain 12-month lookback applies.
   // Outside the window, no movement is normal and the item is skipped as a
   // candidate; inside it, no movement is a real signal.
   scheduleStartMonth Int?
   scheduleEndMonth   Int?
-  updatedById   String?
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  updatedById        String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   countLines       CountLine[]
   purchaseLines    PurchaseLine[]
@@ -636,9 +627,9 @@ model LocationItem {
   aliases          ItemAlias[]
   transferLines    TransferLine[]
   transferReceipts TransferReceiptLine[]
+  bottleKeeps      BottleKeep[]
 
   @@unique([locationId, itemVariantId])
-  bottleKeeps      BottleKeep[]
 }
 
 // Per-item display unit — admin default (client req 2026-07-31, see
@@ -697,20 +688,20 @@ model UserItemUnitPreference {
 }
 
 model Supplier {
-  id          String  @id @default(cuid())
-  clientId    String
-  client      Client  @relation(fields: [clientId], references: [id])
-  name        String
+  id            String  @id @default(cuid())
+  clientId      String
+  client        Client  @relation(fields: [clientId], references: [id])
+  name          String
   // Freeform legacy field — kept so existing notes aren't lost. The structured
   // fields below are what the Purchase report prints (client req 2026-07-20).
-  contactInfo String?
+  contactInfo   String?
   contactPerson String?
   phone         String?
   email         String?
   address       String?
   // C.O.D. / 7 / 15 / 30 days / prepaid — see @fnb/core PAYMENT_TERMS.
   paymentTerms  String? // COD | NET_7 | NET_15 | NET_30 | PREPAID
-  isActive    Boolean @default(true)
+  isActive      Boolean @default(true)
 
   purchases Purchase[]
 
@@ -737,16 +728,16 @@ model ItemAlias {
 // $transaction as every mutation.
 
 model CountSession {
-  id            String    @id @default(cuid())
-  locationId    String
-  location      Location  @relation(fields: [locationId], references: [id])
-  countDate     String // YYYY-MM-DD
-  name          String?
-  status        String    @default("OPEN") // OPEN | COMMITTED | VOID
-  note          String?
-  createdById   String
-  createdByName String
-  createdAt     DateTime  @default(now())
+  id             String    @id @default(cuid())
+  locationId     String
+  location       Location  @relation(fields: [locationId], references: [id])
+  countDate      String // YYYY-MM-DD
+  name           String?
+  status         String    @default("OPEN") // OPEN | COMMITTED | VOID
+  note           String?
+  createdById    String
+  createdByName  String
+  createdAt      DateTime  @default(now())
   // When the work actually happened on the device, as against createdAt = when
   // the server received it. An offline desktop that syncs a whole day at 9pm
   // would otherwise stamp every record 9pm, and the audit trail would claim a
@@ -758,18 +749,18 @@ model CountSession {
   //
   // Null on everything written through the browser, where the two are the same
   // instant. Read it as `occurredAt ?? createdAt`.
-  occurredAt    DateTime?
+  occurredAt     DateTime?
   // Which source created this document: a registered desktop, or null for the
   // browser. Two jobs (docs/sync-and-data-lifecycle.md §7.2): while the document
   // is OPEN/DRAFT it is the OWNER — only that source may edit or commit it, which
   // removes the whole draft-merge problem instead of solving it. Afterwards it is
   // PROVENANCE, the thing an auditor needs when chasing a double-entered delivery.
   originDeviceId String?
-  committedAt   DateTime?
-  committedById String?
-  voidedAt      DateTime?
-  voidedById    String?
-  voidReason    String?
+  committedAt    DateTime?
+  committedById  String?
+  voidedAt       DateTime?
+  voidedById     String?
+  voidReason     String?
 
   lines CountLine[]
 
@@ -777,11 +768,11 @@ model CountSession {
 }
 
 model CountLine {
-  id               String       @id @default(cuid())
+  id               String        @id @default(cuid())
   countSessionId   String
-  countSession     CountSession @relation(fields: [countSessionId], references: [id])
+  countSession     CountSession  @relation(fields: [countSessionId], references: [id])
   locationItemId   String
-  locationItem     LocationItem @relation(fields: [locationItemId], references: [id])
+  locationItem     LocationItem  @relation(fields: [locationItemId], references: [id])
   /// Which part of the establishment this tally came from. Null = the location
   /// does not split by area, or the line predates areas.
   ///
@@ -792,24 +783,24 @@ model CountLine {
   areaId           String?
   area             LocationArea? @relation(fields: [areaId], references: [id])
   countType        String // FULL | WEIGH
-  qtyFull          Float        @default(0)
+  qtyFull          Float         @default(0)
   scaleWeight      Float?
   scaleUnit        String? // g | oz
   tareWeight       Float?
   densityFactor    Float?
-  remainingContent Float        @default(0) // WEIGH: computed content (ml or raw units)
-  unitCost         Float        @default(0) // price snapshots at entry time
-  unitRetail       Float        @default(0)
-  status           String       @default("ACTIVE") // ACTIVE | VOID
+  remainingContent Float         @default(0) // WEIGH: computed content (ml or raw units)
+  unitCost         Float         @default(0) // price snapshots at entry time
+  unitRetail       Float         @default(0)
+  status           String        @default("ACTIVE") // ACTIVE | VOID
   voidedAt         DateTime?
   voidedById       String?
   voidReason       String?
   correctionOfId   String?
-  correctionOf     CountLine?   @relation("CountLineCorrection", fields: [correctionOfId], references: [id])
-  corrections      CountLine[]  @relation("CountLineCorrection")
+  correctionOf     CountLine?    @relation("CountLineCorrection", fields: [correctionOfId], references: [id])
+  corrections      CountLine[]   @relation("CountLineCorrection")
   createdById      String
   createdByName    String
-  createdAt        DateTime     @default(now())
+  createdAt        DateTime      @default(now())
   occurredAt       DateTime? // device time — see CountSession.occurredAt
 
   @@index([countSessionId])
@@ -817,30 +808,30 @@ model CountLine {
 }
 
 model Purchase {
-  id            String    @id @default(cuid())
-  locationId    String
-  location      Location  @relation(fields: [locationId], references: [id])
-  supplierId    String?
-  supplier      Supplier? @relation(fields: [supplierId], references: [id])
-  refNo         String?
-  purchaseDate  String // YYYY-MM-DD
-  status        String    @default("DRAFT") // DRAFT | COMMITTED | VOID
-  note          String?
-  createdById   String
-  createdByName String
-  createdAt     DateTime  @default(now())
-  occurredAt    DateTime? // device time — see CountSession.occurredAt
+  id             String    @id @default(cuid())
+  locationId     String
+  location       Location  @relation(fields: [locationId], references: [id])
+  supplierId     String?
+  supplier       Supplier? @relation(fields: [supplierId], references: [id])
+  refNo          String?
+  purchaseDate   String // YYYY-MM-DD
+  status         String    @default("DRAFT") // DRAFT | COMMITTED | VOID
+  note           String?
+  createdById    String
+  createdByName  String
+  createdAt      DateTime  @default(now())
+  occurredAt     DateTime? // device time — see CountSession.occurredAt
   // Which source created this document: a registered desktop, or null for the
   // browser. Two jobs (docs/sync-and-data-lifecycle.md §7.2): while the document
   // is OPEN/DRAFT it is the OWNER — only that source may edit or commit it, which
   // removes the whole draft-merge problem instead of solving it. Afterwards it is
   // PROVENANCE, the thing an auditor needs when chasing a double-entered delivery.
   originDeviceId String?
-  committedAt   DateTime?
-  committedById String?
-  voidedAt      DateTime?
-  voidedById    String?
-  voidReason    String?
+  committedAt    DateTime?
+  committedById  String?
+  voidedAt       DateTime?
+  voidedById     String?
+  voidReason     String?
 
   lines PurchaseLine[]
 
@@ -1159,32 +1150,29 @@ model ActivityLog {
 
   /**
    * Tamper-evidence for the audit trail (docs/security.md).
-   *
    * `hash` = SHA-256 over this row's own material fields PLUS the previous
    * row's hash, so the log is a chain: altering, deleting or reordering any row
    * breaks every hash after it. `seq` is the chain position — a monotonic
    * integer, so a verifier can walk in a defined order without depending on
    * timestamp ties.
-   *
    * This is the difference between a system that STORES its history and one
    * that can PROVE the history was not edited — including by whoever holds the
    * database file, which is precisely this product's stated adversary. Storing
    * a log an insider can quietly rewrite is a confident lie.
-   *
    * Nullable because rows written before this shipped have no chain; the
    * verifier reports where the chain begins rather than treating history as
    * corrupt.
    */
-  seq      Int?    @unique
-  prevHash String?
-  hash     String?
+  seq        Int?      @unique
+  prevHash   String?
+  hash       String?
   // ts = when the server logged it; occurredAt = when the user did it on an
   // offline device. Same distinction as CountSession.occurredAt, and the reason
   // the audit trail of a synced day is still readable as a sequence of events.
-  occurredAt  DateTime?
+  occurredAt DateTime?
   // Which desktop the action came from, null for the browser. An admin
   // investigating a discrepancy needs to know it arrived from the bar PC.
-  deviceId    String?
+  deviceId   String?
 
   @@index([ts])
   @@index([entity, entityId])
@@ -1193,7 +1181,6 @@ model ActivityLog {
 /**
  * Applied sync operations — the ONE genuine idempotency-token table here, and
  * worth explaining because everything else deliberately avoids being one.
- *
  * For a CREATE, the record's own primary key answers "did this already apply?"
  * for free (see `syncFields` in @fnb/core), so no token is needed. A VOID or a
  * COMMIT is not a new row: there is no key to collide, and a replayed void is
@@ -1201,22 +1188,20 @@ model ActivityLog {
  * in the browser meanwhile. Those two cases need opposite handling — one is a
  * success, the other is a conflict a human must see — so the distinction cannot
  * be guessed. `opId` is the client-minted key that makes it decidable.
- *
  * Written in the SAME transaction as the mutation it records, or a crash between
  * the two would let the operation apply twice.
- *
  * Unlike every other table in this schema, this one is pruned: an operation is
  * never replayed once its device has synced past it. See
  * docs/sync-and-data-lifecycle.md §7.6 — 90 days.
  */
 model SyncOp {
-  opId       String   @id
-  userId     String
-  deviceId   String?
-  entity     String // CountSession | SaleRecord | ...
-  entityId   String
-  action     String // commit | void | correct
-  appliedAt  DateTime @default(now())
+  opId      String   @id
+  userId    String
+  deviceId  String?
+  entity    String // CountSession | SaleRecord | ...
+  entityId  String
+  action    String // commit | void | correct
+  appliedAt DateTime @default(now())
 
   @@index([appliedAt])
   @@index([entity, entityId])
@@ -1229,4 +1214,118 @@ model Setting {
   value    String // JSON text
 
   @@unique([clientId, key])
+}
+
+// ───────────────── Snapshots, period locks, what-if scenarios ─────────────────
+//
+// Three features, one build, because they share one question: what did this
+// report say, and what would it say instead? See docs/project-overview.md
+// "Parked build — report snapshots + what-if (requests G & I)".
+
+/**
+ * The Full Audit, frozen: its parameters, its computed payload, and who froze
+ * it (client request G, 2026-08-06 — "you can back track pa ba or you can see
+ * the Original report so you can compare it sa Revised?").
+ * The report itself is recomputed live from whatever records are currently
+ * valid, which is what makes it trustworthy and also what makes an earlier
+ * version unrecoverable. Nothing was ever wrong with the audit trail — every
+ * correction keeps its original and logs old→new — but no one could put the
+ * two REPORTS side by side.
+ * Append-only. A snapshot is never edited; a corrected period takes a new one
+ * and points at the old through `supersedesId`, so the chain reads in order.
+ * `payloadJson` is TEXT, not Json — portability rule, architecture.md §2.
+ */
+model ReportSnapshot {
+  id           String   @id @default(cuid())
+  clientId     String
+  locationId   String
+  slug         String // "full-audit" — the only one snapshotted today
+  label        String? // what the auditor called this version
+  note         String?
+  paramsJson   String // begin/end/productType/costBasis/threshold — what was asked for
+  payloadJson  String // the ReconReport as computed at takenAt
+  takenAt      DateTime @default(now())
+  takenById    String
+  takenByName  String // frozen, like every other audit record
+  supersedesId String?
+
+  @@index([locationId, slug, takenAt])
+}
+
+/**
+ * A closed period. Until this existed "Final" was a word, not a state: anyone
+ * with the rights could revise a finished period at any time, which is exactly
+ * how a Final Report comes to be revised in the first place.
+ * Enforced server-side on every write path, so a desktop push is bound by it
+ * too (sync doc §7). RELEASED rather than deleted — reopening a closed period
+ * is itself an event an auditor needs to see, with a reason and a name on it.
+ */
+model PeriodLock {
+  id            String    @id @default(cuid())
+  locationId    String
+  begin         String // YYYY-MM-DD, inclusive
+  end           String // YYYY-MM-DD, inclusive
+  status        String    @default("LOCKED") // LOCKED | RELEASED
+  reason        String?
+  lockedAt      DateTime  @default(now())
+  lockedById    String
+  lockedByName  String
+  releasedAt    DateTime?
+  releasedById  String?
+  releaseReason String?
+
+  @@index([locationId, status])
+}
+
+/**
+ * A what-if (client request I, 2026-08-06): keep the Beginning and Ending
+ * counts, replace everything in between, and see what the report WOULD say —
+ * for when the client doubts the first data entry.
+ * Scenario rows live in their own tables and the live loader never reads them,
+ * so there is no path by which a hypothetical reaches a real report. That
+ * separation is the whole design; a flag on the real tables would have put one
+ * missed `where` clause between a what-if and the audited figures.
+ * Online-only, like catalog master data (sync doc §7.3): the desktop counts
+ * real inventory, not hypotheticals.
+ */
+model Scenario {
+  id                String   @id @default(cuid())
+  locationId        String
+  begin             String // YYYY-MM-DD — the beginning count anchor
+  end               String // YYYY-MM-DD — the ending count anchor
+  name              String
+  note              String?
+  /**
+   * The frozen report this was built to argue with, if any.
+   */
+  basedOnSnapshotId String?
+  status            String   @default("DRAFT") // DRAFT | DISCARDED
+  createdAt         DateTime @default(now())
+  createdById       String
+  createdByName     String
+
+  entries ScenarioEntry[]
+
+  @@index([locationId, status])
+}
+
+/**
+ * One hypothetical movement. Deliberately flatter than the real tables: a
+ * scenario is a thinking tool, not a ledger, so there are no headers, no
+ * commit status, and no void — editing one is just editing it.
+ */
+model ScenarioEntry {
+  id             String   @id @default(cuid())
+  scenarioId     String
+  scenario       Scenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+  kind           String // SALE | NON_REVENUE | PRODUCTION | PURCHASE | FORFEIT
+  locationItemId String
+  businessDate   String // YYYY-MM-DD
+  qty            Float
+  unitCost       Float? // PURCHASE
+  unitPrice      Float? // SALE
+  note           String?
+  createdAt      DateTime @default(now())
+
+  @@index([scenarioId])
 }

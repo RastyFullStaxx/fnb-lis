@@ -2,25 +2,7 @@ import { Link } from "react-router";
 import { canViewReport, canViewReportForSubscription, type Role, allowedProductTypes } from "@fnb/core";
 import { useMe } from "@/api/auth";
 import { useCurrentClient, useCurrentLocation } from "@/api/location";
-import {
-  ArrowLeftRight,
-  BarChart3,
-  Boxes,
-  ClipboardCheck,
-  ClipboardList,
-  Coins,
-  Gauge,
-  GlassWater,
-  PackageX,
-  PieChart,
-  Receipt,
-  ShoppingCart,
-  TrendingUp,
-  Undo2,
-  Wine,
-  Wrench,
-  type LucideIcon,
-} from "lucide-react";
+import { ArrowLeftRight, BarChart3, Boxes, ClipboardCheck, ClipboardList, Coins, FlaskConical, Gauge, GlassWater, History, PackageX, PieChart, Receipt, ShoppingCart, TrendingUp, Undo2, Wine, Wrench, type LucideIcon } from "lucide-react";
 import { useLocationId } from "@/api/location";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -58,6 +40,18 @@ const SECTIONS: Array<{ title: string; blurb: string; reports: Report[] }> = [
         icon: BarChart3,
         title: "Variance Report",
         description: "Only the items that missed or beat expectation, at cost and retail.",
+      },
+      {
+        path: "full-audit/versions",
+        icon: History,
+        title: "Full Audit Versions",
+        description: "Compare a saved copy of the report against a later one, with the actions that moved the figures.",
+      },
+      {
+        path: "scenarios",
+        icon: FlaskConical,
+        title: "What-if Scenarios",
+        description: "Keep the counts, re-enter the movements, and see what the audit would have said. Never touches real records.",
       },
       {
         path: "legacy-audit",

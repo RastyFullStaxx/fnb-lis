@@ -1,4 +1,5 @@
 export * from "./rounding";
+export * from "./report-diff";
 export * from "./billing";
 export * from "./cost-analysis";
 export * from "./units";

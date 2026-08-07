@@ -3,6 +3,7 @@ import { zValidator } from "../lib/validate";
 import { saleCorrect, saleCreate, voidRequest } from "@fnb/core";
 import { prisma } from "../db";
 import { AppError } from "../lib/errors";
+import { assertPeriodOpen } from "../lib/period-lock";
 import { replay } from "../lib/idempotency";
 import { assertExpectedStatus, opAlreadyApplied, originOf, recordOp } from "../lib/two-way";
 import { logActivity } from "../services/activity";
@@ -61,6 +62,7 @@ export const saleRoutes = new Hono<AppEnv>()
   /** Single-step commit — sales are quick entries (drafting lives in Purchases/Counts). */
   .post("/sales", createGuard, zValidator("json", saleCreate), async (c) => {
     const location = c.get("location");
+    await assertPeriodOpen(location.id, c.req.valid("json").saleDate, "sale");
     const user = c.get("user")!;
     const body = c.req.valid("json");
 
@@ -151,6 +153,7 @@ export const saleRoutes = new Hono<AppEnv>()
     const { reason, opId, expectedStatus } = c.req.valid("json");
     const sale = await prisma.saleRecord.findUnique({ where: { id: c.req.param("id") }, include: SALE_INCLUDE });
     if (!sale || sale.locationId !== location.id) throw new AppError(404, "Record not found");
+    await assertPeriodOpen(location.id, sale.saleDate, "record");
 
     if (await opAlreadyApplied(opId)) return c.json(sale, 200);
     assertExpectedStatus(sale.status, expectedStatus, "record");
@@ -195,6 +198,10 @@ export const saleRoutes = new Hono<AppEnv>()
 
     const original = await prisma.saleRecord.findUnique({ where: { id: c.req.param("id") }, include: SALE_INCLUDE });
     if (!original || original.locationId !== location.id) throw new AppError(404, "Record not found");
+    // Deliberately after `replay()` above: a device retrying a correction it
+    // already landed must still converge, even if the period closed since.
+    // This blocks NEW work in a closed period, not the settling of old work.
+    await assertPeriodOpen(location.id, original.saleDate, "record");
     if (original.status === "VOID") throw new AppError(409, "Record is already voided — create a new entry instead");
 
     // Verifying the record belongs here is NOT enough — the replacement's target

@@ -13,6 +13,7 @@ import {
 } from "@fnb/core";
 import { prisma } from "../db";
 import { AppError } from "../lib/errors";
+import { assertPeriodOpen } from "../lib/period-lock";
 import { replay } from "../lib/idempotency";
 import {
   assertExpectedStatus,
@@ -50,11 +51,15 @@ const LINE_INCLUDE = {
   receipts: { where: { status: "ACTIVE" }, select: { id: true, qtyReceived: true, receiptDate: true, note: true } },
 } as const;
 
+/** Mutation chokepoint — see the note in routes/counts.ts. */
 async function getOwnedTransfer(locationId: string, transferId: string) {
   const transfer = await prisma.transfer.findUnique({ where: { id: transferId } });
   if (!transfer || (transfer.fromLocationId !== locationId && transfer.toLocationId !== locationId)) {
     throw new AppError(404, "Transfer not found");
   }
+  // Checked against THIS location's lock: a transfer has two sides, and each
+  // establishment closes its own books on its own schedule.
+  await assertPeriodOpen(locationId, transfer.businessDate, "transfer");
   return transfer;
 }
 
@@ -123,6 +128,7 @@ export const transferRoutes = new Hono<AppEnv>()
 
   .post("/transfers", createGuard, zValidator("json", transferCreate), async (c) => {
     const location = c.get("location");
+    await assertPeriodOpen(location.id, c.req.valid("json").businessDate, "transfer");
     const user = c.get("user")!;
     const body = c.req.valid("json");
 

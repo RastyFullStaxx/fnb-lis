@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router";
-import { BarChart3, ChevronDown, ChevronRight, FileDown, Info } from "lucide-react";
+import { Link, useNavigate, useSearchParams } from "react-router";
+import { BarChart3, ChevronDown, ChevronRight, FileDown, History, Info, Save } from "lucide-react";
 import { can, hasVariance, MATERIAL_VARIANCE_PCT, round2, varianceRuleText, varianceSeverity, type Role } from "@fnb/core";
 import { toast } from "sonner";
 import { useMe } from "@/api/auth";
@@ -10,6 +10,9 @@ import { useProductTypes } from "@/api/master";
 import { useCompanyInfo, useVarianceThreshold } from "@/api/settings";
 import { exportUrl, useFullAuditDrill, type DrillRecord } from "@/api/reports";
 import { ApiError, downloadFile } from "@/api/http";
+import { useSaveSnapshot } from "@/api/reports";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { formatMoney, formatNumber, formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
@@ -28,8 +31,10 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   DropdownMenu,
@@ -241,6 +246,17 @@ export function FullAuditPage() {
                 inventoryPdf: exportUrl(locationId, "legacy-audit", "pdf", { ...legacyParams, variant: "inventory" }),
               }}
             />
+            {/* Save as Final + the version history it feeds (client request
+                G, 2026-08-06). Deliberately beside the download buttons: this
+                is the same act -- taking a copy of what the report says today
+                -- except the copy stays inside the system where it can be
+                compared, instead of becoming a file in someone's Downloads. */}
+            <SaveFinalButton begin={effectiveBegin ?? null} end={effectiveEnd ?? null} disabled={!report.data?.rows.length} />
+            <Button asChild variant="outline" size="sm" className="print:hidden">
+              <Link to={`/l/${locationId}/reports/full-audit/versions`}>
+                <History className="size-4" /> Versions
+              </Link>
+            </Button>
             <ExportButtons
               xlsxUrl={exportUrl(locationId, "full-audit", "xlsx", exportParams)}
               csvUrl={exportUrl(locationId, "full-audit", "csv", exportParams)}
@@ -883,6 +899,97 @@ function DrillDialog({
             })}
           </div>
         )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * "Save as Final" — freeze what the report says right now.
+ *
+ * A dialog rather than a bare button because a version wants a name. Six
+ * timestamps in a picker are indistinguishable; "Signed off with Lourd" and
+ * "After the recount" are the difference between a version list and a version
+ * HISTORY. The label is optional all the same — never make someone name a
+ * thing before they can save it.
+ */
+function SaveFinalButton({
+  begin,
+  end,
+  disabled,
+}: {
+  begin: string | null;
+  end: string | null;
+  disabled: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [label, setLabel] = useState("");
+  const [note, setNote] = useState("");
+  const save = useSaveSnapshot();
+  const locationId = useLocationId();
+  const navigate = useNavigate();
+
+  const submit = async () => {
+    if (!begin || !end) return;
+    try {
+      await save.mutateAsync({ begin, end, label: label.trim() || undefined, note: note.trim() || undefined });
+      toast.success("Saved — this version can be compared later", {
+        action: {
+          label: "Versions",
+          onClick: () => navigate(`/l/${locationId}/reports/full-audit/versions`),
+        },
+      });
+      setOpen(false);
+      setLabel("");
+      setNote("");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not save this version");
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" disabled={disabled} className="print:hidden">
+          <Save className="size-4" /> Save as Final
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Save this report as final</DialogTitle>
+          <DialogDescription>
+            Keeps a frozen copy of every figure as it stands today, for {begin} → {end}. Later revisions will
+            not change it, so the two can be compared.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="snap-label">Name this version (optional)</Label>
+            <Input
+              id="snap-label"
+              placeholder="e.g. Signed off with the client"
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && void submit()}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="snap-note">Note (optional)</Label>
+            <Input
+              id="snap-note"
+              placeholder="Anything worth remembering about this copy"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && void submit()}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+          <Button onClick={submit} disabled={save.isPending}>
+            {save.isPending ? "Saving…" : "Save Version"}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

@@ -16,6 +16,8 @@ import { TransferEditorPage } from "./pages/transfers/editor";
 import { SalesPage } from "./pages/sales";
 import { ReportsPage } from "./pages/reports";
 import { FullAuditPage } from "./pages/reports/full-audit";
+import { AuditVersionsPage } from "./pages/reports/audit-versions";
+import { ScenarioEditorPage, ScenariosPage } from "./pages/reports/scenarios";
 import { SalesReportPage } from "./pages/reports/sales";
 import { PurchaseReportPage } from "./pages/reports/purchases";
 import { NonRevenueReportPage } from "./pages/reports/non-revenue";
@@ -74,6 +76,9 @@ export const router = createBrowserRouter([
       { path: "imports/:batchId", element: <ImportReviewPage /> },
       { path: "reports", element: <ReportsPage /> },
       { path: "reports/full-audit", element: <FullAuditPage /> },
+      { path: "reports/full-audit/versions", element: <AuditVersionsPage /> },
+      { path: "reports/scenarios", element: <ScenariosPage /> },
+      { path: "reports/scenarios/:scenarioId", element: <ScenarioEditorPage /> },
       { path: "reports/sales", element: <SalesReportPage /> },
       { path: "reports/purchases", element: <PurchaseReportPage /> },
       { path: "reports/non-revenue", element: <NonRevenueReportPage /> },

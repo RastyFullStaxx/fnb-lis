@@ -23,6 +23,8 @@ import { areaRoutes } from "./routes/areas";
 import { bottleKeepRoutes } from "./routes/bottle-keep";
 import { locationItemRoutes } from "./routes/location-items";
 import { countRoutes } from "./routes/counts";
+import { periodLockRoutes } from "./routes/period-locks";
+import { scenarioRoutes } from "./routes/scenarios";
 import { purchaseRoutes } from "./routes/purchases";
 import { transferRoutes } from "./routes/transfers";
 import { saleRoutes } from "./routes/sales";
@@ -230,6 +232,8 @@ export function createApp() {
     .route("/", bottleKeepRoutes)
     .route("/", locationItemRoutes)
     .route("/", countRoutes)
+    .route("/", periodLockRoutes)
+    .route("/", scenarioRoutes)
     .route("/", purchaseRoutes)
     .route("/", transferRoutes)
     .route("/", saleRoutes)

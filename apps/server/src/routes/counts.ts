@@ -22,6 +22,7 @@ import { prisma, type Tx } from "../db";
 import { AppError } from "../lib/errors";
 import { replay } from "../lib/idempotency";
 import { getTrailingAverage, getTrailingFullQty } from "../lib/weigh-history";
+import { assertPeriodOpen } from "../lib/period-lock";
 import {
   assertExpectedStatus,
   holdParentOpen,
@@ -223,9 +224,16 @@ function snapshotPrices(
   };
 }
 
+/**
+ * Every mutation route below reaches its document through this helper, and
+ * only mutation routes do -- the GET above reads the session directly. So the
+ * closed-period check belongs HERE rather than repeated at seven call sites,
+ * where the eighth would eventually be added without it.
+ */
 async function getOwnedSession(locationId: string, sessionId: string) {
   const session = await prisma.countSession.findUnique({ where: { id: sessionId } });
   if (!session || session.locationId !== locationId) throw new AppError(404, "Count session not found");
+  await assertPeriodOpen(locationId, session.countDate, "count");
   return session;
 }
 
@@ -392,6 +400,9 @@ export const countRoutes = new Hono<AppEnv>()
   .post("/counts", createGuard, zValidator("json", countSessionCreate), async (c) => {
     const location = c.get("location");
     const user = c.get("user")!;
+    // The create path has no document to look the date up from, so it checks
+    // the one it was handed.
+    await assertPeriodOpen(location.id, c.req.valid("json").countDate, "count");
     const body = c.req.valid("json");
 
     const already = await replay(

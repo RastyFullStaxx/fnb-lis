@@ -11,9 +11,11 @@ import {
   type CostBasis,
   type NonRevenueGroup, canViewReport, canViewReportForSubscription, isAuditViewer, type Role } from "@fnb/core";
 import { prisma } from "../db";
+import { logActivity } from "../services/activity";
 import { AppError } from "../lib/errors";
 import { requirePermission, type AppEnv } from "../middleware/auth";
 import { buildFullAudit, committedCountDates } from "../services/report-assembly";
+import { compareSnapshots, listSnapshots, snapshotSummary } from "../services/snapshots";
 import {
   assetBreakageReport,
   costAnalysisReport,
@@ -279,6 +281,101 @@ export const reportRoutes = new Hono<AppEnv>()
     const productType = c.req.query("productType") || undefined;
     const allowed = allowedProductTypes(c.get("locationModules"));
     return c.json(await buildFullAudit(location.id, begin, end, productType, allowed, basisOf(c)));
+  })
+
+  /**
+   * Freeze this Full Audit (client request G, 2026-08-06). "Save as Final" on
+   * screen.
+   *
+   * MANUAL, not automatic. A snapshot on every view would produce a version
+   * list nobody reads, and the thing being recorded is a judgement -- somebody
+   * decided this report was the answer -- which is not something a page load
+   * can assert on their behalf.
+   *
+   * Gated on `reports.export`: taking a copy of a report you may already
+   * download in full is the same disclosure, so it needs no stronger right --
+   * and nothing about it changes an inventory figure.
+   */
+  .post("/reports/full-audit/snapshot", exportGuard, async (c) => {
+    const location = c.get("location");
+    const user = c.get("user")!;
+    const body = await c.req.json().catch(() => ({}));
+    const begin = String(body.begin ?? "");
+    const end = String(body.end ?? "");
+    if (!DATE_RE.test(begin) || !DATE_RE.test(end)) throw new AppError(400, "begin and end must be YYYY-MM-DD");
+    if (end <= begin) throw new AppError(400, "The ending count date must be after the beginning date");
+    const productType = body.productType ? String(body.productType) : undefined;
+    const allowed = allowedProductTypes(c.get("locationModules"));
+    const costBasis = basisOf(c);
+
+    // Computed HERE rather than accepted from the caller. A snapshot the client
+    // supplies the payload for is a snapshot of whatever the client felt like
+    // sending, which is worth nothing in an audit.
+    const report = await buildFullAudit(location.id, begin, end, productType, allowed, costBasis);
+
+    const previous = await prisma.reportSnapshot.findFirst({
+      where: { locationId: location.id, slug: "full-audit" },
+      orderBy: { takenAt: "desc" },
+      select: { id: true },
+    });
+
+    const snapshot = await prisma.$transaction(async (tx) => {
+      const created = await tx.reportSnapshot.create({
+        data: {
+          clientId: location.clientId,
+          locationId: location.id,
+          slug: "full-audit",
+          label: body.label ? String(body.label).slice(0, 120) : null,
+          note: body.note ? String(body.note).slice(0, 500) : null,
+          paramsJson: JSON.stringify({
+            begin, end, productType, costBasis, varianceThresholdPct: thresholdOf(c),
+          }),
+          payloadJson: JSON.stringify(report),
+          takenById: user.id,
+          takenByName: `${user.firstName} ${user.lastName}`,
+          supersedesId: previous?.id ?? null,
+        },
+      });
+      await logActivity(
+        {
+          user,
+          clientId: location.clientId,
+          locationId: location.id,
+          action: "report.snapshot",
+          entity: "ReportSnapshot",
+          entityId: created.id,
+          summary: `Saved the Full Audit for ${begin} → ${end} as a final copy${body.label ? `: ${String(body.label)}` : ""}`,
+          details: { begin, end, rows: report.rows.length, supersedesId: previous?.id ?? null },
+        },
+        tx,
+      );
+      return created;
+    });
+
+    return c.json(snapshotSummary(snapshot), 201);
+  })
+
+  .get("/reports/full-audit/snapshots", async (c) => {
+    const location = c.get("location");
+    return c.json({ snapshots: await listSnapshots(location.id, "full-audit") });
+  })
+
+  /** The frozen report itself, for rendering a version as it stood. */
+  .get("/reports/full-audit/snapshots/:id", async (c) => {
+    const location = c.get("location");
+    const row = await prisma.reportSnapshot.findUnique({ where: { id: c.req.param("id") } });
+    if (!row || row.locationId !== location.id) throw new AppError(404, "Snapshot not found");
+    return c.json({ ...snapshotSummary(row), report: JSON.parse(row.payloadJson) });
+  })
+
+  /** Original vs Revised, plus the actions that moved the numbers between them. */
+  .get("/reports/full-audit/compare", async (c) => {
+    const location = c.get("location");
+    const a = c.req.query("a") ?? "";
+    const b = c.req.query("b") ?? "";
+    if (!a || !b) throw new AppError(400, "Two snapshot ids are required");
+    if (a === b) throw new AppError(400, "Pick two different versions to compare");
+    return c.json(await compareSnapshots(location.id, a, b));
   })
 
   .get("/reports/full-audit/drill", async (c) => {
