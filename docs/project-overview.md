@@ -198,6 +198,108 @@ Rough size: 1–2 days, front-end-weighted. Open question for the client: unknow
 |---|---|---|
 | F | **Per-item display unit** — a manager sets a default display unit per item; any staff member can override it for themselves, per item, without affecting anyone else; falls back to the staff member's general unit preference, then the item's own unit | ✅ Built. New server-only, one-way tables `ClientItemUnitDefault` (admin default, `master.write`) and `UserItemUnitPreference` (staff override, own choice) — see [sync-and-data-lifecycle.md §2](sync-and-data-lifecycle.md) and [architecture.md deviation #36](architecture.md). Resolution order implemented as one pure function, `resolveDisplayUnit()` in `@fnb/core`: staff override → admin default → staff's general `preferredVolumeUnit`/`preferredMassUnit` → item's own unit. Routes live in `settings.ts` (admin default gated `master.write`; staff override gated `requireAuth` only). Both pickers added to the Settings page: staff override under "Display" next to the existing volume/mass pickers, admin default under "Establishment settings" next to Inventory Cost Basis and Variance Highlight Threshold. Storage, calculation, reconciliation, weighing, pricing, and rounding are untouched — display only, per [per-user-per-item-uom-plan.md](per-user-per-item-uom-plan.md) |
 
+## Client request tracker — 2026-08-06 additions
+
+| # | Request | Status |
+|---|---|---|
+| G | **Back-track a revised Final Report** — see the ORIGINAL report beside the revised one to compare | 📋 **Parked — spec below.** Half of it already works: nothing is ever overwritten (void + `correctionOfId` keeps the original line on the document) and every change writes a hash-chained ActivityLog row carrying old→new values. What is missing is a stored copy of the *rendered report*: the Full Audit is recomputed live, so after a revision the earlier numbers exist only as an exported file |
+| H | **Variance Report** — pouring short/over 10%, whole items short/over 1 bottle, same for Kitchen and Asset | ✅ **Already built** (request A, 2026-07-21). Both triggers are live and additive, and the % rule runs on every item with usage, so Kitchen and Asset are covered by the same predicate. **Threshold left at 11%** — the client said "10%" on 2026-08-06 but named 11% on 2026-07-21; it is a per-establishment setting (Settings → Variance Highlight Threshold), so changing it is a field edit, not a build. Confirm which number he wants |
+| I | **"What-if" re-entry** — regenerate keeping only Beginning and Ending inventory, then enter fresh sales / purchases / non-revenue, for when the client doubts the first data entry | 📋 **Parked — spec below.** The data model already separates counts from transactions and the report recomputes live, so the *shape* works today; what is missing is the fast path (each entry must be voided one at a time) and a sandbox that leaves live data alone |
+
+### Parked build — report snapshots + what-if (requests G & I)
+
+**Build them together.** G needs a stored report and a way to diff two of them; I needs a second
+report to diff against the live one. That is the same machinery, so building I after G is mostly
+free, and building I *first* would mean building G's diff anyway.
+
+Neither touches `reconciliation.ts`, `weighing.ts`, `pricing.ts` or `rounding.ts`. The golden
+fixtures are the gate on every phase.
+
+#### Phase 1 — Report snapshots (request G)
+
+A snapshot is the Full Audit frozen: its parameters, its computed payload, and who froze it.
+
+- **Model `ReportSnapshot`** — `clientId`, `locationId`, `slug`, `paramsJson`, `payloadJson`,
+  `takenAt`, `takenById`, `label`, `note`, `supersedesId`. TEXT payloads, not `Json` (portability
+  rule §2). Append-only: a snapshot is never edited, and a correction takes a NEW one.
+- **Routes** — `POST /reports/full-audit/snapshot` (freeze, ActivityLog in the same
+  `$transaction`), `GET …/snapshots` (list), `GET …/snapshots/:id`, `GET …/snapshots/compare?a=&b=`.
+- **Diff service** — pure function over two payloads: per-item deltas on begin / end / purchases /
+  usage / variance, plus header totals, plus rows that appeared or disappeared. Reuses
+  `varianceSeverity` for flagging; adds no math.
+- **UI** — a *Save as Final* action on the Full Audit; a **Versions** panel listing snapshots with
+  who and when; a compare view (Original | Revised | Δ, changed rows tinted). The Δ view answers
+  the client's actual question in one screen.
+- **Tie the numbers to the people** — list the ActivityLog entries that fall between the two
+  snapshots, so "what changed" shows both the moved figures and the human actions behind them.
+  This is the part that makes it an audit answer rather than a spreadsheet diff.
+- **Not included:** snapshotting the other 20 reports. Full Audit only — it is the one the client
+  calls Final.
+
+#### Phase 2 — Period lock (optional; makes "Final" actually final)
+
+Today there is **no period lock**: anyone with the rights can revise a closed period at any time,
+which is why "the Final Report was revised" is possible in the first place. If the client wants
+Final to mean locked:
+
+- `PeriodLock` (locationId, begin, end, lockedAt/By, reason) + `assertPeriodOpen(locationId, date)`
+  called from every create / correct / void path — ~20 sites, the same shape as the `holdParentOpen`
+  work already shipped.
+- Unlocking is itself a logged event with a reason, so a reopened period is visible rather than
+  silent.
+- **Sync note:** the desktop writes too, so the lock has to be enforced server-side on push and
+  mirrored to the device — read sync-and-data-lifecycle.md §7.1–7.2 before starting this phase.
+
+#### Phase 3 — What-if scenarios (request I)
+
+The key fact: `buildFullAudit` is **seven queries followed by pure in-memory aggregation**. Split
+it and the sandbox falls out without duplicating a single formula.
+
+1. **Refactor** `buildFullAudit` into `loadAuditInputs()` (the seven transactional queries) and
+   `assembleFullAudit(inputs)` (everything after). `buildFullAudit` stays as the thin wrapper —
+   `stockOnHand` calls it. Catalog metadata and weighted-average costs keep reading live data;
+   only the transactional datasets become injectable. `verify:seed` proves the refactor moved
+   nothing.
+2. **Models** — `Scenario` (locationId, begin, end, name, basedOnSnapshotId, status, createdBy) and
+   `ScenarioEntry` (scenarioId, kind SALE / PURCHASE / NON_REVENUE / FORFEIT / TRANSFER,
+   locationItemId, businessDate, qty, unitCost, note). Scenario data lives in its own tables and the
+   live loader never reads them — so there is no path by which a what-if leaks into a real report.
+3. **Flow** — start a scenario from a period; it keeps the committed Beginning and Ending counts
+   untouched and starts the middle either **empty** (the client's stated ask) or **seeded from the
+   real entries** so he edits rather than retypes. Offer both; seeded will be the one he uses.
+4. **Report it** — `assembleFullAudit(live counts + scenario entries)`. Same math, same fixtures,
+   clearly badged as a scenario on screen and in every export so it can never be mistaken for the
+   real report.
+5. **Compare** — Phase 1's diff view, scenario vs live. Free.
+6. **Deliberately NOT included: "apply scenario to live."** Promoting a scenario would have to
+   void and re-write dozens of committed records in one action; that is the single most dangerous
+   button in the product and it should be a separate decision, made after he has used the read-only
+   version. Correcting counts already works today via the existing void-and-replace.
+- **Sync note:** scenarios are **online-only**, like catalog master data — the desktop reads and
+  writes real inventory, not hypotheticals. That keeps them out of the two-way conflict rules
+  entirely.
+
+#### Rough sizes
+
+| Phase | Work | Estimate |
+|---|---|---|
+| 1 | Report snapshots + compare view | **~4 days** |
+| 2 | Period lock (optional) | **~2 days** |
+| 3 | What-if scenarios (read-only) | **~5 days** |
+| — | "Apply scenario to live" (deferred) | +2 days, separate decision |
+
+The client's two questions are answered by **Phases 1 + 3 ≈ 9 days**. That is material new scope
+against the current engagement — price it before committing.
+
+#### Decisions needed from the client
+
+1. **Snapshot trigger** — automatic on some "finalise" action, or a manual *Save as Final* the
+   auditor presses? (Recommend manual: automatic snapshots on every view produce noise nobody reads.)
+2. **Does Final mean locked?** (Phase 2.) If yes, who may reopen a locked period.
+3. **Scenario start state** — empty or seeded from the real entries.
+4. **Does a scenario ever become real?** (The deferred apply step.) Recommend: not in v1.
+5. Variance threshold — 10% or the 11% he specified on 2026-07-21.
+
 ## Open decisions — raise at the next client check-in
 
 1. **Transfers design sign-off.** Transfers have **no legacy precedent** — unlike everything else,
@@ -219,3 +321,4 @@ Rough size: 1–2 days, front-end-weighted. Open question for the client: unknow
    client's accountant to nominate one: PAS 2 expects a single formula applied consistently, and
    switching restates every valuation figure (logged with old → new). Valuation only — variance is
    basis-independent by construction (architecture.md deviations #21–23).
+7. **Report snapshots / what-if (requests G & I, 2026-08-06)** — material new scope (~9 days for the two he asked for). Five sub-decisions and the phase plan are in the parked build above; the pricing call is the client's before any of it starts.

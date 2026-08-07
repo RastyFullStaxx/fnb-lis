@@ -628,6 +628,10 @@ export const transferRoutes = new Hono<AppEnv>()
     const { reason } = c.req.valid("json");
     const transfer = await getOwnedTransfer(location.id, c.req.param("id"));
     requireSourceSide(transfer, location.id);
+    // Draft lines are removed, not voided -- as in Counts and Purchases.
+    if (transfer.status !== "COMMITTED") {
+      throw new AppError(409, "Draft transfer lines are removed, not voided");
+    }
     const line = await prisma.transferLine.findUnique({ where: { id: c.req.param("lineId") }, include: LI_INCLUDE });
     if (!line || line.transferId !== transfer.id) throw new AppError(404, "Transfer line not found");
     if (line.status === "VOID") throw new AppError(409, "Already voided");

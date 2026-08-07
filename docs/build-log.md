@@ -4669,3 +4669,145 @@ The last of the five simulation groups, and the one people touch every shift.
 
 `verify:seed` passes; web typechecks.
 
+## Audit — void-on-draft (2026-08-06)
+
+**A committed count session could contain no lines at all.** Found by scanning
+every transactional query for a missing `status` filter, then proved against the
+running API rather than argued from the source.
+
+The two halves:
+
+- `POST /counts/:id/lines/:lineId/void` never checked the SESSION's status. Its
+  sibling `DELETE` route refuses on a committed session ("void instead"), which
+  implies void is the post-commit operation — but nothing enforced the other
+  direction, so a line in an OPEN draft could be voided.
+- The commit guard counted rows with `countLine.count({ countSessionId })` and no
+  status filter, so those VOID lines still satisfied "add at least one count line
+  before committing".
+
+Add one line, void it, commit: **200 COMMITTED, 1 line, 0 ACTIVE.** Purchases had
+the identical pair. Transfers had the void hole but already counted only ACTIVE
+lines at commit, so it could not reach the empty-commit end state.
+
+Why this one mattered: an empty COMMITTED count session is a perfectly valid
+Full Audit anchor. `committedCountDates()` offers its date in the report picker,
+`buildFullAudit` finds no lines for it, and every item's beginning or ending
+reads zero — so the whole period reconciles against nothing, on the one report
+the client says he trusts above all else.
+
+Fixed at the root: all three void-line routes now refuse unless the parent is
+COMMITTED, and both commit guards count ACTIVE lines only. Re-probed: 409
+"Draft count lines are removed, not voided", then a normal commit with 1 ACTIVE
+line. Checked the dev database for existing damage — no committed session or
+purchase has zero active lines. Draft removal (the DELETE route) is untouched,
+so the entry workflow is unchanged.
+
+`verify:seed`, `verify:races`, `verify:sync` and `verify:security` all pass;
+both workspaces typecheck.
+
+## Audit — two committed counts on one date (2026-08-06)
+
+Worse than the empty-session bug above, and found by the same method: ask what
+the report's anchor query actually selects, then try to break it against the
+running API.
+
+`buildFullAudit` picks its beginning and ending inventory with
+`{locationId, countDate, status: COMMITTED}` and **sums every line it finds**.
+Nothing stopped a second committed session on the same date. Measured on a
+seeded period: a stray 99-unit line took Absolut Vodka's beginning from **1 to
+100** and turned a variance of **0 into -99**. A 99-bottle short that never
+happened, on the Full Audit.
+
+This is the ordinary double-entry accident -- staff count, the manager counts
+again to be sure -- and both commits were accepted silently.
+
+Fixed inside the commit transaction, beside the existing compare-and-set (a
+check outside it would let two simultaneous commits both pass before either
+wrote). The refusal names the date and the two ways out: void the other count,
+or move this one. Neither counted areas nor re-counting are affected -- areas
+are area-tagged lines in ONE session, and a voided session is ignored.
+
+**The seed was doing it too.** Two independent blocks wrote Depot counts on
+2026-06-08 and 2026-06-15 -- the transfers-scenario boundary counts and the
+Stockroom catalog counts -- so the Depot's own audit for those dates was
+already inflated. The second block now appends to the date's existing session
+instead of opening a rival. Sums are unchanged, so every golden number holds.
+
+**The dev database still carries the old artifact** on Depot 06-08/06-15; it
+predates the guard and only a re-seed clears it. Main Bar and Kitchen -- every
+golden fixture -- are unaffected.
+
+`verify:seed` and `verify:races` pass.
+
+## UI/UX — say the rule, and say it early (2026-08-06)
+
+**The count-date clash is now caught while the date is still a choice.** The
+server refuses a second committed count for a date (above), but hearing that at
+commit is hearing it after someone has counted the whole bar. The Start a Count
+dialog now checks the picked date against the committed sessions it already has
+in hand -- no new query -- and says what will happen, with a button straight to
+the existing count. Verified live: warns on 2026-07-20, clean on a free date.
+
+**The Full Audit never stated the rule behind its own colours.** Red and amber
+rows are an assertion -- "this one is material" -- and the criterion is a
+per-establishment setting: 11% at Prime Hospitality, 8% at Casa Verde. A reader
+who does not know the number cannot tell a flagged row from a formatting choice,
+and the downloaded workbook reached the accountant with coloured rows, a Flag
+column, and no criterion anywhere in the file.
+
+One sentence now travels with the numbers -- on screen, in the Excel subtitle,
+as its own CSV line, and in the PDF subtitle:
+
+> Flagged: over/short by 11% or more of usage, or by a whole unit on items counted whole
+
+Generated by `varianceRuleText()` in `@fnb/core`, beside `varianceSeverity`, so
+the words and the predicate cannot drift apart. Verified on screen at the live
+11% and in a downloaded CSV. `reconciliation.ts` was touched, so the golden
+fixtures were re-run: PASS -- the addition is a string, no math moved.
+
+### Swept and already sound
+
+Checked and found nothing worth changing, recorded so the next pass skips them:
+error-copy register (the "Couldn't load" / "Could not save" split is systematic,
+read vs write, not drift); buttons disabled by a business rule (each has its
+reason visible on the same screen); clickable table rows (all three carry
+`tabIndex` + Enter/Space); `aria-live` on both surfaces DESIGN.md names.
+
+## Audit round 2 — one new check, and one race that turned out not to exist
+
+**`verify:races` case 4: the anchor rule under concurrency.** The new
+one-count-per-date guard reads for a rival and then writes, which is the exact
+TOCTOU shape the rest of that harness exists to test. Two concurrent commits of
+two sessions on the same date, with a 250ms window wedged between the read and
+the write.
+
+**It holds -- and it already held before any reordering.** Both orderings were
+run: read-first (what the route does) and write-first. Each time exactly one
+commit landed and the other was refused. Prisma serialises SQLite write
+transactions, so the loser's read sees the winner. **The route was left
+alone**; reordering it would have been a fix for a race that does not exist.
+The check stays because that serialisation is an assumption, not a promise -- a
+driver swap or a move off SQLite would remove it silently, and the failure would
+surface as a corrupt report rather than an error.
+
+### Swept clean this round
+
+- **Numeric boundaries.** Every entry field routes through `nonNegative` /
+  `positive` in `@fnb/core`, both `.finite()` -- so `1e400` (which JSON parses
+  to Infinity) is refused. The bare `z.number()` uses elsewhere are all bounded
+  by `.int()` or `.min/.max`, which reject Infinity by construction.
+- **ActivityLog discipline.** All 11 mutations outside a `$transaction` are
+  login bookkeeping, MFA/PIN state, or a personal UI preference; the two that
+  restate every report -- cost basis and variance threshold -- both write
+  `tx.client.update` alongside `logActivity` in one transaction.
+- **Index coverage** on all seven Full Audit queries.
+
+### Noted, not built
+
+`checkOutlierWarnings` covers WEIGH lines only -- a fat-fingered FULL count (10
+typed as 1000, the likeliest entry error in the product) gets no warning from
+either side. That exclusion is deliberate, not an oversight: the phases doc
+scopes the checks to Weigh Partial and Open Amount. Reusing the existing
+trailing-average machinery for full counts would be a small feature, and it is
+the client's call, not a bug to fix quietly.
+

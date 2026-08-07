@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { BarChart3, ChevronDown, ChevronRight, FileDown, Info } from "lucide-react";
-import { can, hasVariance, MATERIAL_VARIANCE_PCT, round2, varianceSeverity, type Role } from "@fnb/core";
+import { can, hasVariance, MATERIAL_VARIANCE_PCT, round2, varianceRuleText, varianceSeverity, type Role } from "@fnb/core";
 import { toast } from "sonner";
 import { useMe } from "@/api/auth";
 import { useCountDates, useFullAudit } from "@/api/ops";
@@ -251,6 +251,13 @@ export function FullAuditPage() {
           </>
         }
       />
+
+      {/* The rule behind the colours, stated where the colours are.
+          Red and amber rows are a claim -- "this one is material" -- and the
+          criterion is a per-establishment setting, so a reader who does not
+          know it cannot tell a flagged row from a formatting choice. Printed
+          too: the paper copy is the one that reaches the accountant. */}
+      <p className="mb-3 text-xs text-muted-foreground print:mb-2">{varianceRuleText(thresholdPct)}</p>
 
       {/* Print-only header */}
       {location && effectiveBegin && effectiveEnd && (

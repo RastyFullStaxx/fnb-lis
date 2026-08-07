@@ -7,6 +7,7 @@ import {
   round2,
   toCsv,
   varianceSeverity,
+  varianceRuleText,
   type CostBasis,
   type CsvValue,
   type ReconReport,
@@ -153,7 +154,7 @@ export async function legacyAuditWorkbook(
   ws.getCell("A1").font = { bold: true, size: 15, color: { argb: BLUE } };
   ws.mergeCells("A2:R2");
   ws.getCell("A2").value =
-    `${meta.clientName} · ${meta.locationName} · ${report.begin} → ${report.end} (activity up to, not including, the ending date) · Valuation: ${COST_BASIS_LABELS[report.costBasis]}`;
+    `${meta.clientName} · ${meta.locationName} · ${report.begin} → ${report.end} (activity up to, not including, the ending date) · Valuation: ${COST_BASIS_LABELS[report.costBasis]} · ${varianceRuleText(meta.varianceThresholdPct ?? MATERIAL_VARIANCE_PCT)}`;
   ws.getCell("A2").font = { size: 10, color: { argb: "FF6B7280" } };
   ws.getCell("S1").value = legacyRatioLabel(variant);
   ws.getCell("S1").font = { bold: true, size: 10 };
@@ -234,6 +235,7 @@ export function legacyAuditCsv(
 ): string {
   const rows: CsvValue[][] = [
     [`${legacyAuditTitle(variant)} · ${report.begin} → ${report.end} · Valuation: ${COST_BASIS_LABELS[report.costBasis]}`],
+    [varianceRuleText(thresholdPct)],
     [legacyRatioLabel(variant), report.costRatio === null ? "" : round2(report.costRatio)],
     LEGACY_HEADERS,
   ];
@@ -269,7 +271,7 @@ export function legacyAuditPdf(
   rows.push({ cells: legacyTotalCells("GRAND TOTAL", report.totals) as (string | number)[], kind: "total" });
   return tablePdf({
     title: legacyAuditTitle(variant),
-    subtitle: `${meta.clientName} · ${meta.locationName} · ${report.begin} → ${report.end} · ${legacyRatioLabel(variant)}: ${report.costRatio === null ? "—" : round2(report.costRatio)} · Valuation: ${COST_BASIS_LABELS[report.costBasis]}`,
+    subtitle: `${meta.clientName} · ${meta.locationName} · ${report.begin} → ${report.end} · ${legacyRatioLabel(variant)}: ${report.costRatio === null ? "—" : round2(report.costRatio)} · Valuation: ${COST_BASIS_LABELS[report.costBasis]} · ${varianceRuleText(threshold)}`,
     columns: LEGACY_HEADERS.map((h, i) => ({ header: h, align: i < 2 ? "left" : "right", width: i === 0 ? "*" : "auto" })),
     rows,
     exportedBy: stampLine(meta),

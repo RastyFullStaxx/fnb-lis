@@ -570,10 +570,46 @@ export const countRoutes = new Hono<AppEnv>()
     assertMayEditDraft(session, user, "count");
 
     if (session.status !== "OPEN") throw new AppError(409, "Already committed");
-    const lineCount = await prisma.countLine.count({ where: { countSessionId: session.id } });
+    const lineCount = await prisma.countLine.count({ where: { countSessionId: session.id, status: "ACTIVE" } });
     if (lineCount === 0) throw new AppError(400, "Add at least one count line before committing");
 
     const committed = await prisma.$transaction(async (tx) => {
+      /**
+       * One COMMITTED count per location per date -- the anchor rule.
+       *
+       * `buildFullAudit` selects its beginning and ending inventory by
+       * {locationId, countDate, status: COMMITTED} and SUMS every line it
+       * finds. A second committed session on the same date therefore does not
+       * replace the first, it ADDS to it: measured on a seeded period, a stray
+       * 99-unit line took the beginning from 1 to 100 and reported a 99-unit
+       * short that never happened. That is the ordinary double-entry accident
+       * -- staff count, the manager counts again to be sure -- and it silently
+       * corrupts the one report the client trusts most.
+       *
+       * Counted areas are NOT this case: a location that splits by bar/store
+       * puts area-tagged lines in ONE session, which report-assembly already
+       * sums correctly. Re-counting after a mistake is not this case either:
+       * the first session is voided, and VOID sessions are ignored here.
+       *
+       * Inside the transaction, next to the compare-and-set: a check outside
+       * it would let two simultaneous commits both pass before either wrote.
+       */
+      const rival = await tx.countSession.findFirst({
+        where: {
+          locationId: location.id,
+          countDate: session.countDate,
+          status: "COMMITTED",
+          id: { not: session.id },
+        },
+        select: { id: true },
+      });
+      if (rival) {
+        throw new AppError(
+          409,
+          `A count for ${session.countDate} has already been committed at this location. Two committed counts for one date would be added together, not compared. Void that one first, or move this count to a different date.`,
+          "DUPLICATE_COUNT_DATE",
+        );
+      }
       // Compare-and-set, not a bare update: the `status !== "OPEN"` check above
       // is outside this transaction, so two commits arriving together both
       // passed it. The loser used to overwrite committedAt/committedById and
@@ -635,7 +671,17 @@ export const countRoutes = new Hono<AppEnv>()
     const location = c.get("location");
     const user = c.get("user")!;
     const { reason } = c.req.valid("json");
-    await getOwnedSession(location.id, c.req.param("id"));
+    const parent = await getOwnedSession(location.id, c.req.param("id"));
+    // Void is the POST-COMMIT operation; a draft line is removed outright (the
+    // sibling DELETE route). Without this check a draft could hold VOID lines,
+    // and the "at least one line" guard below counted them -- so a document
+    // whose every line had been voided committed EMPTY. For a count session
+    // that is the worst case in the product: an empty COMMITTED session is a
+    // valid Full Audit anchor, so every item's beginning or ending reads zero
+    // and the whole period reconciles against nothing.
+    if (parent.status !== "COMMITTED") {
+      throw new AppError(409, "Draft count lines are removed, not voided");
+    }
     const line = await prisma.countLine.findUnique({ where: { id: c.req.param("lineId") }, include: LINE_INCLUDE });
     if (!line || line.countSessionId !== c.req.param("id")) throw new AppError(404, "Count line not found");
     if (line.status === "VOID") throw new AppError(409, "Already voided");
