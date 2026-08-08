@@ -322,6 +322,60 @@ html[data-font-size="x-large"] {
   }
 }
 
+/* Landing nav anchors: smooth-scroll to each section, offset so the top of
+   the section clears the viewport edge instead of landing flush against
+   it. */
+html:has(#home) {
+  scroll-behavior: smooth;
+}
+#home,
+#about,
+#services,
+#contact {
+  scroll-margin-top: 1.5rem;
+}
+
+/* Landing dotted-grid background: a halftone-style dot lattice for the dark
+   hero surface, matching the client's reference deck texture — large, dense,
+   ink-dark dots near the top-left corner that shrink and thin out toward the
+   opposite corner. Three dot layers at different sizes are each masked to
+   their own zone of the radial falloff so the dot *size* appears to shrink,
+   not just fade — a plain single-layer radial-gradient can only vary
+   opacity, not per-dot size. Kept as a plain background-image (not
+   decorative markup) so it never competes with real content for
+   screen-reader attention. */
+.landing-dot-grid {
+  --dot-color: color-mix(in oklab, var(--sidebar-foreground) 55%, transparent);
+  position: relative;
+}
+.landing-dot-grid::before,
+.landing-dot-grid::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+.landing-dot-grid {
+  background-image: radial-gradient(var(--dot-color) 3.5px, transparent 3.5px);
+  background-size: 20px 20px;
+  background-position: -2px -2px;
+  -webkit-mask-image: radial-gradient(circle at 4% 2%, #000 0%, #000 30%, transparent 68%);
+  mask-image: radial-gradient(circle at 4% 2%, #000 0%, #000 30%, transparent 68%);
+}
+.landing-dot-grid::before {
+  background-image: radial-gradient(var(--dot-color) 2px, transparent 2px);
+  background-size: 20px 20px;
+  background-position: -2px -2px;
+  -webkit-mask-image: radial-gradient(circle at 4% 2%, transparent 26%, #000 40%, #000 62%, transparent 82%);
+  mask-image: radial-gradient(circle at 4% 2%, transparent 26%, #000 40%, #000 62%, transparent 82%);
+}
+.landing-dot-grid::after {
+  background-image: radial-gradient(var(--dot-color) 1px, transparent 1px);
+  background-size: 20px 20px;
+  background-position: -2px -2px;
+  -webkit-mask-image: radial-gradient(circle at 4% 2%, transparent 58%, #000 76%, #000 100%);
+  mask-image: radial-gradient(circle at 4% 2%, transparent 58%, #000 76%, #000 100%);
+}
+
 /* Print: strip the app chrome, land reports on A4 landscape with a repeating
    table header. Use `print:hidden` on controls and `hidden print:block` on the
    print-only report header. */
