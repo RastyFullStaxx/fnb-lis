@@ -1,6 +1,6 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type MouseEvent } from "react";
 import { Link, Navigate } from "react-router";
-import { Globe, Mail, MapPin, Phone, Play, Share2 } from "lucide-react";
+import { Globe, Mail, MapPin, Phone, Play, Share2, Volume2, VolumeX } from "lucide-react";
 import { useMe } from "@/api/auth";
 import { Button } from "@/components/ui/button";
 import lisLogo from "@/assets/lis-logo.png";
@@ -12,6 +12,8 @@ import aboutBarPhoto from "@/assets/photos/about-bar.png";
 import aboutKitchenPhoto from "@/assets/photos/about-kitchen.png";
 import servicesSharedPhoto from "@/assets/photos/services-shared.png";
 import servicesJoinedPhoto from "@/assets/photos/services-joined.png";
+import dotPattern from "@/assets/dot-pattern.svg";
+import dotPatternWhite from "@/assets/dot-pattern-white.svg";
 
 // ── Marketing content (client req #8) ────────────────────────────────────────
 // ponytail: placeholders stand in for photography until the client sends the
@@ -76,7 +78,15 @@ const NAV_LINKS = [
 function HomeSection() {
   return (
     <section id="home" className="relative overflow-hidden">
-      <div aria-hidden="true" className="landing-dot-grid pointer-events-none absolute inset-0" />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 h-full w-full bg-no-repeat"
+        style={{
+          backgroundImage: `url(${dotPattern})`,
+          backgroundPosition: "top left",
+          backgroundSize: "auto",
+        }}
+      />
       <div className="relative grid lg:grid-cols-[1.1fr_0.9fr] lg:h-dvh">
         {/* Left: nav + hero copy */}
         <div className="mx-auto flex w-full max-w-xl flex-col px-6 py-6 lg:py-10">
@@ -138,13 +148,21 @@ function HomeSection() {
 }
 
 /**
- * Portrait product video with sound. Autoplaying audio is blocked by every
- * browser anyway, so this stays paused behind its poster frame until the
- * visitor chooses to play it — a real control, not a muted loop.
+ * Portrait product video (client req #8). Autoplaying audio is blocked by
+ * every browser, so this autoplays muted on mount — the same pattern
+ * Apple's product pages use — with a persistent "Tap to unmute" pill
+ * inviting the visitor to turn sound on; it swaps to a plain speaker icon
+ * once they've unmuted. Uses a custom play/pause overlay instead of the
+ * native `controls` attribute, so no browser-chrome scrubber/volume/
+ * fullscreen bar ever appears. The play button only shows while paused —
+ * it's the "click to start" CTA; once playing, the motion itself is the
+ * "this is playing" signal, so no icon sits on top of it. Clicking
+ * anywhere on the video still toggles playback either way.
  */
 function HeroVideo() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isMuted, setIsMuted] = useState(true);
 
   function togglePlay() {
     const video = videoRef.current;
@@ -158,6 +176,14 @@ function HeroVideo() {
     }
   }
 
+  function toggleMute(e: MouseEvent) {
+    e.stopPropagation();
+    const video = videoRef.current;
+    if (!video) return;
+    video.muted = !video.muted;
+    setIsMuted(video.muted);
+  }
+
   return (
     <div className="relative h-full w-full overflow-hidden bg-black">
       <video
@@ -165,7 +191,10 @@ function HeroVideo() {
         className="h-full w-full object-cover"
         poster={lisVideoPoster}
         playsInline
-        controls={isPlaying}
+        autoPlay
+        muted
+        loop
+        onClick={togglePlay}
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
         onEnded={() => setIsPlaying(false)}
@@ -173,18 +202,29 @@ function HeroVideo() {
         <source src={lisVideoWebm} type="video/webm" />
         <source src={lisVideoMp4} type="video/mp4" />
       </video>
-      {!isPlaying && (
-        <button
-          type="button"
-          onClick={togglePlay}
-          aria-label="Play video"
-          className="absolute inset-0 flex items-center justify-center bg-black/20 transition-colors hover:bg-black/30"
-        >
+      <button
+        type="button"
+        onClick={togglePlay}
+        aria-label={isPlaying ? "Pause video" : "Play video"}
+        className={`absolute inset-0 flex items-center justify-center transition-colors ${
+          isPlaying ? "bg-transparent" : "bg-black/20 hover:bg-black/30"
+        }`}
+      >
+        {!isPlaying && (
           <span className="flex size-16 items-center justify-center rounded-full bg-background/90 text-foreground shadow-lg">
             <Play className="size-7 translate-x-0.5" fill="currentColor" />
           </span>
-        </button>
-      )}
+        )}
+      </button>
+      <button
+        type="button"
+        onClick={toggleMute}
+        aria-label={isMuted ? "Unmute video" : "Mute video"}
+        className="absolute bottom-4 right-4 flex items-center gap-2 rounded-full bg-black/60 py-2 pl-3 pr-4 text-sm font-medium text-white backdrop-blur-sm transition-colors hover:bg-black/75"
+      >
+        {isMuted ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
+        {isMuted && <span>Tap to unmute</span>}
+      </button>
     </div>
   );
 }
@@ -198,23 +238,25 @@ function AboutSection() {
     "We help you stay in control of your inventory so you can focus on growing your business.",
   ];
   return (
-    <section id="about" className="bg-background text-foreground">
+    <section id="about" className="bg-[#F3F3F3] text-foreground">
       <div className="mx-auto grid max-w-6xl gap-12 px-6 py-16 lg:grid-cols-[1.05fr_0.95fr] lg:items-start lg:py-24">
-        <div>
+        <div className="max-w-lg">
           <div className="flex items-center gap-4">
-            <h2 className="text-3xl font-bold uppercase tracking-tight sm:text-4xl">About Us</h2>
+            <h2 className="text-3xl font-bold uppercase tracking-tight text-sidebar sm:text-4xl">About Us</h2>
             <img src={lisLogo} alt="" className="size-14 object-contain" />
           </div>
-          <p className="mt-8 text-base italic text-muted-foreground">Accuracy is Everything</p>
-          <div className="mt-4 space-y-5 text-[15px] leading-7 text-foreground/90">
+          <p className="mt-8 text-base italic text-sidebar">Accuracy is Everything</p>
+          <div className="mt-4 space-y-5 text-justify text-base leading-7 text-sidebar">
             {paragraphs.map((p) => (
               <p key={p}>{p}</p>
             ))}
           </div>
-          <p className="mt-8 font-semibold">Liquor Inventory Solution, your Trusted Inventory Management partner!</p>
+          <p className="mt-8 whitespace-nowrap font-semibold text-sidebar">
+            Liquor Inventory Solution, your Trusted Inventory Management partner!
+          </p>
         </div>
 
-        <div className="relative mx-auto w-full max-w-xs py-4 lg:mx-0 lg:max-w-sm">
+        <div className="relative mx-auto w-full max-w-xs py-4 lg:mx-0 lg:ml-auto lg:max-w-sm">
           <div className="relative ml-auto w-[70%]">
             <div aria-hidden="true" className="absolute -bottom-3 -right-3 h-full w-full bg-sidebar" />
             <img
@@ -332,8 +374,17 @@ function ContactSection() {
     { icon: MapPin, label: CONTACT.address },
   ];
   return (
-    <section id="contact" className="bg-background text-foreground">
-      <div className="mx-auto grid max-w-6xl items-center gap-10 px-6 py-16 lg:grid-cols-2 lg:py-24">
+    <section id="contact" className="relative overflow-hidden bg-[#F3F3F3] text-foreground">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 h-full w-full bg-no-repeat"
+        style={{
+          backgroundImage: `url(${dotPatternWhite})`,
+          backgroundPosition: "top left",
+          backgroundSize: "auto",
+        }}
+      />
+      <div className="relative mx-auto grid max-w-6xl items-center gap-10 px-6 py-16 lg:grid-cols-2 lg:py-24">
         <h2 className="text-4xl font-bold uppercase tracking-tight sm:text-5xl">Contact Us</h2>
         <div className="divide-y divide-dashed divide-border">
           {rows.map((row) => (
