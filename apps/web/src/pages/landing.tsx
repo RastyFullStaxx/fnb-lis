@@ -1,6 +1,6 @@
 import { useRef, useState, type MouseEvent } from "react";
 import { Link, Navigate } from "react-router";
-import { Globe, Mail, MapPin, Phone, Play, Share2, Volume2, VolumeX } from "lucide-react";
+import { Globe, Mail, MapPin, Phone, Play, Volume2, VolumeX } from "lucide-react";
 import { useMe } from "@/api/auth";
 import { Button } from "@/components/ui/button";
 import lisLogo from "@/assets/lis-logo.png";
@@ -22,6 +22,7 @@ const CONTACT = {
   phone: "+63 952 394 5402",
   email: "liquorinventorysolutions@gmail.com",
   facebook: "Liquor Inventory Solution - FNB Cost Control",
+  facebookUrl: "https://www.facebook.com/bar.audit",
   website: "www.barandkitchencontrol.com",
   address: "Pasig City, Philippines",
 };
@@ -125,14 +126,14 @@ function HomeSection() {
                 variant="outline"
                 className="min-h-11 rounded-md border-none bg-sidebar-foreground px-6 text-sidebar hover:bg-sidebar-foreground/90"
               >
-                <Link to="/login">Subscribe</Link>
+                <a href="#contact">Subscribe</a>
               </Button>
               <Button
                 asChild
                 variant="outline"
                 className="min-h-11 rounded-md border-none bg-sidebar-foreground px-6 text-sidebar hover:bg-sidebar-foreground/90"
               >
-                <Link to="/login">On-Premise Solution</Link>
+                <a href="#contact">On-Premise Solution</a>
               </Button>
             </div>
           </div>
@@ -241,7 +242,7 @@ function AboutSection() {
     <section id="about" className="bg-[#F3F3F3] text-foreground">
       <div className="mx-auto grid max-w-6xl gap-12 px-6 py-16 lg:grid-cols-[1.05fr_0.95fr] lg:items-start lg:py-24">
         <div className="max-w-lg">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center justify-between gap-4">
             <h2 className="text-3xl font-bold uppercase tracking-tight text-sidebar sm:text-4xl">About Us</h2>
             <img src={lisLogo} alt="" className="size-14 object-contain" />
           </div>
@@ -297,14 +298,14 @@ function ServicesSection() {
   ];
   return (
     <section id="services" className="bg-sidebar text-sidebar-foreground">
-      <div className="mx-auto max-w-6xl px-6 py-16 lg:py-24">
+      <div className="mx-auto max-w-6xl px-6 pb-8 pt-16 lg:pb-12 lg:pt-24">
         <h2 className="text-center text-3xl font-bold uppercase tracking-tight sm:text-4xl">Services</h2>
         <div className="mt-14 grid gap-10 sm:grid-cols-2">
           {services.map((service) => (
             <div key={service.title} className="flex flex-col items-center text-center">
               <img src={service.photo} alt={service.alt} className="w-full max-w-sm border border-sidebar-border/50 object-cover" />
-              <h3 className="mt-6 text-lg font-bold uppercase tracking-wide">{service.title}</h3>
-              <p className="mt-4 max-w-sm text-sm leading-6 text-sidebar-foreground/75">{service.body}</p>
+              <h3 className="mt-6 text-lg font-bold uppercase tracking-wide text-white">{service.title}</h3>
+              <p className="mt-4 max-w-sm text-justify text-base leading-6 text-white">{service.body}</p>
             </div>
           ))}
         </div>
@@ -325,18 +326,18 @@ function GoalSystemSection() {
   ];
   return (
     <section className="bg-sidebar text-sidebar-foreground">
-      <div className="mx-auto grid max-w-6xl gap-3 px-6 py-16 sm:grid-cols-2 lg:py-24">
-        <div className="flex flex-col gap-3">
-          <div className="rounded-lg bg-muted/95 p-8 text-foreground">
+      <div className="mx-auto grid max-w-5xl gap-3 px-6 pb-16 pt-8 sm:grid-cols-2 lg:pb-24 lg:pt-12">
+        <div className="flex h-full flex-col gap-3">
+          <div className="flex-1 bg-muted/95 p-8" style={{ color: "#112555" }}>
             <h3 className="text-xl font-bold">Our Goal</h3>
-            <p className="mt-4 text-sm leading-6 text-foreground/80">
+            <p className="mt-4 text-base leading-6">
               To provide accurate, reliable, and efficient inventory solutions that help hospitality businesses
               protect their profits and operate with confidence.
             </p>
           </div>
-          <div className="rounded-lg bg-accent p-8 text-accent-foreground">
+          <div className="flex-1 bg-accent p-8" style={{ color: "#112555" }}>
             <h3 className="text-xl font-bold">Standalone Inventory Management System</h3>
-            <p className="mt-4 text-sm leading-6 text-accent-foreground/80">
+            <p className="mt-4 text-base leading-6">
               For businesses that prefer an offline solution, we offer an on-premise system that runs on your
               dedicated computer, providing fast, secure, and reliable inventory management without requiring an
               internet connection.
@@ -344,13 +345,13 @@ function GoalSystemSection() {
           </div>
         </div>
 
-        <div className="rounded-lg bg-background p-8 text-foreground">
+        <div className="bg-background p-8" style={{ color: "#112555" }}>
           <h3 className="text-xl font-bold">Cloud-Based Inventory Management System</h3>
-          <p className="mt-4 text-sm leading-6 text-foreground/80">
+          <p className="mt-4 text-base leading-6">
             Manage your inventory anytime, anywhere through our cloud-based platform.
           </p>
           <h3 className="mt-8 text-xl font-bold">Key Features</h3>
-          <ul className="mt-4 space-y-2 text-sm leading-6 text-foreground/80">
+          <ul className="mt-4 space-y-2 text-base leading-6">
             {features.map((feature) => (
               <li key={feature} className="flex gap-2">
                 <span aria-hidden="true">-</span>
@@ -365,12 +366,32 @@ function GoalSystemSection() {
 }
 
 /* ── Contact ──────────────────────────────────────────────────────────────── */
+/** Facebook glyph (client-provided asset), drawn to match the stroke-icon
+ * style (lucide-react) used by the rest of the contact row icons so it
+ * doesn't stand out as a different icon set. */
+function FacebookIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />
+    </svg>
+  );
+}
+
 function ContactSection() {
   const rows = [
-    { icon: Phone, label: CONTACT.phone },
-    { icon: Mail, label: CONTACT.email },
-    { icon: Share2, label: CONTACT.facebook },
-    { icon: Globe, label: CONTACT.website },
+    { icon: Phone, label: CONTACT.phone, href: `tel:${CONTACT.phone.replace(/[^+\d]/g, "")}` },
+    { icon: Mail, label: CONTACT.email, href: `mailto:${CONTACT.email}` },
+    { icon: FacebookIcon, label: CONTACT.facebook, href: CONTACT.facebookUrl },
+    { icon: Globe, label: CONTACT.website, href: `https://${CONTACT.website}` },
     { icon: MapPin, label: CONTACT.address },
   ];
   return (
@@ -385,12 +406,37 @@ function ContactSection() {
         }}
       />
       <div className="relative mx-auto grid max-w-6xl items-center gap-10 px-6 py-16 lg:grid-cols-2 lg:py-24">
-        <h2 className="text-4xl font-bold uppercase tracking-tight sm:text-5xl">Contact Us</h2>
-        <div className="divide-y divide-dashed divide-border">
+        <h2 className="text-4xl font-bold uppercase tracking-tight sm:text-5xl" style={{ color: "#112555" }}>Contact Us</h2>
+        <div>
           {rows.map((row) => (
-            <div key={row.label} className="flex items-center gap-4 py-4">
-              <row.icon className="size-5 shrink-0 text-foreground" />
-              <span className="text-sm font-semibold">{row.label}</span>
+            <div key={row.label}>
+              {row.href ? (
+                <a
+                  href={row.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-4 py-4 transition-opacity hover:opacity-70"
+                  style={{ color: "#112555" }}
+                >
+                  <row.icon className="size-5 shrink-0" />
+                  <span className="text-sm font-semibold">{row.label}</span>
+                </a>
+              ) : (
+                <div className="flex items-center gap-4 py-4" style={{ color: "#112555" }}>
+                  <row.icon className="size-5 shrink-0" />
+                  <span className="text-sm font-semibold">{row.label}</span>
+                </div>
+              )}
+              <div
+                aria-hidden="true"
+                className="h-1.5 w-full"
+                style={{
+                  backgroundImage:
+                    "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='6' viewBox='0 0 8 6'%3E%3Ccircle cx='3' cy='3' r='1.5' fill='%23112555'/%3E%3C/svg%3E\")",
+                  backgroundRepeat: "repeat-x",
+                  backgroundPosition: "left center",
+                }}
+              />
             </div>
           ))}
         </div>
