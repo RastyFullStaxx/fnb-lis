@@ -322,6 +322,19 @@ html[data-font-size="x-large"] {
   }
 }
 
+/* Landing nav anchors: smooth-scroll to each section, offset so the top of
+   the section clears the viewport edge instead of landing flush against
+   it. */
+html:has(#home) {
+  scroll-behavior: smooth;
+}
+#home,
+#about,
+#services,
+#contact {
+  scroll-margin-top: 1.5rem;
+}
+
 /* Print: strip the app chrome, land reports on A4 landscape with a repeating
    table header. Use `print:hidden` on controls and `hidden print:block` on the
    print-only report header. */
