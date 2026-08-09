@@ -282,6 +282,34 @@ export function useLegacyAuditReport(
   });
 }
 
+/** The category-only Variance Summary rollup — mirrors VarianceSummaryRow/Report
+    in apps/server/src/services/report-variance-summary.ts. */
+export interface VarianceSummaryRow {
+  categoryName: string;
+  status: string;
+  brands: string;
+  short: number;
+  over: number;
+}
+export interface VarianceSummaryReport {
+  period: { beginDate: string; endDate: string };
+  rows: VarianceSummaryRow[];
+  totals: { short: number; over: number };
+}
+
+export function useVarianceSummaryReport(begin: string, end: string, productType?: string) {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["report", "variance-summary", locationId, begin, end, productType],
+    queryFn: () => {
+      const qs = new URLSearchParams({ begin, end });
+      if (productType) qs.set("productType", productType);
+      return api<VarianceSummaryReport>(`${base(locationId)}/reports/variance-summary?${qs}`);
+    },
+    enabled: Boolean(begin && end),
+  });
+}
+
 export interface AssetBreakageReport {
   from: string;
   to: string;
@@ -508,6 +536,7 @@ export function exportUrl(
     | "cost-analysis"
     | "top-sellers"
     | "legacy-audit"
+    | "variance-summary"
     | "cost-snapshot"
     | "forfeits"
     | "usage-cost"

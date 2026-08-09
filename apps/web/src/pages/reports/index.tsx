@@ -66,6 +66,12 @@ const SECTIONS: Array<{ title: string; blurb: string; reports: Report[] }> = [
         description: "The client's original 24-column layout, grouped by category, with the cost ratio.",
       },
       {
+        path: "variance-summary",
+        icon: BarChart3,
+        title: "Variance Summary",
+        description: "Category-only rollup of the variance: status, brands involved, and short/over at retail.",
+      },
+      {
         path: "usage-cost",
         icon: Gauge,
         title: "Usage Cost",
