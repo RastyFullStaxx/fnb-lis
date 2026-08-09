@@ -80,6 +80,22 @@ const GROUPS: Array<[string, number]> = [
   ["Overall Variance", 4],
 ];
 
+/** Solid tint for the sticky-left cell on highlighted rows — translucent
+    tints (bg-destructive/5, bg-warning/10) let scrolled-under columns bleed
+    through a pinned cell, since this report is intentionally wide by design
+    and meant to be scrolled. Same values as full-audit.tsx's identical fix,
+    hand-matched to those two translucent tints over `--background` in the
+    LIGHT theme, which is the only theme the app ships (no `.dark` toggle
+    exists). If a dark theme is ever added these literals must gain a `dark:`
+    twin, or highlighted rows will pin a near-white cell against a dark table. */
+const SHORT_ROW_STICKY_BG = "bg-[oklch(0.977_0.011_25)]";
+const OVER_ROW_STICKY_BG = "bg-[oklch(0.972_0.024_75)]";
+/** Solid equivalent of `bg-muted/50` (the category-total row's tint) over the
+    LIGHT theme's `--background` (pure white) — same reasoning and same
+    hand-match technique as the two constants above, for the one other
+    sticky-left cell that sat on a translucent row background. */
+const TOTAL_ROW_STICKY_BG = "bg-[oklch(0.986_0.002_239.3)]";
+
 /**
  * The client's legacy "Full Audit Report By Category" rendered on screen
  * (client req 2026-07-25 — he sent a screenshot of the old system and asked us
@@ -203,7 +219,7 @@ export function LegacyAuditPage() {
           )}
         </div>
 
-        <div className="min-h-0 flex-1 overflow-auto">
+        <div className="min-h-0 flex-1 overflow-auto [&_[data-slot=table-container]]:overflow-visible">
           {queryFailed(report) ? (
             <TableFailure query={report} />
           ) : report.isPending ? (
@@ -232,10 +248,10 @@ export function LegacyAuditPage() {
                   ))}
                 </TableRow>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="sticky left-0 top-8 z-30 min-w-[12rem] bg-muted">Product Name</TableHead>
-                  <TableHead className="sticky top-8 z-20 border-l bg-muted">Size/UOM</TableHead>
+                  <TableHead className="sticky left-0 top-10 z-30 w-[14rem] min-w-[10rem] border-r bg-muted">Product Name</TableHead>
+                  <TableHead className="sticky top-10 z-20 bg-muted">Size/UOM</TableHead>
                   {COLUMNS.map((c) => (
-                    <TableHead key={c.header} className="sticky top-8 z-20 bg-muted text-right whitespace-nowrap">
+                    <TableHead key={c.header} className="sticky top-10 z-20 bg-muted text-right whitespace-nowrap">
                       {c.header}
                     </TableHead>
                   ))}
@@ -245,12 +261,10 @@ export function LegacyAuditPage() {
                 {report.data.groups.map((group) => (
                   <Fragment key={group.categoryName}>
                     <TableRow className="bg-secondary/60 hover:bg-secondary/60">
-                      <TableCell
-                        colSpan={COLUMNS.length + 2}
-                        className="py-1 text-[11px] font-semibold uppercase tracking-wide text-secondary-foreground"
-                      >
+                      <TableCell className="sticky left-0 z-10 w-[14rem] min-w-[10rem] border-r break-words bg-secondary py-1 text-[11px] font-semibold uppercase tracking-wide text-secondary-foreground">
                         {group.categoryName}
                       </TableCell>
+                      <TableCell colSpan={COLUMNS.length + 1} className="py-1" />
                     </TableRow>
                     {group.rows.map((row, i) => {
                       // Same materiality highlight as the Full Audit and the
@@ -259,6 +273,15 @@ export function LegacyAuditPage() {
                         { variance: row.overallVariance, variancePct: row.variancePct, contentTracked: row.contentTracked },
                         thresholdPct,
                       );
+                      // The row tint is translucent by design (it needs to sit
+                      // over the row's own alternating/hover background), but
+                      // the STICKY cell can't use it — see SHORT/OVER_ROW_STICKY_BG
+                      // above. bg-background is the sticky cell's own opaque
+                      // fallback for an untinted row, not bg-inherit, which
+                      // would resolve to the unstyled <tr>'s transparent
+                      // background and let scrolled columns show through it.
+                      const stickyBg =
+                        sev === "short" ? SHORT_ROW_STICKY_BG : sev === "over" ? OVER_ROW_STICKY_BG : "bg-background";
                       return (
                         <TableRow
                           key={`${group.categoryName}-${i}`}
@@ -267,10 +290,10 @@ export function LegacyAuditPage() {
                             sev === "over" && "bg-warning/10",
                           )}
                         >
-                          <TableCell className="sticky left-0 z-10 max-w-[14rem] break-words bg-inherit font-medium">
+                          <TableCell className={cn("sticky left-0 z-10 w-[14rem] min-w-[10rem] border-r break-words font-medium", stickyBg)}>
                             {row.productName}
                           </TableCell>
-                          <TableCell className="border-l whitespace-nowrap text-muted-foreground">{row.sizeUom}</TableCell>
+                          <TableCell className="whitespace-nowrap text-muted-foreground">{row.sizeUom}</TableCell>
                           {COLUMNS.map((c) => {
                             const v = c.value(row);
                             return (
@@ -283,10 +306,10 @@ export function LegacyAuditPage() {
                       );
                     })}
                     <TableRow className="bg-muted/50 font-medium hover:bg-muted/50">
-                      <TableCell className="sticky left-0 z-10 bg-muted/50 uppercase">
+                      <TableCell className={cn("sticky left-0 z-10 w-[14rem] min-w-[10rem] border-r break-words uppercase", TOTAL_ROW_STICKY_BG)}>
                         {group.categoryName} total
                       </TableCell>
-                      <TableCell className="border-l" />
+                      <TableCell />
                       {COLUMNS.map((c) => {
                         const v = c.header === "%Over/Short" ? null : c.value(group.totals as unknown as LegacyAuditRow);
                         return (
@@ -299,8 +322,8 @@ export function LegacyAuditPage() {
                   </Fragment>
                 ))}
                 <TableRow className="bg-muted font-semibold hover:bg-muted [&_td]:border-t-2">
-                  <TableCell className="sticky left-0 z-10 bg-muted">GRAND TOTAL</TableCell>
-                  <TableCell className="border-l" />
+                  <TableCell className="sticky left-0 z-10 w-[14rem] min-w-[10rem] border-r break-words bg-muted">GRAND TOTAL</TableCell>
+                  <TableCell />
                   {COLUMNS.map((c) => {
                     const v = c.header === "%Over/Short" ? null : c.value(report.data.totals as unknown as LegacyAuditRow);
                     return (

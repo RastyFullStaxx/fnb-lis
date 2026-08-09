@@ -382,10 +382,10 @@ export function FullAuditPage() {
               <TableHeader>
                 {/* Column groups halve the scan: movement → usage → sold → verdict. */}
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="sticky left-0 top-0 z-30 bg-muted" aria-label="Item column group" />
+                  <TableHead className="sticky left-0 top-0 z-30 border-r bg-muted" aria-label="Item column group" />
                   <TableHead
                     colSpan={compact ? 2 : 5}
-                    className="sticky top-0 z-20 border-l bg-muted text-center text-xs font-medium text-muted-foreground"
+                    className="sticky top-0 z-20 bg-muted text-center text-xs font-medium text-muted-foreground"
                   >
                     Stock Movement
                   </TableHead>
@@ -404,8 +404,8 @@ export function FullAuditPage() {
                   </TableHead>
                 </TableRow>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="sticky left-0 top-10 z-30 w-[15rem] min-w-[9rem] bg-muted">Item</TableHead>
-                  <TableHead className="sticky top-10 z-20 border-l bg-muted text-right">
+                  <TableHead className="sticky left-0 top-10 z-30 w-[15rem] min-w-[9rem] border-r bg-muted">Item</TableHead>
+                  <TableHead className="sticky top-10 z-20 bg-muted text-right">
                     {compact ? <HeadHint label="Begin" /> : "Begin (Full + Open)"}
                   </TableHead>
                   {!compact && <TableHead className="sticky top-10 z-20 bg-muted text-right">Purchased</TableHead>}
@@ -439,7 +439,7 @@ export function FullAuditPage() {
                       visible subset's total. Siblings hide their footer when
                       filtered; the sacred report keeps its variance on screen
                       and disambiguates instead. */}
-                  <TableCell className="sticky left-0 z-10 bg-muted">
+                  <TableCell className="sticky left-0 z-10 w-[15rem] min-w-[9rem] border-r whitespace-normal break-words bg-muted">
                     {filteredOut > 0 ? "Grand Total · all rows" : "Grand Total"}
                   </TableCell>
                   {compact ? (
@@ -635,7 +635,7 @@ function CategoryRows({
   return (
     <>
       <TableRow className="bg-secondary/60 hover:bg-secondary/60">
-        <TableCell className="sticky left-0 z-10 bg-secondary py-1.5 text-xs font-semibold uppercase tracking-wide text-secondary-foreground">
+        <TableCell className="sticky left-0 z-10 w-[15rem] min-w-[9rem] border-r whitespace-normal break-words bg-secondary py-1.5 text-xs font-semibold uppercase tracking-wide text-secondary-foreground">
           {group.categoryName}
         </TableCell>
         <TableCell colSpan={compact ? 7 : 14} className="py-1.5" />
@@ -672,13 +672,23 @@ function CategoryRows({
           }}
           aria-label={`Open source records for ${row.itemName}`}
         >
-          {/* Wraps instead of forcing the table wider. An auditor has to read
-              the whole name to trust the row, so this caps and breaks rather
-              than truncating — "Jack Daniel's Old No. 7 700 ml" over two lines
-              beats an ellipsis or a sideways scrollbar. */}
+          {/* Fixed width, matching the header exactly (w-[15rem] min-w-[9rem]).
+              A max-width alone let the browser compute a narrower "natural"
+              column width from the body's shorter item names while the
+              sticky cell still painted at 15rem — the extra width overlapped
+              the next column and hid its divider under the sticky cell on
+              every row. Matching the header's fixed width removes the
+              mismatch; whitespace-normal + break-words still wraps long
+              names instead of forcing the table wider.
+              The divider itself lives here (border-r) rather than on the
+              Begin cell (border-l): that cell scrolls away with the rest of
+              the body, taking its border with it, while this cell is
+              pinned — so a border-l next door only ever lined up with the
+              sticky column at scroll position 0. border-r on the sticky
+              cell travels with it instead. */}
           <TableCell
             className={cn(
-              "sticky left-0 z-10 max-w-[15rem] whitespace-normal break-words",
+              "sticky left-0 z-10 w-[15rem] min-w-[9rem] border-r whitespace-normal break-words",
               stickyBg,
             )}
           >
@@ -689,7 +699,7 @@ function CategoryRows({
               </Badge>
             )}
           </TableCell>
-          <TableCell className="tnum border-l text-right">
+          <TableCell className="tnum text-right">
             {formatNumber(row.beginFull)}
             {row.beginOpenEquiv > 0 && <span className="text-muted-foreground"> + {formatNumber(row.beginOpenEquiv)}</span>}
           </TableCell>

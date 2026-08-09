@@ -125,7 +125,7 @@ export function VarianceSummaryPage() {
           </ToolbarField>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-auto">
+        <div className="min-h-0 flex-1 overflow-auto [&_[data-slot=table-container]]:overflow-visible">
           {queryFailed(report) ? (
             <TableFailure query={report} title="Couldn't load the Variance Summary" />
           ) : report.isPending ? (
@@ -155,11 +155,11 @@ export function VarianceSummaryPage() {
                   </TableHead>
                 </TableRow>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="sticky top-8 z-20 min-w-[10rem] bg-muted">Category</TableHead>
-                  <TableHead className="sticky top-8 z-20 bg-muted">Variances</TableHead>
-                  <TableHead className="sticky top-8 z-20 min-w-[16rem] bg-muted">Brands</TableHead>
-                  <TableHead className="sticky top-8 z-20 border-l bg-muted text-right">Short</TableHead>
-                  <TableHead className="sticky top-8 z-20 bg-muted text-right">Over</TableHead>
+                  <TableHead className="sticky top-10 z-20 min-w-[10rem] bg-muted">Category</TableHead>
+                  <TableHead className="sticky top-10 z-20 bg-muted">Variances</TableHead>
+                  <TableHead className="sticky top-10 z-20 min-w-[16rem] bg-muted">Brands</TableHead>
+                  <TableHead className="sticky top-10 z-20 border-l bg-muted text-right">Short</TableHead>
+                  <TableHead className="sticky top-10 z-20 bg-muted text-right">Over</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
