@@ -290,6 +290,7 @@ export interface VarianceSummaryRow {
   brands: string;
   short: number;
   over: number;
+  remarks: string;
 }
 export interface VarianceSummaryReport {
   period: { beginDate: string; endDate: string };

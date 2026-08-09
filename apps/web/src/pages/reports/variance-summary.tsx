@@ -29,9 +29,9 @@ import {
  * Variance Summary Report (client req, version 2 of the existing Variance
  * Report #10): a category-only view of the Full Audit — no item rows. One
  * row per category: status, the brands carrying the variance, and the
- * Short/Over retail split into two columns. Remarks is filled in by hand in
- * the downloaded XLSX file only — there is no on-screen or saved Remarks
- * field (see variance-summary-report-plan.md, "Remarks").
+ * Short/Over retail split into two columns. Remarks is carried on every
+ * export (XLSX/CSV/PDF) but deliberately NOT shown here — it's typed in by
+ * hand after downloading, not something this live report tracks or displays.
  *
  * Own page, own route, own hub card — not a view bolted onto Full Audit.
  */
@@ -146,11 +146,20 @@ export function VarianceSummaryPage() {
             <Table className="border-separate border-spacing-0 text-sm [&_td]:border-b [&_td]:px-3 [&_th]:border-b [&_th]:px-3">
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="sticky top-0 z-20 min-w-[10rem] bg-muted">Category</TableHead>
-                  <TableHead className="sticky top-0 z-20 bg-muted">Variances</TableHead>
-                  <TableHead className="sticky top-0 z-20 min-w-[16rem] bg-muted">Brands</TableHead>
-                  <TableHead className="sticky top-0 z-20 bg-muted text-right">Short</TableHead>
-                  <TableHead className="sticky top-0 z-20 bg-muted text-right">Over</TableHead>
+                  <TableHead colSpan={3} className="sticky top-0 z-20 bg-muted" aria-label="Category column group" />
+                  <TableHead
+                    colSpan={2}
+                    className="sticky top-0 z-20 border-l bg-muted text-center text-[11px] font-medium text-muted-foreground"
+                  >
+                    Variance at Retail
+                  </TableHead>
+                </TableRow>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="sticky top-8 z-20 min-w-[10rem] bg-muted">Category</TableHead>
+                  <TableHead className="sticky top-8 z-20 bg-muted">Variances</TableHead>
+                  <TableHead className="sticky top-8 z-20 min-w-[16rem] bg-muted">Brands</TableHead>
+                  <TableHead className="sticky top-8 z-20 border-l bg-muted text-right">Short</TableHead>
+                  <TableHead className="sticky top-8 z-20 bg-muted text-right">Over</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
