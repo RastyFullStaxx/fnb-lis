@@ -328,14 +328,14 @@ function GoalSystemSection() {
     <section className="bg-sidebar text-sidebar-foreground">
       <div className="mx-auto grid max-w-5xl gap-3 px-6 pb-16 pt-8 sm:grid-cols-2 lg:pb-24 lg:pt-12">
         <div className="flex h-full flex-col gap-3">
-          <div className="flex-1 bg-muted/95 p-8" style={{ color: "#112555" }}>
+          <div className="flex-1 bg-muted/95 p-8" style={{ color: "#002c50" }}>
             <h3 className="text-xl font-bold">Our Goal</h3>
             <p className="mt-4 text-base leading-6">
               To provide accurate, reliable, and efficient inventory solutions that help hospitality businesses
               protect their profits and operate with confidence.
             </p>
           </div>
-          <div className="flex-1 bg-accent p-8" style={{ color: "#112555" }}>
+          <div className="flex-1 bg-accent p-8" style={{ color: "#002c50" }}>
             <h3 className="text-xl font-bold">Standalone Inventory Management System</h3>
             <p className="mt-4 text-base leading-6">
               For businesses that prefer an offline solution, we offer an on-premise system that runs on your
@@ -345,7 +345,7 @@ function GoalSystemSection() {
           </div>
         </div>
 
-        <div className="bg-background p-8" style={{ color: "#112555" }}>
+        <div className="bg-background p-8" style={{ color: "#002c50" }}>
           <h3 className="text-xl font-bold">Cloud-Based Inventory Management System</h3>
           <p className="mt-4 text-base leading-6">
             Manage your inventory anytime, anywhere through our cloud-based platform.
@@ -406,7 +406,7 @@ function ContactSection() {
         }}
       />
       <div className="relative mx-auto grid max-w-6xl items-center gap-10 px-6 py-16 lg:grid-cols-2 lg:py-24">
-        <h2 className="text-4xl font-bold uppercase tracking-tight sm:text-5xl" style={{ color: "#112555" }}>Contact Us</h2>
+        <h2 className="text-4xl font-bold uppercase tracking-tight sm:text-5xl" style={{ color: "#002c50" }}>Contact Us</h2>
         <div>
           {rows.map((row) => (
             <div key={row.label}>
@@ -416,13 +416,13 @@ function ContactSection() {
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center gap-4 py-4 transition-opacity hover:opacity-70"
-                  style={{ color: "#112555" }}
+                  style={{ color: "#002c50" }}
                 >
                   <row.icon className="size-5 shrink-0" />
                   <span className="text-sm font-semibold">{row.label}</span>
                 </a>
               ) : (
-                <div className="flex items-center gap-4 py-4" style={{ color: "#112555" }}>
+                <div className="flex items-center gap-4 py-4" style={{ color: "#002c50" }}>
                   <row.icon className="size-5 shrink-0" />
                   <span className="text-sm font-semibold">{row.label}</span>
                 </div>
@@ -432,7 +432,7 @@ function ContactSection() {
                 className="h-1.5 w-full"
                 style={{
                   backgroundImage:
-                    "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='6' viewBox='0 0 8 6'%3E%3Ccircle cx='3' cy='3' r='1.5' fill='%23112555'/%3E%3C/svg%3E\")",
+                    "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='6' viewBox='0 0 8 6'%3E%3Ccircle cx='3' cy='3' r='1.5' fill='%23002c50'/%3E%3C/svg%3E\")",
                   backgroundRepeat: "repeat-x",
                   backgroundPosition: "left center",
                 }}

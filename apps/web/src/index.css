@@ -3,29 +3,39 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* FNB/LIS theme — royal blue & white. Source of truth: DESIGN.md. */
+/* FNB/LIS theme — brand blue & white. Source of truth: DESIGN.md.
+   Brand hue updated to 239.3° (from #012f48). The rest of the ramp is
+   re-hued from 264 -> 239.3 at its original lightness/chroma so the existing
+   contrast ratios documented below still hold.
+   --primary/--ring/--chart-1/--sidebar-primary use oklch(0.48 0.14 239.3)
+   (#0065a3) rather than the exact #012f48 swatch: the swatch's lightness
+   (L=0.29) sits almost on top of --sidebar's (L=0.28), so a --primary button
+   on the sidebar nearly disappeared. #0065a3 keeps the same hue/brand family
+   but restores the lightness gap the original palette had between --primary
+   (L=0.488) and --sidebar (L=0.28), so the button pops again. #012f48 itself
+   is still used as the sidebar's own base surface color (--sidebar) below. */
 :root {
   --radius: 0.625rem;
 
   --background: oklch(1 0 0);
-  --foreground: oklch(0.19 0.015 264);
+  --foreground: oklch(0.19 0.015 239.3);
 
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.19 0.015 264);
+  --card-foreground: oklch(0.19 0.015 239.3);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.19 0.015 264);
+  --popover-foreground: oklch(0.19 0.015 239.3);
 
-  --primary: oklch(0.488 0.217 264);
+  --primary: oklch(0.48 0.14 239.3); /* #0065a3 — brand hue, lifted for contrast against --sidebar */
   --primary-foreground: oklch(0.985 0 0);
 
-  --secondary: oklch(0.955 0.008 264);
-  --secondary-foreground: oklch(0.28 0.06 264);
+  --secondary: oklch(0.955 0.008 239.3);
+  --secondary-foreground: oklch(0.28 0.06 239.3);
 
-  --muted: oklch(0.972 0.004 264);
-  --muted-foreground: oklch(0.46 0.02 264);
+  --muted: oklch(0.972 0.004 239.3);
+  --muted-foreground: oklch(0.46 0.02 239.3);
 
-  --accent: oklch(0.955 0.015 264);
-  --accent-foreground: oklch(0.28 0.09 264);
+  --accent: oklch(0.955 0.015 239.3);
+  --accent-foreground: oklch(0.28 0.09 239.3);
 
   --destructive: oklch(0.55 0.2 25);
   --destructive-foreground: oklch(0.985 0 0);
@@ -40,25 +50,25 @@
   --warning-text: oklch(0.5 0.13 75);
   --success-text: oklch(0.5 0.14 155);
 
-  --border: oklch(0.916 0.008 264);
-  --input: oklch(0.916 0.008 264);
-  --ring: oklch(0.488 0.217 264); /* focus rings match --primary (DESIGN.md) */
+  --border: oklch(0.916 0.008 239.3);
+  --input: oklch(0.916 0.008 239.3);
+  --ring: oklch(0.48 0.14 239.3); /* focus rings match --primary (DESIGN.md) */
 
-  --chart-1: oklch(0.488 0.217 264);
-  --chart-2: oklch(0.62 0.14 264);
-  --chart-3: oklch(0.75 0.09 264);
+  --chart-1: oklch(0.48 0.14 239.3);
+  --chart-2: oklch(0.62 0.14 239.3);
+  --chart-3: oklch(0.75 0.09 239.3);
   --chart-4: var(--success);
   --chart-5: var(--warning);
 
-  /* The one Committed surface: deep royal ink sidebar. */
-  --sidebar: oklch(0.28 0.09 264);
-  --sidebar-foreground: oklch(0.93 0.012 264);
-  --sidebar-primary: oklch(0.488 0.217 264);
+  /* The one Committed surface: deep brand-navy sidebar. */
+  --sidebar: oklch(0.28 0.09 239.3);
+  --sidebar-foreground: oklch(0.93 0.012 239.3);
+  --sidebar-primary: oklch(0.48 0.14 239.3); /* #0065a3 */
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.345 0.095 264);
+  --sidebar-accent: oklch(0.345 0.095 239.3);
   --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(0.35 0.07 264);
-  --sidebar-ring: oklch(0.6 0.15 264);
+  --sidebar-border: oklch(0.35 0.07 239.3);
+  --sidebar-ring: oklch(0.6 0.15 239.3);
 }
 
 @theme inline {
@@ -252,14 +262,14 @@ html[data-font-size="x-large"] {
    read correctly, instead of a hard-coded gray that only suits one of them. */
 :root {
   --sb-size: 6px;
-  --sb-thumb: oklch(0.85 0.012 264);
-  --sb-thumb-hover: oklch(0.72 0.015 264);
+  --sb-thumb: oklch(0.85 0.012 239.3);
+  --sb-thumb-hover: oklch(0.72 0.015 239.3);
 }
 .dark {
   /* On dark surfaces the light thumb is too loud; step it down to sit at the
      same visual weight rather than the same colour. */
-  --sb-thumb: oklch(0.42 0.02 264);
-  --sb-thumb-hover: oklch(0.55 0.025 264);
+  --sb-thumb: oklch(0.42 0.02 239.3);
+  --sb-thumb-hover: oklch(0.55 0.025 239.3);
 }
 
 /* Firefox ONLY, and the guard is load-bearing.

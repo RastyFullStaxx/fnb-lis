@@ -20,7 +20,7 @@ export function ReadonlyWatermark({ role, name }: { role: string; name: string }
     const svg =
       `<svg xmlns="http://www.w3.org/2000/svg" width="420" height="200">` +
       `<text x="210" y="100" text-anchor="middle" transform="rotate(-30 210 100)" ` +
-      `font-family="system-ui, sans-serif" font-size="15" fill="#3a56e4" fill-opacity="0.4">` +
+      `font-family="system-ui, sans-serif" font-size="15" fill="#0070d6" fill-opacity="0.4">` +
       label.replace(/&/g, "&amp;").replace(/</g, "&lt;") +
       `</text></svg>`;
     return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
