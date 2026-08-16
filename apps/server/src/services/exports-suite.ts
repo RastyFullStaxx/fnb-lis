@@ -55,8 +55,8 @@ import { tablePdf, type PdfRow } from "./pdf";
  * CSV on all of them).
  */
 
-const BLUE = "FF3A56E4";
-const LIGHT = "FFEEF1FD";
+const BLUE = "FF0070D6";
+const LIGHT = "FFE8F3FC";
 
 /** ExcelJS ARGB (e.g. "FFFDECEA") → pdfmake hex ("#FDECEA") for row fills. */
 function pdfFill(argb: string): string {

@@ -23,7 +23,7 @@ const printer = new PdfPrinter({
   },
 });
 
-const BLUE = "#1b4ed8";
+const BLUE = "#0064cb";
 const INK = "#26282e";
 const MUTED = "#6b7280";
 const HEADER_FILL = "#eef0f5";

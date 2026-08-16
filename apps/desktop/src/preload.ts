@@ -82,11 +82,11 @@ const CHROME_CSS = `
 #lis-syncbar .spacer { margin-left: auto; }
 #lis-syncbar button {
   /* flex:none — otherwise the button stretches to fill the row. */
-  flex: none; font: inherit; color: #cfd8f5; background: transparent;
-  border: 1px solid #3a4a86; border-radius: .375rem; padding: .125rem .5rem; cursor: pointer;
+  flex: none; font: inherit; color: #c1ddf2; background: transparent;
+  border: 1px solid #005580; border-radius: .375rem; padding: .125rem .5rem; cursor: pointer;
   line-height: 1.4;
 }
-#lis-syncbar button:hover { border-color: #6f8bff; }
+#lis-syncbar button:hover { border-color: #00a0f3; }
 
 /* Make room for the desktop chrome by SHRINKING THE APP, not by padding the
    body.
@@ -114,7 +114,7 @@ const CHROME_CSS = `
 #lis-titlebar {
   position: fixed; top: 0; left: 0; right: 0; height: var(--lis-chrome-top); z-index: 2147483001;
   display: flex; align-items: center; gap: .5rem; padding: 0 .75rem;
-  background: #112555; color: #cfd8f5;
+  background: #002c50; color: #c1ddf2;
   font: 12px/1 "Segoe UI", system-ui, sans-serif;
   -webkit-app-region: drag; user-select: none;
 }
@@ -123,13 +123,13 @@ const CHROME_CSS = `
 body > #root { margin-top: var(--lis-chrome-top); }
 #lis-conflicts {
   position: fixed; inset: auto 0 2rem 0; max-height: 60vh; overflow: auto; z-index: 2147483000;
-  background: #0f1b47; border-top: 1px solid #2b3c78; padding: 1rem; display: none;
-  font: 13px/1.5 "Segoe UI", system-ui, sans-serif; color: #e8ecf8;
+  background: #002343; border-top: 1px solid #004672; padding: 1rem; display: none;
+  font: 13px/1.5 "Segoe UI", system-ui, sans-serif; color: #e3eef7;
 }
 #lis-conflicts h2 { font-size: 1rem; margin: 0 0 .25rem; }
-#lis-conflicts .why { color: #a8b3d8; font-size: 12px; margin: 0 0 1rem; }
-#lis-conflicts .row { border: 1px solid #2b3c78; border-radius: .5rem; padding: .625rem .75rem; margin-bottom: .5rem; }
-#lis-conflicts .path { font-family: ui-monospace, monospace; font-size: 12px; color: #9fb0e8; }
+#lis-conflicts .why { color: #95bad4; font-size: 12px; margin: 0 0 1rem; }
+#lis-conflicts .row { border: 1px solid #004672; border-radius: .5rem; padding: .625rem .75rem; margin-bottom: .5rem; }
+#lis-conflicts .path { font-family: ui-monospace, monospace; font-size: 12px; color: #80bae2; }
 #lis-conflicts .err { color: #ffc9d1; font-size: 12px; margin-top: .25rem; }
 `;
 

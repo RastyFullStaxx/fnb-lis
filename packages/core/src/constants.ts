@@ -242,12 +242,14 @@ export const PACKAGE_LABELS: Record<PackageType, string> = {
 };
 
 /**
- * Max USER accounts per monthly tier (client req 2026-07-21): Basic 1,
- * Medium 5, Full 10. Standalone is owner-set, so it has no fixed number —
- * `0` here means "whatever the owner saved", never unlimited-by-default.
+ * Max USER accounts per monthly tier (client req 2026-07-21, revised
+ * 2026-08-10: Basic raised 1 -> 2 so an owner and one staff account both fit
+ * on the entry tier). Medium 5, Full 10 unchanged. Standalone is owner-set,
+ * so it has no fixed number — `0` here means "whatever the owner saved",
+ * never unlimited-by-default.
  */
 export const PACKAGE_MAX_USERS: Record<PackageType, number> = {
-  BASIC: 1,
+  BASIC: 2,
   MEDIUM: 5,
   FULL: 10,
   ONE_TIME: 0, // owner sets it explicitly on the subscription
@@ -290,7 +292,8 @@ export const PACKAGE_DEFAULT_BILLING_CYCLE: Record<PackageType, BillingCycle> = 
  *  - STANDALONE billing => "One-Time Installation", regardless of the counts —
  *    the tier is "pay once, no recurring bill", and the owner sets his own
  *    user cap so accounts can't be generated behind his back.
- *  - MONTHLY: 1 user => Basic, 2-5 => Medium, 6+ (or unlimited) => Full.
+ *  - MONTHLY: 1-2 users => Basic, 3-5 => Medium, 6+ (or unlimited) => Full.
+ *    (Basic's ceiling moved 1 -> 2 on 2026-08-10 — see PACKAGE_MAX_USERS.)
  */
 export function derivePackageType(
   billingCycle: BillingCycle,
@@ -299,8 +302,13 @@ export function derivePackageType(
 ): PackageType {
   if (billingCycle === "STANDALONE") return "ONE_TIME";
   // Pre-maxUsers subscriptions carry 0 — fall back to the old location rule so
-  // existing rows keep their badge instead of all jumping to Full.
+  // existing rows keep their badge instead of all jumping to Full. This branch
+  // reads maxEntities (locations), not the user-count policy above, so it is
+  // deliberately left at the original "1 location => Basic" split.
   const n = maxUsers > 0 ? maxUsers : maxEntities;
+  if (maxUsers > 0) {
+    return n <= PACKAGE_MAX_USERS.BASIC ? "BASIC" : n <= PACKAGE_MAX_USERS.MEDIUM ? "MEDIUM" : "FULL";
+  }
   if (n === 1) return "BASIC";
   return n <= PACKAGE_MAX_USERS.MEDIUM && n > 0 ? "MEDIUM" : "FULL";
 }
@@ -603,6 +611,7 @@ export function isMissingPrice(
 export const REPORT_SLUGS = [
   "full-audit",
   "legacy-audit",
+  "variance-summary",
   "usage-cost",
   "cost-snapshot",
   "sales",
@@ -640,6 +649,7 @@ export type ReportSlug = (typeof REPORT_SLUGS)[number];
 export const REPORT_TIER_PRESETS: Record<PackageType, readonly ReportSlug[]> = {
   BASIC: [
     "full-audit",
+    "variance-summary",
     "legacy-audit",
     "top-sellers",
     "transfers",
@@ -651,6 +661,7 @@ export const REPORT_TIER_PRESETS: Record<PackageType, readonly ReportSlug[]> = {
   ],
   MEDIUM: [
     "full-audit",
+    "variance-summary",
     "legacy-audit",
     "usage-cost",
     "cost-snapshot",
@@ -668,6 +679,7 @@ export const REPORT_TIER_PRESETS: Record<PackageType, readonly ReportSlug[]> = {
   FULL: [...REPORT_SLUGS],
   ONE_TIME: [
     "full-audit",
+    "variance-summary",
     "legacy-audit",
     "cost-snapshot",
     "sales",
@@ -704,7 +716,7 @@ export const REPORT_TIER_PRESETS: Record<PackageType, readonly ReportSlug[]> = {
  * the admin checklist shows one row for it, not two, and a client's
  * "Variance Report: YES" expectation reads as "Full Audit" being enabled.
  *
- * Keys must exactly match `REPORT_SLUGS` — same length (21), same values. A
+ * Keys must exactly match `REPORT_SLUGS` — same length (22), same values. A
  * slug present in one but not the other fails silently as a missing
  * checkbox, not an error, so this is checked by hand against `REPORT_SLUGS`
  * whenever either list changes.
@@ -712,6 +724,7 @@ export const REPORT_TIER_PRESETS: Record<PackageType, readonly ReportSlug[]> = {
 export const REPORT_METADATA: Record<ReportSlug, { label: string; group: string }> = {
   "full-audit": { label: "Full Audit", group: "Reconciliation" },
   "legacy-audit": { label: "Full Audit by Category", group: "Reconciliation" },
+  "variance-summary": { label: "Variance Summary", group: "Reconciliation" },
   "usage-cost": { label: "Usage Cost", group: "Reconciliation" },
   "cost-snapshot": { label: "Beginning / Ending Cost", group: "Reconciliation" },
   sales: { label: "Sales", group: "Sales & Revenue" },
@@ -749,6 +762,7 @@ export const REPORT_METADATA: Record<ReportSlug, { label: string; group: string 
 export const AUDIT_VIEWER_REPORTS = [
   "full-audit",
   "legacy-audit",
+  "variance-summary",
   "usage-cost",
   "cost-snapshot",
   "cost-analysis",

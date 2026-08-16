@@ -69,6 +69,12 @@ import {
   usageCostReport,
   type LegacyAuditVariant,
 } from "../services/report-suite";
+import { varianceSummaryReport } from "../services/report-variance-summary";
+import {
+  varianceSummaryCsv,
+  varianceSummaryPdf,
+  varianceSummaryWorkbook,
+} from "../services/exports-variance-summary";
 import {
   costSnapshotCsv,
   costSnapshotPdf,
@@ -360,6 +366,40 @@ export const reportRoutes = new Hono<AppEnv>()
     if (format === "csv") return csvResponse(legacyAuditCsv(report, variant, thresholdOf(c)), name, fullName(user));
     if (format === "pdf") return pdfResponse(await legacyAuditPdf(report, await meta(client, location.name, user), variant), name);
     return xlsxResponse(await legacyAuditWorkbook(report, await meta(client, location.name, user), variant), name);
+  })
+
+  // ── Variance Summary (client req, version 2 of the Variance Report #10) ──
+  // Category-only rollup of the Full Audit — reuses buildFullAudit() output,
+  // does not recompute variance. JSON sibling of the export below, same
+  // pattern as legacy-audit: not behind exportGuard, since the router already
+  // requires reports.view.
+  .get("/reports/variance-summary", async (c) => {
+    const location = c.get("location");
+    const begin = c.req.query("begin") ?? "";
+    const end = c.req.query("end") ?? "";
+    if (!DATE_RE.test(begin) || !DATE_RE.test(end) || end <= begin) throw new AppError(400, "Valid begin < end required");
+    const productType = c.req.query("productType") || undefined;
+    const allowed = allowedProductTypes(c.get("locationModules"));
+    const report = await buildFullAudit(location.id, begin, end, productType, allowed, basisOf(c));
+    return c.json(varianceSummaryReport(report));
+  })
+
+  .get("/reports/variance-summary/export", exportGuard, async (c) => {
+    const location = c.get("location");
+    const client = c.get("client");
+    const begin = c.req.query("begin") ?? "";
+    const end = c.req.query("end") ?? "";
+    if (!DATE_RE.test(begin) || !DATE_RE.test(end) || end <= begin) throw new AppError(400, "Valid begin < end required");
+    const productType = c.req.query("productType") || undefined;
+    const allowed = allowedProductTypes(c.get("locationModules"));
+    const full = await buildFullAudit(location.id, begin, end, productType, allowed, basisOf(c));
+    const report = varianceSummaryReport(full);
+    const user = c.get("user")!;
+    const name = `variance-summary_${location.name}_${begin}_${end}${basisSuffix(basisOf(c))}`.replace(/[^\w.-]+/g, "-");
+    const format = c.req.query("format");
+    if (format === "csv") return csvResponse(varianceSummaryCsv(report), name, fullName(user));
+    if (format === "pdf") return pdfResponse(await varianceSummaryPdf(report, await meta(client, location.name, user)), name);
+    return xlsxResponse(await varianceSummaryWorkbook(report, await meta(client, location.name, user)), name);
   })
 
   // ── Cost snapshots (client reports #3 Beginning / #4 Ending) ──

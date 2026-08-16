@@ -104,7 +104,7 @@ async function seedClients() {
   // same Basic-tier/single-location shape Casa Verde already establishes.
   const aurora = await upsertClientWithSubscription(
     "Aurora Asset Holdings",
-    { billingCycle: "MONTHLY", modules: ["ASSET"], maxEntities: 1, maxUsers: 1 },
+    { billingCycle: "MONTHLY", modules: ["ASSET"], maxEntities: 1, maxUsers: 2 },
     admin?.id,
   );
   await upsertLocationWithModules(aurora.id, "Main Warehouse", ["ASSET"]);

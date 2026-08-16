@@ -30,9 +30,9 @@ import type { TopSellersReport } from "./top-sellers";
 import type { AssetRegisterReport } from "./asset-register";
 import type { AssetInventoryReport } from "./asset-inventory";
 
-// Palette (ARGB). Royal blue header, light-blue group rows, red negatives.
-const BLUE = "FF3A56E4";
-const LIGHT = "FFEEF1FD";
+// Palette (ARGB). Brand blue header, light-blue group rows, red negatives.
+const BLUE = "FF0070D6";
+const LIGHT = "FFE8F3FC";
 const RED = "FFB42318";
 const AMBER = "FFB45309";
 const WHITE = "FFFFFFFF";
@@ -899,7 +899,7 @@ export async function topSellersWorkbook(report: TopSellersReport, meta: ReportM
 
   // — Top Brands —
   const bh = ws.addRow(["TOP BRANDS"]);
-  bh.font = { bold: true, color: { argb: "FF3A56E4" } };
+  bh.font = { bold: true, color: { argb: "FF0070D6" } };
   styleHeaderRow(ws.addRow(TOP_BRANDS_HEADERS));
   report.topBrands.forEach((row, i) => {
     const r = ws.addRow([i + 1, row.name, row.category ?? ""]);
@@ -912,7 +912,7 @@ export async function topSellersWorkbook(report: TopSellersReport, meta: ReportM
 
   // — Top Menus —
   const mh = ws.addRow(["TOP MENUS"]);
-  mh.font = { bold: true, color: { argb: "FF3A56E4" } };
+  mh.font = { bold: true, color: { argb: "FF0070D6" } };
   styleHeaderRow(ws.addRow(TOP_MENUS_HEADERS));
   report.topMenus.forEach((row, i) => {
     const r = ws.addRow([i + 1, row.name]);
@@ -925,7 +925,7 @@ export async function topSellersWorkbook(report: TopSellersReport, meta: ReportM
 
   // — Top Ingredients —
   const ih = ws.addRow(["TOP INGREDIENTS"]);
-  ih.font = { bold: true, color: { argb: "FF3A56E4" } };
+  ih.font = { bold: true, color: { argb: "FF0070D6" } };
   styleHeaderRow(ws.addRow(TOP_INGREDIENTS_HEADERS));
   report.topIngredients.forEach((row, i) => {
     const r = ws.addRow([i + 1, row.name, row.category ?? ""]);
