@@ -10,7 +10,7 @@
  */
 import { z } from "zod";
 import type Anthropic from "@anthropic-ai/sdk";
-import { FUZZY_THRESHOLD, fuzzyScore, normalizeAlias, round2, type CostBasis } from "@fnb/core";
+import { canViewVariance, FUZZY_THRESHOLD, fuzzyScore, normalizeAlias, round2, type CostBasis, type Role } from "@fnb/core";
 import { buildFullAudit, committedCountDates } from "./report-assembly";
 import { fullAuditDrill, nonRevenueReport, onHandReport, purchaseReport, salesReport } from "./report-lists";
 import { buildDashboard } from "./dashboard";
@@ -24,6 +24,28 @@ export interface StockyContext {
   /** The client's saved inventory cost basis — Stocky must value stock the
       same way the report pages it links to do. */
   costBasis: CostBasis;
+  /**
+   * The calling user's role and variance-view flag (hide-variance-from-staff
+   * Phase 3.4) — the gates in explain_variance / get_report_row / get_dashboard
+   * need both at call time, the same shape `canViewVariance()` in @fnb/core
+   * takes everywhere else it's checked.
+   */
+  role: Role;
+  canViewVariance?: boolean;
+}
+
+/**
+ * The plain, confirmed-wording refusal for a blocked STAFF session
+ * (hide-variance-from-staff Phase 3.1/3.2) — a stated restriction, never a
+ * vague or evasive non-answer that leaves the model free to soften or explain
+ * around it.
+ */
+export const VARIANCE_RESTRICTED_MESSAGE =
+  "Variance figures aren't available on your account. Ask a manager to turn on variance access if you need this.";
+
+/** True when this session must not see Variance or anything that backs it out. */
+export function varianceBlocked(ctx: StockyContext): boolean {
+  return ctx.role === "STAFF" && !canViewVariance({ role: ctx.role, canViewVariance: ctx.canViewVariance });
 }
 
 export interface StockyTool {
@@ -192,6 +214,8 @@ async function auditWithDates(ctx: StockyContext, begin: string, end: string) {
 }
 
 // ── get_report_row ──
+// Gated: hide-variance-from-staff Phase 3.2. STAFF without canViewVariance
+// gets a plain permission message instead of the row — see varianceBlocked().
 
 const getReportRow = tool({
   name: "get_report_row",
@@ -210,6 +234,7 @@ const getReportRow = tool({
     additionalProperties: false,
   },
   async run(ctx, input) {
+    if (varianceBlocked(ctx)) return { error: VARIANCE_RESTRICTED_MESSAGE };
     const res = await auditWithDates(ctx, input.begin, input.end);
     if ("error" in res) return res;
     const ranked = rankByQuery(res.report.rows, input.itemQuery, (r) => r.itemName);
@@ -230,6 +255,9 @@ const getReportRow = tool({
 });
 
 // ── explain_variance ──
+// Gated: hide-variance-from-staff Phase 3.1. Same check as get_report_row —
+// this tool hands over both the variance figures AND the source records
+// behind them, so it needs the identical gate, not a softer one.
 
 const explainVariance = tool({
   name: "explain_variance",
@@ -248,6 +276,7 @@ const explainVariance = tool({
     additionalProperties: false,
   },
   async run(ctx, input) {
+    if (varianceBlocked(ctx)) return { error: VARIANCE_RESTRICTED_MESSAGE };
     const res = await auditWithDates(ctx, input.begin, input.end);
     if ("error" in res) return res;
     const ranked = rankByQuery(res.report.rows, input.itemQuery, (r) => r.itemName);
@@ -346,6 +375,13 @@ const findRecords = tool({
 });
 
 // ── get_dashboard ──
+// Gated: hide-variance-from-staff Phase 3.3. Unlike explain_variance /
+// get_report_row this tool stays callable for blocked STAFF — attention
+// items and recent activity are legitimate content — but varianceLeaders is
+// stripped, matching the full-removal approach the dashboard page itself
+// uses (Phase 4.5). buildDashboard() already knows how to omit
+// varianceLeaders server-side (Phase 2.5's canSeeVariance param), so the
+// flag is threaded through rather than trimmed twice.
 
 const getDashboard = tool({
   name: "get_dashboard",
@@ -355,7 +391,14 @@ const getDashboard = tool({
   schema: z.object({}),
   inputSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
   async run(ctx) {
-    const dash = await buildDashboard(ctx.locationId, ctx.clientId);
+    const dash = await buildDashboard(
+      ctx.locationId,
+      ctx.clientId,
+      undefined,
+      undefined,
+      undefined,
+      !varianceBlocked(ctx),
+    );
     return {
       period: dash.period,
       attention: dash.attention,
@@ -422,6 +465,17 @@ const FORMULA_EXPLANATIONS: Record<string, { formula: string; explanation: strin
   },
 };
 
+// Gated (hide-variance-from-staff Phase 3, gap fix): the plan's own leak
+// audit named explain_variance / get_report_row / get_dashboard as the
+// Stocky surface to gate, and explain_formula was never in that list — an
+// oversight, since its "variance" and "variance_pct" entries hand over the
+// exact reconciliation identity verbatim, no figures needed. The other seven
+// formulas (usage, open_equiv, weigh, recipe_expansion, menu_revenue,
+// cost_basis, date_semantics) describe HOW a number is computed, not what it
+// evaluates to for this establishment, and none of them let a blocked STAFF
+// back-solve a fake count — those stay open for every role, unchanged.
+const VARIANCE_FORMULA_KEYS = new Set(["variance", "variance_pct"]);
+
 const explainFormula = tool({
   name: "explain_formula",
   label: "Looking up the formula",
@@ -442,7 +496,10 @@ const explainFormula = tool({
     required: ["name"],
     additionalProperties: false,
   },
-  async run(_ctx, input) {
+  async run(ctx, input) {
+    if (VARIANCE_FORMULA_KEYS.has(input.name) && varianceBlocked(ctx)) {
+      return { error: VARIANCE_RESTRICTED_MESSAGE };
+    }
     return { name: input.name, ...FORMULA_EXPLANATIONS[input.name] };
   },
 });

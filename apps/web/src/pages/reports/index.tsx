@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { canViewReport, canViewReportForSubscription, type Role, allowedProductTypes } from "@fnb/core";
+import { canViewReport, canViewReportForSubscription, canViewVariance, type Role, allowedProductTypes } from "@fnb/core";
 import { useMe } from "@/api/auth";
 import { useCurrentClient, useCurrentLocation } from "@/api/location";
 import {
@@ -230,6 +230,26 @@ const SECTIONS: Array<{ title: string; blurb: string; reports: Report[] }> = [
   },
 ];
 
+/**
+ * Full Audit, Legacy Audit, Variance Summary, and Usage Cost carry Variance
+ * and the figures that can back-solve it — a STAFF account without
+ * `canViewVariance` gets no card for them, same slugs the route guard
+ * already blocks by URL (`components/app-shell.tsx` `VARIANCE_GATED_REPORTS`,
+ * hide-variance-from-staff Phase 4.1/4.2/4.3), so a card can never open onto
+ * that guard's "isn't part of your access" screen. Kept as its own list here
+ * for the same reason the route guard keeps its own copy rather than
+ * importing one: a display-layer mirror of the server's real enforcement
+ * (routes/reports.ts Phase 2.2), not something that needs a shared import to
+ * stay correct. `full-audit` also covers the "Variance Report" card below
+ * (`full-audit?variance=only` shares the base slug, same as every other gate
+ * on this page) and the standalone Full Audit link at the top of the page.
+ *
+ * Usage Cost added post-launch (verification gap): its report is a straight
+ * per-item `usage` breakdown off the reconciliation — the same figure Par
+ * Level's column was trimmed for — and was missed on the first pass.
+ */
+const VARIANCE_GATED_REPORTS = ["full-audit", "legacy-audit", "variance-summary", "usage-cost"];
+
 export function ReportsPage() {
   const locationId = useLocationId();
   const href = (path: string) => `/l/${locationId}/reports/${path}`;
@@ -239,7 +259,13 @@ export function ReportsPage() {
   // card that 404s. Everyone running the establishment sees all of them.
   const me = useMe();
   const role = (me.data?.user.role ?? "AUDIT_VIEWER_LIMITED") as Role;
-  // Three filters, same mechanism, all independent — a report needs to clear
+  // Hide variance from staff (hide-variance-from-staff-plan.md, Phase 5.1): a
+  // STAFF account without `canViewVariance` loses the Full Audit, Legacy
+  // Audit, Variance Summary, and Usage Cost cards entirely — `false` while
+  // `me` is still loading, same fallback every other role check on this page
+  // already makes.
+  const varianceBlocked = me.data ? me.data.user.role === "STAFF" && !canViewVariance(me.data.user) : false;
+  // Four filters, same mechanism, all independent — a report needs to clear
   // every one of them to show a card. Role: an audit-service viewer reads the
   // reconciliation and nothing else. Module: an Asset-only warehouse has no use
   // for "Sales by Item (Shot & Bottle)", and the hub was offering all nineteen
@@ -247,6 +273,8 @@ export function ReportsPage() {
   // client's subscription may not include this report at all
   // (docs/2026-08-04-report-tier-gating-plan.md) — mirrors the server's
   // canViewReportForSubscription() so nothing shows a card that then 404s.
+  // Variance: a blocked STAFF account loses the reconciliation cards above,
+  // same as it loses the URL by hand (VARIANCE_GATED_REPORTS above).
   const location = useCurrentLocation();
   const allowedTypes = allowedProductTypes(location?.modules);
   const client = useCurrentClient();
@@ -258,7 +286,8 @@ export function ReportsPage() {
       return (
         canViewReport(role, slug) &&
         canViewReportForSubscription(role, slug, enabledReportSlugs) &&
-        (!r.requiresProductTypes || !allowedTypes || r.requiresProductTypes.some((t) => allowedTypes.includes(t)))
+        (!r.requiresProductTypes || !allowedTypes || r.requiresProductTypes.some((t) => allowedTypes.includes(t))) &&
+        !(varianceBlocked && VARIANCE_GATED_REPORTS.includes(slug))
       );
     }),
   })).filter((section) => section.reports.length > 0);
@@ -276,27 +305,32 @@ export function ReportsPage() {
 
         {/* The Full Audit is the report this product exists to produce, so it
             leads the page at its own weight instead of being the first of
-            thirteen equals. The formula is why clients trust it. */}
-        <Link to={href("full-audit")} className="group block">
-          <Card className="transition-colors group-hover:border-primary/40">
-            <CardHeader>
-              <BarChart3 className="mb-1 size-5 text-primary" />
-              <CardTitle className="text-lg">Full Audit</CardTitle>
-              <CardDescription className="max-w-prose">
-                The reconciliation every other report supports: the beginning count and everything
-                that moved, against everything that was sold and used.
-              </CardDescription>
-              {/* Wraps rather than scrolls: at 375px these lines are 583px
-                  wide, and a nested scroller inside a card that is itself a
-                  link fights the tap target. A formula reading over two lines
-                  is fine; one escaping its card is not. */}
-              <div className="mt-3 grid gap-1.5 font-mono text-xs leading-relaxed text-muted-foreground">
-                <span>Begin + Purchases + Returns + Transfers In − Transfers Out − End = Usage</span>
-                <span>(Sales + Recipes + Non-Revenue + Production) − Usage = Variance</span>
-              </div>
-            </CardHeader>
-          </Card>
-        </Link>
+            thirteen equals. The formula is why clients trust it. Outside the
+            SECTIONS filter above, so it needs its own copy of the variance
+            gate: a blocked STAFF account has no more claim to this card than
+            to the "Variance Report" one inside Reconciliation. */}
+        {!varianceBlocked && (
+          <Link to={href("full-audit")} className="group block">
+            <Card className="transition-colors group-hover:border-primary/40">
+              <CardHeader>
+                <BarChart3 className="mb-1 size-5 text-primary" />
+                <CardTitle className="text-lg">Full Audit</CardTitle>
+                <CardDescription className="max-w-prose">
+                  The reconciliation every other report supports: the beginning count and everything
+                  that moved, against everything that was sold and used.
+                </CardDescription>
+                {/* Wraps rather than scrolls: at 375px these lines are 583px
+                    wide, and a nested scroller inside a card that is itself a
+                    link fights the tap target. A formula reading over two lines
+                    is fine; one escaping its card is not. */}
+                <div className="mt-3 grid gap-1.5 font-mono text-xs leading-relaxed text-muted-foreground">
+                  <span>Begin + Purchases + Returns + Transfers In − Transfers Out − End = Usage</span>
+                  <span>(Sales + Recipes + Non-Revenue + Production) − Usage = Variance</span>
+                </div>
+              </CardHeader>
+            </Card>
+          </Link>
+        )}
       </div>
 
       {grouped ? (

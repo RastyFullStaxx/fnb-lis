@@ -28,6 +28,15 @@ model User {
   status           String    @default("ACTIVE") // ACTIVE | DISABLED
   failedLoginCount Int       @default(0)
   failedLoginAt    DateTime?
+  // Per-STAFF-account gate on variance and every number that can back-fill it
+  // (Usage, Sold, Par Level's Used column, Ask Stocky's variance tools) — see
+  // hide-variance-from-staff-plan.md. Read only for STAFF; every other role's
+  // access is unconditional and never checks this column (canViewVariance() in
+  // @fnb/core). Defaults false: every STAFF account, new or existing, starts
+  // blocked — trust is a deliberate grant, not a migration default. Settable by
+  // MANAGER, OWNER, or ADMIN only (PERMISSIONS["variance.grant"]), never by the
+  // STAFF member themself.
+  canViewVariance  Boolean   @default(false)
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 

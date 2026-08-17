@@ -138,6 +138,10 @@ async function resolveActingUser(c: Context, session: SessionUser): Promise<Sess
     role: actor.role as Role,
     modules: actor.role === "ADMIN" || actor.modules.length === 0 ? null : actor.modules.map((m) => m.module),
     deviceId: session.deviceId,
+    // The ACTING user's own flag, not the session opener's — a STAFF member
+    // substituted in on a device session is gated exactly as they would be at
+    // the bar, not widened by whoever registered the machine.
+    canViewVariance: actor.canViewVariance,
     /**
      * Who actually holds the session, as distinct from who is claimed to be
      * acting. Routes that must not let a person act on THEMSELVES through a

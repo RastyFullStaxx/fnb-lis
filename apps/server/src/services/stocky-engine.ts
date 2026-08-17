@@ -10,7 +10,7 @@
 import { normalizeAlias } from "@fnb/core";
 import { committedCountDates } from "./report-assembly";
 import { onHandReport, purchaseReport } from "./report-lists";
-import { type StockyContext, stockyToolByName } from "./stocky-tools";
+import { type StockyContext, stockyToolByName, VARIANCE_RESTRICTED_MESSAGE, varianceBlocked } from "./stocky-tools";
 
 const PESO = "₱"; // ₱
 const MINUS = "−"; // − (matches the report UI)
@@ -275,6 +275,12 @@ ${attItems.length ? `Needs attention:\n${attItems.join("\n")}` : "Nothing needs 
       const dates = await committedCountDates(ctx.locationId);
       const period = resolvePeriod(question, dates);
       if (!period) return `I need two committed counts to compute a variance, and this location doesn't have them yet. Commit a beginning and ending count on the [Counts](/l/${ctx.locationId}/counts) screen first.`;
+      // Ask up front, not via get_dashboard's silent trim: that tool stays
+      // callable and legitimately returns an EMPTY varianceLeaders array for
+      // blocked STAFF (Phase 3.3), which would otherwise read here as "no
+      // variance this period" — exactly the vague non-answer the plan rules
+      // out. A direct variance question gets the plain restriction instead.
+      if (varianceBlocked(ctx)) return VARIANCE_RESTRICTED_MESSAGE;
       const item = mentionedName(question, await catalogNames(ctx));
       if (!item) {
         const d = await callTool(ctx, "get_dashboard", {});

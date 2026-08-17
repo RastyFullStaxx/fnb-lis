@@ -103,6 +103,15 @@ export async function buildDashboard(
    * rather than "everything ever," since there is no natural start point.
    */
   recentPriceChangesSince?: Date,
+  /**
+   * Whether this caller may see Variance and the figures that back-solve it
+   * (hide-variance-from-staff Phase 2.5) — `canViewVariance()` in @fnb/core,
+   * same one-gate-honoured-everywhere shape as `canSeeActivity` above. A
+   * blocked STAFF account gets no `varianceLeaders` at all rather than an
+   * empty array standing in for "nothing hidden"; the web page (Phase 4.5)
+   * removes the section entirely when the array is empty for this reason.
+   */
+  canSeeVariance = true,
 ): Promise<DashboardData> {
   const [
     dates,
@@ -275,7 +284,7 @@ export async function buildDashboard(
   }).length;
 
   let varianceLeaders: DashboardData["varianceLeaders"] = [];
-  if (latest) {
+  if (latest && canSeeVariance) {
     const report = await buildFullAudit(locationId, latest.begin, latest.end, undefined, allowedProductTypes);
     varianceLeaders = report.rows
       // hasVariance, not `!== 0` — reconciliation sums land on values like

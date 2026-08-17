@@ -9,7 +9,7 @@ import {
   NON_REVENUE_GROUP_LABELS,
   NON_REVENUE_GROUPS,
   type CostBasis,
-  type NonRevenueGroup, canViewReport, canViewReportForSubscription, isAuditViewer, type Role } from "@fnb/core";
+  type NonRevenueGroup, canViewReport, canViewReportForSubscription, canViewVariance, isAuditViewer, type Role, type SessionUser } from "@fnb/core";
 import { prisma } from "../db";
 import { AppError } from "../lib/errors";
 import { requirePermission, type AppEnv } from "../middleware/auth";
@@ -25,6 +25,8 @@ import {
   purchaseReport,
   salesReport,
   transferReport,
+  type ParLevelReport,
+  type ParLevelRow,
   type SalesReportView,
 } from "../services/report-lists";
 import { topSellersReport } from "../services/top-sellers";
@@ -156,6 +158,35 @@ function basisSuffix(basis: CostBasis): string {
   return basis === "PRICE" ? "" : `_${COST_BASIS_SLUGS[basis]}`;
 }
 
+/**
+ * Trim Par Level's "Used (last period)" figure for STAFF without
+ * `canViewVariance` (hide-variance-from-staff Phase 2.4). On hand, Par, and
+ * Suggested Order stay untouched — they give no hint toward a fake count on
+ * their own. `usage` is the field the client calls "Used (last period)"; it
+ * hands over the same target number Variance would, so it is on the leak
+ * list even though the report has no column literally named Variance.
+ *
+ * Screen JSON only. The export route needs no equivalent trim: STAFF never
+ * holds `reports.export` at all (locked in by Phase 2.6), so
+ * `/reports/par-level/export` is unreachable by any STAFF account regardless
+ * of this flag — there is no download to trim.
+ *
+ * Returns a loosened row shape (`usage` becomes optional) rather than a typed
+ * ParLevelReport, since the field is genuinely ABSENT from the wire response
+ * for blocked staff, not merely zeroed — the web page (Phase 4.4) drops the
+ * column when the key is missing rather than rendering an empty one.
+ */
+function trimParLevelForBlockedStaff(
+  report: ParLevelReport,
+  user: SessionUser,
+): ParLevelReport | (Omit<ParLevelReport, "rows"> & { rows: Array<Omit<ParLevelRow, "usage">> }) {
+  if (user.role !== "STAFF" || canViewVariance(user)) return report;
+  return {
+    ...report,
+    rows: report.rows.map(({ usage: _omit, ...rest }) => rest),
+  };
+}
+
 const XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 function xlsxResponse(buffer: Buffer, filename: string): Response {
@@ -232,6 +263,44 @@ export const reportRoutes = new Hono<AppEnv>()
       // belong to the full-audit report — take the first segment after it.
       const slug = c.req.path.split("/reports/")[1]?.split("/")[0]?.split("?")[0];
       if (slug && slug !== "count-dates" && !canViewReport(user.role as Role, slug)) {
+        throw new AppError(404, "Not found");
+      }
+    }
+    await next();
+  })
+  /**
+   * Hide variance from staff (hide-variance-from-staff-plan.md, Phase 2.2). A
+   * STAFF account without `canViewVariance` may never open the reports that
+   * carry Variance or the figures that back-solve it: Full Audit, Legacy
+   * Audit, Variance Summary, and Usage Cost, on screen, export, or
+   * drill-down alike.
+   *
+   * Usage Cost added post-launch (gap found in verification, not in the
+   * original plan doc): `usageCostReport()` returns `qty: round2(r.usage)`
+   * per item straight off `buildFullAudit` — the identical figure Par Level's
+   * `usage` field was trimmed for in this same phase (2.4), just as its own
+   * report instead of a column. The plan's leak audit never named it
+   * separately; it should have been on the list from the start.
+   *
+   * Same slug extraction as the AUDIT_VIEWER guard above, reused rather than
+   * recomputed, so every sub-route under a hidden slug is covered
+   * automatically: "full-audit/drill" and "full-audit/export" both extract to
+   * "full-audit", same as they do for that guard.
+   *
+   * 404, not 403 — same convention as the AUDIT_VIEWER guard: a report this
+   * account may never open should look like one that does not exist.
+   *
+   * Cost Analysis is deliberately NOT in this list — it carries no Usage,
+   * Sold, or Variance column, so it cannot be used to back-solve a fake
+   * count (plan doc, "Why hiding one column is not enough"). Its one tooltip
+   * that names the concept is reworded client-side instead (Phase 2.3/4.3).
+   */
+  .use("/reports/*", async (c, next) => {
+    const user = c.get("user")!;
+    if (user.role === "STAFF" && !canViewVariance(user)) {
+      const slug = c.req.path.split("/reports/")[1]?.split("/")[0]?.split("?")[0];
+      const HIDDEN_FROM_BLOCKED_STAFF = ["full-audit", "legacy-audit", "variance-summary", "usage-cost"];
+      if (slug && HIDDEN_FROM_BLOCKED_STAFF.includes(slug)) {
         throw new AppError(404, "Not found");
       }
     }
@@ -702,7 +771,8 @@ export const reportRoutes = new Hono<AppEnv>()
   .get("/reports/par-level", async (c) => {
     const location = c.get("location");
     const allowed = allowedProductTypes(c.get("locationModules"));
-    return c.json(await parLevelReport(location.id, allowed, basisOf(c)));
+    const report = await parLevelReport(location.id, allowed, basisOf(c));
+    return c.json(trimParLevelForBlockedStaff(report, c.get("user")!));
   })
   .get("/reports/par-level/export", exportGuard, async (c) => {
     const location = c.get("location");

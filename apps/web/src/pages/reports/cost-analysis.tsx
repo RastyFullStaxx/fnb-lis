@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Info, PieChart } from "lucide-react";
-import { round2 } from "@fnb/core";
+import { canViewVariance, round2 } from "@fnb/core";
+import { useMe } from "@/api/auth";
 import { useCountDates } from "@/api/ops";
 import { useLocationId } from "@/api/location";
 import { exportUrl, useCostAnalysisReport } from "@/api/reports";
@@ -40,6 +41,12 @@ const TOP_CATEGORIES = 8;
 export function CostAnalysisPage() {
   const locationId = useLocationId();
   const countDates = useCountDates();
+  const me = useMe();
+  // Cost Analysis stays visible to every STAFF account (hide-variance-from-
+  // staff-plan.md: no variance column, no Usage/Sold column, so it can't be
+  // used to back-solve a fake count) — only its one tooltip that NAMES
+  // variance gets reworded for a blocked STAFF viewer (Phase 2.3/4.3).
+  const varianceBlocked = me.data ? me.data.user.role === "STAFF" && !canViewVariance(me.data.user) : false;
   const [begin, setBegin] = useState<string | undefined>(undefined);
   const [end, setEnd] = useState<string | undefined>(undefined);
 
@@ -227,7 +234,13 @@ export function CostAnalysisPage() {
                         a usage-derived cost (qty × unit cost) for the same
                         period, and the two differ by whatever hasn't reconciled.
                         Both are correct; saying which is which stops it reading
-                        as a discrepancy. */}
+                        as a discrepancy. A blocked STAFF viewer gets the same
+                        two-methods framing with the word "variance" and the gap
+                        it names left out (hide-variance-from-staff Phase 2.3/
+                        4.3) — this report has no Usage/Sold column to back-solve
+                        a fake count with, so it stays visible, but this one line
+                        would otherwise name the concept this feature exists to
+                        hide. */}
                     <p className="text-xs font-medium text-muted-foreground">
                       <TooltipProvider>
                         <Tooltip>
@@ -237,10 +250,21 @@ export function CostAnalysisPage() {
                             </span>
                           </TooltipTrigger>
                           <TooltipContent className="max-w-xs">
-                            Beginning stock + purchases + transfers − ending stock. This is the
-                            balance method, so it includes anything unaccounted for. The Full
-                            Audit's usage figure counts what was actually sold and used, so the
-                            two differ by the period's variance.
+                            {varianceBlocked ? (
+                              <>
+                                Beginning stock + purchases + transfers − ending stock. This is
+                                the balance method. The Full Audit measures cost a different way,
+                                from what was actually sold and used, so the two figures are
+                                expected to read differently.
+                              </>
+                            ) : (
+                              <>
+                                Beginning stock + purchases + transfers − ending stock. This is the
+                                balance method, so it includes anything unaccounted for. The Full
+                                Audit's usage figure counts what was actually sold and used, so the
+                                two differ by the period's variance.
+                              </>
+                            )}
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>

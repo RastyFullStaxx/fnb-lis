@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { BadgeCheck, Copy, History, KeyRound, Package, Plus, RefreshCw, UserCog } from "lucide-react";
+import { BadgeCheck, Copy, Eye, History, KeyRound, Package, Plus, RefreshCw, UserCog } from "lucide-react";
 import { toast } from "sonner";
 import {
   ROLES,
@@ -8,6 +8,7 @@ import {
   MODULE_TYPES,
   PACKAGE_LABELS,
   MODULE_TYPE_LABELS,
+  can,
   type Role,
   type PackageType,
   type ModuleType,
@@ -18,6 +19,7 @@ import {
   useCreateUser,
   useUpdateUser,
   useUpdateUserAccess,
+  useUpdateVarianceAccess,
   type AdminUser,
 } from "@/api/admin";
 import { useMe } from "@/api/auth";
@@ -32,6 +34,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -691,6 +694,8 @@ function EditUserDialog({
 }) {
   const update = useUpdateUser();
   const updateAccess = useUpdateUserAccess();
+  const updateVarianceAccess = useUpdateVarianceAccess();
+  const me = useMe();
   const [role, setRole] = useState<Role>("STAFF");
   const [resetPw, setResetPw] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
@@ -764,6 +769,22 @@ function EditUserDialog({
     }
   };
 
+  // hide-variance-from-staff Phase 6.2: wired to the dedicated
+  // variance-access endpoint (Phase 1.5/1.6), not `update` — that route is
+  // gated on `variance.grant` (ADMIN/OWNER/MANAGER), wider than the
+  // `users.manage` guard on every other control in this dialog. Toggles
+  // immediately, no confirm step — same weight as the Module Access
+  // checkboxes above it, not the destructive Reset Password / Disable
+  // actions below.
+  const toggleVarianceAccess = async (next: boolean) => {
+    try {
+      await updateVarianceAccess.mutateAsync({ id: user.id, canViewVariance: next });
+      toast.success(next ? `Granted ${user.firstName} access to Variance` : `Revoked ${user.firstName}'s access to Variance`);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not update variance access");
+    }
+  };
+
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
@@ -816,6 +837,30 @@ function EditUserDialog({
               void doReset();
             }}
           />
+
+          {/* hide-variance-from-staff Phase 6.1: STAFF-only, and only for a
+              viewer holding variance.grant (ADMIN/OWNER/MANAGER) — a MANAGER
+              sees this one row without gaining any other account control,
+              since every other row here still checks users.manage via the
+              route it calls. */}
+          {user.role === "STAFF" && me.data && can(me.data.user.role, "variance.grant") && (
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div className="flex items-center gap-2 text-sm">
+                <Eye className="size-4 text-muted-foreground" />
+                <div>
+                  <div>Can view variance</div>
+                  <p className="text-xs text-muted-foreground">
+                    Full Audit, Variance Summary, Legacy Audit, and Ask Stocky's variance answers.
+                  </p>
+                </div>
+              </div>
+              <Switch
+                checked={user.canViewVariance === true}
+                disabled={updateVarianceAccess.isPending}
+                onCheckedChange={(v) => void toggleVarianceAccess(v)}
+              />
+            </div>
+          )}
 
           <div className="flex items-center justify-between rounded-lg border p-3">
             <div className="text-sm">

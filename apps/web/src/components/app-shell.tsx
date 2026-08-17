@@ -8,7 +8,7 @@ import {
   useParams,
 } from "react-router";
 import { Check, ChevronsUpDown, Lock, LogOut, Sparkles } from "lucide-react";
-import { can, canViewReport, canViewReportForSubscription, LOCATION_KIND_LABELS, type LocationKind, type MeResponse, type Role } from "@fnb/core";
+import { can, canViewReport, canViewReportForSubscription, canViewVariance, LOCATION_KIND_LABELS, type LocationKind, type MeResponse, type Role, type SessionUser } from "@fnb/core";
 import { useLogout, useMe } from "@/api/auth";
 import { ApiError } from "@/api/http";
 import { BootError, BootSkeleton } from "@/components/full-page-spinner";
@@ -166,7 +166,7 @@ function ShellLayout({ me, current }: { me: MeResponse; current: CurrentLocation
           data-slot="page-content"
           className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4 sm:p-6"
         >
-          <RouteGuard role={role} />
+          <RouteGuard user={me.user} />
         </div>
         <ReadonlyWatermark role={role} name={`${me.user.firstName} ${me.user.lastName}`} />
       </SidebarInset>
@@ -192,6 +192,25 @@ function defaultSidebarOpen(): boolean {
 }
 
 /**
+ * Reports Full Audit / Legacy Audit / Variance Summary / Usage Cost carry
+ * Variance and the figures that can back-solve it — a STAFF account without
+ * `canViewVariance` may never open them, on screen or by typed URL
+ * (hide-variance-from-staff Phase 4.1/4.2/4.3). Same four slugs, same
+ * 404-shaped block the server enforces (routes/reports.ts
+ * `HIDDEN_FROM_BLOCKED_STAFF`); kept as its own list here rather than
+ * exported from @fnb/core, since it is a display-layer mirror of a set that
+ * already exists as a runtime constant server-side, not something both
+ * layers need to import to stay in sync (the server 404 is the actual
+ * enforcement — this only stops the guard from letting the page mount before
+ * that request comes back).
+ *
+ * Usage Cost added post-launch (verification gap): it returns per-item
+ * `usage` straight off the reconciliation, the same figure Par Level's
+ * column was trimmed for — it was missed on the first pass of this list.
+ */
+const VARIANCE_GATED_REPORTS = ["full-audit", "legacy-audit", "variance-summary", "usage-cost"];
+
+/**
  * One gate for every screen. The sidebar filtered itself, but the routes did
  * not — so a READONLY user who typed /counts/<id> got the full count editor
  * with an enabled Save button, and only found out at the 403. The server was
@@ -199,7 +218,8 @@ function defaultSidebarOpen(): boolean {
  * problem. Reuses the nav's own permission declarations, so the two cannot
  * drift apart.
  */
-function RouteGuard({ role }: { role: Role }) {
+function RouteGuard({ user }: { user: SessionUser }) {
+  const role = user.role as Role;
   const { pathname } = useLocation();
   const { locationId } = useParams();
   const relative = locationId ? pathname.split(`/l/${locationId}/`)[1] ?? "" : "";
@@ -224,6 +244,33 @@ function RouteGuard({ role }: { role: Role }) {
         icon={Lock}
         title="This report isn't part of your access"
         description="Your account covers the reconciliation reports. Ask the establishment owner or your LIS administrator if you need more."
+        action={
+          <Button asChild variant="outline">
+            <Link to={`/l/${locationId}/reports`}>Back to Reports</Link>
+          </Button>
+        }
+      />
+    );
+  }
+
+  // Hide variance from staff (hide-variance-from-staff-plan.md, Phase 4.1/4.2/
+  // 4.3): same not-available treatment as the AUDIT_VIEWER gate above, so a
+  // blocked STAFF account sees the identical calm "isn't part of your access"
+  // card rather than a page that mounts and then fails against the server's
+  // own 404 on the same reports (routes/reports.ts Phase 2.2). Checked
+  // before the tier gate below since a report can be hidden for either reason
+  // independently and this one needs no client/subscription data to decide.
+  if (
+    reportSlug &&
+    role === "STAFF" &&
+    !canViewVariance(user) &&
+    VARIANCE_GATED_REPORTS.includes(reportSlug)
+  ) {
+    return (
+      <EmptyState
+        icon={Lock}
+        title="This report isn't part of your access"
+        description="Ask a manager to turn on variance access for your account if you need this report."
         action={
           <Button asChild variant="outline">
             <Link to={`/l/${locationId}/reports`}>Back to Reports</Link>

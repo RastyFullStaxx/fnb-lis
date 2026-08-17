@@ -104,7 +104,15 @@ export interface ParLevelReport {
     category: string;
     onHand: number;
     parLevel: number;
-    usage: number;
+    /**
+     * The "Used (last period)" figure. Genuinely ABSENT from the wire
+     * response — not zeroed — for a STAFF account without `canViewVariance`
+     * (hide-variance-from-staff Phase 2.4/4.4): it hands over the same
+     * target-usage number Variance would. Optional here to match; the page
+     * drops the column entirely when it's missing rather than rendering an
+     * empty one.
+     */
+    usage?: number;
     suggestedOrder: number;
     orderValue: number;
     belowPar: boolean;

@@ -113,11 +113,15 @@ export const stockyRoutes = new Hono<AppEnv>().post(
     if (messages.length === 0) throw new AppError(400, "The conversation must start with a user message");
     const question = [...history].reverse().find((m) => m.role === "user")?.content ?? "";
     // Carry the client's valuation policy so Stocky's stock-worth answers
-    // agree with the report pages it cites.
+    // agree with the report pages it cites, and the caller's role +
+    // canViewVariance so explain_variance / get_report_row / get_dashboard
+    // can gate themselves (hide-variance-from-staff Phase 3.4).
     const toolCtx = {
       locationId: location.id,
       clientId: client.id,
       costBasis: (isCostBasis(client.costBasis) ? client.costBasis : "PRICE") as CostBasis,
+      role: user.role as Role,
+      canViewVariance: user.canViewVariance,
     };
 
     // No key → the deterministic rule engine answers from the same read-only

@@ -501,6 +501,15 @@ export const PERMISSIONS = {
   // footer. AUDIT_VIEWER_LIMITED (unpaid) gets reports.view only, above.
   "reports.export": ["ADMIN", "OWNER", "MANAGER", "ACCOUNTANT", "AUDIT_VIEWER"],
   "activity.view": ["ADMIN", "OWNER", "MANAGER"],
+  /**
+   * Flip a STAFF account's `canViewVariance` flag (hide-variance-from-staff
+   * Phase 1). Deliberately wider than `users.manage` (ADMIN/OWNER only): the
+   * client asked for MANAGER to hold this one specifically, since managers are
+   * the ones who actually observe and trust staff day to day — everything else
+   * about an account (disable, reset password, role) stays ADMIN/OWNER only.
+   * STAFF and everyone below cannot touch it, including on their own account.
+   */
+  "variance.grant": ["ADMIN", "OWNER", "MANAGER"],
 } as const satisfies Record<string, readonly Role[]>;
 
 /**
@@ -805,5 +814,38 @@ export function canViewReportForSubscription(
 ): boolean {
   if (role === "ADMIN") return true;
   return enabledReportSlugs.includes(slug);
+}
+
+/**
+ * May this user see Variance and everything that can back-solve it — the
+ * hide-variance-from-staff gate (hide-variance-from-staff-plan.md). A single
+ * switch: MANAGER, OWNER, ADMIN, ACCOUNTANT, and both AUDIT_VIEWER tiers see
+ * it unconditionally, same as before this flag existed — the client's ask was
+ * to gate STAFF specifically, not to touch anyone who already runs or audits
+ * the establishment. Only for STAFF does this read `user.canViewVariance`,
+ * which defaults false and is set only by someone holding `variance.grant`
+ * (PERMISSIONS above). Any role this function doesn't recognize is denied —
+ * a fail-closed default, not an oversight, so a future role added to `ROLES`
+ * without an explicit line here starts blocked rather than silently open.
+ *
+ * This is a presentation/report gate, the same kind as `canViewReport` above
+ * — it never touches `packages/core/reconciliation.ts` or any other sacred
+ * math. Full-Audit-shaped numbers still compute the same way for everyone;
+ * this only decides who is handed the result.
+ */
+export function canViewVariance(user: { role: Role; canViewVariance?: boolean }): boolean {
+  switch (user.role) {
+    case "MANAGER":
+    case "OWNER":
+    case "ADMIN":
+    case "ACCOUNTANT":
+    case "AUDIT_VIEWER":
+    case "AUDIT_VIEWER_LIMITED":
+      return true;
+    case "STAFF":
+      return user.canViewVariance === true;
+    default:
+      return false;
+  }
 }
 

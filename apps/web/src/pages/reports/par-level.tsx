@@ -43,6 +43,15 @@ export function ParLevelReportPage() {
       : all;
   }, [report.data, query]);
 
+  // "Used (last period)" is genuinely ABSENT from the wire response for a
+  // blocked STAFF account (hide-variance-from-staff Phase 2.4/4.4), not
+  // zeroed — driven off the data itself, same as every other presence check
+  // on this page, rather than a second read of the role/flag this page has
+  // no other reason to know about. Checked against the full row set, not the
+  // filtered/searched `rows`, so a search that happens to match zero rows
+  // can never flip the column on or off.
+  const showUsage = (report.data?.rows ?? []).some((r) => r.usage !== undefined);
+
   // What to buy: the biggest suggested orders by value.
   const reorderBars = useMemo(() => {
     return (report.data?.rows ?? [])
@@ -116,7 +125,7 @@ export function ParLevelReportPage() {
                     <TableHead>Category</TableHead>
                     <TableHead className="text-right">On Hand</TableHead>
                     <TableHead className="text-right">Par</TableHead>
-                    <TableHead className="text-right">Used (last period)</TableHead>
+                    {showUsage && <TableHead className="text-right">Used (last period)</TableHead>}
                     <TableHead className="text-right">Suggested Order</TableHead>
                     <TableHead className="text-right">Order Value</TableHead>
                   </TableRow>
@@ -135,7 +144,11 @@ export function ParLevelReportPage() {
                       <TableCell className="text-muted-foreground">{row.category}</TableCell>
                       <TableCell className={cn("tnum text-right", row.belowPar && "text-warning-text")}>{formatNumber(row.onHand)}</TableCell>
                       <TableCell className="tnum text-right text-muted-foreground">{formatNumber(row.parLevel)}</TableCell>
-                      <TableCell className="tnum text-right text-muted-foreground">{formatNumber(row.usage)}</TableCell>
+                      {showUsage && (
+                        <TableCell className="tnum text-right text-muted-foreground">
+                          {row.usage !== undefined ? formatNumber(row.usage) : "—"}
+                        </TableCell>
+                      )}
                       <TableCell className="tnum text-right font-medium">{row.suggestedOrder > 0 ? formatNumber(row.suggestedOrder) : "—"}</TableCell>
                       <TableCell className="tnum text-right">{row.orderValue > 0 ? formatMoney(row.orderValue) : "—"}</TableCell>
                     </TableRow>
@@ -144,7 +157,7 @@ export function ParLevelReportPage() {
                 {query.trim() === "" && (
                   <TableFooter>
                     <TableRow>
-                      <TableCell colSpan={5} className="font-medium">
+                      <TableCell colSpan={showUsage ? 5 : 4} className="font-medium">
                         {report.data.totals.belowParCount} below par
                       </TableCell>
                       <TableCell className="text-right font-medium">Total to buy</TableCell>
