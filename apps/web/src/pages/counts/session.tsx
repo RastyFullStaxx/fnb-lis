@@ -5,7 +5,7 @@ import { toast } from "sonner";
 // phpRound for DISPLAY of the stored reading: entering in grams converts to the
 // item's own unit, which lands on values like 28.642457103059293. The stored
 // number stays exact — only what is shown is shortened.
-import { can, checkContentVsHistory, convert, isExpiryDatePast, phpRound, resolveIsPerishable, type Role, type UnitDef, type WeighWarning } from "@fnb/core";
+import { can, checkContentVsHistory, checkQtyVsHistory, convert, isExpiryDatePast, phpRound, resolveIsPerishable, type Role, type UnitDef, type WeighWarning } from "@fnb/core";
 import { statusVariant } from "@/lib/status";
 import { useMe } from "@/api/auth";
 import { useItemDisplayUnit } from "@/lib/preferences";
@@ -206,7 +206,8 @@ function OpenSession({ session }: { session: SessionWithLines }) {
   // Weight outlier warning (docs/2026-08-01-weight-outlier-warning-plan.md,
   // phases doc Phase 3/4) — one fetch per picked item, shared by both the
   // Weigh Partial preview below and the Open Amount check further down.
-  const trailingAverage = useTrailingAverage(item?.id ?? null).data?.trailingAverage;
+  const trailing = useTrailingAverage(item?.id ?? null).data;
+  const trailingAverage = trailing?.trailingAverage;
   // FIFO worklist (expiry-date-plan.md, phases doc Phase 4.2) — same
   // one-fetch-per-picked-item shape as trailingAverage above. Gated on the
   // same resolver everywhere else in this feature reads, so picking a
@@ -270,6 +271,22 @@ function OpenSession({ session }: { session: SessionWithLines }) {
     const stored = itemUnit && displayUnit && displayUnit.kind === itemUnit.kind ? convert(n, displayUnit, itemUnit) : n;
     return checkContentVsHistory(stored, trailingAverage);
   }, [activeMode, useTotalAmount, openAmount, itemUnit, displayUnit, trailingAverage]);
+
+  /**
+   * Full Units' own outlier check -- the shelf count, and until now the only
+   * entry mode with no sanity check of any kind. Same shape as Open Amount
+   * above and rendered by the same strip, so all three modes warn identically.
+   *
+   * No unit conversion here, unlike Open Amount: a full count is whole
+   * containers, so the typed number and the stored one are the same number
+   * whatever unit the counter prefers.
+   */
+  const qtyWarning = useMemo((): WeighWarning | null => {
+    if (activeMode !== "FULL" || qty === "") return null;
+    const n = Number(qty);
+    if (!Number.isFinite(n) || n < 0) return null;
+    return checkQtyVsHistory(n, trailing?.trailingFullQty);
+  }, [activeMode, qty, trailing?.trailingFullQty]);
 
   /**
    * Focus the entry field for the current mode. Picking an item left focus on
@@ -561,6 +578,14 @@ function OpenSession({ session }: { session: SessionWithLines }) {
                 onChange={(e) => setQty(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && save()}
               />
+              {/* Same strip as Open Amount and the weigh preview. Advisory --
+                  an extra digit is the likely reading, but a genuine delivery
+                  can move a shelf that far, so it never blocks the save. */}
+              {qtyWarning && (
+                <p className="rounded-md bg-warning/10 px-3 py-1.5 text-xs text-foreground">
+                  {qtyWarning.message}
+                </p>
+              )}
             </div>
           ) : activeMode === "OPEN" ? (
             <div className="space-y-3">

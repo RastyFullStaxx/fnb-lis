@@ -1,5 +1,5 @@
 import { phpRound } from "./rounding";
-import { WEIGH_OUTLIER_LOW_RATIO, WEIGH_OUTLIER_HIGH_RATIO } from "./constants";
+import { COUNT_OUTLIER_HIGH_RATIO, WEIGH_OUTLIER_LOW_RATIO, WEIGH_OUTLIER_HIGH_RATIO } from "./constants";
 
 /**
  * Open-container weighing — the legacy system's signature calculation.
@@ -24,7 +24,8 @@ export type WeighWarning =
   | { code: "SCALE_BELOW_TARE"; blocking: true; message: string }
   | { code: "CONTENT_EXCEEDS_SIZE"; blocking: false; message: string }
   | { code: "CONTENT_BELOW_SIZE_FLOOR"; blocking: false; message: string }
-  | { code: "CONTENT_UNUSUAL_VS_HISTORY"; blocking: false; message: string };
+  | { code: "CONTENT_UNUSUAL_VS_HISTORY"; blocking: false; message: string }
+  | { code: "QTY_UNUSUAL_VS_HISTORY"; blocking: false; message: string };
 
 /**
  * History-ratio check (plan §3, §6 step 1) — shared by validateWeigh and
@@ -59,6 +60,30 @@ export function checkContentVsHistory(
     };
   }
   return null;
+}
+
+/**
+ * The history-ratio check for a FULL (whole-unit) count line.
+ *
+ * Sibling of `checkContentVsHistory` above and deliberately the same shape --
+ * pure, no I/O, caller supplies the average -- so both entry paths warn from
+ * one vocabulary and render through one strip. It lives beside the weigh
+ * checks because the warning union does; nothing here reads a scale.
+ *
+ * High side only, and silent without history: see COUNT_OUTLIER_HIGH_RATIO for
+ * why a low count is not worth interrupting anyone over.
+ */
+export function checkQtyVsHistory(
+  qtyFull: number,
+  trailingAverage: number | null | undefined,
+): WeighWarning | null {
+  if (trailingAverage == null || trailingAverage <= 0) return null;
+  if (qtyFull / trailingAverage <= COUNT_OUTLIER_HIGH_RATIO) return null;
+  return {
+    code: "QTY_UNUSUAL_VS_HISTORY",
+    blocking: false,
+    message: "That's much higher than this item's recent counts — check for an extra digit.",
+  };
 }
 
 /** remaining = round((scale − tare) × densityFactor) — integer, legacy parity. */

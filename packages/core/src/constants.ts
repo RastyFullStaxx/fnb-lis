@@ -461,6 +461,24 @@ export const MFA_BACKUP_CODE_COUNT = 10;
 export const WEIGH_OUTLIER_LOW_RATIO = 0.05; // below 5% of size or history: flag as unusually low
 export const WEIGH_OUTLIER_HIGH_RATIO = 5; // above 5x history: flag as unusually high
 
+/**
+ * The same check for a WHOLE-UNIT count -- "how many bottles on the shelf",
+ * the most-used entry path in the product and, until now, the only one with no
+ * sanity check at all. A dropped or extra digit here lands straight in a report
+ * anchor: 10 typed as 100 is a 90-bottle variance nobody caused.
+ *
+ * HIGH SIDE ONLY, deliberately. On the low side an unusually small count is
+ * ordinary bar life -- an item sells out, and zero is the correct answer. A
+ * warning that fires on every stockout would be ignored within a week, and it
+ * would take the weigh warnings that share the same strip down with it. An
+ * extra digit only ever reads high, so that is the side worth interrupting on.
+ *
+ * Its own constant rather than reusing the weigh ratio: the numbers are equal
+ * today, but a shelf count and a scale reading have no reason to stay in step
+ * once either is tuned against real usage.
+ */
+export const COUNT_OUTLIER_HIGH_RATIO = 5;
+
 export const PERMISSIONS = {
   // Cross-tenant system administration (every client, every location). ADMIN only —
   // an OWNER must never reach another establishment's data.
