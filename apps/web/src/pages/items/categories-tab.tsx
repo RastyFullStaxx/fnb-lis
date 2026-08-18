@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { QuantityInput } from "@/components/quantity-input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -87,6 +88,7 @@ export function CategoriesTab({
               <TableHead>Type</TableHead>
               <TableHead>Industry</TableHead>
               <TableHead className="text-right">Liquid Weight (default)</TableHead>
+              <TableHead className="text-right">Expires</TableHead>
               <TableHead className="text-right">Items</TableHead>
               <TableHead className="w-20" />
             </TableRow>
@@ -99,6 +101,13 @@ export function CategoriesTab({
                 <TableCell className="text-muted-foreground">{cat.industry ?? "—"}</TableCell>
                 <TableCell className="tnum text-right">
                   {cat.defaultDensityFactor ?? <span className="text-muted-foreground">—</span>}
+                </TableCell>
+                <TableCell className="text-right">
+                  {cat.defaultPerishable ? (
+                    <span className="text-muted-foreground">Yes</span>
+                  ) : (
+                    <span className="text-muted-foreground">No</span>
+                  )}
                 </TableCell>
                 <TableCell className="tnum text-right">{cat._count?.items ?? 0}</TableCell>
                 <TableCell className="text-right">
@@ -152,6 +161,9 @@ function CategoryDialog({
       defaultDensityFactor: category?.defaultDensityFactor ?? null,
       sortOrder: category?.sortOrder ?? 0,
       industry: category?.industry ?? null,
+      // New categories start perishable — most of the catalog spoils, spirits
+      // are the exception (expiry-date-plan.md), matching the schema default.
+      defaultPerishable: category?.defaultPerishable ?? true,
     },
   });
 
@@ -236,6 +248,26 @@ function CategoryDialog({
             {form.formState.errors.productType && (
               <p className="text-sm text-destructive">Choose a product type</p>
             )}
+          </div>
+
+          {/* Policy call, not a physical measurement (expiry-date-plan.md) —
+              whether items in this category spoil at all. Applies to every
+              product type: Vodka and Supplies default off, everything else
+              defaults on. A LocationItem can still override this per
+              establishment, same helper-text pattern as Track Open Content
+              in the item form. */}
+          <div className="flex items-center justify-between gap-4 rounded-md border p-3">
+            <div>
+              <p className="text-sm font-medium">Items in this category expire</p>
+              <p className="text-xs text-muted-foreground">
+                On: items need an expiry date at receiving and get flagged once past it. Off: no date
+                is asked for or tracked — spirits, supplies, and other shelf-stable goods.
+              </p>
+            </div>
+            <Switch
+              checked={form.watch("defaultPerishable") ?? true}
+              onCheckedChange={(v) => form.setValue("defaultPerishable", v, { shouldDirty: true })}
+            />
           </div>
 
           {isAsset && (

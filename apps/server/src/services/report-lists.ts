@@ -607,6 +607,96 @@ export async function nonMovingReport(
   return { lastCountDate: snap.lastCountDate, periodBegin: snap.periodBegin, periodEnd: snap.periodEnd, rows, totals: { count: totals.count, costValue: round2(totals.costValue), retailValue: round2(totals.retailValue) } };
 }
 
+// ── Expiring Batches (expiry-date-plan.md, phases doc Phase 6.1) ──
+// The manager-level "what's expiring across the board" view. Extends the
+// per-item FIFO worklist (fifo-batches.ts, Phase 4.1) to the whole location:
+// same "open batch" definition — an ACTIVE line on a COMMITTED purchase,
+// dated lines only — just not filtered down to one LocationItem. Pure read,
+// no new schema, sourced straight from PurchaseLine.expiryDate rows already
+// written at receiving (Phase 3).
+
+export interface ExpiringBatchRow {
+  purchaseLineId: string;
+  locationItemId: string;
+  name: string;
+  category: string;
+  productType: string;
+  qty: number;
+  expiryDate: string;
+  purchaseDate: string;
+  /** Computed live against today, never stored — same precedent as
+      BottleKeep.dueForForfeit (expiry-date-plan.md, "computed, not stored"). */
+  isExpired: boolean;
+}
+export interface ExpiringBatchesReport {
+  asOfDate: string;
+  rows: ExpiringBatchRow[];
+  totals: { expiredCount: number; upcomingCount: number };
+}
+
+/**
+ * Every open, dated batch across a location, expired first (oldest expiry
+ * first within that group), then everything still ahead sorted
+ * soonest-to-expire — the ordering the source plan asks for ("expired
+ * first, then soonest-to-expire").
+ *
+ * `allowedProductTypes` mirrors every other report here (a Kitchen-only
+ * location has no use for a Beverage batch, and vice versa) even though
+ * perishable rows in practice skew Food/Beverage — Supplies and Asset
+ * default `defaultPerishable: false` per the source plan, so they rarely
+ * appear here at all, but the filter costs nothing to keep consistent.
+ */
+export async function expiringBatchesReport(
+  locationId: string,
+  allowedProductTypes?: readonly string[] | null,
+): Promise<ExpiringBatchesReport> {
+  const today = todayBusinessDate();
+  const lines = await prisma.purchaseLine.findMany({
+    where: {
+      status: "ACTIVE",
+      expiryDate: { not: null },
+      purchase: { status: "COMMITTED", locationId },
+      ...(allowedProductTypes
+        ? { locationItem: { itemVariant: { item: { category: { productType: { in: [...allowedProductTypes] } } } } } }
+        : {}),
+    },
+    include: {
+      purchase: { select: { purchaseDate: true } },
+      locationItem: { include: LI_INCLUDE },
+    },
+    orderBy: [{ expiryDate: "asc" }, { createdAt: "asc" }],
+  });
+
+  const rows: ExpiringBatchRow[] = lines.map((l) => ({
+    purchaseLineId: l.id,
+    locationItemId: l.locationItemId,
+    name: itemLabel(l.locationItem),
+    category: l.locationItem.itemVariant.item.category.name,
+    productType: l.locationItem.itemVariant.item.category.productType,
+    qty: round2(l.qty),
+    expiryDate: l.expiryDate!, // filtered not-null above
+    purchaseDate: l.purchase.purchaseDate,
+    isExpired: l.expiryDate! <= today,
+  }));
+
+  // Expired first (still oldest-expiry-first within that group, since the
+  // query is already sorted ascending by expiryDate), then upcoming batches
+  // in the same soonest-first order the query already produced.
+  rows.sort((a, b) => {
+    if (a.isExpired !== b.isExpired) return a.isExpired ? -1 : 1;
+    return a.expiryDate.localeCompare(b.expiryDate);
+  });
+
+  const totals = rows.reduce(
+    (acc, r) => ({
+      expiredCount: acc.expiredCount + (r.isExpired ? 1 : 0),
+      upcomingCount: acc.upcomingCount + (r.isExpired ? 0 : 1),
+    }),
+    { expiredCount: 0, upcomingCount: 0 },
+  );
+  return { asOfDate: today, rows, totals };
+}
+
 // ── Clutter candidates (clutter-item-removal plan, Phase 3) ──
 // System-suggested items for the manual hide action. Reuses the same
 // idle-stock read as Non-Moving, then adds two guards so a seasonal item

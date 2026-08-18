@@ -136,6 +136,22 @@ export interface NonMovingReport {
   totals: { count: number; costValue: number; retailValue: number };
 }
 
+export interface ExpiringBatchesReport {
+  asOfDate: string;
+  rows: Array<{
+    purchaseLineId: string;
+    locationItemId: string;
+    name: string;
+    category: string;
+    productType: string;
+    qty: number;
+    expiryDate: string;
+    purchaseDate: string;
+    isExpired: boolean;
+  }>;
+  totals: { expiredCount: number; upcomingCount: number };
+}
+
 export interface CostAnalysisReport {
   begin: string;
   end: string;
@@ -473,6 +489,14 @@ export function useNonMovingReport() {
   });
 }
 
+export function useExpiringBatchesReport() {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["report", "expiring-batches", locationId],
+    queryFn: () => api<ExpiringBatchesReport>(`${base(locationId)}/reports/expiring-batches`),
+  });
+}
+
 export function useFullAuditDrill(begin: string, end: string, locationItemId: string | null) {
   const locationId = useLocationId();
   return useQuery({
@@ -538,6 +562,7 @@ export function exportUrl(
     | "on-hand"
     | "par-level"
     | "non-moving"
+    | "expiring-batches"
     | "asset-breakage"
     | "asset-register"
     | "asset-inventory"

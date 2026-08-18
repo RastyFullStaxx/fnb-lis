@@ -5,6 +5,7 @@ import {
   ASSET_LOSS_REASON_LABELS,
   ASSET_LOSS_REASONS,
   can,
+  isExpiryDatePast,
   NON_REVENUE_GROUP_LABELS,
   NON_REVENUE_GROUPS,
   NON_REVENUE_REASONS,
@@ -493,6 +494,12 @@ function QuickEntry({ kind }: { kind: SaleKind }) {
   // take a plain quantity that may be decimal — 0.6 kg of trimmings — the same
   // way Production is entered.
   const isBeverage = item?.itemVariant.item.category.productType === "Beverage";
+  // The pointer this screen exists to be (Phase 5.3, expiry-date-plan.md):
+  // the expired flag itself moves nothing, so it needs to name where staff
+  // send it. Computed here, never stored — same as everywhere else this
+  // flag shows.
+  const today = new Date().toISOString().slice(0, 10);
+  const hasExpiredBatch = isExpiryDatePast(item?.earliestOpenExpiry, today);
 
   const pickTarget = (t: SaleTarget) => {
     setTarget(t);
@@ -633,7 +640,18 @@ function QuickEntry({ kind }: { kind: SaleKind }) {
           {kind === "NON_REVENUE" && (
             <>
               <div className="space-y-2">
-                <Label htmlFor="s-reason">{isAsset ? "What Happened" : "Reason"}</Label>
+                <Label htmlFor="s-reason" className="flex items-center gap-1.5">
+                  {isAsset ? "What Happened" : "Reason"}
+                  {/* The pointer this screen exists to be (Phase 5.3): the
+                      expired flag alone moves nothing, so it names where
+                      staff send it. Never a gate — "Expired" is one more
+                      choice in the list below, picked freely like any other. */}
+                  {hasExpiredBatch && (
+                    <Badge variant="destructive" className="font-normal">
+                      Has an expired batch
+                    </Badge>
+                  )}
+                </Label>
                 {/* Assets get loss reasons (Broken / Lost / Stolen / Retired);
                     consumables get the three canonical buckets plus "Other /
                     Unspecified" (client req 2026-07-21). Legacy reasons stay

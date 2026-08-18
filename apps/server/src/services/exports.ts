@@ -18,6 +18,7 @@ import {
 import type {
   AssetBreakageReport,
   CostAnalysisReport,
+  ExpiringBatchesReport,
   NonMovingReport,
   NonRevenueReport,
   OnHandReport,
@@ -657,6 +658,54 @@ export function nonMovingCsv(report: NonMovingReport): string {
     rows.push([row.name, row.category, round2(row.onHand), round2(row.cost), round2(row.costValue), round2(row.retailValue)]);
   }
   rows.push(["Total", "", "", "", round2(report.totals.costValue), round2(report.totals.retailValue)]);
+  return toCsv(rows);
+}
+
+// ───────────────────── Expiring Batches (Phase 6.1) ─────────────────────
+// Amber row tint reuses FILL_OVER — the same "over" highlight the Full Audit
+// exports already use, and the same warning-not-destructive color the
+// on-screen `bg-warning/10` class carries. A different color from the
+// destructive/red variance tint on purpose (expiry-date-plan.md: "a
+// different color to avoid confusion with variance severity") — this report
+// has no variance rows to confuse it with, so the existing warning tint is
+// reused rather than inventing a third palette entry.
+
+export const EXPIRING_BATCHES_HEADERS = ["Item", "Category", "Qty", "Purchase Date", "Expiry Date", "Status"];
+
+export async function expiringBatchesWorkbook(report: ExpiringBatchesReport, meta: ReportMeta): Promise<Buffer> {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Expiring Batches", { views: [{ state: "frozen", ySplit: 4 }] });
+  titleBlock(ws, "Expiring Batches Report", `${meta.clientName} · ${meta.locationName} · as of ${report.asOfDate}`, EXPIRING_BATCHES_HEADERS.length, meta);
+  styleHeaderRow(ws.addRow(EXPIRING_BATCHES_HEADERS));
+  for (const row of report.rows) {
+    const r = ws.addRow([row.name, row.category]);
+    qtyCell(r.getCell(3), row.qty);
+    r.getCell(4).value = row.purchaseDate;
+    r.getCell(5).value = row.expiryDate;
+    r.getCell(6).value = row.isExpired ? "Expired" : "Upcoming";
+    if (row.isExpired) {
+      r.eachCell((cell) => { cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: FILL_OVER } }; });
+    }
+  }
+  const t = ws.addRow(["Total", ""]);
+  t.font = { bold: true };
+  t.getCell(6).value = `${report.totals.expiredCount} expired, ${report.totals.upcomingCount} upcoming`;
+  ws.getColumn(1).width = 30;
+  ws.getColumn(2).width = 18;
+  ws.getColumn(3).width = 12;
+  ws.getColumn(4).width = 14;
+  ws.getColumn(5).width = 14;
+  ws.getColumn(6).width = 14;
+  stampLogo(ws, EXPIRING_BATCHES_HEADERS.length);
+  return toBuffer(wb);
+}
+
+export function expiringBatchesCsv(report: ExpiringBatchesReport): string {
+  const rows: CsvValue[][] = [EXPIRING_BATCHES_HEADERS];
+  for (const row of report.rows) {
+    rows.push([row.name, row.category, round2(row.qty), row.purchaseDate, row.expiryDate, row.isExpired ? "Expired" : "Upcoming"]);
+  }
+  rows.push(["Total", "", "", "", "", `${report.totals.expiredCount} expired, ${report.totals.upcomingCount} upcoming`]);
   return toCsv(rows);
 }
 

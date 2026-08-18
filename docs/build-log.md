@@ -4915,3 +4915,169 @@ adds both"* on the dashboard and in the bell.
 
 All five harnesses pass; both workspaces typecheck.
 
+## Phase 44 — Expiry date (2026-08-18)
+
+Client ask: a real calendar date tied to actual stock received, not a shelf
+life rule on the item type — spirits don't spoil, Meat/Dairy spoil fast, Dry
+Goods (Cooking Oil) spoils slow, and `productType` alone can't separate any of
+them. Full reasoning in `docs/expiry-date-plan.md`; build order in its
+companion phases doc. Seven phases, closed out here.
+
+### Shipped
+
+- **Phase 1 — the policy layer.** `Category.defaultPerishable Boolean
+  @default(true)` and `LocationItem.isPerishable Boolean?` (null = inherit),
+  resolved by `resolveIsPerishable(local, categoryDefault)` in
+  `packages/core/src/constants.ts`, next to `resolveBottleWeights`. **Two
+  tiers, not three** — deliberately unlike the three-tier bottle-weight
+  cascade, since perishability is a policy call, not a physical measurement,
+  and a 750ml and a 1L bottle of the same item never disagree on whether it
+  spoils. Seed data sets `defaultPerishable: false` on every true-spirit
+  category (Vodka, Rum, Whisky, Gin, Brandy, Tequila, Single Malt Whisky,
+  Cognac, Bourbon) plus Supplies and Asset; every other seeded category keeps
+  the schema default (`true`).
+- **Phase 2 — item catalog UI.** `defaultPerishable` switch on the category
+  form ("Items in this category expire"), a three-state Inherit/Perishable/Not
+  perishable control on the `LocationItem` section of the item form —
+  conditional the same way the existing Asset-only fields are, keyed off
+  `resolveIsPerishable()` instead of `productType === "Asset"` — and a
+  perishable indicator on the categories list.
+- **Phase 3 — receiving.** `expiryDate` on the purchase-line zod DTO,
+  `'YYYY-MM-DD'`, required by `superRefine` exactly when the line's
+  `LocationItem` resolves perishable, re-checked server-side at the route, not
+  just client-side. Date input added to the receiving screen's left-column
+  entry row, visible only for perishable lines, no new modal. Draft lines edit
+  freely; committed lines correct through the standing Void/Correct pattern,
+  same as `qty` or `unitCost` already do.
+- **Phase 4 — count screen FIFO panel.** New read-only aggregation listing
+  open purchase-line batches for a `LocationItem`, oldest date first, added to
+  the existing right-column standing panel (today's "recent entries" spot).
+  Deliberately not a field on the count row — one count line is one quantity
+  for the whole item and can't hold two dates.
+- **Phase 5 — the expired flag and the write-off path.** `isExpiryDatePast()`
+  computes the flag live wherever a batch is shown (FIFO panel, catalog row,
+  purchase history) — never a stored column, same precedent as `BottleKeep`'s
+  `dueForForfeit`. `"Expired"` added to `NON_REVENUE_REASON_WORDS`, mapped to
+  `SPOILAGE_SPILLAGE` in `nonRevenueGroupOf()`; before this it fell through
+  the switch's `default: return null` unbucketed. `Forfeit` deliberately left
+  alone — `Forfeit.remainingContent` is a stock-IN (`reconciliation.ts`:
+  "Forfeits ADD BACK into the pool"), the opposite direction from a write-off.
+  The Non-Revenue entry screen shows the computed flag as context next to an
+  item with an expired batch, the same spot the Asset-aware reason-list swap
+  already reads `category.productType`. No write-off wiring on the count
+  screen, by design, same reasoning that kept `BottleKeep` forfeiting off it.
+- **Phase 6 — reports and access.** `GET /reports/expiring-batches` (+
+  `/export` for csv/pdf/xlsx), expired batches first then soonest-to-expire,
+  built on the Phase 4 aggregation extended across the whole location. Sits in
+  the Stock & Movement group on the reports hub. **Not** added to
+  `HIDDEN_FROM_BLOCKED_STAFF` alongside Cost Analysis — perishability isn't
+  derived from usage or sold figures, so it can't be reverse-engineered into a
+  fake count, the same carve-out reasoning `routes/reports.ts` already states
+  for Cost Analysis. The three existing independent download gates
+  (`reports.export`, `Client.allowReportDownloads`, `VIEW_ONLY` billing state)
+  apply the same as every other report, no new one added. **One correction to
+  the source plan's own stated verification**: the phases doc's Phase 6.2/6.3
+  describe an `AUDIT_VIEWER` seeing this report "read-only." The build instead
+  excludes `AUDIT_VIEWER`/`AUDIT_VIEWER_LIMITED` from it outright, via the
+  separate, narrower `AUDIT_VIEWER_REPORTS` allowlist that exists to give a
+  3rd-party reconciliation service (client req 2026-07-28) exactly the
+  reconciliation set and nothing else — the same list Purchases and Par Level
+  are already excluded from for the identical reason. `constants.ts` carries
+  the in-code note explaining the two gates are separately motivated: the
+  plan's "AUDIT_VIEWER read-only" line is about the STAFF-blocking gate
+  (`HIDDEN_FROM_BLOCKED_STAFF`), not this narrower one. Every role that runs
+  the establishment, STAFF included, still sees it in full.
+- **Phase 7 — this entry, plus [architecture.md deviation
+  #37](architecture.md).**
+
+### Schema diff, in full
+
+```prisma
+model Category     { defaultPerishable Boolean @default(true) }   // 20260818010000
+model LocationItem { isPerishable      Boolean?                }  // 20260818020000
+model PurchaseLine  { expiryDate       String?                 }  // 20260818030000
+```
+
+Three additive columns, three migrations, no changed constraint, no new
+model. `PurchaseLine` still carries no unique constraint on
+`(purchaseId, locationItemId)` — a delivery with two dates on the same item
+was already two lines before this feature and still is, each with its own qty
+and date. Outside the schema: one string added to `NON_REVENUE_REASON_WORDS`,
+one `case "EXPIRED":` arm in `nonRevenueGroupOf()`.
+
+### Explicitly out of scope, carried forward
+
+Item transformation — a produced item (tenders, drummets, marinated cuts)
+getting its own catalog entry, on-hand quantity, expiry date, and a link back
+to the raw item it came from — is not built here. `Item` stays flat and
+`SaleRecord` kind `PRODUCTION` still only tracks ingredients going out. Named
+as a boundary in the source plan and in Phase 5 of the phases doc; it needs
+its own plan before any of Phase 3's date-capture pattern is reused for
+produced items.
+
+### Verified
+
+`verify:seed` re-run after each schema-touching phase (1, 3, 5): both golden
+anchors unmoved — Main Bar Jun 1–8 still **−₱330.69 / −₱869.57**. Nothing in
+this feature changes a cost, quantity, or reconciliation figure; the three new
+columns and `resolveIsPerishable()`/`isExpiryDatePast()` are lookups and
+computed-display flags, not arithmetic.
+
+**A real gap found and closed here, not earlier.** Every phase above named a
+"Verify" step, but until this pass none of it existed as a repeatable check —
+`verify-seed.ts` asserted nothing about perishability, the resolver, or the
+reason-word mapping; only the two pre-existing golden anchors were being
+re-confirmed, which proves this feature broke nothing without proving it does
+anything. `verify-seed.ts` now also asserts, against the real seeded
+database: the true-spirit + Supplies + Asset categories are non-perishable
+and Meat/Dairy/Wine/Dry Goods are not; `resolveIsPerishable()` resolves
+correctly for a real seeded Vodka, Wine, and Dry Goods row (the exact three
+Phase 1.6 names) plus the override-vs-inherit direction on synthetic input;
+`"Expired"` is offered and maps to `SPOILAGE_SPILLAGE` (`Phase 5.2`);
+`isExpiryDatePast()`'s before/after/on-the-day/null cases; and that
+`expiringBatchesReport()` executes and returns a well-formed shape.
+
+**A second gap, found and closed in a follow-up pass the same day: no seed
+data populated the feature.** Neither `seed.ts` nor `seed-demo.ts` wrote
+`expiryDate` onto any `PurchaseLine` — both write directly via Prisma,
+bypassing the `assertExpiryDateValid()` check the real `/purchases` route
+enforces, so seven existing seed call sites (three in `seed.ts`, four in
+`seed-demo.ts`, covering Main Bar, Kitchen, Depot, Casa Verde, and the demo
+history's generic multi-period purchase generator) created perishable
+deliveries — chicken, steak, beer, tonic, fries, salmon, cola, orange juice,
+wine, syrup, cooking oil, butter — in a shape the route itself would now
+reject. All seven now carry real dates, sample data throughout so free to
+patch: hand-picked fixtures got fixed literal dates; the generic demo-history
+engine (`seed-demo.ts`'s per-period purchase loop) got a static
+`SHELF_LIFE_DAYS` lookup by item name plus a pure `addDays(purchaseDate,
+offset)` helper, keeping the whole thing deterministic — no new call into
+the file's seeded LCG (`rand()`/`randInt()`), so every other jittered figure
+in the demo history reseeds identically to before. Non-perishable items
+(Vodka, Whisky, Rum, Gin, Tequila) are simply absent from the lookup and get
+`expiryDate: null`, same as the real receiving screen would show. Confirmed
+by hand, line by line, that every edit touched only the new `expiryDate` key
+— `qty`, `unitCost`, and `lineTotal` on every patched line are byte-identical
+to before, so nothing that feeds `reconciliation.ts` moved. `verify-seed.ts`
+was upgraded to match: what was an informational count is now a hard
+assertion — every ACTIVE line resolving perishable (through
+`resolveIsPerishable()` itself, not the raw `Category` field, so a future
+`LocationItem.isPerishable` override can't quietly desync this check from
+what the app decides) carries a date and none resolving non-perishable does,
+and `expiringBatchesReport()` is now asserted to find real rows, not just to
+run without throwing.
+
+Both workspaces typecheck clean (pre-existing code). The `verify-seed.ts`
+additions and the `seed.ts`/`seed-demo.ts` edits in this pass are written but
+**not executed** — this environment has no installed dependencies or
+generated Prisma client to run them against (`npm install` was out of scope
+for this pass). Checked by hand instead: every edited block's non-`expiryDate`
+fields diffed identical to the original, both files' brace/paren/bracket
+counts balance, and an isolated `tsc --noEmit` pass against all three files
+raised nothing beyond the expected missing-Prisma-client noise (the same
+`does not exist on type '{}'`/`CategoryWhereInput` class of error that a
+clean, ungenerated checkout throws on pre-existing code too) — no error
+touched `SHELF_LIFE_DAYS`, `addDays`, or any of the new assertions. Still,
+`npm run seed && npm run verify:seed -w @fnb/server` needs an actual run, on
+a machine with dependencies installed, before this is trusted the way the
+rest of this file is.
+

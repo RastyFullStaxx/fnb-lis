@@ -142,6 +142,41 @@ const KITCHEN_PROFILES: Record<KitchenKey, Profile> = {
 };
 
 /**
+ * Shelf life in days from delivery, by item name — expiry-date-plan.md /
+ * phases doc Phase 3. Keyed by name (not `BarKey`/`KitchenKey`) because it
+ * mirrors `Category.defaultPerishable` from seed.ts's master catalog, not
+ * this file's own per-location item defs. A name absent from this table is
+ * non-perishable (Vodka, Whisky, Rum, Gin, Tequila — all seeded
+ * `defaultPerishable: false`) and gets no `expiryDate`, same as a real
+ * receiving screen would never show the field for those categories.
+ * Fixed offsets, not randomised — this generator's LCG stream must stay
+ * exactly as consumed today, or every other jittered figure in the demo
+ * history reseeds to a different number.
+ */
+const SHELF_LIFE_DAYS: Record<string, number> = {
+  "Grenadine Syrup": 365, // Syrup
+  "House Red Wine": 730, // Wine
+  "San Miguel Pale Pilsen": 180, // Beer
+  "Tonic Water": 270, // Soda & Mixers
+  Cola: 270, // Soda & Mixers
+  "Orange Juice": 14, // Juices
+  "Chicken Breast": 5, // Poultry
+  "Ribeye Steak": 7, // Meat
+  "Salmon Fillet": 3, // Seafood
+  Butter: 45, // Dairy
+  "Potato Fries": 180, // Frozen
+  "Cooking Oil": 365, // Dry Goods
+};
+/** `purchaseDate` plus a fixed day offset, string arithmetic only — no
+    `Date`/timezone involved, matching the architecture.md §2 portability
+    rule the `expiryDate` column itself follows. */
+function addDays(isoDate: string, days: number): string {
+  const d = new Date(`${isoDate}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
  * Deliberate variances, in units, keyed `period:item`. Everything unlisted
  * reconciles to zero — a demo where every row is off reads as a broken
  * system, and one where none is reads as a pointless report. These are the
@@ -541,6 +576,7 @@ async function runLedger<K extends string>(opts: {
         },
       });
       for (const line of bucket) {
+        const shelfLife = SHELF_LIFE_DAYS[line.item.def.name];
         await prisma.purchaseLine.create({
           data: {
             purchaseId: purchase.id,
@@ -548,6 +584,7 @@ async function runLedger<K extends string>(opts: {
             qty: line.qty,
             unitCost: line.unitCost,
             lineTotal: round2(line.qty * line.unitCost),
+            expiryDate: shelfLife !== undefined ? addDays(purchase.purchaseDate, shelfLife) : null,
             ...opts.who,
           },
         });
@@ -947,8 +984,17 @@ async function seedOpenPeriod() {
     },
   });
   for (const [key, qty, unitCost] of [["beer330", 48, 47], ["tonic200", 24, 33], ["absolut700", 6, 649]] as Array<[BarKey, number, number]>) {
+    const shelfLife = SHELF_LIFE_DAYS[BAR_ITEMS[key].name];
     await prisma.purchaseLine.create({
-      data: { purchaseId: purchase.id, locationItemId: items[key].id, qty, unitCost, lineTotal: round2(qty * unitCost), ...who },
+      data: {
+        purchaseId: purchase.id,
+        locationItemId: items[key].id,
+        qty,
+        unitCost,
+        lineTotal: round2(qty * unitCost),
+        expiryDate: shelfLife !== undefined ? addDays(purchase.purchaseDate, shelfLife) : null,
+        ...who,
+      },
     });
   }
   const purchase2 = await prisma.purchase.create({
@@ -958,8 +1004,17 @@ async function seedOpenPeriod() {
     },
   });
   for (const [key, qty, unitCost] of [["cola1", 12, 45], ["oj1", 10, 85]] as Array<[BarKey, number, number]>) {
+    const shelfLife = SHELF_LIFE_DAYS[BAR_ITEMS[key].name];
     await prisma.purchaseLine.create({
-      data: { purchaseId: purchase2.id, locationItemId: items[key].id, qty, unitCost, lineTotal: round2(qty * unitCost), ...who },
+      data: {
+        purchaseId: purchase2.id,
+        locationItemId: items[key].id,
+        qty,
+        unitCost,
+        lineTotal: round2(qty * unitCost),
+        expiryDate: shelfLife !== undefined ? addDays(purchase2.purchaseDate, shelfLife) : null,
+        ...who,
+      },
     });
   }
 
@@ -1075,8 +1130,17 @@ async function seedFoodOpenPeriod(clientName: string, locationName: string, refP
     },
   });
   for (const [key, qty, unitCost] of [["chicken", 12, 190], ["fries", 15, 117], ["salmon", 4, 655]] as Array<[KitchenKey, number, number]>) {
+    const shelfLife = SHELF_LIFE_DAYS[KITCHEN_ITEMS[key].name];
     await prisma.purchaseLine.create({
-      data: { purchaseId: purchase.id, locationItemId: items[key].id, qty, unitCost, lineTotal: round2(qty * unitCost), ...who },
+      data: {
+        purchaseId: purchase.id,
+        locationItemId: items[key].id,
+        qty,
+        unitCost,
+        lineTotal: round2(qty * unitCost),
+        expiryDate: shelfLife !== undefined ? addDays(purchase.purchaseDate, shelfLife) : null,
+        ...who,
+      },
     });
   }
 
@@ -1224,13 +1288,15 @@ async function seedAssets() {
   });
 
   // Asset categories (productType Asset) — from the client's data, verbatim.
+  // defaultPerishable: false, same as every other Asset category in
+  // seed.ts's seedCategories() — assets don't spoil (expiry-date-plan.md).
   const categoryId = new Map<string, string>();
   let sort = 41;
   for (const name of [...new Set(ASSET_ITEMS.map((i) => i.category))]) {
     const c = await prisma.category.upsert({
       where: { name },
       update: {},
-      create: { name, productType: "Asset", sortOrder: sort++ },
+      create: { name, productType: "Asset", sortOrder: sort++, defaultPerishable: false },
     });
     categoryId.set(name, c.id);
   }

@@ -3,7 +3,7 @@ import { useParams } from "react-router";
 import type { LocationItemAttach, LocationItemUpdate, MeClient, SupplierUpsert } from "@fnb/core";
 import { api, del, post, put } from "./http";
 import { useMe } from "./auth";
-import type { AvailableVariant, LocationItem, Supplier } from "./types";
+import type { AvailableVariant, FifoBatch, LocationItem, Supplier } from "./types";
 
 /** The active location id from the /l/:locationId/* route. */
 export function useLocationId(): string {
@@ -56,6 +56,22 @@ export function useTrailingAverage(locationItemId: string | null) {
     queryKey: ["trailingAverage", locationId, locationItemId],
     queryFn: () =>
       api<{ trailingAverage: number | null }>(`${base(locationId)}/location-items/${locationItemId}/trailing-average`),
+    enabled: locationItemId != null,
+  });
+}
+
+/**
+ * Open perishable batches for an item, oldest expiry first — the count
+ * screen's FIFO worklist (expiry-date-plan.md, phases doc Phase 4.2). Same
+ * shape as useTrailingAverage above: one fetch per picked item, `null`/empty
+ * while nothing is picked rather than showing stale data from the last item.
+ */
+export function useFifoBatches(locationItemId: string | null) {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["fifoBatches", locationId, locationItemId],
+    queryFn: () =>
+      api<{ batches: FifoBatch[] }>(`${base(locationId)}/location-items/${locationItemId}/fifo-batches`),
     enabled: locationItemId != null,
   });
 }

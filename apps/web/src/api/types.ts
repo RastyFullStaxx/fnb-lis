@@ -18,6 +18,10 @@ export interface Category {
   sortOrder: number;
   // Asset-only, nullable (client req 2026-07-24). One industry per category.
   industry: string | null;
+  // Whether items in this category spoil by default (expiry-date-plan.md).
+  // Read through resolveIsPerishable(), never compared directly —
+  // LocationItem.isPerishable below can override it per establishment.
+  defaultPerishable: boolean;
   _count?: { items: number };
 }
 
@@ -79,6 +83,16 @@ export interface LocationItem {
   status: string | null;
   remarks: string | null;
   assetCode: string | null;
+  /** Per-location override of Category.defaultPerishable. Null = inherit the
+      category default (expiry-date-plan.md). Read through resolveIsPerishable(). */
+  isPerishable: boolean | null;
+  /** Oldest open (ACTIVE, on a COMMITTED purchase) expiry date across every
+      dated batch for this row, or null if none. Only present on the catalog
+      list response (GET /location-items) — the attach/update mutations don't
+      compute it, since a just-attached or just-priced row has no purchase
+      history to aggregate. Compare with isExpiryDatePast(), which treats
+      missing the same as null (expiry-date-plan.md, phases doc Phase 5.1). */
+  earliestOpenExpiry?: string | null;
   itemVariant: ItemVariant & { item: Item };
 }
 
@@ -171,6 +185,9 @@ export interface PurchaseLine extends AuditFields {
   qty: number;
   unitCost: number;
   lineTotal: number;
+  /** The date on the box, entered at receiving (expiry-date-plan.md). Null for
+      non-perishable lines and for lines written before this column existed. */
+  expiryDate: string | null;
   locationItem: LocationItem;
 }
 
@@ -240,4 +257,13 @@ export interface Forfeit extends AuditFields {
   qty: number;
   note: string | null;
   locationItem: LocationItem;
+}
+
+/** One open perishable delivery batch — the count screen's FIFO worklist
+    (expiry-date-plan.md, phases doc Phase 4). */
+export interface FifoBatch {
+  id: string;
+  qty: number;
+  expiryDate: string;
+  purchaseDate: string;
 }

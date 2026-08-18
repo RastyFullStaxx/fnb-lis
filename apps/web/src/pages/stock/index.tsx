@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useParams, useSearchParams } from "react-router";
 import { Boxes, Copy, Info, Plus, Scale, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
-import { can, isMissingPrice, MODULE_TYPE_LABELS, resolveBottleWeights, type ModuleType, type Role } from "@fnb/core";
+import { can, isMissingPrice, isExpiryDatePast, MODULE_TYPE_LABELS, resolveBottleWeights, resolveIsPerishable, type ModuleType, type Role } from "@fnb/core";
 import { useMe } from "@/api/auth";
 import { useCopyFromLocation, useCurrentLocation, useLocationItems } from "@/api/location";
 import type { LocationItem } from "@/api/types";
@@ -42,6 +42,7 @@ import { AttachItemDialog } from "./attach-dialog";
 import { PriceEdit } from "./price-edit";
 import { WeightReport } from "./weight-report";
 import { WeightEdit } from "./weight-edit";
+import { PerishableEdit } from "./perishable-edit";
 
 /**
  * Tare + liquid weight (density) for the list, and whether either is missing
@@ -83,6 +84,9 @@ export function StockPage() {
   const [reportedOnly, setReportedOnly] = useState(params.get("weightReported") === "1");
   const [attachOpen, setAttachOpen] = useState(false);
   const [copyOpen, setCopyOpen] = useState(false);
+  // The expired-batch badge's "on or past today" comparison (Phase 5.1) —
+  // computed once per render, same value every row on this screen shares.
+  const today = new Date().toISOString().slice(0, 10);
   const fetched = useLocationItems({ search: search || undefined, missingPrices: missingOnly });
   // Weight filters are client-side: the same weighInfo() the rows render from,
   // so the chip count and the list can never disagree.
@@ -229,6 +233,24 @@ export function StockPage() {
                   Empty Weight / ml per unit
                 </TableHead>
                 <TableHead className="text-right">Status</TableHead>
+                <TableHead className="text-right">
+                  {/* Whether this row needs an expiry date at receiving —
+                      resolved from the category default unless overridden
+                      here (expiry-date-plan.md). */}
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="inline-flex cursor-help items-center gap-1">
+                          Expires <Info className="size-3.5 text-muted-foreground" />
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        Whether this item needs an expiry date when it's received. Comes from the
+                        category by default; click the clock to override for this location.
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </TableHead>
                 {showAssetDetails && <TableHead className="text-right">Asset Details</TableHead>}
               </TableRow>
             </TableHeader>
@@ -313,6 +335,53 @@ export function StockPage() {
                       ) : (
                         <Badge variant="success">Ready</Badge>
                       )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <span>
+                          {resolveIsPerishable(row, row.itemVariant.item.category.defaultPerishable) ? (
+                            "Perishable"
+                          ) : (
+                            <span className="text-muted-foreground">Not perishable</span>
+                          )}
+                          {row.isPerishable != null && (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="ml-1.5 cursor-help text-xs text-muted-foreground">own</span>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  Your own override, recorded here. It applies to this location only
+                                  and replaces the category default.
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          )}
+                          {/* The oldest open batch on record for this row, past its
+                              own date — computed here, never stored (Phase 5.1). A
+                              row can be "Perishable" with nothing expired yet, so
+                              this is its own badge, not folded into the text above. */}
+                          {isExpiryDatePast(row.earliestOpenExpiry, today) && (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span>
+                                    <Badge variant="destructive" className="ml-1.5 cursor-help">
+                                      Expired
+                                    </Badge>
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  At least one delivered batch is past its printed date.
+                                  Log a Non-Revenue entry with reason "Expired" to take it
+                                  out of stock.
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          )}
+                        </span>
+                        <PerishableEdit row={row} />
+                      </div>
                     </TableCell>
                     {showAssetDetails && (
                     <TableCell className="text-right">

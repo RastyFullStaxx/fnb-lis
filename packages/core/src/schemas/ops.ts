@@ -107,12 +107,31 @@ export const purchaseCreate = z.object({
 });
 export type PurchaseCreate = z.infer<typeof purchaseCreate>;
 
-export const purchaseLineCreate = z.object({
+const purchaseLineShape = z.object({
   ...syncFields,
   locationItemId: id,
   qty: positive,
   unitCost: nonNegative,
+  /**
+   * The date on the box, entered at receiving (expiry-date-plan.md). String,
+   * not DateTime, same portability rule as purchaseDate above and the same
+   * precedent BottleKeep.expiresOn already set for this codebase.
+   *
+   * Optional here, not required: whether a date is actually mandatory depends
+   * on resolveIsPerishable() for the line's LocationItem, a fact this schema
+   * has no way to look up — packages/core does no I/O (resolveIsPerishable's
+   * own doc comment says so, and nothing in this package imports Prisma).
+   * The "required when perishable, ignored otherwise" rule is enforced
+   * server-side in the route instead (Phase 3.2), the same split already used
+   * for weighMode validity (assertWeighModeValid in routes/master.ts): zod
+   * checks the shape a body is allowed to take, the route checks the
+   * DB-backed truth. dateString itself still rejects anything malformed
+   * (`"2026-13-45"`, `""`, non-YYYY-MM-DD) the moment a value is sent.
+   */
+  expiryDate: dateString.optional(),
 });
+
+export const purchaseLineCreate = purchaseLineShape;
 export type PurchaseLineCreate = z.infer<typeof purchaseLineCreate>;
 
 /**
@@ -121,10 +140,11 @@ export type PurchaseLineCreate = z.infer<typeof purchaseLineCreate>;
  * point: the replacement inherits the invoice's date, supplier and ref, so it
  * lands in exactly the report period the original did. The item is fixed —
  * you're correcting the numbers, not what was delivered (for a missed item,
- * record a new delivery). Omitting `unitCost` keeps the original's snapshot.
+ * record a new delivery). Omitting `unitCost` keeps the original's snapshot;
+ * omitting `expiryDate` does the same for the date on the box.
  */
-export const purchaseLineCorrect = purchaseLineCreate
-  .pick({ qty: true })
+export const purchaseLineCorrect = purchaseLineShape
+  .pick({ qty: true, expiryDate: true })
   // .pick() drops the sync fields, and a correction is a create like any other
   // — it needs its own idempotency key or a retried correction writes a second
   // replacement line against an already-voided original.

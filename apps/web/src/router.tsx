@@ -27,6 +27,7 @@ import { BlankFormsPage } from "./pages/reports/blank-forms";
 import { BottleKeepPage } from "./pages/reports/bottle-keep";
 import { CountSheetPage } from "./pages/reports/count-sheet";
 import { NonMovingReportPage } from "./pages/reports/non-moving";
+import { ExpiringBatchesReportPage } from "./pages/reports/expiring-batches";
 import { AssetBreakageReportPage } from "./pages/reports/asset-breakage";
 import { LegacyAuditPage } from "./pages/reports/legacy-audit";
 import { VarianceSummaryPage } from "./pages/reports/variance-summary";
@@ -86,6 +87,7 @@ export const router = createBrowserRouter([
       { path: "reports/blank-forms", element: <BlankFormsPage /> },
       { path: "reports/bottle-keep", element: <BottleKeepPage /> },
       { path: "reports/non-moving", element: <NonMovingReportPage /> },
+      { path: "reports/expiring-batches", element: <ExpiringBatchesReportPage /> },
       { path: "reports/asset-breakage", element: <AssetBreakageReportPage /> },
       { path: "reports/legacy-audit", element: <LegacyAuditPage /> },
       { path: "reports/variance-summary", element: <VarianceSummaryPage /> },

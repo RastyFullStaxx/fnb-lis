@@ -4,6 +4,7 @@ import { useMe } from "@/api/auth";
 import { useCurrentClient, useCurrentLocation } from "@/api/location";
 import {
   ArrowLeftRight,
+  AlertTriangle,
   BarChart3,
   Boxes,
   ClipboardCheck,
@@ -179,6 +180,17 @@ const SECTIONS: Array<{ title: string; blurb: string; reports: Report[] }> = [
         icon: PackageX,
         title: "Non-Moving Items",
         description: "Dead stock — items on hand that saw no movement last period, ranked by idle value.",
+      },
+      {
+        path: "expiring-batches",
+        // Same conservative call as Sales/Sales-by-Item/Top Sellers/Cost
+        // Analysis above: perishability defaults false for Supplies and
+        // Asset categories (expiry-date-plan.md), so an Asset-only location
+        // has nothing to show here.
+        requiresProductTypes: ["Beverage", "Food"],
+        icon: AlertTriangle,
+        title: "Expiring Batches",
+        description: "Every open, dated delivery batch on the shelf — expired first, then soonest to expire.",
       },
     ],
   },

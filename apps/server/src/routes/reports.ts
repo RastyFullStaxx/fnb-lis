@@ -17,6 +17,7 @@ import { buildFullAudit, committedCountDates } from "../services/report-assembly
 import {
   assetBreakageReport,
   costAnalysisReport,
+  expiringBatchesReport,
   fullAuditDrill,
   nonMovingReport,
   nonRevenueReport,
@@ -43,6 +44,8 @@ import {
   assetRegisterWorkbook,
   assetInventoryCsv,
   assetInventoryWorkbook,
+  expiringBatchesCsv,
+  expiringBatchesWorkbook,
   nonMovingCsv,
   nonMovingWorkbook,
   nonRevenueCsv,
@@ -90,6 +93,7 @@ import {
   legacyAuditTitle,
   legacyAuditWorkbook,
   assetBreakagePdfDoc,
+  expiringBatchesPdfDoc,
   nonMovingPdfDoc,
   nonRevenuePdfDoc,
   onHandPdfDoc,
@@ -294,6 +298,13 @@ export const reportRoutes = new Hono<AppEnv>()
    * Sold, or Variance column, so it cannot be used to back-solve a fake
    * count (plan doc, "Why hiding one column is not enough"). Its one tooltip
    * that names the concept is reworded client-side instead (Phase 2.3/4.3).
+   *
+   * Expiring Batches (expiry-date-plan.md, phases doc Phase 6.2) is
+   * deliberately NOT in this list either, for the identical reason: a
+   * purchase line's expiry date isn't derived from usage or sold figures and
+   * can't solve for a fake count — knowing a case expires Tuesday says
+   * nothing about what today's count should read. STAFF need it most, since
+   * they decide day to day whether to use the item.
    */
   .use("/reports/*", async (c, next) => {
     const user = c.get("user")!;
@@ -804,6 +815,28 @@ export const reportRoutes = new Hono<AppEnv>()
     if (format === "csv") return csvResponse(nonMovingCsv(report), name, fullName(user));
     if (format === "pdf") return pdfResponse(await nonMovingPdfDoc(report, await meta(client, location.name, user)), name);
     return xlsxResponse(await nonMovingWorkbook(report, await meta(client, location.name, user)), name);
+  })
+
+  // ── Expiring Batches (expiry-date-plan.md, phases doc Phase 6.1) ──
+  // The manager-level "what's expiring across the board" view — every open,
+  // dated purchase-line batch at this location, expired first. No date range:
+  // this reads live open batches, not a closed period, same as On-Hand.
+  .get("/reports/expiring-batches", async (c) => {
+    const location = c.get("location");
+    const allowed = allowedProductTypes(c.get("locationModules"));
+    return c.json(await expiringBatchesReport(location.id, allowed));
+  })
+  .get("/reports/expiring-batches/export", exportGuard, async (c) => {
+    const location = c.get("location");
+    const client = c.get("client");
+    const allowed = allowedProductTypes(c.get("locationModules"));
+    const report = await expiringBatchesReport(location.id, allowed);
+    const user = c.get("user")!;
+    const name = `expiring-batches_${location.name}_${report.asOfDate}`.replace(/[^\w.-]+/g, "-");
+    const format = c.req.query("format");
+    if (format === "csv") return csvResponse(expiringBatchesCsv(report), name, fullName(user));
+    if (format === "pdf") return pdfResponse(await expiringBatchesPdfDoc(report, await meta(client, location.name, user)), name);
+    return xlsxResponse(await expiringBatchesWorkbook(report, await meta(client, location.name, user)), name);
   })
 
   // ── Top Sellers (replaces legacy Graph report) ──

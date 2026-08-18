@@ -172,6 +172,12 @@ export function nonRevenueGroupOf(reason: string | null | undefined): NonRevenue
     // clean (their Non-Revenue sheet, June 2026 — the most frequent entry on
     // it by far). Product destroyed, not given away: same bucket as spillage.
     case "BLEED":
+    // A batch past the date on the box (expiry-date-plan.md). Product
+    // destroyed, not given away — same bucket as spillage and spoilage, one
+    // write-off path for every item type. Not a new bucket: the plan is
+    // explicit this is the establishment's own existing word for the same
+    // event Spoilage & Spillages already reports.
+    case "EXPIRED":
       return "SPOILAGE_SPILLAGE";
     case "TRIMMING":
       return "TRIMMING";
@@ -203,6 +209,7 @@ export const NON_REVENUE_REASON_WORDS = [
   "Spoilage",
   "Spillage",
   "Breakage",
+  "Expired",
   "Trimming",
   "Tasting",
   "Complimentary",
@@ -587,6 +594,61 @@ export function resolveBottleWeights(
 }
 
 /**
+ * Whether one catalog row spoils — the policy layer expiry date hangs off of
+ * (expiry-date-plan.md).
+ *
+ * A client sets their own establishment-level call for one catalog row; the
+ * category default is the shared starting point every LocationItem falls
+ * back to when it hasn't been overridden. So the local override wins, then
+ * the category default.
+ *
+ * Two tiers, not three, deliberately unlike resolveBottleWeights above.
+ * Bottle tare and density are physical measurements of one specific bottle,
+ * so a 750ml and a 1L variant of the same item can legitimately disagree,
+ * which is why that cascade has an ItemVariant middle tier. Perishability is
+ * a policy call, not a measurement — a 750ml and a 1L bottle of the same
+ * item, at the same location, never disagree on whether it spoils. There is
+ * no per-variant fact to hold, so there is no ItemVariant.isPerishable field
+ * and no middle tier here.
+ *
+ * Deliberately NOT in weighing.ts: same reasoning as resolveBottleWeights —
+ * this is a lookup rule, not math, and has nothing to do with the sacred
+ * reconciliation path.
+ */
+export function resolveIsPerishable(
+  local: { isPerishable?: boolean | null },
+  categoryDefault: boolean,
+): boolean {
+  return local.isPerishable ?? categoryDefault;
+}
+
+/**
+ * Whether a batch's printed date has come and gone — the expired flag
+ * (expiry-date-plan.md, phases doc Phase 5.1).
+ *
+ * Computed, never stored: same precedent as BottleKeep's `dueForForfeit`
+ * (routes/bottle-keep.ts — `k.status === "ACTIVE" && k.expiresOn <= today`),
+ * which the phases doc names directly as the pattern to follow. A stored
+ * boolean would be correct the moment it was written and wrong every morning
+ * after, with nothing to notice or fix it. `expiryDate` is `'YYYY-MM-DD'`
+ * TEXT (architecture.md §2), so this is a plain string comparison — no
+ * `Date` parsing, no timezone to get wrong, half-open window for free, same
+ * as every other business-date comparison in this codebase.
+ *
+ * `today` is supplied by the caller rather than read from `Date.now()` in
+ * here, keeping this a pure lookup like every other resolver in this file:
+ * the server passes its own local calendar day (services/*.ts
+ * `todayBusinessDate()`), the browser passes its own — both are "on or past
+ * the date on the box" for whoever is looking at the screen, which is what
+ * this flag means. `null`/`undefined` (a non-perishable line, or a
+ * historical line written before this feature existed) is never expired —
+ * there is no date on the box to have passed.
+ */
+export function isExpiryDatePast(expiryDate: string | null | undefined, today: string): boolean {
+  return expiryDate != null && expiryDate <= today;
+}
+
+/**
  * Whether a catalog row is still missing a price.
  *
  * An Asset is never sold, so it has no retail price to be missing — requiring
@@ -610,7 +672,8 @@ export function isMissingPrice(
  * rows resolve to 19 distinct slugs once Variance Report folds into
  * `full-audit`, plus the two reports the client confirmed YES on every tier
  * that were missing from the original checklist (`bottle-keep`,
- * `blank-forms`) — 21 total.
+ * `blank-forms`) — 21 total, plus `expiring-batches`
+ * (expiry-date-plan.md, phases doc Phase 6.1) — 22.
  *
  * This is the source list report-tier gating is built from
  * (docs/2026-08-04-report-tier-gating-plan.md). Nothing reads it yet — Phase
@@ -640,6 +703,7 @@ export const REPORT_SLUGS = [
   "asset-breakage",
   "asset-register",
   "asset-inventory",
+  "expiring-batches",
 ] as const;
 export type ReportSlug = (typeof REPORT_SLUGS)[number];
 
@@ -647,7 +711,11 @@ export type ReportSlug = (typeof REPORT_SLUGS)[number];
  * The default enabled-report set per subscription tier, from the client's
  * approved checklist (docs/2026-08-04-report-tier-gating-plan.md), plus
  * `bottle-keep` and `blank-forms` on every tier per the client's confirmation
- * that both default to YES across the board.
+ * that both default to YES across the board, and `expiring-batches` on every
+ * tier for the same reason (expiry-date-plan.md, phases doc Phase 6.2): it
+ * is a basic operational need — STAFF deciding whether an item is safe to
+ * use — not a premium analytics add-on gated by tier the way Usage Cost or
+ * Cost Snapshot are.
  *
  * These are DEFAULTS applied once, at subscription creation (Phase 5) — the
  * actual gate is the subscription's own `SubscriptionReport` rows, which an
@@ -667,6 +735,7 @@ export const REPORT_TIER_PRESETS: Record<PackageType, readonly ReportSlug[]> = {
     "forfeits",
     "bottle-keep",
     "blank-forms",
+    "expiring-batches",
   ],
   MEDIUM: [
     "full-audit",
@@ -684,6 +753,7 @@ export const REPORT_TIER_PRESETS: Record<PackageType, readonly ReportSlug[]> = {
     "forfeits",
     "bottle-keep",
     "blank-forms",
+    "expiring-batches",
   ],
   FULL: [...REPORT_SLUGS],
   ONE_TIME: [
@@ -706,6 +776,7 @@ export const REPORT_TIER_PRESETS: Record<PackageType, readonly ReportSlug[]> = {
     "asset-inventory",
     "bottle-keep",
     "blank-forms",
+    "expiring-batches",
   ],
 };
 
@@ -725,7 +796,7 @@ export const REPORT_TIER_PRESETS: Record<PackageType, readonly ReportSlug[]> = {
  * the admin checklist shows one row for it, not two, and a client's
  * "Variance Report: YES" expectation reads as "Full Audit" being enabled.
  *
- * Keys must exactly match `REPORT_SLUGS` — same length (22), same values. A
+ * Keys must exactly match `REPORT_SLUGS` — same length (23), same values. A
  * slug present in one but not the other fails silently as a missing
  * checkbox, not an error, so this is checked by hand against `REPORT_SLUGS`
  * whenever either list changes.
@@ -748,6 +819,7 @@ export const REPORT_METADATA: Record<ReportSlug, { label: string; group: string 
   "count-sheet": { label: "Physical Count Sheet", group: "Stock & Movement" },
   "par-level": { label: "Par Level", group: "Stock & Movement" },
   "non-moving": { label: "Non-Moving Items", group: "Stock & Movement" },
+  "expiring-batches": { label: "Expiring Batches", group: "Stock & Movement" },
   "non-revenue": { label: "Non-Revenue", group: "Losses & Returns" },
   forfeits: { label: "Forfeited Bottles", group: "Losses & Returns" },
   "asset-breakage": { label: "Asset Breakage", group: "Losses & Returns" },
@@ -776,6 +848,22 @@ export const AUDIT_VIEWER_REPORTS = [
   "cost-snapshot",
   "cost-analysis",
 ] as const;
+
+/**
+ * `expiring-batches` (expiry-date-plan.md, phases doc Phase 6.2) is
+ * deliberately NOT added to the list above. Its own plan says an
+ * AUDIT_VIEWER should see it "read-only, informational" — but that line is
+ * about the STAFF/MANAGER role gate (`canViewVariance` /
+ * `HIDDEN_FROM_BLOCKED_STAFF`), not this narrower, separately-motivated
+ * list. AUDIT_VIEWER_REPORTS exists to give a 3rd-party audit service the
+ * reconciliation set and nothing else (client req 2026-07-28) — this same
+ * comment block names Purchases, Transfers, and Par Level as "noise" for
+ * that role for the identical reason an expiring-batch listing would be:
+ * it is stock/movement detail, not reconciliation. Every role that runs
+ * the establishment (STAFF included) still sees it via `canViewReport`'s
+ * `!isAuditViewer(role)` branch — only the narrow 3rd-party tier is
+ * excluded, same as it already is from Purchases and Par Level.
+ */
 
 /** Audit-service viewers, paid and unpaid — read-only 3rd-party report readers. */
 export function isAuditViewer(role: Role): boolean {

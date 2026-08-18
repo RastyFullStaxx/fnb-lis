@@ -14,9 +14,15 @@
  * caller (verify-seed.mjs) creates and deletes.
  */
 import { prisma } from "../src/db";
-import { REPORT_TIER_PRESETS } from "@fnb/core";
+import {
+  REPORT_TIER_PRESETS,
+  resolveIsPerishable,
+  isExpiryDatePast,
+  nonRevenueGroupOf,
+  NON_REVENUE_REASON_WORDS,
+} from "@fnb/core";
 import { buildFullAudit } from "../src/services/report-assembly";
-import { nonMovingReport } from "../src/services/report-lists";
+import { nonMovingReport, expiringBatchesReport } from "../src/services/report-lists";
 
 const GOLDEN = { begin: "2026-06-01", end: "2026-06-08", cost: -330.6857142857142, retail: -869.5714285714284 };
 
@@ -53,6 +59,52 @@ const main = async () => {
   const near = (a: number, b: number) => Math.abs(a - b) < 0.005;
   ok("variance at cost", near(latest.totals.varianceCost, LATEST.cost), `${latest.totals.varianceCost} (want ${LATEST.cost})`);
   ok("variance at retail", near(latest.totals.varianceRetail, LATEST.retail), `${latest.totals.varianceRetail} (want ${LATEST.retail})`);
+
+  console.log("\nCoverage — PurchaseLine.expiryDate actually seeded (Phase 3)");
+  // seed.ts and seed-demo.ts write PurchaseLine rows directly via Prisma,
+  // bypassing the assertExpiryDateValid() check the real /purchases route
+  // enforces (routes/purchases.ts), so nothing at the database level stops a
+  // perishable-category delivery from being seeded with no date — the
+  // seeders have to honor the rule themselves. Resolved through
+  // resolveIsPerishable() itself, not the raw Category field, so this stays
+  // correct even if a future LocationItem.isPerishable override is seeded —
+  // no override exists in seed data today, so this is currently equivalent
+  // to reading Category.defaultPerishable directly, but reading it through
+  // the resolver means this check can't silently drift out of sync with what
+  // the app itself decides is perishable.
+  const activeLines = await prisma.purchaseLine.findMany({
+    where: { status: "ACTIVE" },
+    include: { locationItem: { include: { itemVariant: { include: { item: { include: { category: true } } } } } } },
+  });
+  const perishableLines = activeLines.filter((l) =>
+    resolveIsPerishable(l.locationItem, l.locationItem.itemVariant.item.category.defaultPerishable),
+  );
+  const nonPerishableLines = activeLines.filter(
+    (l) => !resolveIsPerishable(l.locationItem, l.locationItem.itemVariant.item.category.defaultPerishable),
+  );
+  const undatedPerishableLines = perishableLines.filter((l) => l.expiryDate == null);
+  const datedNonPerishableLines = nonPerishableLines.filter((l) => l.expiryDate != null);
+  ok(
+    "every ACTIVE purchase line resolving perishable carries an expiryDate",
+    undatedPerishableLines.length === 0 && perishableLines.length > 0,
+    `${perishableLines.length - undatedPerishableLines.length} dated, ${undatedPerishableLines.length} missing`,
+  );
+  ok(
+    "no ACTIVE purchase line resolving non-perishable carries a stray expiryDate",
+    datedNonPerishableLines.length === 0,
+    `${datedNonPerishableLines.length} mis-dated`,
+  );
+
+  console.log("\nCoverage — Expiring Batches report runs cleanly (Phase 6.1)");
+  const expiring = await expiringBatchesReport(loc.id);
+  ok(
+    "expiringBatchesReport runs without error, returns a well-formed shape, and finds seeded rows",
+    Array.isArray(expiring.rows) &&
+      expiring.rows.length > 0 &&
+      typeof expiring.totals.expiredCount === "number" &&
+      typeof expiring.totals.upcomingCount === "number",
+    `${expiring.rows.length} rows, ${expiring.totals.expiredCount} expired`,
+  );
 
   console.log("\nCoverage — every table that drives a screen or a report");
   const counts: Array<[string, Promise<number>]> = [
@@ -94,6 +146,111 @@ const main = async () => {
     const n = await p;
     ok(label, n > 0, `${n} rows`);
   }
+
+  console.log("\nCoverage — perishability policy layer (expiry-date-plan.md, Phase 1.5)");
+  // Not a blanket n > 0 — the actual claim is the SPLIT: true spirits plus
+  // Supplies/Asset seeded false, everything else left on the schema default
+  // (true). A seeder that flipped the wrong categories would still pass every
+  // check above (both counts are still > 0) while silently breaking the
+  // feature's entire reason for existing — a bar tracking expiry on Vodka, or
+  // never tracking it on Meat.
+  const spiritNames = [
+    "Vodka",
+    "Rum",
+    "Whisky",
+    "Gin",
+    "Brandy",
+    "Tequila",
+    "Single Malt Whisky",
+    "Cognac",
+    "Bourbon",
+  ];
+  const nonPerishableCategories = await prisma.category.count({ where: { defaultPerishable: false } });
+  ok(
+    "at least the seeded spirits + Supplies + Asset categories are non-perishable",
+    nonPerishableCategories >= spiritNames.length,
+    `${nonPerishableCategories} categories`,
+  );
+  const spiritsStillPerishable = await prisma.category.count({
+    where: { name: { in: spiritNames }, defaultPerishable: true },
+  });
+  ok("no true-spirit category is left perishable", spiritsStillPerishable === 0, `${spiritsStillPerishable} mis-seeded`);
+  const foodStillPerishable = await prisma.category.count({
+    where: { name: { in: ["Meat", "Dairy", "Wine", "Dry Goods"] }, defaultPerishable: true },
+  });
+  ok(
+    "Meat/Dairy/Wine/Dry Goods stayed on the schema default (perishable)",
+    foodStillPerishable === 4,
+    `${foodStillPerishable}/4`,
+  );
+
+  console.log("\nCoverage — resolveIsPerishable() against real seeded rows (Phase 1.6)");
+  // Hand-picked rows the phases doc names directly: a Vodka row, a Wine row,
+  // a Dry Goods row. Confirms the resolver's local-override-then-category-
+  // default cascade against data this seeder actually wrote, not a synthetic
+  // fixture that could drift from what's really in the database.
+  const vodkaRow = await prisma.locationItem.findFirst({
+    where: { itemVariant: { item: { category: { name: "Vodka" } } } },
+    include: { itemVariant: { include: { item: { include: { category: true } } } } },
+  });
+  ok(
+    "Vodka row resolves non-perishable with no override",
+    !!vodkaRow &&
+      vodkaRow.isPerishable == null &&
+      resolveIsPerishable(vodkaRow, vodkaRow.itemVariant.item.category.defaultPerishable) === false,
+    vodkaRow ? `isPerishable=${vodkaRow.isPerishable}` : "no Vodka LocationItem seeded",
+  );
+  const wineRow = await prisma.locationItem.findFirst({
+    where: { itemVariant: { item: { category: { name: "Wine" } } } },
+    include: { itemVariant: { include: { item: { include: { category: true } } } } },
+  });
+  ok(
+    "Wine row resolves perishable with no override",
+    !!wineRow &&
+      wineRow.isPerishable == null &&
+      resolveIsPerishable(wineRow, wineRow.itemVariant.item.category.defaultPerishable) === true,
+    wineRow ? `isPerishable=${wineRow.isPerishable}` : "no Wine LocationItem seeded",
+  );
+  const dryGoodsRow = await prisma.locationItem.findFirst({
+    where: { itemVariant: { item: { category: { name: "Dry Goods" } } } },
+    include: { itemVariant: { include: { item: { include: { category: true } } } } },
+  });
+  ok(
+    "Dry Goods row resolves perishable with no override",
+    !!dryGoodsRow &&
+      resolveIsPerishable(dryGoodsRow, dryGoodsRow.itemVariant.item.category.defaultPerishable) === true,
+    dryGoodsRow ? `isPerishable=${dryGoodsRow.isPerishable}` : "no Dry Goods LocationItem seeded",
+  );
+  // The override direction itself, exercised against the pure function with
+  // synthetic input — this half needs no database row, since it is only
+  // checking that local wins over category when both are present.
+  ok(
+    "resolveIsPerishable: local override wins over category default (true)",
+    resolveIsPerishable({ isPerishable: true }, false) === true,
+  );
+  ok(
+    "resolveIsPerishable: local override wins over category default (false)",
+    resolveIsPerishable({ isPerishable: false }, true) === false,
+  );
+  ok(
+    "resolveIsPerishable: null local falls through to category default",
+    resolveIsPerishable({ isPerishable: null }, true) === true &&
+      resolveIsPerishable({ isPerishable: null }, false) === false,
+  );
+
+  console.log("\nCoverage — 'Expired' non-revenue reason word (Phase 5.2)");
+  ok("'Expired' is offered as a reason word", (NON_REVENUE_REASON_WORDS as readonly string[]).includes("Expired"));
+  ok("'Expired' maps to SPOILAGE_SPILLAGE", nonRevenueGroupOf("Expired") === "SPOILAGE_SPILLAGE");
+  ok("case/spacing-insensitive: 'EXPIRED' also maps", nonRevenueGroupOf("EXPIRED") === "SPOILAGE_SPILLAGE");
+
+  console.log("\nCoverage — isExpiryDatePast() (Phase 5.1)");
+  // A fixed, arbitrary anchor date — this is a pure-function check, not a
+  // real-time one, so it stays correct regardless of when verify:seed runs.
+  const anchor = "2026-06-15";
+  ok("a date before the anchor reads expired", isExpiryDatePast("2020-01-01", anchor) === true);
+  ok("a date after the anchor reads not expired", isExpiryDatePast("2099-01-01", anchor) === false);
+  ok("a date equal to the anchor reads expired (on-or-past)", isExpiryDatePast(anchor, anchor) === true);
+  ok("null/undefined never reads expired", isExpiryDatePast(null, anchor) === false && isExpiryDatePast(undefined, anchor) === false);
 
   console.log("\nCoverage — every subscription has SubscriptionReport rows (report tier gating, Phase 6)");
   // A blanket n > 0 above only proves SOME rows exist; a subscription with

@@ -261,16 +261,30 @@ async function seedUnits() {
 }
 
 async function seedCategories() {
-  const categories: Array<{ name: string; productType: string; defaultDensityFactor?: number; sortOrder: number }> = [
-    { name: "Vodka", productType: "Beverage", defaultDensityFactor: 30.12, sortOrder: 1 },
-    { name: "Rum", productType: "Beverage", defaultDensityFactor: 30.49, sortOrder: 2 },
-    { name: "Whisky", productType: "Beverage", defaultDensityFactor: 30.86, sortOrder: 3 },
-    { name: "Gin", productType: "Beverage", defaultDensityFactor: 30.49, sortOrder: 4 },
-    { name: "Brandy", productType: "Beverage", defaultDensityFactor: 30.3, sortOrder: 5 },
-    { name: "Tequila", productType: "Beverage", defaultDensityFactor: 30.67, sortOrder: 6 },
-    { name: "Single Malt Whisky", productType: "Beverage", defaultDensityFactor: 30.12, sortOrder: 7 },
-    { name: "Cognac", productType: "Beverage", defaultDensityFactor: 30.67, sortOrder: 8 },
-    { name: "Bourbon", productType: "Beverage", defaultDensityFactor: 30.86, sortOrder: 9 },
+  const categories: Array<{
+    name: string;
+    productType: string;
+    defaultDensityFactor?: number;
+    sortOrder: number;
+    // Perishability policy layer (expiry-date-plan.md / expiry-date-phases.md
+    // Phase 1.5). Omitted = schema default (true, perishable) — most of the
+    // catalog spoils. Explicit `false` marks the seeded exception: true
+    // spirits (self-preserving, high proof — no bar tracks a "best by" date
+    // on Jack Daniel's) and every Supplies / Asset category (neither spoils).
+    defaultPerishable?: boolean;
+  }> = [
+    { name: "Vodka", productType: "Beverage", defaultDensityFactor: 30.12, sortOrder: 1, defaultPerishable: false },
+    { name: "Rum", productType: "Beverage", defaultDensityFactor: 30.49, sortOrder: 2, defaultPerishable: false },
+    { name: "Whisky", productType: "Beverage", defaultDensityFactor: 30.86, sortOrder: 3, defaultPerishable: false },
+    { name: "Gin", productType: "Beverage", defaultDensityFactor: 30.49, sortOrder: 4, defaultPerishable: false },
+    { name: "Brandy", productType: "Beverage", defaultDensityFactor: 30.3, sortOrder: 5, defaultPerishable: false },
+    { name: "Tequila", productType: "Beverage", defaultDensityFactor: 30.67, sortOrder: 6, defaultPerishable: false },
+    { name: "Single Malt Whisky", productType: "Beverage", defaultDensityFactor: 30.12, sortOrder: 7, defaultPerishable: false },
+    { name: "Cognac", productType: "Beverage", defaultDensityFactor: 30.67, sortOrder: 8, defaultPerishable: false },
+    { name: "Bourbon", productType: "Beverage", defaultDensityFactor: 30.86, sortOrder: 9, defaultPerishable: false },
+    // Aperitif and Liqueur are dairy- or wine-based (Baileys, vermouth), not
+    // distilled — they spoil and stay on the schema default (true) despite
+    // sharing productType "Beverage" with the true spirits above.
     { name: "Aperitif", productType: "Beverage", defaultDensityFactor: 28.9, sortOrder: 10 },
     { name: "Liqueur", productType: "Beverage", sortOrder: 11 },
     { name: "Wine", productType: "Beverage", sortOrder: 12 },
@@ -283,40 +297,45 @@ async function seedCategories() {
     { name: "Seafood", productType: "Food", sortOrder: 22 },
     { name: "Dairy", productType: "Food", sortOrder: 23 },
     { name: "Produce", productType: "Food", sortOrder: 24 },
+    // Dry Goods (e.g. Cooking Oil) spoils on a long timeline, unlike Meat or
+    // Dairy in the same productType "Food" — but it still spoils, so it stays
+    // on the schema default (true). A location that wants a shorter effective
+    // window overrides at LocationItem, not here.
     { name: "Dry Goods", productType: "Food", sortOrder: 25 },
     { name: "Frozen", productType: "Food", sortOrder: 26 },
     { name: "Sauces & Dressings", productType: "Food", sortOrder: 27 },
-    { name: "Consumables", productType: "Supplies", sortOrder: 30 },
+    { name: "Consumables", productType: "Supplies", sortOrder: 30, defaultPerishable: false },
     // Asset now has its own real product type (Fix Plan Phase E) — equipment,
     // tools, and other non-consumable items, distinct from the consumable
-    // Supplies above (Table Napkins, Disposable Gloves).
-    { name: "Equipment", productType: "Asset", sortOrder: 40 },
+    // Supplies above (Table Napkins, Disposable Gloves). Neither Supplies nor
+    // Asset spoils, so every category below is seeded defaultPerishable: false.
+    { name: "Equipment", productType: "Asset", sortOrder: 40, defaultPerishable: false },
     // Full AST-001->070 register categories (Phase 7.3) — one category per
     // item, per the client's own sheet and the proposal's explicit
     // recommendation not to invent a consolidated scheme. Kept distinct from
     // the flat "Equipment" category above, which predates this and already
     // holds its own two demo items (Bar Blender, Commercial Ice Machine).
-    { name: "POS Equipment", productType: "Asset", sortOrder: 41 },
-    { name: "IT Equipment", productType: "Asset", sortOrder: 42 },
-    { name: "Security CCTV", productType: "Asset", sortOrder: 43 },
-    { name: "Security DVR/NVR", productType: "Asset", sortOrder: 44 },
-    { name: "Audio System", productType: "Asset", sortOrder: 45 },
-    { name: "Entertainment", productType: "Asset", sortOrder: 46 },
-    { name: "Coffee Equipment", productType: "Asset", sortOrder: 47 },
-    { name: "Beverage Equipment", productType: "Asset", sortOrder: 48 },
-    { name: "Refrigeration Upright", productType: "Asset", sortOrder: 49 },
-    { name: "Refrigeration Chest", productType: "Asset", sortOrder: 50 },
-    { name: "Refrigeration Wine", productType: "Asset", sortOrder: 51 },
-    { name: "Refrigeration", productType: "Asset", sortOrder: 52 },
-    { name: "Kitchen Equipment", productType: "Asset", sortOrder: 53 },
-    { name: "Furniture", productType: "Asset", sortOrder: 54 },
-    { name: "Bar Tools", productType: "Asset", sortOrder: 55 },
-    { name: "Glassware", productType: "Asset", sortOrder: 56 },
-    { name: "Dinning Ware", productType: "Asset", sortOrder: 57 },
-    { name: "Safety Fire", productType: "Asset", sortOrder: 58 },
-    { name: "Safety — First Aid", productType: "Asset", sortOrder: 59 },
-    { name: "Cleaning Equipment", productType: "Asset", sortOrder: 60 },
-    { name: "Office Equipment", productType: "Asset", sortOrder: 61 },
+    { name: "POS Equipment", productType: "Asset", sortOrder: 41, defaultPerishable: false },
+    { name: "IT Equipment", productType: "Asset", sortOrder: 42, defaultPerishable: false },
+    { name: "Security CCTV", productType: "Asset", sortOrder: 43, defaultPerishable: false },
+    { name: "Security DVR/NVR", productType: "Asset", sortOrder: 44, defaultPerishable: false },
+    { name: "Audio System", productType: "Asset", sortOrder: 45, defaultPerishable: false },
+    { name: "Entertainment", productType: "Asset", sortOrder: 46, defaultPerishable: false },
+    { name: "Coffee Equipment", productType: "Asset", sortOrder: 47, defaultPerishable: false },
+    { name: "Beverage Equipment", productType: "Asset", sortOrder: 48, defaultPerishable: false },
+    { name: "Refrigeration Upright", productType: "Asset", sortOrder: 49, defaultPerishable: false },
+    { name: "Refrigeration Chest", productType: "Asset", sortOrder: 50, defaultPerishable: false },
+    { name: "Refrigeration Wine", productType: "Asset", sortOrder: 51, defaultPerishable: false },
+    { name: "Refrigeration", productType: "Asset", sortOrder: 52, defaultPerishable: false },
+    { name: "Kitchen Equipment", productType: "Asset", sortOrder: 53, defaultPerishable: false },
+    { name: "Furniture", productType: "Asset", sortOrder: 54, defaultPerishable: false },
+    { name: "Bar Tools", productType: "Asset", sortOrder: 55, defaultPerishable: false },
+    { name: "Glassware", productType: "Asset", sortOrder: 56, defaultPerishable: false },
+    { name: "Dinning Ware", productType: "Asset", sortOrder: 57, defaultPerishable: false },
+    { name: "Safety Fire", productType: "Asset", sortOrder: 58, defaultPerishable: false },
+    { name: "Safety — First Aid", productType: "Asset", sortOrder: 59, defaultPerishable: false },
+    { name: "Cleaning Equipment", productType: "Asset", sortOrder: 60, defaultPerishable: false },
+    { name: "Office Equipment", productType: "Asset", sortOrder: 61, defaultPerishable: false },
   ];
   for (const cat of categories) {
     await prisma.category.upsert({
@@ -325,8 +344,13 @@ async function seedCategories() {
         productType: cat.productType,
         defaultDensityFactor: cat.defaultDensityFactor != null ? densityPerGram(cat.defaultDensityFactor) : null,
         sortOrder: cat.sortOrder,
+        defaultPerishable: cat.defaultPerishable ?? true,
       },
-      create: { ...cat, defaultDensityFactor: cat.defaultDensityFactor != null ? densityPerGram(cat.defaultDensityFactor) : null },
+      create: {
+        ...cat,
+        defaultDensityFactor: cat.defaultDensityFactor != null ? densityPerGram(cat.defaultDensityFactor) : null,
+        defaultPerishable: cat.defaultPerishable ?? true,
+      },
     });
   }
 }
@@ -796,13 +820,13 @@ async function seedGoldenCycle() {
       refNo: "INV-8841", status: "COMMITTED", committedAt: new Date(), committedById: manager.id, ...encoder,
     },
   });
-  const pline = (item: typeof absolut, qty: number, unitCost: number) =>
+  const pline = (item: typeof absolut, qty: number, unitCost: number, expiryDate: string | null = null) =>
     prisma.purchaseLine.create({
-      data: { purchaseId: purchase.id, locationItemId: item.id, qty, unitCost, lineTotal: qty * unitCost, ...encoder },
+      data: { purchaseId: purchase.id, locationItemId: item.id, qty, unitCost, lineTotal: qty * unitCost, expiryDate, ...encoder },
     });
-  await pline(absolut, 6, 615);
-  await pline(beer, 24, 44);
-  await pline(tonic, 12, 30);
+  await pline(absolut, 6, 615); // Vodka — non-perishable, no date
+  await pline(beer, 24, 44, "2026-09-15"); // Beer — perishable, printed shelf date
+  await pline(tonic, 12, 30, "2027-01-10"); // Soda & Mixers — perishable, long shelf life but still dated
 
   const sale = (
     item: typeof absolut, saleDate: string, kind: string, qty: number, unitPrice: number,
@@ -1189,8 +1213,25 @@ async function seedKitchenCycle() {
   const purchase = await prisma.purchase.create({
     data: { locationId: location.id, supplierId: supplier?.id ?? null, refNo: "KITCH-2201", purchaseDate: "2026-06-03", status: "COMMITTED", committedAt: new Date(), committedById: manager.id, ...encoder },
   });
+  // Short shelf life, dated close to the 2026-06-03 delivery — Poultry/Meat/
+  // Frozen categories are all perishable by default (expiry-date-plan.md).
+  const kitchenLineDates: Record<string, string> = {
+    [chicken.id]: "2026-06-08",
+    [steak.id]: "2026-06-10",
+    [fries.id]: "2026-12-03",
+  };
   for (const [item, qty] of [[chicken, 12], [steak, 4], [fries, 15]] as Array<[typeof chicken, number]>) {
-    await prisma.purchaseLine.create({ data: { purchaseId: purchase.id, locationItemId: item.id, qty, unitCost: item.cost, lineTotal: qty * item.cost, ...encoder } });
+    await prisma.purchaseLine.create({
+      data: {
+        purchaseId: purchase.id,
+        locationItemId: item.id,
+        qty,
+        unitCost: item.cost,
+        lineTotal: qty * item.cost,
+        expiryDate: kitchenLineDates[item.id],
+        ...encoder,
+      },
+    });
   }
   const plate = await prisma.menuItem.create({ data: { locationId: location.id, name: "Grilled Chicken Plate" } });
   const version = await prisma.recipeVersion.create({
@@ -1316,9 +1357,19 @@ async function seedDepotOperations() {
     },
   });
   if (!existingDelivery) {
+    // Beer and Soda & Mixers are both perishable by default (expiry-date-plan.md).
+    const depotLineDates: Record<string, string> = { [beer.id]: "2026-10-01", [tonic.id]: "2027-03-01" };
     for (const [item, qty, unitCost] of [[beer, 96, 44], [tonic, 48, 29]] as const) {
       await prisma.purchaseLine.create({
-        data: { purchaseId: purchase.id, locationItemId: item.id, qty, unitCost, lineTotal: qty * unitCost, ...encoder },
+        data: {
+          purchaseId: purchase.id,
+          locationItemId: item.id,
+          qty,
+          unitCost,
+          lineTotal: qty * unitCost,
+          expiryDate: depotLineDates[item.id],
+          ...encoder,
+        },
       });
     }
   }
