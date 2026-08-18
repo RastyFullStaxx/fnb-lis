@@ -4915,6 +4915,7 @@ adds both"* on the dashboard and in the bell.
 
 All five harnesses pass; both workspaces typecheck.
 
+<<<<<<< HEAD
 ## Phase 44 — Expiry date (2026-08-18)
 
 Client ask: a real calendar date tied to actual stock received, not a shelf
@@ -5081,3 +5082,5 @@ touched `SHELF_LIFE_DAYS`, `addDays`, or any of the new assertions. Still,
 a machine with dependencies installed, before this is trusted the way the
 rest of this file is.
 
+=======
+>>>>>>> origin/main

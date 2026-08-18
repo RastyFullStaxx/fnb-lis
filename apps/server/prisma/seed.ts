@@ -1318,12 +1318,22 @@ async function seedDepotOperations() {
   const rum = await row("Bacardi Superior", 750);
 
   const count = async (countDate: string, lines: Array<{ item: typeof beer; full: number }>) => {
-    const session = await prisma.countSession.create({
-      data: {
-        locationId: depot.id, countDate, name: DEPOT_COUNT, status: "COMMITTED",
-        committedAt: new Date(), committedById: manager.id, ...encoder,
-      },
-    });
+    // Reuse the date's session rather than opening a second one. The transfers
+    // scenario above already seeds Depot boundary counts on 06-08 and 06-15,
+    // and `buildFullAudit` SUMS every committed session sharing a date -- two
+    // sessions would inflate the Depot's own anchor rather than sit beside it.
+    // The route layer now refuses this at commit; the seed writes through
+    // Prisma directly, so it has to hold the same rule itself.
+    const session =
+      (await prisma.countSession.findFirst({
+        where: { locationId: depot.id, countDate, status: "COMMITTED" },
+      })) ??
+      (await prisma.countSession.create({
+        data: {
+          locationId: depot.id, countDate, name: DEPOT_COUNT, status: "COMMITTED",
+          committedAt: new Date(), committedById: manager.id, ...encoder,
+        },
+      }));
     for (const l of lines) {
       await prisma.countLine.create({
         data: {

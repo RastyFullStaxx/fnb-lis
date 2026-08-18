@@ -261,7 +261,7 @@ export const purchaseRoutes = new Hono<AppEnv>()
     assertMayEditDraft(purchase, user, "delivery");
 
     if (purchase.status !== "DRAFT") throw new AppError(409, "Already committed");
-    const lineCount = await prisma.purchaseLine.count({ where: { purchaseId: purchase.id } });
+    const lineCount = await prisma.purchaseLine.count({ where: { purchaseId: purchase.id, status: "ACTIVE" } });
     if (lineCount === 0) throw new AppError(400, "Add at least one line before committing");
     const committed = await prisma.$transaction(async (tx) => {
       await transitionStatus(
@@ -319,7 +319,11 @@ export const purchaseRoutes = new Hono<AppEnv>()
     const location = c.get("location");
     const user = c.get("user")!;
     const { reason } = c.req.valid("json");
-    await getOwnedPurchase(location.id, c.req.param("id"));
+    const parent = await getOwnedPurchase(location.id, c.req.param("id"));
+    // Same rule as the count session above: draft lines are removed, not voided.
+    if (parent.status !== "COMMITTED") {
+      throw new AppError(409, "Draft delivery lines are removed, not voided");
+    }
     const line = await prisma.purchaseLine.findUnique({ where: { id: c.req.param("lineId") }, include: LI_INCLUDE });
     if (!line || line.purchaseId !== c.req.param("id")) throw new AppError(404, "Purchase line not found");
     if (line.status === "VOID") throw new AppError(409, "Already voided");

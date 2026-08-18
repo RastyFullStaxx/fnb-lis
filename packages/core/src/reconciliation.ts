@@ -195,6 +195,20 @@ export type VarianceSeverity = "none" | "over" | "short";
  * Pure predicate over already-computed outputs — it changes no reconciliation
  * number and touches none of the sacred math (sibling of `hasVariance`).
  */
+/**
+ * The highlight rule, in words, for the reader of the report.
+ *
+ * A coloured row is an ASSERTION -- "this one is material" -- and the criterion
+ * behind it is a per-establishment setting (8% at one client, 11% at another).
+ * Shown nowhere, a downloaded workbook reaches an accountant with red rows, a
+ * Flag column, and no way to know what was being claimed. So the rule travels
+ * with the numbers, on screen and in every export, and it is generated HERE so
+ * the sentence and the predicate can never drift apart.
+ */
+export function varianceRuleText(thresholdPct: number = MATERIAL_VARIANCE_PCT): string {
+  return `Flagged: over/short by ${thresholdPct}% or more of usage, or by a whole unit on items counted whole`;
+}
+
 export function varianceSeverity(
   row: {
     variance: number;

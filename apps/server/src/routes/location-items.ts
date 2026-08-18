@@ -6,7 +6,10 @@ import { prisma } from "../db";
 import { AppError } from "../lib/errors";
 import { assertNotQueuedEdit } from "../lib/two-way";
 import { getTrailingAverage, getTrailingFullQty } from "../lib/weigh-history";
+<<<<<<< HEAD
 import { getFifoBatches, getEarliestOpenExpiry } from "../lib/fifo-batches";
+=======
+>>>>>>> origin/main
 import { logActivity } from "../services/activity";
 import { generateAssetCode } from "../services/asset-supplier";
 import { requirePermission, type AppEnv } from "../middleware/auth";
@@ -230,6 +233,7 @@ export const locationItemRoutes = new Hono<AppEnv>()
       getTrailingFullQty(itemId),
     ]);
     return c.json({ trailingAverage, trailingFullQty });
+<<<<<<< HEAD
   })
 
   /**
@@ -246,6 +250,8 @@ export const locationItemRoutes = new Hono<AppEnv>()
     if (!existing || existing.locationId !== location.id) throw new AppError(404, "Catalog item not found");
     const batches = await getFifoBatches(itemId);
     return c.json({ batches });
+=======
+>>>>>>> origin/main
   })
 
   .put("/location-items/:id", priceGuard, zValidator("json", locationItemUpdate), async (c) => {

@@ -1,6 +1,7 @@
 import {
   ArrowLeftRight,
   ClipboardList,
+  CopyCheck,
   FileInput,
   History,
   Scale,
@@ -31,6 +32,7 @@ export type AttentionKind =
   | "purchase"
   | "transfer"
   | "count"
+  | "duplicateCount"
   | "bottleKeep"
   | "priceChange";
 
@@ -59,6 +61,7 @@ export function attentionItems(data: DashboardData, role: Role): AttentionItem[]
     openCounts,
     bottleKeepsDue,
     draftTransfers,
+    duplicateCountDates,
     recentPriceChanges,
   } = data.attention;
   const items: Array<AttentionItem | null> = [
@@ -148,6 +151,29 @@ export function attentionItems(data: DashboardData, role: Role): AttentionItem[]
           path: "transfers",
           icon: ArrowLeftRight,
           group: "Open work",
+        }
+      : null,
+    /**
+     * Two committed counts on one date. Top of "Needs review" because the
+     * report is WRONG until it is resolved -- the Full Audit's anchor sums both
+     * sessions, so the period's beginning or ending inventory is inflated for
+     * as long as this sits here. Everything else in this list is work waiting
+     * to happen; this one is a number already being read.
+     *
+     * Only reachable from an offline machine that pushed after the fact: the
+     * browser is refused outright. Voiding the wrong session clears it.
+     */
+    duplicateCountDates > 0 && can(role, "entries.void")
+      ? {
+          kind: "duplicateCount",
+          count: duplicateCountDates,
+          label:
+            duplicateCountDates === 1
+              ? "A date has two committed counts — the report adds both"
+              : `${duplicateCountDates} dates have two committed counts — the report adds both`,
+          path: "counts",
+          icon: CopyCheck,
+          group: "Needs review",
         }
       : null,
     openCounts > 0 && can(role, "entries.create")

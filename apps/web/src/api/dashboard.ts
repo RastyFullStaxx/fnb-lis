@@ -42,6 +42,9 @@ export interface DashboardData {
     draftTransfers: number;
     /** locationItem.priceChange rows since this user's own activityViewedAt
         preference (Phase 46.4.2). 0 for a user who hasn't opened Activity yet. */
+    /** Dates with more than one committed count — the report's anchor sums
+        them, so this is a wrong number already being read, not pending work. */
+    duplicateCountDates: number;
     recentPriceChanges: number;
   };
   varianceLeaders: Array<{

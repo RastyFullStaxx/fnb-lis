@@ -190,6 +190,7 @@ export function CountsPage() {
         open={createOpen}
         onOpenChange={setCreateOpen}
         openSessions={(sessions.data ?? []).filter((s) => s.status === "OPEN")}
+        committed={(sessions.data ?? []).filter((s) => s.status === "COMMITTED")}
       />
     </div>
   );
@@ -199,16 +200,24 @@ function NewCountDialog({
   open,
   onOpenChange,
   openSessions,
+  committed,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Counts already in progress here — see the note in the dialog body. */
   openSessions: Array<{ id: string; countDate: string }>;
+  /** Counts already committed here — one per date is the anchor rule. */
+  committed: Array<{ id: string; countDate: string }>;
 }) {
   const navigate = useNavigate();
   const locationId = useLocationId();
   const { createSession } = useCountMutations();
   const [countDate, setCountDate] = useState(() => new Date().toISOString().slice(0, 10));
+  // The server refuses a SECOND committed count for a date, because the Full
+  // Audit sums every committed session sharing one — two would inflate the
+  // anchor rather than replace it. Saying so at commit is too late: by then
+  // someone has counted the whole bar. Say it while the date is still a choice.
+  const clash = committed.find((s) => s.countDate === countDate);
 
   const start = async () => {
     try {
@@ -251,6 +260,24 @@ function NewCountDialog({
                 Continue {formatDate(openSessions[0]!.countDate)}
               </Button>
             )}
+          </div>
+        )}
+
+        {clash && (
+          <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-sm">
+            <p>
+              <span className="font-medium">This date already has a committed count.</span> A second one
+              would be added to it, not compared against it, so the count won’t be allowed to commit.
+              Pick another date — or open that count and correct it.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-2"
+              onClick={() => navigate(`/l/${locationId}/counts/${clash.id}`)}
+            >
+              Open {formatDate(clash.countDate)}
+            </Button>
           </div>
         )}
 

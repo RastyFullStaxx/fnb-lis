@@ -5,7 +5,11 @@ import { toast } from "sonner";
 // phpRound for DISPLAY of the stored reading: entering in grams converts to the
 // item's own unit, which lands on values like 28.642457103059293. The stored
 // number stays exact — only what is shown is shortened.
+<<<<<<< HEAD
 import { can, checkContentVsHistory, checkQtyVsHistory, convert, isExpiryDatePast, phpRound, resolveIsPerishable, type Role, type UnitDef, type WeighWarning } from "@fnb/core";
+=======
+import { can, checkContentVsHistory, checkQtyVsHistory, convert, phpRound, type Role, type UnitDef, type WeighWarning } from "@fnb/core";
+>>>>>>> origin/main
 import { statusVariant } from "@/lib/status";
 import { useMe } from "@/api/auth";
 import { useItemDisplayUnit } from "@/lib/preferences";
@@ -208,6 +212,7 @@ function OpenSession({ session }: { session: SessionWithLines }) {
   // Weigh Partial preview below and the Open Amount check further down.
   const trailing = useTrailingAverage(item?.id ?? null).data;
   const trailingAverage = trailing?.trailingAverage;
+<<<<<<< HEAD
   // FIFO worklist (expiry-date-plan.md, phases doc Phase 4.2) — same
   // one-fetch-per-picked-item shape as trailingAverage above. Gated on the
   // same resolver everywhere else in this feature reads, so picking a
@@ -217,6 +222,8 @@ function OpenSession({ session }: { session: SessionWithLines }) {
     ? resolveIsPerishable(item, item.itemVariant.item.category.defaultPerishable)
     : false;
   const fifoBatches = useFifoBatches(itemIsPerishable ? (item?.id ?? null) : null).data?.batches;
+=======
+>>>>>>> origin/main
   // What the counter is TYPING in. Starts as the item's own unit and is theirs
   // to change — a bar's scale reads grams whatever unit the bottle was
   // originally weighed in, and before this the field could not accept that.
