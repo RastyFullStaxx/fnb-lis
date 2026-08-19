@@ -6,7 +6,252 @@ import { prisma } from "../db";
 import { AppError } from "../lib/errors";
 import { assertNotQueuedEdit } from "../lib/two-way";
 import { getTrailingAverage, getTrailingFullQty } from "../lib/weigh-history";
+<<<<<<< HEAD
 import { getFifoBatches, getEarliestOpenExpiry } from "../lib/fifo-batches";
+=======
+>>>>>>> origin/main
+import { logActivity } from "../services/activity";
+import { generateAssetCode } from "../services/asset-supplier";
+import { requirePermission, type AppEnv } from "../middleware/auth";
+
+const priceGuard = requirePermission("prices.edit");
+const masterGuard = requirePermission("master.write");
+
+/**
+ * The client's saved inventory cost basis. Same policy as the reports —
+ * the candidate list's cost value must not disagree with what Non-Moving
+ * or the Full Audit show for the same item.
+ */
+function basisOf(c: Context<AppEnv>): CostBasis {
+  const raw = (c.get("client") as { costBasis?: string } | undefined)?.costBasis;
+  return isCostBasis(raw) ? raw : "PRICE";
+}
+
+/** Asset register fields writable through the shared catalog PUT. */
+const ASSET_DETAIL_FIELDS = ["assetCode", "initialCost", "serialNo", "condition", "status", "remarks"] as const;
+
+/** Did this partial update actually carry any of these fields? */
+const touched = (body: Record<string, unknown>, keys: readonly string[]) =>
+  keys.some((k) => body[k] !== undefined);
+
+/** Mounted under /api/locations/:locationId (requireAuth + requireLocationAccess applied there). */
+export const locationItemRoutes = new Hono<AppEnv>()
+  /**
+   * The establishment's own catalog WITH its bottle tare + liquid weights, as
+   * CSV. The client weighs their own bottles (client decision 2026-07-25:
+   * "sila na mag timbang… dapat din makita nila"), so this is their data to
+   * take — it exports the LOCAL database, never the shared master library.
+   */
+  .get("/location-items/export", async (c) => {
+    const location = c.get("location");
+    const user = c.get("user")!;
+    const rows = await prisma.locationItem.findMany({
+      where: { locationId: location.id, isActive: true },
+      include: { itemVariant: { include: { unit: true, item: { include: { category: true } } } } },
+      orderBy: { itemVariant: { item: { name: "asc" } } },
+    });
+    const csv = toCsv([
+      ["Item", "Category", "Size", "Unit", "Cost", "Retail", "Par", "Empty (Tare) Weight", "Tare Unit", "Liquid Weight", "Source"],
+      ...rows.map((r): CsvValue[] => [
+        r.itemVariant.item.name,
+        r.itemVariant.item.category.name,
+        r.itemVariant.size,
+        r.itemVariant.unit.name,
+        r.cost,
+        r.retail,
+        r.parLevel ?? "",
+        ...(() => {
+          // Same resolution the count screen uses, so the file and the app can
+          // never quote different weights.
+          const w = resolveBottleWeights(r, r.itemVariant, r.itemVariant.item.category.defaultDensityFactor);
+          return [w.tareWeight ?? "", w.tareWeightUnit ?? "", w.densityFactor ?? "", w.fromLocal ? "Own weighing" : "Standard"];
+        })(),
+      ]),
+    ]);
+    const name = `local-database_${location.name}`.replace(/[^\w.-]+/g, "-");
+    return new Response(csv, {
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${name}.csv"`,
+        "X-Exported-By": `${user.firstName} ${user.lastName}`,
+      },
+    });
+  })
+
+  // ── Location catalog ──
+  .get("/location-items", async (c) => {
+    const location = c.get("location");
+    const search = c.req.query("search")?.trim();
+    const missingPrices = c.req.query("missingPrices") === "1";
+    const items = await prisma.locationItem.findMany({
+      where: {
+        locationId: location.id,
+        isActive: c.req.query("includeInactive") === "1" ? undefined : true,
+        // Mirrors isMissingPrice(): Assets need a cost but never a retail
+        // price, so the chip and this filter can't disagree.
+        ...(missingPrices
+          ? {
+              OR: [
+                { cost: { lte: 0 } },
+                {
+                  retail: { lte: 0 },
+                  itemVariant: { item: { category: { productType: { not: "Asset" } } } },
+                },
+              ],
+            }
+          : {}),
+        ...(search
+          ? { itemVariant: { item: { name: { contains: search } } } }
+          : {}),
+      },
+      include: {
+        itemVariant: { include: { unit: true, item: { include: { category: true } } } },
+      },
+      orderBy: { itemVariant: { item: { name: "asc" } } },
+      take: 1000,
+    });
+    // Earliest open expiry per row, so the catalog list can flag an expired
+    // batch without a per-row round trip (Phase 5.1) — one query for the
+    // whole page, joined here rather than in the database since Prisma has
+    // no groupBy-then-join in a single call.
+    const earliestExpiry = await getEarliestOpenExpiry(location.id);
+    return c.json(
+      items.map((item) => ({ ...item, earliestOpenExpiry: earliestExpiry.get(item.id) ?? null })),
+    );
+  })
+
+  .post("/location-items", priceGuard, zValidator("json", locationItemAttach), async (c) => {
+    const location = c.get("location");
+    const user = c.get("user")!;
+    const body = c.req.valid("json");
+
+    const variant = await prisma.itemVariant.findUnique({
+      where: { id: body.itemVariantId },
+      include: { item: { include: { category: true } } },
+    });
+    if (!variant) throw new AppError(404, "Item variant not found");
+
+    // Module enforcement (Fix Plan Phase C §2.3): a location can only stock
+    // product types its OWN LocationModule set covers — not just whatever
+    // the client's subscription allows in total. This is the layer that
+    // actually gates catalog access; Casa Verde's original bug (a Kitchen-only
+    // location stocked with Beverage items) is now structurally impossible.
+    const allowed = allowedProductTypes(c.get("locationModules"));
+    if (allowed && !allowed.includes(variant.item.category.productType)) {
+      throw new AppError(
+        403,
+        `This location isn't set up for ${variant.item.category.productType} inventory. Add that module to this location (or raise it on the subscription first) to add "${variant.item.name}".`,
+      );
+    }
+
+    const exists = await prisma.locationItem.findUnique({
+      where: { locationId_itemVariantId: { locationId: location.id, itemVariantId: body.itemVariantId } },
+    });
+    if (exists) {
+      if (exists.isActive) throw new AppError(409, "This item is already in the location catalog");
+      // Reactivate instead of duplicating.
+      //
+      // This writes cost and retail, so it is a price change and has to leave
+      // the same trail as one. It previously did neither — no transaction, no
+      // ActivityLog — which made "archive the item, re-add it at a different
+      // cost" the one way to move a valuation input with nothing recorded,
+      // while the create branch below and PUT /location-items/:id both log.
+      const revived = await prisma.$transaction(async (tx) => {
+        const row = await tx.locationItem.update({
+          where: { id: exists.id },
+          data: { isActive: true, cost: body.cost, retail: body.retail, parLevel: body.parLevel ?? null, updatedById: user.id },
+          include: { itemVariant: { include: { unit: true, item: { include: { category: true } } } } },
+        });
+        await logActivity(
+          {
+            user, clientId: location.clientId, locationId: location.id,
+            action: "locationItem.priceChange", entity: "LocationItem", entityId: row.id,
+            summary: `Restored ${row.itemVariant.item.name} ${row.itemVariant.size} ${row.itemVariant.unit.name} to catalog (cost ${exists.cost} → ${body.cost}, retail ${exists.retail} → ${body.retail})`,
+            // Same before/after shape PUT /location-items/:id records, so the
+            // dashboard's price-change counter and the Activity filter pick
+            // this up like any other price move.
+            details: {
+              old: { cost: exists.cost, retail: exists.retail, parLevel: exists.parLevel, isActive: false },
+              new: { cost: body.cost, retail: body.retail, parLevel: body.parLevel ?? null, isActive: true },
+            },
+          },
+          tx,
+        );
+        return row;
+      });
+      return c.json(revived, 200);
+    }
+    const created = await prisma.$transaction(async (tx) => {
+      // Asset rows get their AST-### register code at attach time — the
+      // sequence is client-wide, not per-category (2.5), so it must be read
+      // and incremented inside this same transaction as the create.
+      const assetCode =
+        variant.item.category.productType === "Asset" ? await generateAssetCode(tx) : null;
+      const li = await tx.locationItem.create({
+        data: {
+          locationId: location.id,
+          itemVariantId: body.itemVariantId,
+          cost: body.cost,
+          retail: body.retail,
+          parLevel: body.parLevel ?? null,
+          assetCode,
+          updatedById: user.id,
+        },
+        include: { itemVariant: { include: { unit: true, item: { include: { category: true } } } } },
+      });
+      await logActivity(
+        {
+          user, clientId: location.clientId, locationId: location.id,
+          action: "locationItem.attach", entity: "LocationItem", entityId: li.id,
+          summary: `Added ${li.itemVariant.item.name} ${li.itemVariant.size} ${li.itemVariant.unit.name} to catalog (cost ${body.cost}, retail ${body.retail})`,
+        },
+        tx,
+      );
+      return li;
+    });
+    return c.json(created, 201);
+  })
+
+  /**
+   * Trailing average of this item's recent weigh counts at this location —
+   * feeds the live weigh preview's history-based outlier check
+   * (docs/2026-08-01-weight-outlier-warning-plan.md §3, §6; phases doc
+   * Phase 3/4). Same query the server itself checks against at save time
+   * (routes/counts.ts), so what the counter sees while typing can never
+   * disagree with what gets logged when they save.
+   *
+   * `requireAuth` only — reading your own count history to sanity-check a
+   * reading needs no special permission, same tier as reading the catalog.
+   */
+  .get("/location-items/:id/trailing-average", async (c) => {
+    const location = c.get("location");
+    const itemId = c.req.param("id");
+    const existing = await prisma.locationItem.findUnique({ where: { id: itemId } });
+    if (!existing || existing.locationId !== location.id) throw new AppError(404, "Catalog item not found");
+    const [trailingAverage, trailingFullQty] = await Promise.all([
+      getTrailingAverage(itemId),
+      getTrailingFullQty(itemId),
+    ]);
+    return c.json({ trailingAverage, trailingFullQty });
+<<<<<<< HEAD
+  })
+
+  /**
+   * Open perishable batches for this catalog row, oldest first — the count
+   * screen's FIFO worklist (expiry-date-plan.md, phases doc 4.1). Pure read,
+   * no new schema, sourced straight from PurchaseLine.expiryDate rows
+   * already written in Phase 3. Same access tier as trailing-average above:
+   * reading which batches are on the shelf needs no special permission.
+   */
+  .get("/location-items/:id/fifo-batches", async (c) => {
+    const location = c.get("location");
+    const itemId = c.req.param("id");
+    const existing = await prisma.locationItem.findUnique({ where: { id: itemId } });
+    if (!existing || existing.locationId !== location.id) throw new AppError(404, "Catalog item not found");
+    const batches = await getFifoBatches(itemId);
+    return c.json({ batches });
+=======
+>>>>>>> origin/main
   })
 
   .put("/location-items/:id", priceGuard, zValidator("json", locationItemUpdate), async (c) => {
