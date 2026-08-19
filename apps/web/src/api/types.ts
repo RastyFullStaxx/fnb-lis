@@ -1,6 +1,6 @@
 // Response shapes for the REST API (server includes noted relations).
 
-import type { PaymentTerms } from "@fnb/core";
+import { convert, type PaymentTerms } from "@fnb/core";
 
 export interface Unit {
   id: string;
@@ -117,6 +117,29 @@ export interface Supplier {
 /** Display label for a variant, e.g. "700 ml" or "1 pack". */
 export function variantLabel(v: { size: number; unit: { name: string } }): string {
   return `${v.size} ${v.unit.name}`;
+}
+
+/**
+ * variantLabel(), but in the viewer's own resolved display unit rather than
+ * always the item's native stored unit (client req 2026-07-31,
+ * docs/per-user-per-item-uom-plan.md). Shared by every screen that lists
+ * variant sizes and has a resolver on hand (Stock's catalog list, Counts'
+ * Not Counted list, and any screen added later) rather than each keeping its
+ * own copy. COUNT-kind items have no display unit to resolve to
+ * (usePreferredUnit returns null for them), so this silently falls back to
+ * the item's own unit for those rows, same behavior as every other screen
+ * using this resolver.
+ */
+export function displayVariantLabel(
+  v: { size: number; unit: { name: string; kind: string; factorToBase: number } },
+  displayUnit: { name: string; kind: string; factorToBase: number } | null,
+): string {
+  if (!displayUnit || displayUnit.name === v.unit.name) return variantLabel(v);
+  const converted = convert(v.size, v.unit, displayUnit);
+  // Same 2-decimal-max formatting QuantityInput/report cells use elsewhere,
+  // avoids a raw float like 0.7000000000000001 from a unit factor conversion.
+  const rounded = Math.round(converted * 100) / 100;
+  return `${rounded} ${displayUnit.name}`;
 }
 
 // ── Operational records ──

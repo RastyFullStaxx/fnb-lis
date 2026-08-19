@@ -11,7 +11,7 @@ import { useMe } from "@/api/auth";
 import { useItemDisplayUnit } from "@/lib/preferences";
 import { useAreas, useFifoBatches, useLocationId, useLocationItems, useTrailingAverage } from "@/api/location";
 import { useCountMutations, useCountSession } from "@/api/ops";
-import { variantLabel, type CountLine, type FifoBatch, type LocationItem } from "@/api/types";
+import { displayVariantLabel, variantLabel, type CountLine, type FifoBatch, type LocationItem } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { BottleKeepInline } from "@/components/bottle-keep-inline";
 import { ItemCombobox } from "@/components/item-combobox";
@@ -806,7 +806,9 @@ function OpenSession({ session }: { session: SessionWithLines }) {
                     }}
                   >
                     <span className="min-w-0 flex-1 truncate text-sm">{li.itemVariant.item.name}</span>
-                    <span className="shrink-0 text-xs text-muted-foreground">{variantLabel(li.itemVariant)}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {displayVariantLabel(li.itemVariant, resolveDisplay(li.itemVariant.item.id, li.itemVariant.unit))}
+                    </span>
                   </button>
                 ))
               )
@@ -1133,7 +1135,7 @@ function EditLineDialog({
         <DialogHeader>
           <DialogTitle>Edit Line</DialogTitle>
           <DialogDescription>
-            {variant.item.name} {variantLabel(variant)}
+            {variant.item.name} {displayVariantLabel(variant, displayUnit ?? null)}
           </DialogDescription>
         </DialogHeader>
 
@@ -1248,9 +1250,14 @@ function LineRow({
   const voided = line.status === "VOID";
   const [confirmRemove, setConfirmRemove] = useState(false);
   // remainingContent is stored in the item's own unit; convert once here for
-  // display. The "X of {variantLabel}" fraction badge below stays on the raw
-  // stored value on purpose — that's a fraction of a bottle, not a quantity,
-  // and dividing by variant.size only makes sense in the item's own unit.
+  // display. The name-row size tag above uses displayVariantLabel (resolved
+  // unit) since it is just identifying the bottle at a glance, same as the
+  // Counts entry form and the Not Counted list. The "X of {variantLabel}"
+  // fraction badge below stays on variantLabel (the item's own unit) on
+  // purpose, that's a fraction of a bottle computed by dividing by
+  // variant.size, and only makes sense against the stored unit the size was
+  // recorded in, converting the label there without converting variant.size
+  // itself would make the fraction wrong.
   const shownUnit = displayUnit && displayUnit.kind === variant.unit.kind ? displayUnit : variant.unit;
   const shownContent =
     shownUnit.kind === variant.unit.kind ? convert(line.remainingContent, variant.unit, shownUnit) : line.remainingContent;
@@ -1267,7 +1274,7 @@ function LineRow({
       <p className={cn("text-sm font-medium", voided && "line-through")}>
         {variant.item.name}
         <span className="ml-1.5 whitespace-nowrap font-normal text-muted-foreground">
-          {variantLabel(variant)}
+          {displayVariantLabel(variant, displayUnit ?? null)}
         </span>
       </p>
       <div className="flex items-end justify-between gap-3">
@@ -1314,7 +1321,7 @@ function LineRow({
           open={confirmRemove}
           onOpenChange={setConfirmRemove}
           title="Remove this line?"
-          description={`${variant.item.name} ${variantLabel(variant)} will be taken off this count.`}
+          description={`${variant.item.name} ${displayVariantLabel(variant, displayUnit ?? null)} will be taken off this count.`}
           confirmLabel="Remove"
           destructive
           onConfirm={() => {

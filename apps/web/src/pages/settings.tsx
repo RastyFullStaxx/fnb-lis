@@ -14,6 +14,7 @@ import { useClearDevicePin, useDevicePin, useMe, useSetDevicePin } from "@/api/a
 import { useAreaMutations, useAreas, useCurrentClient, useLocationId } from "@/api/location";
 import { useProductTypes } from "@/api/master";
 import {
+  useClearItemUnitDefault,
   useClearItemUnitPreference,
   useCompanyInfo,
   useCostBasis,
@@ -60,7 +61,7 @@ export function SettingsPage() {
   return (
     <div>
       <PageHeader title="Settings" />
-      {/* Flat sections split by hairlines — one surface, never stacked cards.
+      {/* Flat sections split by hairlines, one surface, never stacked cards.
           Grouped, because the two halves are not peers: see SettingsGroup. */}
       <div className="space-y-10">
         <SettingsGroup
@@ -76,10 +77,10 @@ export function SettingsPage() {
           title="Establishment settings"
           description="Shared by everyone at this establishment. Changes here move the figures in reports and exports."
         >
-          <CompanySection />
+          {can(role, "master.write") && <AdminItemUnitDefaultSection />}
           <CostBasisSection />
           <VarianceThresholdSection />
-          {can(role, "master.write") && <AdminItemUnitDefaultSection />}
+          <CompanySection />
           {can(role, "master.write") && <StorageAreasSection />}
           {can(role, "master.write") && <CatalogExportSection />}
           {can(role, "admin.manage") && <ProductTypesSection />}
@@ -95,7 +96,7 @@ export function SettingsPage() {
  * Seven sections used to run down one hairline-divided list as visual peers,
  * and two of them are not peers with the rest: **Inventory Cost Basis restates
  * every valuation figure** and **Variance Highlight Threshold changes what the
- * Full Audit flags on screen and in every download** — for the whole client.
+ * Full Audit flags on screen and in every download**, for the whole client.
  * Text Size changes nothing but your own browser. Rendering an accounting
  * policy and a font control identically invites exactly the wrong click.
  *
@@ -155,7 +156,7 @@ function CostBasisSection() {
   return (
     <SettingsSection
       title="Inventory Cost Basis"
-      description="Applies to valuation columns only — variance is never affected."
+      description="Applies to valuation columns only, variance is never affected."
     >
       <div className="max-w-md space-y-2">
         <Label htmlFor="cost-basis">Basis</Label>
@@ -194,7 +195,7 @@ function CostBasisSection() {
 
 /**
  * Over/short highlight threshold (client req, 2026-07-21). An audit policy
- * saved per establishment — a bar and a fine-dining kitchen tolerate different
+ * saved per establishment, a bar and a fine-dining kitchen tolerate different
  * variance. Presentation only; never touches the reconciliation math.
  */
 function VarianceThresholdSection() {
@@ -228,7 +229,7 @@ function VarianceThresholdSection() {
   return (
     <SettingsSection
       title="Variance Highlight Threshold"
-      description="How large an over/short must be, as a percent of usage, before the Full Audit highlights the row — on screen and in every download."
+      description="How large an over/short must be, as a percent of usage, before the Full Audit highlights the row, on screen and in every download."
     >
       <div className="max-w-md space-y-2">
         <Label htmlFor="variance-threshold">Threshold</Label>
@@ -272,7 +273,7 @@ function VarianceThresholdSection() {
 
 /**
  * The client's own catalog, weights included, as a file. They weigh their own
- * bottles now (client decision 2026-07-25), so this is a copy of THEIR data —
+ * bottles now (client decision 2026-07-25), so this is a copy of THEIR data,
  * handy for a spreadsheet or a backup, not a release of anything.
  */
 function CatalogExportSection() {
@@ -281,7 +282,7 @@ function CatalogExportSection() {
   return (
     <SettingsSection
       title="Local Database"
-      description="Download this location's catalog — costs, prices, par levels, and the empty (tare) and liquid weights you have recorded."
+      description="Download this location's catalog: costs, prices, par levels, and the empty (tare) and liquid weights you have recorded."
     >
       <Button variant="outline" size="sm" asChild>
         <a href={`/api/locations/${locationId}/location-items/export`}>
@@ -316,7 +317,7 @@ function SettingsSection({
  * The PIN a person uses to sign in on the offline desktop, set from the browser
  * because that is where there is a keyboard and a network.
  *
- * Everyone sees this section — a STAFF member is precisely who stands at the bar
+ * Everyone sees this section, a STAFF member is precisely who stands at the bar
  * PC at 2am, so gating it by role would lock out its main audience.
  *
  * It is deliberately NOT presented as "a shorter password". The copy says where
@@ -359,7 +360,7 @@ function DevicePinSection() {
         recoveryAnswer: answer.trim(),
         ...(mode === "password" ? { currentPassword: proof } : { currentRecoveryAnswer: proof }),
       });
-      toast.success(res.via === "recovery" ? "PIN reset — your administrator has been notified" : "Device PIN saved");
+      toast.success(res.via === "recovery" ? "PIN reset, your administrator has been notified" : "Device PIN saved");
       reset();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not save the PIN");
@@ -369,7 +370,7 @@ function DevicePinSection() {
   const remove = async () => {
     try {
       await clear.mutateAsync();
-      toast.success("Device PIN removed — you can no longer sign in offline");
+      toast.success("Device PIN removed, you can no longer sign in offline");
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not remove the PIN");
     }
@@ -378,7 +379,7 @@ function DevicePinSection() {
   return (
     <SettingsSection
       title="Offline desktop PIN"
-      description="Signs you in on the bar computer when there's no internet. It works on that computer only — it is not your password, and it can't be used to sign in here."
+      description="Signs you in on the bar computer when there's no internet. It works on that computer only, it is not your password, and it can't be used to sign in here."
     >
       {status.isPending ? (
         <Skeleton className="h-9 w-56" />
@@ -463,7 +464,7 @@ function DevicePinSection() {
                   setProof("");
                 }}
               >
-                {mode === "password" ? "I forgot my password — use my recovery question" : "Use my password instead"}
+                {mode === "password" ? "I forgot my password, use my recovery question" : "Use my password instead"}
               </button>
             )}
           </div>
@@ -581,13 +582,13 @@ function DisplayPreferencesSection() {
 /**
  * Staff's own per-item display-unit overrides (client req 2026-07-31,
  * docs/per-user-per-item-uom-plan.md). Direct sibling of the volume/mass
- * pickers above — same helper-text convention, own choice, requireAuth only.
+ * pickers above, same helper-text convention, own choice, requireAuth only.
  * A row here beats the admin default and this user's general
  * preferredVolumeUnit/preferredMassUnit for that one item (see
  * resolveDisplayUnit() in @fnb/core).
  *
  * Seeded from GET /item-unit-preferences (the "list mine" endpoint) so the
- * list survives navigating away and back — previously this only tracked
+ * list survives navigating away and back, previously this only tracked
  * items added during the current visit, so the saved override kept working
  * everywhere else in the app while this list itself looked empty again.
  * Freshly-picked items not yet saved are kept in local state alongside the
@@ -601,7 +602,7 @@ function StaffItemUnitSection() {
   const savedRows: Item[] = (saved.data ?? []).map((r) => ({ id: r.itemId, name: r.itemName }));
   const savedIds = new Set(savedRows.map((r) => r.id));
   // Local-only rows are for an item just picked this visit, before its first
-  // save lands in the server list above — once it does, drop the local copy
+  // save lands in the server list above, once it does, drop the local copy
   // so a saved item is never shown twice.
   const rows = [...savedRows, ...localRows.filter((r) => !savedIds.has(r.id))];
 
@@ -615,7 +616,7 @@ function StaffItemUnitSection() {
   return (
     <SettingsSection
       title="Per-item display units"
-      description="Show a specific item in its own unit, just for you — overrides both your general preference above and any default your manager has set."
+      description="Show a specific item in its own unit, just for you. Overrides both your general preference above and any default your manager has set."
     >
       <div className="max-w-md space-y-4">
         {saved.isPending ? (
@@ -673,7 +674,7 @@ function StaffItemUnitRow({ item, onRemove }: { item: Item; onRemove: () => void
     }
   };
 
-  // The X button used to only drop the row from local state — harmless when
+  // The X button used to only drop the row from local state, harmless when
   // the list was local-only, but now the list is seeded from the server this
   // row would just reappear on the next refetch if a saved unit were left in
   // place underneath it. Clear it first so removing a row actually removes
@@ -730,14 +731,19 @@ function StaffItemUnitRow({ item, onRemove }: { item: Item; onRemove: () => void
 
 /**
  * Admin/manager default per-item display unit (client req 2026-07-31,
- * docs/per-user-per-item-uom-plan.md). Same shape as Inventory Cost Basis and
- * Variance Highlight Threshold above it — an establishment policy set once,
- * gated master.write. Applies to every user of this client with no override
- * of their own for that item (see resolveDisplayUnit() in @fnb/core).
+ * docs/per-user-per-item-uom-plan.md). The third rung of the same
+ * display-unit ladder as Display and Per-item display units in "Your
+ * preferences" above (general preference -> personal per-item override ->
+ * this establishment-wide default), placed first in this group so it stays
+ * adjacent to the two it extends rather than being separated by Cost Basis
+ * and Variance Threshold. It is, like those two, an establishment policy set
+ * once and gated master.write. Applies to every user of this client with no
+ * override of their own for that item (see resolveDisplayUnit() in
+ * @fnb/core).
  */
 /**
  * Seeded from GET /item-unit-defaults, same fix and same reason as
- * StaffItemUnitSection above — this list previously only tracked items
+ * StaffItemUnitSection above, this list previously only tracked items
  * added during the current visit, so it reset to empty on navigation while
  * each saved default kept applying underneath it.
  */
@@ -762,7 +768,7 @@ function AdminItemUnitDefaultSection() {
   return (
     <SettingsSection
       title="Per-item display unit defaults"
-      description="Set the unit an item shows in by default, for everyone at this establishment who hasn't picked their own unit for it."
+      description="The establishment-wide version of Per-item display units above. Sets the unit an item shows in by default, for everyone here who hasn't picked their own unit for it."
     >
       <div className="max-w-md space-y-4">
         {saved.isPending ? (
@@ -802,6 +808,7 @@ function AdminItemUnitDefaultRow({ item, onRemove }: { item: Item; onRemove: () 
   const clientId = client?.id ?? "";
   const saved = useItemUnitDefault(clientId, item.id);
   const set = useSetItemUnitDefault(clientId, item.id);
+  const clear = useClearItemUnitDefault(clientId, item.id);
 
   const current = saved.data?.unit ?? null;
 
@@ -812,6 +819,32 @@ function AdminItemUnitDefaultRow({ item, onRemove }: { item: Item; onRemove: () 
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not save that default");
     }
+  };
+
+  const reset = async () => {
+    try {
+      await clear.mutateAsync();
+      toast.success(`${item.name} reset to item's own unit`);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not clear that default");
+    }
+  };
+
+  // Same fix as StaffItemUnitRow's removeRow above, for the same reason:
+  // this list is seeded from the server (useItemUnitDefaults), so removing
+  // only the local row leaves the saved ClientItemUnitDefault in place
+  // underneath it and the row just comes back on the next refetch. Clear the
+  // saved default first, then drop the row.
+  const removeRow = async () => {
+    if (current) {
+      try {
+        await clear.mutateAsync();
+      } catch (err) {
+        toast.error(err instanceof ApiError ? err.message : "Could not clear that default");
+        return;
+      }
+    }
+    onRemove();
   };
 
   return (
@@ -833,11 +866,17 @@ function AdminItemUnitDefaultRow({ item, onRemove }: { item: Item; onRemove: () 
           </SelectContent>
         </Select>
       )}
+      {current && (
+        <Button variant="ghost" size="sm" onClick={() => void reset()} disabled={clear.isPending}>
+          Reset
+        </Button>
+      )}
       <Button
         variant="ghost"
         size="icon"
         className="size-8 shrink-0"
-        onClick={onRemove}
+        onClick={() => void removeRow()}
+        disabled={clear.isPending}
         aria-label={`Remove ${item.name} from this list`}
       >
         <X className="size-3.5" />
@@ -865,7 +904,7 @@ function CompanySection() {
   const set = (k: keyof CompanyInfo) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
 
-  // Save stays disabled until something actually changed — at most one enabled
+  // Save stays disabled until something actually changed, at most one enabled
   // primary shows on the page at a time.
   const saved = info.data;
   const isDirty = !!saved && (Object.keys(form) as (keyof CompanyInfo)[]).some((k) => form[k] !== saved[k]);
@@ -873,7 +912,7 @@ function CompanySection() {
   const save = async () => {
     try {
       await update.mutateAsync(form);
-      toast.success("Company info saved — it now brands this client's reports");
+      toast.success("Company info saved, it now brands this client's reports");
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not save");
     }
@@ -936,7 +975,7 @@ function CompanySection() {
               rows={2}
               value={form.reportFooter}
               onChange={set("reportFooter")}
-              placeholder="e.g. Confidential — prepared for internal audit use."
+              placeholder="e.g. Confidential, prepared for internal audit use."
             />
           </div>
           <Button onClick={save} disabled={update.isPending || !client || !isDirty}>
@@ -949,7 +988,7 @@ function CompanySection() {
 }
 
 /**
- * Storage areas — the columns on the printed count sheet.
+ * Storage areas: the columns on the printed count sheet.
  *
  * Lives under Establishment settings because it changes the paper every
  * counter in the building works from, not one person's screen.
@@ -984,7 +1023,7 @@ function StorageAreasSection() {
   return (
     <SettingsSection
       title="Storage Areas"
-      description="Where stock sits inside this establishment — the bar, the lounge, the stock room. Each one becomes a column on the printed count sheet, and counters tally them separately."
+      description="Where stock sits inside this establishment: the bar, the lounge, the stock room. Each one becomes a column on the printed count sheet, and counters tally them separately."
     >
       <div className="max-w-md space-y-3">
         {areas.isPending ? (
@@ -1038,7 +1077,7 @@ function StorageAreasSection() {
           </div>
         )}
         <p className="text-xs leading-5 text-muted-foreground">
-          Archiving keeps every past count intact — an area still names where those bottles were
+          Archiving keeps every past count intact, an area still names where those bottles were
           counted; it just stops appearing on new sheets.
         </p>
       </div>
@@ -1120,7 +1159,7 @@ function ProductTypesSection() {
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), add())}
               placeholder="Add a product type…"
-              // The only input on the page with no visible label — a placeholder
+              // The only input on the page with no visible label, a placeholder
               // is not one, and it disappears the moment anyone types.
               aria-label="Add a product type"
               className="max-w-xs"

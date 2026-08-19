@@ -373,6 +373,43 @@ export const settingsRoutes = new Hono<AppEnv>()
     return c.json({ unit: row.unit });
   })
 
+  // DELETE mirrors /item-unit-preference/:itemId above. Without it, the X
+  // button on the "Per-item display unit defaults" row on Settings had
+  // nothing to call: it only dropped the row from local state, and the row
+  // reappeared on the next render because the list is seeded from this same
+  // saved ClientItemUnitDefault underneath it. Same writeGuard and audit
+  // logging as PUT above, since clearing this is as much an establishment
+  // policy change as setting it.
+  .delete("/item-unit-default/:itemId", writeGuard, async (c) => {
+    const user = c.get("user")!;
+    const itemId = c.req.param("itemId");
+    const clientId = c.req.query("clientId") ?? "";
+    if (!clientId) throw new AppError(400, "clientId is required");
+    await assertClientAccess(user.id, user.role, clientId);
+    const item = await prisma.item.findUnique({ where: { id: itemId }, select: { id: true, name: true } });
+    if (!item) throw new AppError(404, "Item not found");
+    const existing = await prisma.clientItemUnitDefault.findUnique({
+      where: { clientId_itemId: { clientId, itemId } },
+    });
+    if (!existing) throw new AppError(404, "No default set for this item");
+    await prisma.$transaction(async (tx) => {
+      await tx.clientItemUnitDefault.delete({ where: { clientId_itemId: { clientId, itemId } } });
+      await logActivity(
+        {
+          user,
+          clientId,
+          action: "settings.itemUnitDefault",
+          entity: "ClientItemUnitDefault",
+          entityId: existing.id,
+          summary: `Cleared default display unit for ${item.name}`,
+          details: { itemId, from: existing.unit, to: null },
+        },
+        tx,
+      );
+    });
+    return c.json({ ok: true });
+  })
+
   /**
    * Every item this client has a manager-set default for — same reason as
    * /item-unit-preferences above: the admin default list on Settings reset

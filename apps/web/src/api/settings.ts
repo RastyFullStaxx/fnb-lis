@@ -225,6 +225,23 @@ export function useSetItemUnitDefault(clientId: string, itemId: string) {
   });
 }
 
+/**
+ * Mirrors useClearItemUnitPreference above. Without this the X on a saved
+ * "Per-item display unit defaults" row had no mutation to call, so the row
+ * reappeared on the next render since the list is seeded from the same
+ * saved default it was supposed to remove.
+ */
+export function useClearItemUnitDefault(clientId: string, itemId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => del<{ ok: true }>(`/api/settings/item-unit-default/${itemId}?clientId=${clientId}`),
+    onSuccess: () => {
+      qc.setQueryData(["settings", "item-unit-default", clientId, itemId], { unit: null });
+      qc.invalidateQueries({ queryKey: ["settings", "item-unit-defaults", clientId] });
+    },
+  });
+}
+
 export interface ItemUnitDefaultRow {
   itemId: string;
   itemName: string;
