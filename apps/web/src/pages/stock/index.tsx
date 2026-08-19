@@ -1,14 +1,15 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
 import { Boxes, Copy, Eye, Info, PackageX, Plus, Scale, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
-import { can, isMissingPrice, isExpiryDatePast, MODULE_TYPE_LABELS, resolveBottleWeights, resolveIsPerishable, type ModuleType, type Role } from "@fnb/core";
+import { can, convert, isMissingPrice, isExpiryDatePast, MODULE_TYPE_LABELS, resolveBottleWeights, resolveIsPerishable, type ModuleType, type Role } from "@fnb/core";
 import { useMe } from "@/api/auth";
 import { useCopyFromLocation, useCurrentLocation, useLocationId, useLocationItems, useRestoreLocationItem } from "@/api/location";
 import type { LocationItem } from "@/api/types";
 import { variantLabel } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { cn } from "@/lib/utils";
+import { useItemDisplayUnit } from "@/lib/preferences";
 import { PageHeader } from "@/components/page-header";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarSearch, queryFailed } from "@/components/table-surface";
@@ -72,6 +73,30 @@ function weighInfo(row: LocationItem) {
 }
 import { AssetDetailsEdit } from "./asset-details-edit";
 
+/**
+ * variantLabel(), but in the viewer's own resolved display unit rather than
+ * always the item's native stored unit (client req 2026-07-31,
+ * docs/per-user-per-item-uom-plan.md). Local Database was the one screen
+ * left reading only the item's own unit — Counts and Recipes already call
+ * useItemDisplayUnit(); this brings the catalog list in line with them so a
+ * per-item override actually shows up everywhere the item's size is printed,
+ * not only in Open Amount entry. COUNT-kind items have no display unit to
+ * resolve to (usePreferredUnit returns null for them), so this silently
+ * falls back to the item's own unit for those rows — same behavior as
+ * every other screen using this resolver.
+ */
+function displayVariantLabel(
+  v: { size: number; unit: { name: string; kind: string; factorToBase: number } },
+  displayUnit: { name: string; kind: string; factorToBase: number } | null,
+): string {
+  if (!displayUnit || displayUnit.name === v.unit.name) return variantLabel(v);
+  const converted = convert(v.size, v.unit, displayUnit);
+  // Same 2-decimal-max formatting QuantityInput/report cells use elsewhere —
+  // avoids a raw float like 0.7000000000000001 from a unit factor conversion.
+  const rounded = Math.round(converted * 100) / 100;
+  return `${rounded} ${displayUnit.name}`;
+}
+
 export function StockPage() {
   const me = useMe();
   const location = useCurrentLocation();
@@ -106,6 +131,16 @@ export function StockPage() {
   // Unfiltered catalog just for the missing-price count, so the chip's label
   // stays stable under search and the filter never strands the user.
   const catalog = useLocationItems();
+
+  // Per-item display unit resolver (client req 2026-07-31,
+  // docs/per-user-per-item-uom-plan.md) — same hook Counts and Recipes use,
+  // batched over every item currently in view so a staff override or admin
+  // default actually shows up on this list, not only in Open Amount entry.
+  const allItemIds = useMemo(
+    () => Array.from(new Set((rows.data ?? []).map((r) => r.itemVariant.item.id))),
+    [rows.data],
+  );
+  const { resolve: resolveDisplay } = useItemDisplayUnit(allItemIds);
 
   const role = (me.data?.user.role ?? "AUDIT_VIEWER_LIMITED") as Role;
   const canEditPrices = can(role, "prices.edit");
@@ -304,7 +339,9 @@ export function StockPage() {
                     {/* Wrap rather than truncate — an auditor has to read the whole item name. */}
                     <TableCell className="max-w-[22rem] break-words">
                       <span className="font-medium">{row.itemVariant.item.name}</span>
-                      <span className="ml-2 text-sm text-muted-foreground">{variantLabel(row.itemVariant)}</span>
+                      <span className="ml-2 text-sm text-muted-foreground">
+                        {displayVariantLabel(row.itemVariant, resolveDisplay(row.itemVariant.item.id, row.itemVariant.unit))}
+                      </span>
                       <span className="block text-xs text-muted-foreground 2xl:hidden">
                         {row.itemVariant.item.category.name}
                       </span>
