@@ -56,7 +56,6 @@ export function useTrailingAverage(locationItemId: string | null) {
     queryKey: ["trailingAverage", locationId, locationItemId],
     queryFn: () =>
       api<{ trailingAverage: number | null; trailingFullQty: number | null }>(`${base(locationId)}/location-items/${locationItemId}/trailing-average`),
-<<<<<<< HEAD
     enabled: locationItemId != null,
   });
 }
@@ -73,8 +72,6 @@ export function useFifoBatches(locationItemId: string | null) {
     queryKey: ["fifoBatches", locationId, locationItemId],
     queryFn: () =>
       api<{ batches: FifoBatch[] }>(`${base(locationId)}/location-items/${locationItemId}/fifo-batches`),
-=======
->>>>>>> origin/main
     enabled: locationItemId != null,
   });
 }
