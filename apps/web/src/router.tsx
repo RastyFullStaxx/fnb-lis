@@ -6,6 +6,7 @@ import { DashboardPage } from "./pages/dashboard";
 import { ComingSoonPage } from "./pages/coming-soon";
 import { ItemsPage } from "./pages/items";
 import { StockPage } from "./pages/stock";
+import { ClutterCandidatesPage } from "./pages/stock/clutter-candidates";
 import { SuppliersPage } from "./pages/suppliers";
 import { CountsPage } from "./pages/counts";
 import { CountSessionPage } from "./pages/counts/session";
@@ -64,6 +65,7 @@ export const router = createBrowserRouter([
       { index: true, element: <Navigate to="dashboard" replace /> },
       { path: "dashboard", element: <DashboardPage /> },
       { path: "stock", element: <StockPage /> },
+      { path: "stock/clutter-candidates", element: <ClutterCandidatesPage /> },
       { path: "counts", element: <CountsPage /> },
       { path: "counts/:sessionId", element: <CountSessionPage /> },
       { path: "purchases", element: <PurchasesPage /> },

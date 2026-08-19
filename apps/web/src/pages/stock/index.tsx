@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { useParams, useSearchParams } from "react-router";
-import { Boxes, Copy, Info, Plus, Scale, TriangleAlert } from "lucide-react";
+import { Link, useParams, useSearchParams } from "react-router";
+import { Boxes, Copy, Eye, Info, PackageX, Plus, Scale, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { can, isMissingPrice, isExpiryDatePast, MODULE_TYPE_LABELS, resolveBottleWeights, resolveIsPerishable, type ModuleType, type Role } from "@fnb/core";
 import { useMe } from "@/api/auth";
-import { useCopyFromLocation, useCurrentLocation, useLocationItems } from "@/api/location";
+import { useCopyFromLocation, useCurrentLocation, useLocationId, useLocationItems, useRestoreLocationItem } from "@/api/location";
 import type { LocationItem } from "@/api/types";
 import { variantLabel } from "@/api/types";
 import { ApiError } from "@/api/http";
@@ -43,6 +43,7 @@ import { PriceEdit } from "./price-edit";
 import { WeightReport } from "./weight-report";
 import { WeightEdit } from "./weight-edit";
 import { PerishableEdit } from "./perishable-edit";
+import { ScheduleEdit } from "./schedule-edit";
 
 /**
  * Tare + liquid weight (density) for the list, and whether either is missing
@@ -74,6 +75,7 @@ import { AssetDetailsEdit } from "./asset-details-edit";
 export function StockPage() {
   const me = useMe();
   const location = useCurrentLocation();
+  const locationId = useLocationId();
   // ?q= seeds the search — the command palette deep-links here with it.
   const [params] = useSearchParams();
   const [search, setSearch] = useState(params.get("q") ?? "");
@@ -84,10 +86,13 @@ export function StockPage() {
   const [reportedOnly, setReportedOnly] = useState(params.get("weightReported") === "1");
   const [attachOpen, setAttachOpen] = useState(false);
   const [copyOpen, setCopyOpen] = useState(false);
+  // Folds restore into Local Database (clutter-item-removal plan, Phase 4) —
+  // off by default so a hidden row never appears without asking for it.
+  const [showHidden, setShowHidden] = useState(false);
   // The expired-batch badge's "on or past today" comparison (Phase 5.1) —
   // computed once per render, same value every row on this screen shares.
   const today = new Date().toISOString().slice(0, 10);
-  const fetched = useLocationItems({ search: search || undefined, missingPrices: missingOnly });
+  const fetched = useLocationItems({ search: search || undefined, missingPrices: missingOnly, includeInactive: showHidden });
   // Weight filters are client-side: the same weighInfo() the rows render from,
   // so the chip count and the list can never disagree.
   const rows = {
@@ -104,6 +109,19 @@ export function StockPage() {
 
   const role = (me.data?.user.role ?? "AUDIT_VIEWER_LIMITED") as Role;
   const canEditPrices = can(role, "prices.edit");
+  // Gates the Clutter Candidates entry point — same permission the
+  // underlying endpoints enforce (master.write), distinct from prices.edit
+  // even though today's role table happens to grant both to the same roles.
+  const canMasterWrite = can(role, "master.write");
+  const restore = useRestoreLocationItem();
+  const onRestore = async (id: string, name: string) => {
+    try {
+      await restore.mutateAsync(id);
+      toast.success(`${name} restored to catalog.`);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not restore this item");
+    }
+  };
   const missingCount =
     catalog.data?.filter((r) => isMissingPrice(r, r.itemVariant.item.category.productType)).length ?? 0;
   const needsWeightCount = catalog.data?.filter((r) => weighInfo(r).incomplete).length ?? 0;
@@ -119,16 +137,25 @@ export function StockPage() {
       <PageHeader
         title="Local Database"
         actions={
-          canEditPrices && (
-            <>
-              <Button variant="outline" onClick={() => setCopyOpen(true)}>
-                <Copy className="size-4" /> Copy from Location
+          <>
+            {canMasterWrite && (
+              <Button asChild variant="outline">
+                <Link to={`/l/${locationId}/stock/clutter-candidates`}>
+                  <PackageX className="size-4" /> Clutter Candidates
+                </Link>
               </Button>
-              <Button onClick={() => setAttachOpen(true)}>
-                <Plus className="size-4" /> Add Items
-              </Button>
-            </>
-          )
+            )}
+            {canEditPrices && (
+              <>
+                <Button variant="outline" onClick={() => setCopyOpen(true)}>
+                  <Copy className="size-4" /> Copy from Location
+                </Button>
+                <Button onClick={() => setAttachOpen(true)}>
+                  <Plus className="size-4" /> Add Items
+                </Button>
+              </>
+            )}
+          </>
         }
       />
 
@@ -162,6 +189,16 @@ export function StockPage() {
               <Toggle pressed={reportedOnly} onPressedChange={setReportedOnly}>
                 <Scale className="size-3.5" />
                 {reportedCount} weight{reportedCount === 1 ? "" : "s"} reported
+              </Toggle>
+            )}
+            {/* Options slot, last per DESIGN.md's toolbar order (tabs, search,
+                filters, options) — same master.write gate as the schedule icon
+                and the Clutter Candidates entry point, since this is what
+                surfaces the rows Restore acts on. */}
+            {canMasterWrite && (
+              <Toggle pressed={showHidden} onPressedChange={setShowHidden}>
+                <Eye className="size-3.5" />
+                Show Hidden
               </Toggle>
             )}
           </>
@@ -260,7 +297,10 @@ export function StockPage() {
                 const weigh = weighInfo(row);
                 const isAsset = row.itemVariant.item.category.productType === "Asset";
                 return (
-                  <TableRow key={row.id} className={cn("group", missing && "bg-destructive/5")}>
+                  <TableRow
+                    key={row.id}
+                    className={cn("group", missing && row.isActive && "bg-destructive/5", !row.isActive && "opacity-60")}
+                  >
                     {/* Wrap rather than truncate — an auditor has to read the whole item name. */}
                     <TableCell className="max-w-[22rem] break-words">
                       <span className="font-medium">{row.itemVariant.item.name}</span>
@@ -273,7 +313,7 @@ export function StockPage() {
                       {row.itemVariant.item.category.name}
                     </TableCell>
                     <TableCell className="text-right">
-                      <PriceEdit row={row} canEdit={canEditPrices} />
+                      <PriceEdit row={row} canEdit={canEditPrices && row.isActive} />
                     </TableCell>
                     <TableCell className="tnum text-right">
                       {row.parLevel ?? <span className="text-muted-foreground">—</span>}
@@ -302,7 +342,7 @@ export function StockPage() {
                               </TooltipProvider>
                             )}
                           </span>
-                          <WeightEdit row={row} />
+                          {row.isActive && <WeightEdit row={row} />}
                         </div>
                       ) : (
                         <span className="block text-right text-muted-foreground">—</span>
@@ -380,14 +420,30 @@ export function StockPage() {
                             </TooltipProvider>
                           )}
                         </span>
-                        <PerishableEdit row={row} />
+                        {row.isActive ? (
+                          <>
+                            <PerishableEdit row={row} />
+                            <ScheduleEdit row={row} />
+                          </>
+                        ) : (
+                          canMasterWrite && (
+                            <Button
+                              size="xs"
+                              variant="outline"
+                              disabled={restore.isPending}
+                              onClick={() => void onRestore(row.id, row.itemVariant.item.name)}
+                            >
+                              Restore
+                            </Button>
+                          )
+                        )}
                       </div>
                     </TableCell>
                     {showAssetDetails && (
                     <TableCell className="text-right">
                       {isAsset ? (
                         <div className="flex flex-col items-end gap-1">
-                          <AssetDetailsEdit row={row} canEdit={canEditPrices} />
+                          <AssetDetailsEdit row={row} canEdit={canEditPrices && row.isActive} />
                           {(row.condition || row.status) && (
                             <div className="flex items-center gap-1">
                               {row.condition && <Badge variant="outline">{row.condition}</Badge>}

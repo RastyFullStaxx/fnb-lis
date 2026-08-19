@@ -75,6 +75,11 @@ export interface LocationItem {
   tareWeightUnit: "g" | "oz" | null;
   densityFactor: number | null;
   isActive: boolean;
+  /** Expected movement window (1-12, calendar month), clutter-item-removal
+      plan. Null on both = no schedule, plain 12-month lookback applies. Set
+      and cleared together (server enforces this) — see schedule-edit.tsx. */
+  scheduleStartMonth: number | null;
+  scheduleEndMonth: number | null;
   // Asset-only (architecture.md deviation #21), filled in post-attach via
   // the Local Database edit surface (Phase 5).
   initialCost: number | null;
@@ -266,4 +271,23 @@ export interface FifoBatch {
   qty: number;
   expiryDate: string;
   purchaseDate: string;
+}
+
+/** One idle item the system suggests for hiding — clutter-item-removal plan,
+    Phase 3 (commit 103f048). Matches ClutterCandidateRow in
+    apps/server/src/services/report-lists.ts exactly. */
+export interface ClutterCandidateRow {
+  locationItemId: string;
+  name: string;
+  category: string;
+  onHand: number;
+  costValue: number;
+  monthsChecked: number;
+}
+
+export interface ClutterCandidateReport {
+  /** The location's last committed count date, or null if it has never
+      counted — the same "no history yet" case Non-Moving falls back on. */
+  asOfDate: string | null;
+  rows: ClutterCandidateRow[];
 }

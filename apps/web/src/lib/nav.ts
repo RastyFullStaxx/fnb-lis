@@ -33,6 +33,14 @@ export interface NavItem {
    * built from Beverage/Food items — never Supplies/Asset) need this.
    */
   requiresProductTypes?: readonly string[];
+  /**
+   * When true, the item is excluded from sidebar rendering (visibleNav) but
+   * still participates in permissionForPath, so its route stays gated even
+   * with no corresponding link in the nav. Used for screens reached from
+   * inside another page's chrome (e.g. a button on Local Database) rather
+   * than from the sidebar itself.
+   */
+  hidden?: boolean;
 }
 
 export const MAIN_NAV: NavItem[] = [
@@ -64,6 +72,15 @@ export const CATALOG_NAV: NavItem[] = [
   { title: "Main Database", path: "items", icon: Package, permission: "master.write" },
   { title: "Suppliers", path: "suppliers", icon: Truck, permission: "master.write" },
   { title: "Settings", path: "settings", icon: Settings, permission: "master.write" },
+  // Reached via a button on Local Database (stock/index.tsx), not the sidebar —
+  // hidden keeps it out of visibleNav while still gating the URL below.
+  {
+    title: "Clutter Candidates",
+    path: "stock/clutter-candidates",
+    icon: Package,
+    permission: "master.write",
+    hidden: true,
+  },
 ];
 
 // Subscriptions are managed inline inside the Clients page — no separate nav item.
@@ -83,6 +100,7 @@ export const ADMIN_NAV: NavItem[] = [
 export function visibleNav(items: NavItem[], role: Role, locationModules?: readonly string[] | null): NavItem[] {
   const allowedTypes = allowedProductTypes(locationModules);
   return items.filter((item) => {
+    if (item.hidden) return false;
     if (item.permission && !can(role, item.permission)) return false;
     if (item.requiresProductTypes && allowedTypes) {
       if (!item.requiresProductTypes.some((t) => allowedTypes.includes(t))) return false;
