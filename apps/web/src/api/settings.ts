@@ -153,7 +153,10 @@ export function useSetItemUnitPreference(itemId: string) {
   return useMutation({
     mutationFn: (unit: ItemDisplayUnit) =>
       put<{ unit: ItemDisplayUnit }>(`/api/settings/item-unit-preference/${itemId}`, { unit }),
-    onSuccess: (data) => qc.setQueryData(["settings", "item-unit-preference", itemId], data),
+    onSuccess: (data) => {
+      qc.setQueryData(["settings", "item-unit-preference", itemId], data);
+      qc.invalidateQueries({ queryKey: ["settings", "item-unit-preferences"] });
+    },
   });
 }
 
@@ -161,7 +164,33 @@ export function useClearItemUnitPreference(itemId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => del<{ ok: true }>(`/api/settings/item-unit-preference/${itemId}`),
-    onSuccess: () => qc.setQueryData(["settings", "item-unit-preference", itemId], { unit: null }),
+    onSuccess: () => {
+      qc.setQueryData(["settings", "item-unit-preference", itemId], { unit: null });
+      // The "which items has this user customized" list (below) has no
+      // per-item invalidation key of its own, so clear it wholesale rather
+      // than trying to patch one row out of a cached array.
+      qc.invalidateQueries({ queryKey: ["settings", "item-unit-preferences"] });
+    },
+  });
+}
+
+export interface ItemUnitPreferenceRow {
+  itemId: string;
+  itemName: string;
+  unit: ItemDisplayUnit;
+}
+
+/**
+ * Every item the signed-in staffer has an override for — what the Settings
+ * page's "Per-item display units" list repopulates from. Without this the
+ * list only ever remembered items added during the current visit (plain
+ * `useState`), so navigating away and back showed an empty list even though
+ * each saved override kept working everywhere resolveDisplayUnit() reads it.
+ */
+export function useItemUnitPreferences() {
+  return useQuery({
+    queryKey: ["settings", "item-unit-preferences"],
+    queryFn: () => api<ItemUnitPreferenceRow[]>("/api/settings/item-unit-preferences"),
   });
 }
 
@@ -189,7 +218,30 @@ export function useSetItemUnitDefault(clientId: string, itemId: string) {
         `/api/settings/item-unit-default/${itemId}?clientId=${clientId}`,
         { unit },
       ),
-    onSuccess: (data) => qc.setQueryData(["settings", "item-unit-default", clientId, itemId], data),
+    onSuccess: (data) => {
+      qc.setQueryData(["settings", "item-unit-default", clientId, itemId], data);
+      qc.invalidateQueries({ queryKey: ["settings", "item-unit-defaults", clientId] });
+    },
+  });
+}
+
+export interface ItemUnitDefaultRow {
+  itemId: string;
+  itemName: string;
+  unit: ItemDisplayUnit;
+}
+
+/**
+ * Every item this client has a manager-set default for — same reason as
+ * useItemUnitPreferences above: the "Per-item display unit defaults" list
+ * only remembered items added this visit, so it reset to empty on
+ * navigation while the saved defaults kept applying underneath it.
+ */
+export function useItemUnitDefaults(clientId: string) {
+  return useQuery({
+    queryKey: ["settings", "item-unit-defaults", clientId],
+    queryFn: () => api<ItemUnitDefaultRow[]>(`/api/settings/item-unit-defaults?clientId=${clientId}`),
+    enabled: Boolean(clientId),
   });
 }
 

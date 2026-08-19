@@ -175,6 +175,24 @@ export const preferencesRoutes = new Hono<AppEnv>()
     return c.json({ ok: true });
   })
 
+  /**
+   * Every item this staffer has customized — the piece the per-item GET/PUT/
+   * DELETE above never provided. Without it, the Settings page's "Per-item
+   * display units" list had nothing to repopulate from and reset to empty on
+   * every navigation, even though the saved override itself was untouched
+   * (the resolver reads UserItemUnitPreference directly, not this list).
+   * Own rows only, requireAuth only — same tier as the per-item routes above.
+   */
+  .get("/item-unit-preferences", async (c) => {
+    const user = c.get("user")!;
+    const rows = await prisma.userItemUnitPreference.findMany({
+      where: { userId: user.id },
+      include: { item: { select: { id: true, name: true } } },
+      orderBy: { item: { name: "asc" } },
+    });
+    return c.json(rows.map((r) => ({ itemId: r.itemId, itemName: r.item.name, unit: r.unit })));
+  })
+
   // ── Batch resolve — levels 1 & 2 for many items at once (client req
   // 2026-07-31, docs/per-user-per-item-uom-plan.md). The per-item GET routes
   // above are one-row-at-a-time, fine for the Settings page's own list, but
@@ -353,6 +371,26 @@ export const settingsRoutes = new Hono<AppEnv>()
       return saved;
     });
     return c.json({ unit: row.unit });
+  })
+
+  /**
+   * Every item this client has a manager-set default for — same reason as
+   * /item-unit-preferences above: the admin default list on Settings reset
+   * to empty on every navigation with no way to repopulate it, even though
+   * each saved default kept working everywhere resolveDisplayUnit() reads
+   * it. Gated master.write, same as reading/writing one row above.
+   */
+  .get("/item-unit-defaults", writeGuard, async (c) => {
+    const user = c.get("user")!;
+    const clientId = c.req.query("clientId") ?? "";
+    if (!clientId) throw new AppError(400, "clientId is required");
+    await assertClientAccess(user.id, user.role, clientId);
+    const rows = await prisma.clientItemUnitDefault.findMany({
+      where: { clientId },
+      include: { item: { select: { id: true, name: true } } },
+      orderBy: { item: { name: "asc" } },
+    });
+    return c.json(rows.map((r) => ({ itemId: r.itemId, itemName: r.item.name, unit: r.unit })));
   })
 
   // ── Inventory cost basis (accounting policy — client req 2026-07-20) ──

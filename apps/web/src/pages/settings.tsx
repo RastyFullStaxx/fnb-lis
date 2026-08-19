@@ -18,7 +18,9 @@ import {
   useCompanyInfo,
   useCostBasis,
   useItemUnitDefault,
+  useItemUnitDefaults,
   useItemUnitPreference,
+  useItemUnitPreferences,
   useSetItemUnitDefault,
   useSetItemUnitPreference,
   useUpdateCompanyInfo,
@@ -584,21 +586,31 @@ function DisplayPreferencesSection() {
  * preferredVolumeUnit/preferredMassUnit for that one item (see
  * resolveDisplayUnit() in @fnb/core).
  *
- * There's no "list my overrides" endpoint (Phase 3 only ships per-item
- * GET/PUT/DELETE), so this keeps an in-memory list of items the user has
- * chosen to customize this session and fetches/saves each one individually —
- * same shape as the admin default section below.
+ * Seeded from GET /item-unit-preferences (the "list mine" endpoint) so the
+ * list survives navigating away and back — previously this only tracked
+ * items added during the current visit, so the saved override kept working
+ * everywhere else in the app while this list itself looked empty again.
+ * Freshly-picked items not yet saved are kept in local state alongside the
+ * server rows until the query refetches with them included.
  */
 function StaffItemUnitSection() {
-  const [rows, setRows] = useState<Item[]>([]);
+  const saved = useItemUnitPreferences();
+  const [localRows, setLocalRows] = useState<Item[]>([]);
   const [picking, setPicking] = useState<Item | null>(null);
 
+  const savedRows: Item[] = (saved.data ?? []).map((r) => ({ id: r.itemId, name: r.itemName }));
+  const savedIds = new Set(savedRows.map((r) => r.id));
+  // Local-only rows are for an item just picked this visit, before its first
+  // save lands in the server list above — once it does, drop the local copy
+  // so a saved item is never shown twice.
+  const rows = [...savedRows, ...localRows.filter((r) => !savedIds.has(r.id))];
+
   const addRow = (item: Item) => {
-    setRows((r) => (r.some((x) => x.id === item.id) ? r : [...r, item]));
+    setLocalRows((r) => (r.some((x) => x.id === item.id) || savedIds.has(item.id) ? r : [...r, item]));
     setPicking(null);
   };
 
-  const removeRow = (itemId: string) => setRows((r) => r.filter((x) => x.id !== itemId));
+  const removeRow = (itemId: string) => setLocalRows((r) => r.filter((x) => x.id !== itemId));
 
   return (
     <SettingsSection
@@ -606,9 +618,14 @@ function StaffItemUnitSection() {
       description="Show a specific item in its own unit, just for you — overrides both your general preference above and any default your manager has set."
     >
       <div className="max-w-md space-y-4">
-        {rows.map((item) => (
-          <StaffItemUnitRow key={item.id} item={item} onRemove={() => removeRow(item.id)} />
-        ))}
+        {saved.isPending ? (
+          <div className="space-y-2">
+            <Skeleton className="h-9 w-full" />
+            <Skeleton className="h-9 w-full" />
+          </div>
+        ) : (
+          rows.map((item) => <StaffItemUnitRow key={item.id} item={item} onRemove={() => removeRow(item.id)} />)
+        )}
 
         <div className="space-y-2">
           <Label htmlFor="unit-add-item">Add an item</Label>
@@ -621,7 +638,7 @@ function StaffItemUnitSection() {
           />
         </div>
 
-        {rows.length === 0 && (
+        {!saved.isPending && rows.length === 0 && (
           <p className="text-xs text-muted-foreground">
             No items customized yet. Pick one above to set a unit just for you.
           </p>
@@ -656,6 +673,23 @@ function StaffItemUnitRow({ item, onRemove }: { item: Item; onRemove: () => void
     }
   };
 
+  // The X button used to only drop the row from local state — harmless when
+  // the list was local-only, but now the list is seeded from the server this
+  // row would just reappear on the next refetch if a saved unit were left in
+  // place underneath it. Clear it first so removing a row actually removes
+  // the override, same outcome as clicking Reset first and then removing.
+  const removeRow = async () => {
+    if (current) {
+      try {
+        await clear.mutateAsync();
+      } catch (err) {
+        toast.error(err instanceof ApiError ? err.message : "Could not clear that unit");
+        return;
+      }
+    }
+    onRemove();
+  };
+
   return (
     <div className="flex items-center gap-2">
       <span className="flex-1 truncate text-sm">{item.name}</span>
@@ -684,7 +718,8 @@ function StaffItemUnitRow({ item, onRemove }: { item: Item; onRemove: () => void
         variant="ghost"
         size="icon"
         className="size-8 shrink-0"
-        onClick={onRemove}
+        onClick={() => void removeRow()}
+        disabled={clear.isPending}
         aria-label={`Remove ${item.name} from this list`}
       >
         <X className="size-3.5" />
@@ -700,16 +735,29 @@ function StaffItemUnitRow({ item, onRemove }: { item: Item; onRemove: () => void
  * gated master.write. Applies to every user of this client with no override
  * of their own for that item (see resolveDisplayUnit() in @fnb/core).
  */
+/**
+ * Seeded from GET /item-unit-defaults, same fix and same reason as
+ * StaffItemUnitSection above — this list previously only tracked items
+ * added during the current visit, so it reset to empty on navigation while
+ * each saved default kept applying underneath it.
+ */
 function AdminItemUnitDefaultSection() {
-  const [rows, setRows] = useState<Item[]>([]);
+  const client = useCurrentClient();
+  const clientId = client?.id ?? "";
+  const saved = useItemUnitDefaults(clientId);
+  const [localRows, setLocalRows] = useState<Item[]>([]);
   const [picking, setPicking] = useState<Item | null>(null);
 
+  const savedRows: Item[] = (saved.data ?? []).map((r) => ({ id: r.itemId, name: r.itemName }));
+  const savedIds = new Set(savedRows.map((r) => r.id));
+  const rows = [...savedRows, ...localRows.filter((r) => !savedIds.has(r.id))];
+
   const addRow = (item: Item) => {
-    setRows((r) => (r.some((x) => x.id === item.id) ? r : [...r, item]));
+    setLocalRows((r) => (r.some((x) => x.id === item.id) || savedIds.has(item.id) ? r : [...r, item]));
     setPicking(null);
   };
 
-  const removeRow = (itemId: string) => setRows((r) => r.filter((x) => x.id !== itemId));
+  const removeRow = (itemId: string) => setLocalRows((r) => r.filter((x) => x.id !== itemId));
 
   return (
     <SettingsSection
@@ -717,9 +765,16 @@ function AdminItemUnitDefaultSection() {
       description="Set the unit an item shows in by default, for everyone at this establishment who hasn't picked their own unit for it."
     >
       <div className="max-w-md space-y-4">
-        {rows.map((item) => (
-          <AdminItemUnitDefaultRow key={item.id} item={item} onRemove={() => removeRow(item.id)} />
-        ))}
+        {saved.isPending ? (
+          <div className="space-y-2">
+            <Skeleton className="h-9 w-full" />
+            <Skeleton className="h-9 w-full" />
+          </div>
+        ) : (
+          rows.map((item) => (
+            <AdminItemUnitDefaultRow key={item.id} item={item} onRemove={() => removeRow(item.id)} />
+          ))
+        )}
 
         <div className="space-y-2">
           <Label htmlFor="client-unit-add-item">Add an item</Label>
@@ -732,7 +787,7 @@ function AdminItemUnitDefaultSection() {
           />
         </div>
 
-        {rows.length === 0 && (
+        {!saved.isPending && rows.length === 0 && (
           <p className="text-xs text-muted-foreground">
             No item defaults set yet. Pick one above to set a default unit for everyone.
           </p>
