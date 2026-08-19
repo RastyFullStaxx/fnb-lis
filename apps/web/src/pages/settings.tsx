@@ -80,7 +80,15 @@ export function SettingsPage() {
           {can(role, "master.write") && <AdminItemUnitDefaultSection />}
           <CostBasisSection />
           <VarianceThresholdSection />
-          <CompanySection />
+          {/* Unlike Cost Basis / Variance Threshold above, this section never
+              had a read-only mode — its GET is `master.write`-gated
+              server-side too (routes/settings.ts `/company`), so a non-write
+              role can't even load the data, let alone save it. Now that the
+              Settings nav/route is open to every role (see lib/nav.ts), this
+              has to move behind the same `can()` check as its establishment-
+              admin siblings below instead of rendering unconditionally and
+              hitting a 403 on load. */}
+          {can(role, "master.write") && <CompanySection />}
           {can(role, "master.write") && <StorageAreasSection />}
           {can(role, "master.write") && <CatalogExportSection />}
           {can(role, "admin.manage") && <ProductTypesSection />}
