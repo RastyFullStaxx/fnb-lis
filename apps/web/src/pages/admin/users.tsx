@@ -144,6 +144,16 @@ export function AdminUsersPage() {
     return matchesStatus && matchesSearch && matchesPkg && matchesModule && matchesBilling;
   });
 
+  // `editing` only tracks which row's dialog is open (set once, on click).
+  // The dialog's actual data must come from the live query result instead of
+  // that captured object — otherwise fields the dialog updates in place
+  // (e.g. the variance-access toggle, which intentionally stays open after
+  // saving) keep showing the value from the moment "Edit" was clicked, even
+  // though `useUpdateVarianceAccess`'s onSuccess invalidates and refetches
+  // ["admin", "users"] behind it. Re-resolving by id here keeps the dialog
+  // in sync with that refetch while `editing` still only drives open/close.
+  const editingUser = editing ? (users.data ?? []).find((u) => u.id === editing.id) ?? editing : null;
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader
@@ -337,7 +347,7 @@ export function AdminUsersPage() {
       </TableSurface>
 
       <CreateUserDialog open={creating} onOpenChange={setCreating} onPassword={setIssued} />
-      <EditUserDialog user={editing} onClose={() => setEditing(null)} onPassword={setIssued} />
+      <EditUserDialog user={editingUser} onClose={() => setEditing(null)} onPassword={setIssued} />
       <PasswordRevealDialog issued={issued} onClose={() => setIssued(null)} />
       <UserSessionsDialog
         userId={sessionsFor?.id ?? null}
@@ -702,6 +712,14 @@ function EditUserDialog({
   const [clientIds, setClientIds] = useState<Set<string>>(new Set());
   const [modules, setModules] = useState<Set<ModuleType>>(new Set());
 
+  // Keyed on `user.id`, not on `user` itself: `user` now re-resolves from the
+  // live query on every refetch (see AdminUsersPage's `editingUser`), so its
+  // reference can change while the dialog stays open on the same row (e.g.
+  // right after the variance toggle's own invalidation). Re-running this
+  // sync on every such refetch would stomp in-progress role/client/module
+  // edits the viewer hasn't saved yet. Re-sync only when the dialog opens or
+  // switches to a different user; canViewVariance itself is read straight
+  // off the live `user` prop below, so it still stays current.
   useEffect(() => {
     if (user) {
       setRole(user.role);
@@ -709,7 +727,8 @@ function EditUserDialog({
       setModules(new Set(user.modules as ModuleType[]));
       setResetPw(null);
     }
-  }, [user]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   const toggle = (id: string) =>
     setClientIds((prev) => {
