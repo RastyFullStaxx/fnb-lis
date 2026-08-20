@@ -159,6 +159,15 @@ export function SalesReportPage() {
                             Menu
                           </Badge>
                         )}
+                        {/* A sale row IS the activity, so isActive === false here
+                            always means a hidden item that moved — never one the
+                            server could have dropped (report-lists.ts). No need to
+                            also check includeHiddenInReports. */}
+                        {row.isActive === false && (
+                          <Badge variant="warning" className="ml-2">
+                            hidden · active
+                          </Badge>
+                        )}
                       </TableCell>
                       <TableCell className="text-muted-foreground">{row.category ?? "—"}</TableCell>
                       <TableCell className="tnum text-right">{formatNumber(row.qty)}</TableCell>

@@ -2,13 +2,16 @@ import { useMemo, useState } from "react";
 import { PackageX } from "lucide-react";
 import { round2 } from "@fnb/core";
 import { useLocationId } from "@/api/location";
+import { useMe } from "@/api/auth";
 import { exportUrl, useNonMovingReport } from "@/api/reports";
+import { useIncludeHiddenInReports } from "@/api/settings";
 import { formatMoney, formatNumber, formatUnitPrice } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarSearch, queryFailed } from "@/components/table-surface";
 import { ExportButtons } from "@/components/report-toolbar";
 import { ChartBlock } from "@/components/charts/chart-block";
 import { MagnitudeBars } from "@/components/charts/magnitude-bars";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -30,8 +33,19 @@ const DEAD_BAR_CAP = 8;
  */
 export function NonMovingReportPage() {
   const locationId = useLocationId();
+  const me = useMe();
   const report = useNonMovingReport();
   const [query, setQuery] = useState("");
+
+  // Every row here has zero usage by construction — the report's own
+  // subject. A hidden row still on the list survived because of purchases/
+  // forfeits/transfers/variance in the window, which NonMovingRow doesn't
+  // carry to the client, or because the setting shows it regardless
+  // (docs/clutter-in-reports-decision.md). The badge is only unambiguous
+  // when the setting is off.
+  const location = me.data?.clients.flatMap((c) => c.locations).find((l) => l.id === locationId);
+  const includeHidden = useIncludeHiddenInReports(location?.clientId ?? "");
+  const includeHiddenInReports = includeHidden.data?.includeHiddenInReports ?? false;
 
   const rows = useMemo(() => {
     const all = report.data?.rows ?? [];
@@ -115,7 +129,14 @@ export function NonMovingReportPage() {
                 <TableBody>
                   {rows.map((row) => (
                     <TableRow key={row.locationItemId}>
-                      <TableCell className="max-w-[22rem] font-medium break-words">{row.name}</TableCell>
+                      <TableCell className="max-w-[22rem] font-medium break-words">
+                        {row.name}
+                        {!row.isActive && !includeHiddenInReports && (
+                          <Badge variant="warning" className="ml-2">
+                            hidden · active
+                          </Badge>
+                        )}
+                      </TableCell>
                       <TableCell className="text-muted-foreground">{row.category}</TableCell>
                       <TableCell className="tnum text-right">{formatNumber(row.onHand)}</TableCell>
                       <TableCell className="tnum text-right">{formatUnitPrice(row.cost)}</TableCell>

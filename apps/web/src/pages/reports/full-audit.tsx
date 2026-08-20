@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { BarChart3, ChevronDown, ChevronRight, FileDown, Info } from "lucide-react";
-import { can, hasVariance, MATERIAL_VARIANCE_PCT, round2, varianceRuleText, varianceSeverity, type Role } from "@fnb/core";
+import { can, hasReportActivity, hasVariance, MATERIAL_VARIANCE_PCT, round2, varianceRuleText, varianceSeverity, type Role } from "@fnb/core";
 import { toast } from "sonner";
 import { useMe } from "@/api/auth";
 import { useCountDates, useFullAudit } from "@/api/ops";
@@ -703,6 +703,14 @@ function CategoryRows({
             {row.flags.missingPrice && (
               <Badge variant="warning" className="ml-2 print:hidden">
                 no price
+              </Badge>
+            )}
+            {/* Hidden item (docs/clutter-in-reports-decision.md) that still has
+                real activity in this period, so the display filter server-side
+                could not drop it — the badge says why it is still here. */}
+            {!row.isActive && hasReportActivity(row) && (
+              <Badge variant="warning" className="ml-2 print:hidden">
+                hidden · active
               </Badge>
             )}
           </TableCell>

@@ -3,7 +3,7 @@ import { BarChart3 } from "lucide-react";
 import { MATERIAL_VARIANCE_PCT, round2, varianceSeverity } from "@fnb/core";
 import { useLocationId } from "@/api/location";
 import { useCountDates } from "@/api/ops";
-import { useVarianceThreshold } from "@/api/settings";
+import { useIncludeHiddenInReports, useVarianceThreshold } from "@/api/settings";
 import { useMe } from "@/api/auth";
 import { exportUrl, useLegacyAuditReport, type LegacyAuditRow } from "@/api/reports";
 import { formatMoney, cn, formatNumber, formatDate } from "@/lib/utils";
@@ -134,6 +134,13 @@ export function LegacyAuditPage() {
   const location = me.data?.clients.flatMap((c) => c.locations).find((l) => l.id === locationId);
   const threshold = useVarianceThreshold(location?.clientId ?? "");
   const thresholdPct = threshold.data?.varianceThresholdPct ?? MATERIAL_VARIANCE_PCT;
+  // LegacyAuditRow has no activity fields to re-derive hasReportActivity from
+  // (report-suite.ts filters on the internal ReconRow before reshaping), so
+  // the badge is only unambiguous when the setting is off — the one case
+  // where a surviving hidden row can only mean "it moved"
+  // (docs/clutter-in-reports-decision.md).
+  const includeHidden = useIncludeHiddenInReports(location?.clientId ?? "");
+  const includeHiddenInReports = includeHidden.data?.includeHiddenInReports ?? false;
 
   const exportParams = { begin: effectiveBegin ?? "", end: effectiveEnd ?? "", variant };
 
@@ -317,6 +324,11 @@ export function LegacyAuditPage() {
                         >
                           <TableCell className={cn("sticky left-0 z-10 w-[14rem] min-w-[10rem] border-r break-words font-medium", stickyBg)}>
                             {row.productName}
+                            {!row.isActive && !includeHiddenInReports && (
+                              <Badge variant="warning" className="ml-2">
+                                hidden · active
+                              </Badge>
+                            )}
                           </TableCell>
                           <TableCell className="whitespace-nowrap text-muted-foreground">{row.sizeUom}</TableCell>
                           {COLUMNS.map((c) => {

@@ -2,7 +2,9 @@ import { useMemo, useState } from "react";
 import { Boxes } from "lucide-react";
 import { round2 } from "@fnb/core";
 import { useLocationId } from "@/api/location";
+import { useMe } from "@/api/auth";
 import { exportUrl, useOnHandReport } from "@/api/reports";
+import { useIncludeHiddenInReports } from "@/api/settings";
 import { formatMoney, formatNumber, formatDate, formatUnitPrice } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarSearch, queryFailed } from "@/components/table-surface";
@@ -27,8 +29,18 @@ const CATEGORY_BAR_CAP = 6;
 
 export function OnHandReportPage() {
   const locationId = useLocationId();
+  const me = useMe();
   const report = useOnHandReport();
   const [query, setQuery] = useState("");
+
+  // Whether a hidden-but-active row's badge is meaningful here: with the
+  // setting on, a row can be !isActive because it's simply shown by policy,
+  // not because it moved — OnHandRow carries no activity fields to tell the
+  // two apart (docs/clutter-in-reports-decision.md), so the badge only shows
+  // when the setting is off, the one case where it can only mean "moved".
+  const location = me.data?.clients.flatMap((c) => c.locations).find((l) => l.id === locationId);
+  const includeHidden = useIncludeHiddenInReports(location?.clientId ?? "");
+  const includeHiddenInReports = includeHidden.data?.includeHiddenInReports ?? false;
 
   const rows = useMemo(() => {
     const all = report.data?.rows ?? [];
@@ -130,6 +142,11 @@ export function OnHandReportPage() {
                         {row.belowPar && (
                           <Badge variant="warning" className="ml-2">
                             Low stock
+                          </Badge>
+                        )}
+                        {!row.isActive && !includeHiddenInReports && (
+                          <Badge variant="warning" className="ml-2">
+                            hidden · active
                           </Badge>
                         )}
                       </TableCell>

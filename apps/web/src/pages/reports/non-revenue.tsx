@@ -193,7 +193,17 @@ export function NonRevenueReportPage() {
                     <TableCell className="tnum">{formatDate(row.saleDate)}</TableCell>
                     {/* Menu names run long; wrapping keeps them fully readable
                         without pushing the money columns off-screen. */}
-                    <TableCell className="max-w-[22rem] font-medium break-words">{row.name}</TableCell>
+                    <TableCell className="max-w-[22rem] font-medium break-words">
+                      {row.name}
+                      {/* A non-revenue row IS the activity, so isActive === false
+                          here always means a hidden item that moved — never one
+                          the server could have dropped (report-lists.ts). */}
+                      {row.isActive === false && (
+                        <Badge variant="warning" className="ml-2">
+                          hidden · active
+                        </Badge>
+                      )}
+                    </TableCell>
                     <TableCell className="text-muted-foreground">{row.uom ?? "—"}</TableCell>
                     <TableCell>
                       <Badge variant="outline">{row.reason}</Badge>

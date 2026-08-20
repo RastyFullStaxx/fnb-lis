@@ -2,7 +2,9 @@ import { useMemo, useState } from "react";
 import { ClipboardList } from "lucide-react";
 import { round2 } from "@fnb/core";
 import { useLocationId } from "@/api/location";
+import { useMe } from "@/api/auth";
 import { exportUrl, useParLevelReport } from "@/api/reports";
+import { useIncludeHiddenInReports } from "@/api/settings";
 import { formatMoney, formatNumber, formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarSearch, queryFailed } from "@/components/table-surface";
@@ -32,8 +34,18 @@ const REORDER_BAR_CAP = 8;
  */
 export function ParLevelReportPage() {
   const locationId = useLocationId();
+  const me = useMe();
   const report = useParLevelReport();
   const [query, setQuery] = useState("");
+
+  // Same reasoning as On-Hand/Non-Moving: ParLevelRow.usage is the reorder
+  // depletion rate, not the purchases/forfeits/transfers/variance signal the
+  // server filter actually checks (report-lists.ts's hasOnHandPeriodActivity),
+  // and that signal isn't on the wire — so the badge is only unambiguous when
+  // the setting is off (docs/clutter-in-reports-decision.md).
+  const location = me.data?.clients.flatMap((c) => c.locations).find((l) => l.id === locationId);
+  const includeHidden = useIncludeHiddenInReports(location?.clientId ?? "");
+  const includeHiddenInReports = includeHidden.data?.includeHiddenInReports ?? false;
 
   const rows = useMemo(() => {
     const all = report.data?.rows ?? [];
@@ -138,6 +150,11 @@ export function ParLevelReportPage() {
                         {row.belowPar && (
                           <Badge variant="warning" className="ml-2">
                             Below par
+                          </Badge>
+                        )}
+                        {!row.isActive && !includeHiddenInReports && (
+                          <Badge variant="warning" className="ml-2">
+                            hidden · active
                           </Badge>
                         )}
                       </TableCell>

@@ -117,7 +117,17 @@ export function PurchaseReportPage() {
                         {row.supplier}
                         {row.refNo && <span className="ml-1.5 text-xs">({row.refNo})</span>}
                       </TableCell>
-                      <TableCell className="max-w-[22rem] break-words font-medium">{row.name}</TableCell>
+                      <TableCell className="max-w-[22rem] break-words font-medium">
+                        {row.name}
+                        {/* A purchase row IS the activity, so isActive === false
+                            here always means a hidden item that moved — never one
+                            the server could have dropped (report-lists.ts). */}
+                        {row.isActive === false && (
+                          <Badge variant="warning" className="ml-2">
+                            hidden · active
+                          </Badge>
+                        )}
+                      </TableCell>
                       <TableCell className="tnum text-right">{formatNumber(row.qty)}</TableCell>
                       <TableCell className="tnum text-right">{formatUnitPrice(row.unitCost)}</TableCell>
                       <TableCell className="tnum text-right">{formatMoney(row.lineTotal)}</TableCell>
