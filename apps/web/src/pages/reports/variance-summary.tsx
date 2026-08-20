@@ -5,6 +5,7 @@ import { useLocationId } from "@/api/location";
 import { useCountDates } from "@/api/ops";
 import { exportUrl, useVarianceSummaryReport } from "@/api/reports";
 import { formatMoney, cn, formatDate } from "@/lib/utils";
+import { useSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { TableEmpty, TableFailure, TableLoading, ToolbarField, queryFailed } from "@/components/table-surface";
@@ -24,6 +25,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 
 /**
  * Variance Summary Report (client req, version 2 of the existing Variance
@@ -53,6 +55,16 @@ export function VarianceSummaryPage() {
   // Rows carrying a real variance vs. rows that reconciled clean ("Ok") —
   // used only to pick the right empty-state message when every category is Ok.
   const varianceRows = useMemo(() => (report.data?.rows ?? []).filter((r) => r.status !== "Ok"), [report.data]);
+
+  const { sortedRows, sortKey, sortDirection, toggleSort } = useSort(report.data?.rows ?? [], {
+    accessors: {
+      category: (r) => r.categoryName,
+      status: (r) => r.status,
+      brands: (r) => r.brands,
+      short: (r) => r.short,
+      over: (r) => r.over,
+    },
+  });
 
   if (countDates.isPending) {
     return (
@@ -155,15 +167,55 @@ export function VarianceSummaryPage() {
                   </TableHead>
                 </TableRow>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="sticky top-10 z-20 min-w-[10rem] bg-muted">Category</TableHead>
-                  <TableHead className="sticky top-10 z-20 bg-muted">Variances</TableHead>
-                  <TableHead className="sticky top-10 z-20 min-w-[16rem] bg-muted">Brands</TableHead>
-                  <TableHead className="sticky top-10 z-20 border-l bg-muted text-right">Short</TableHead>
-                  <TableHead className="sticky top-10 z-20 bg-muted text-right">Over</TableHead>
+                  <SortableTableHead
+                    sortKey="category"
+                    activeKey={sortKey}
+                    direction={sortDirection}
+                    onSort={toggleSort}
+                    className="sticky top-10 z-20 min-w-[10rem] bg-muted"
+                  >
+                    Category
+                  </SortableTableHead>
+                  <SortableTableHead
+                    sortKey="status"
+                    activeKey={sortKey}
+                    direction={sortDirection}
+                    onSort={toggleSort}
+                    className="sticky top-10 z-20 bg-muted"
+                  >
+                    Variances
+                  </SortableTableHead>
+                  <SortableTableHead
+                    sortKey="brands"
+                    activeKey={sortKey}
+                    direction={sortDirection}
+                    onSort={toggleSort}
+                    className="sticky top-10 z-20 min-w-[16rem] bg-muted"
+                  >
+                    Brands
+                  </SortableTableHead>
+                  <SortableTableHead
+                    sortKey="short"
+                    activeKey={sortKey}
+                    direction={sortDirection}
+                    onSort={toggleSort}
+                    className="sticky top-10 z-20 border-l bg-muted text-right"
+                  >
+                    Short
+                  </SortableTableHead>
+                  <SortableTableHead
+                    sortKey="over"
+                    activeKey={sortKey}
+                    direction={sortDirection}
+                    onSort={toggleSort}
+                    className="sticky top-10 z-20 bg-muted text-right"
+                  >
+                    Over
+                  </SortableTableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {report.data.rows.map((row) => {
+                {sortedRows.map((row) => {
                   const isOk = row.status === "Ok";
                   return (
                     <TableRow

@@ -3,6 +3,7 @@ import { AlertTriangle } from "lucide-react";
 import { useLocationId } from "@/api/location";
 import { exportUrl, useExpiringBatchesReport } from "@/api/reports";
 import { cn, formatDate, formatNumber } from "@/lib/utils";
+import { useSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
 import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarSearch, queryFailed } from "@/components/table-surface";
 import { ExportButtons } from "@/components/report-toolbar";
@@ -12,10 +13,10 @@ import {
   TableBody,
   TableCell,
   TableFooter,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 
 /**
  * Expiring Batches report (expiry-date-plan.md, phases doc Phase 6.1) — the
@@ -48,6 +49,17 @@ export function ExpiringBatchesReportPage() {
       ? all.filter((r) => r.name.toLowerCase().includes(q) || r.category.toLowerCase().includes(q))
       : all;
   }, [report.data, query]);
+
+  const { sortedRows, sortKey, sortDirection, toggleSort } = useSort(rows, {
+    accessors: {
+      item: (r) => r.name,
+      category: (r) => r.category,
+      qty: (r) => r.qty,
+      received: (r) => r.purchaseDate,
+      expires: (r) => r.expiryDate,
+      status: (r) => (r.isExpired ? 0 : 1),
+    },
+  });
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -82,16 +94,34 @@ export function ExpiringBatchesReportPage() {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted hover:bg-muted">
-                <TableHead>Item</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead className="text-right">Qty</TableHead>
-                <TableHead>Received</TableHead>
-                <TableHead>Expires</TableHead>
-                <TableHead>Status</TableHead>
+                <SortableTableHead sortKey="item" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Item
+                </SortableTableHead>
+                <SortableTableHead sortKey="category" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Category
+                </SortableTableHead>
+                <SortableTableHead
+                  sortKey="qty"
+                  activeKey={sortKey}
+                  direction={sortDirection}
+                  onSort={toggleSort}
+                  className="text-right"
+                >
+                  Qty
+                </SortableTableHead>
+                <SortableTableHead sortKey="received" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Received
+                </SortableTableHead>
+                <SortableTableHead sortKey="expires" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Expires
+                </SortableTableHead>
+                <SortableTableHead sortKey="status" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Status
+                </SortableTableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((row) => (
+              {sortedRows.map((row) => (
                 <TableRow
                   key={row.purchaseLineId}
                   className={cn(row.isExpired && "bg-warning/10 hover:bg-warning/15")}

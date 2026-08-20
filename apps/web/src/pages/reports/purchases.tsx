@@ -5,6 +5,7 @@ import { useLocationId } from "@/api/location";
 import { useCountDates } from "@/api/ops";
 import { exportUrl, usePurchaseReport } from "@/api/reports";
 import { formatMoney, formatNumber, formatDate, formatUnitPrice } from "@/lib/utils";
+import { useSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
 import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarSearch, queryFailed } from "@/components/table-surface";
 import { DateRangeControl, ExportButtons } from "@/components/report-toolbar";
@@ -16,10 +17,10 @@ import {
   TableBody,
   TableCell,
   TableFooter,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 import { useReportRange } from "./use-report-range";
 
 
@@ -50,6 +51,32 @@ export function PurchaseReportPage() {
     }
     return head;
   }, [report.data]);
+
+  const { sortedRows, sortKey, sortDirection, toggleSort } = useSort(rows, {
+    accessors: {
+      date: (r) => r.purchaseDate,
+      supplier: (r) => r.supplier,
+      item: (r) => r.name,
+      qty: (r) => r.qty,
+      unitCost: (r) => r.unitCost,
+      lineTotal: (r) => r.lineTotal,
+    },
+  });
+
+  const bySupplierRows = report.data?.bySupplier ?? [];
+  const { sortedRows: sortedBySupplier, sortKey: bySupplierSortKey, sortDirection: bySupplierSortDirection, toggleSort: toggleBySupplierSort } = useSort(
+    bySupplierRows,
+    {
+      accessors: {
+        supplier: (s) => s.supplier,
+        contact: (s) => s.contactPerson ?? "",
+        phone: (s) => s.phone ?? "",
+        terms: (s) => s.paymentTerms ?? "",
+        qty: (s) => s.qty,
+        cost: (s) => s.cost,
+      },
+    },
+  );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -101,16 +128,46 @@ export function PurchaseReportPage() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted hover:bg-muted">
-                    <TableHead>Date</TableHead>
-                    <TableHead>Supplier</TableHead>
-                    <TableHead>Item</TableHead>
-                    <TableHead className="text-right">Qty</TableHead>
-                    <TableHead className="text-right">Unit Cost</TableHead>
-                    <TableHead className="text-right">Line Total</TableHead>
+                    <SortableTableHead sortKey="date" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                      Date
+                    </SortableTableHead>
+                    <SortableTableHead sortKey="supplier" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                      Supplier
+                    </SortableTableHead>
+                    <SortableTableHead sortKey="item" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                      Item
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="qty"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      Qty
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="unitCost"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      Unit Cost
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="lineTotal"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      Line Total
+                    </SortableTableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {rows.map((row, i) => (
+                  {sortedRows.map((row, i) => (
                     <TableRow key={i}>
                       <TableCell className="tnum">{formatDate(row.purchaseDate)}</TableCell>
                       <TableCell className="max-w-[18rem] break-words text-muted-foreground">
@@ -160,16 +217,40 @@ export function PurchaseReportPage() {
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead>Supplier</TableHead>
-                <TableHead>Contact</TableHead>
-                <TableHead>Phone</TableHead>
-                <TableHead>Terms</TableHead>
-                <TableHead className="text-right">Qty</TableHead>
-                <TableHead className="text-right">Cost</TableHead>
+                <SortableTableHead sortKey="supplier" activeKey={bySupplierSortKey} direction={bySupplierSortDirection} onSort={toggleBySupplierSort}>
+                  Supplier
+                </SortableTableHead>
+                <SortableTableHead sortKey="contact" activeKey={bySupplierSortKey} direction={bySupplierSortDirection} onSort={toggleBySupplierSort}>
+                  Contact
+                </SortableTableHead>
+                <SortableTableHead sortKey="phone" activeKey={bySupplierSortKey} direction={bySupplierSortDirection} onSort={toggleBySupplierSort}>
+                  Phone
+                </SortableTableHead>
+                <SortableTableHead sortKey="terms" activeKey={bySupplierSortKey} direction={bySupplierSortDirection} onSort={toggleBySupplierSort}>
+                  Terms
+                </SortableTableHead>
+                <SortableTableHead
+                  sortKey="qty"
+                  activeKey={bySupplierSortKey}
+                  direction={bySupplierSortDirection}
+                  onSort={toggleBySupplierSort}
+                  className="text-right"
+                >
+                  Qty
+                </SortableTableHead>
+                <SortableTableHead
+                  sortKey="cost"
+                  activeKey={bySupplierSortKey}
+                  direction={bySupplierSortDirection}
+                  onSort={toggleBySupplierSort}
+                  className="text-right"
+                >
+                  Cost
+                </SortableTableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {report.data.bySupplier.map((s) => (
+              {sortedBySupplier.map((s) => (
                 <TableRow key={s.supplier}>
                   <TableCell className="max-w-[18rem] break-words font-medium">
                     {s.supplier}

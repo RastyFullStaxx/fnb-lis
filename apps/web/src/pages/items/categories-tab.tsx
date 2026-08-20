@@ -7,6 +7,7 @@ import { categoryUpsert, type CategoryUpsert } from "@fnb/core";
 import { useAddIndustryOption, useCategories, useCreateCategory, useIndustryOptions, useProductTypes, useUpdateCategory } from "@/api/master";
 import type { Category } from "@/api/types";
 import { ApiError } from "@/api/http";
+import { useSort } from "@/hooks/use-sort";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { QuantityInput } from "@/components/quantity-input";
@@ -31,10 +32,10 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 import { TableEmpty, TableFailure, TableLoading, ToolbarSearch, queryFailed } from "@/components/table-surface";
 
 /** Sentinel for the "Other" branch in the Industry select — same convention as AssetDetailsEdit. */
@@ -57,6 +58,14 @@ export function CategoriesTab({
   const rows = (categories.data ?? []).filter(
     (c) => !q || c.name.toLowerCase().includes(q) || c.productType.toLowerCase().includes(q),
   );
+
+  const { sortedRows, sortKey, sortDirection, toggleSort } = useSort(rows, {
+    accessors: {
+      liquidWeight: (c) => c.defaultDensityFactor ?? -Infinity,
+      expires: (c) => (c.defaultPerishable ? 1 : 0),
+      items: (c) => c._count?.items ?? 0,
+    },
+  });
 
   return (
     <>
@@ -84,17 +93,47 @@ export function CategoriesTab({
         <Table>
           <TableHeader>
             <TableRow className="bg-muted hover:bg-muted">
-              <TableHead>Category</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Industry</TableHead>
-              <TableHead className="text-right">Liquid Weight (default)</TableHead>
-              <TableHead className="text-right">Expires</TableHead>
-              <TableHead className="text-right">Items</TableHead>
-              <TableHead className="w-20" />
+              <SortableTableHead sortKey="name" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                Category
+              </SortableTableHead>
+              <SortableTableHead sortKey="productType" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                Type
+              </SortableTableHead>
+              <SortableTableHead sortKey="industry" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                Industry
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="liquidWeight"
+                activeKey={sortKey}
+                direction={sortDirection}
+                onSort={toggleSort}
+                className="text-right"
+              >
+                Liquid Weight (default)
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="expires"
+                activeKey={sortKey}
+                direction={sortDirection}
+                onSort={toggleSort}
+                className="text-right"
+              >
+                Expires
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="items"
+                activeKey={sortKey}
+                direction={sortDirection}
+                onSort={toggleSort}
+                className="text-right"
+              >
+                Items
+              </SortableTableHead>
+              <SortableTableHead sortable={false} className="w-20" />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.map((cat) => (
+            {sortedRows.map((cat) => (
               <TableRow key={cat.id}>
                 <TableCell className="font-medium">{cat.name}</TableCell>
                 <TableCell className="text-muted-foreground">{cat.productType}</TableCell>

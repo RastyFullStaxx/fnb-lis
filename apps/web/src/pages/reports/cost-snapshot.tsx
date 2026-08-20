@@ -6,6 +6,7 @@ import { useCountDates } from "@/api/ops";
 import { useLocationId } from "@/api/location";
 import { exportUrl, useCostSnapshotReport } from "@/api/reports";
 import { formatMoney, formatNumber, formatDate, formatUnitPrice } from "@/lib/utils";
+import { useSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarField, ToolbarSearch, queryFailed } from "@/components/table-surface";
@@ -26,10 +27,10 @@ import {
   TableBody,
   TableCell,
   TableFooter,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 
 
 /**
@@ -69,6 +70,17 @@ export function CostSnapshotPage() {
       .slice(0, 8)
       .map((r) => ({ label: r.name, value: round2(r.value) }));
   }, [report.data]);
+
+  const { sortedRows, sortKey, sortDirection, toggleSort } = useSort(rows, {
+    accessors: {
+      item: (r) => r.name,
+      uom: (r) => r.uom,
+      qty: (r) => r.qty,
+      cost: (r) => r.cost,
+      value: (r) => r.value,
+      basis: (r) => r.basis,
+    },
+  });
 
   if (!countDates.isPending && dates.length === 0) {
     return (
@@ -173,16 +185,46 @@ export function CostSnapshotPage() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted hover:bg-muted">
-                    <TableHead>Item</TableHead>
-                    <TableHead>UOM</TableHead>
-                    <TableHead className="text-right">Qty</TableHead>
-                    <TableHead className="text-right">Cost Price</TableHead>
-                    <TableHead className="text-right">Value</TableHead>
-                    <TableHead>Cost Basis</TableHead>
+                    <SortableTableHead sortKey="item" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                      Item
+                    </SortableTableHead>
+                    <SortableTableHead sortKey="uom" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                      UOM
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="qty"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      Qty
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="cost"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      Cost Price
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="value"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      Value
+                    </SortableTableHead>
+                    <SortableTableHead sortKey="basis" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                      Cost Basis
+                    </SortableTableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {rows.map((row, i) => (
+                  {sortedRows.map((row, i) => (
                     <TableRow key={i}>
                       <TableCell className="max-w-[22rem] font-medium break-words">{row.name}</TableCell>
                       <TableCell className="text-muted-foreground">{row.uom}</TableCell>

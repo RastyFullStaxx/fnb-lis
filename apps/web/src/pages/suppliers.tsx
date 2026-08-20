@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router";
+import { useSort } from "@/hooks/use-sort";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Truck } from "lucide-react";
@@ -40,10 +41,10 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 
 /** Radix Select has no empty-string value, so "not set" needs a sentinel. */
 const NO_TERMS = "__none__";
@@ -63,6 +64,13 @@ export function SuppliersPage() {
     const matchesSearch =
       !q || s.name.toLowerCase().includes(q) || (s.contactInfo ?? "").toLowerCase().includes(q);
     return matchesStatus && matchesSearch;
+  });
+
+  const { sortedRows, sortKey, sortDirection, toggleSort } = useSort(filtered, {
+    accessors: {
+      terms: (s) => (s.paymentTerms ? PAYMENT_TERMS_LABELS[s.paymentTerms] : ""),
+      status: (s) => (s.isActive ? 1 : 0),
+    },
   });
 
   return (
@@ -126,16 +134,32 @@ export function SuppliersPage() {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted hover:bg-muted">
-                <TableHead>Supplier</TableHead>
-                <TableHead>Contact</TableHead>
-                <TableHead>Phone</TableHead>
-                <TableHead>Terms</TableHead>
-                <TableHead className="text-right">Status</TableHead>
-                <TableHead className="w-20" />
+                <SortableTableHead sortKey="name" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Supplier
+                </SortableTableHead>
+                <SortableTableHead sortKey="contactPerson" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Contact
+                </SortableTableHead>
+                <SortableTableHead sortKey="phone" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Phone
+                </SortableTableHead>
+                <SortableTableHead sortKey="terms" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Terms
+                </SortableTableHead>
+                <SortableTableHead
+                  sortKey="status"
+                  activeKey={sortKey}
+                  direction={sortDirection}
+                  onSort={toggleSort}
+                  className="text-right"
+                >
+                  Status
+                </SortableTableHead>
+                <SortableTableHead sortable={false} className="w-20" />
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((s) => (
+              {sortedRows.map((s) => (
                 <TableRow key={s.id} className={s.isActive ? undefined : "opacity-60"}>
                   <TableCell className="max-w-[22rem] font-medium break-words">{s.name}</TableCell>
                   <TableCell

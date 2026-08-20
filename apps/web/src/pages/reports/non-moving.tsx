@@ -6,6 +6,7 @@ import { useMe } from "@/api/auth";
 import { exportUrl, useNonMovingReport } from "@/api/reports";
 import { useIncludeHiddenInReports } from "@/api/settings";
 import { formatMoney, formatNumber, formatUnitPrice } from "@/lib/utils";
+import { useSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
 import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarSearch, queryFailed } from "@/components/table-surface";
 import { ExportButtons } from "@/components/report-toolbar";
@@ -18,10 +19,10 @@ import {
   TableBody,
   TableCell,
   TableFooter,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 
 
 const DEAD_BAR_CAP = 8;
@@ -61,6 +62,17 @@ export function NonMovingReportPage() {
       .slice(0, DEAD_BAR_CAP)
       .map((r) => ({ label: r.name, value: round2(r.costValue) }));
   }, [report.data]);
+
+  const { sortedRows, sortKey, sortDirection, toggleSort } = useSort(rows, {
+    accessors: {
+      item: (r) => r.name,
+      category: (r) => r.category,
+      onHand: (r) => r.onHand,
+      cost: (r) => r.cost,
+      costValue: (r) => r.costValue,
+      retailValue: (r) => r.retailValue,
+    },
+  });
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -118,16 +130,52 @@ export function NonMovingReportPage() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted hover:bg-muted">
-                    <TableHead>Item</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead className="text-right">On Hand</TableHead>
-                    <TableHead className="text-right">Cost</TableHead>
-                    <TableHead className="text-right">Cost Value</TableHead>
-                    <TableHead className="text-right">Retail Value</TableHead>
+                    <SortableTableHead sortKey="item" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                      Item
+                    </SortableTableHead>
+                    <SortableTableHead sortKey="category" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                      Category
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="onHand"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      On Hand
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="cost"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      Cost
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="costValue"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      Cost Value
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="retailValue"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      Retail Value
+                    </SortableTableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {rows.map((row) => (
+                  {sortedRows.map((row) => (
                     <TableRow key={row.locationItemId}>
                       <TableCell className="max-w-[22rem] font-medium break-words">
                         {row.name}

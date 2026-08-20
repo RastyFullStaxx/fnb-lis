@@ -5,6 +5,7 @@ import { Activity as ActivityIcon } from "lucide-react";
 import { useActivity, type ActivityFilters, type ActivityRow } from "@/api/activity";
 import { useCurrentClient } from "@/api/location";
 import { usePreferencesContext } from "@/lib/preferences";
+import { useSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
 import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarField, ToolbarSearch, queryFailed } from "@/components/table-surface";
 import { Badge } from "@/components/ui/badge";
@@ -14,10 +15,10 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 
 // The server caps a page at this many rows (apps/server/src/routes/activity.ts).
 const PAGE_LIMIT = 200;
@@ -100,6 +101,13 @@ export function AdminActivityPage() {
       to: to || undefined,
     });
 
+  const { sortedRows, sortKey, sortDirection, toggleSort } = useSort(activity.data?.rows ?? [], {
+    accessors: {
+      when: (r) => r.ts,
+      who: (r) => r.userName ?? "System",
+    },
+  });
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader title="Activity" />
@@ -160,14 +168,22 @@ export function AdminActivityPage() {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted hover:bg-muted">
-                <TableHead className="w-44">When</TableHead>
-                <TableHead className="w-36">Who</TableHead>
-                <TableHead>Action</TableHead>
-                <TableHead>Summary</TableHead>
+                <SortableTableHead sortKey="when" activeKey={sortKey} direction={sortDirection} onSort={toggleSort} className="w-44">
+                  When
+                </SortableTableHead>
+                <SortableTableHead sortKey="who" activeKey={sortKey} direction={sortDirection} onSort={toggleSort} className="w-36">
+                  Who
+                </SortableTableHead>
+                <SortableTableHead sortKey="action" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Action
+                </SortableTableHead>
+                <SortableTableHead sortKey="summary" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Summary
+                </SortableTableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {activity.data!.rows.map((r) => {
+              {sortedRows.map((r) => {
                 const priceChange = priceChangeText(r);
                 return (
                   <TableRow key={r.id}>
@@ -187,7 +203,7 @@ export function AdminActivityPage() {
                   </TableRow>
                 );
               })}
-              {activity.data!.rows.length === PAGE_LIMIT && (
+              {sortedRows.length === PAGE_LIMIT && (
                 <TableRow className="hover:bg-transparent">
                   <TableCell colSpan={4} className="py-3 text-center text-xs text-muted-foreground">
                     Showing the latest {PAGE_LIMIT} entries — narrow the date range to see older activity.

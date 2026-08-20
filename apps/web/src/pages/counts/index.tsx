@@ -10,6 +10,7 @@ import { useMe } from "@/api/auth";
 import { useCountMutations, useCountSessions } from "@/api/ops";
 import { useDeviceNames } from "@/api/sync";
 import { ApiError } from "@/api/http";
+import { useSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
 import { ReleaseDraftButton } from "@/components/release-draft-button";
 import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarField, ToolbarSearch, queryFailed } from "@/components/table-surface";
@@ -36,10 +37,10 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 
 
 export function CountsPage() {
@@ -62,8 +63,18 @@ export function CountsPage() {
   })
     // Unfinished work first. A count you can still act on was landing below
     // seven committed ones purely because it was older — the dashboard sends
-    // you here and then makes you hunt for the row it just named.
+    // you here and then makes you hunt for the row it just named. This is
+    // the default order; clicking a column header takes over from here.
     .sort((a, b) => Number(b.status === "OPEN") - Number(a.status === "OPEN"));
+
+  const { sortedRows, sortKey, sortDirection, toggleSort } = useSort(filtered, {
+    accessors: {
+      countDate: (s) => s.countDate,
+      status: (s) => s.status,
+      lines: (s) => s._count?.lines ?? 0,
+      encodedBy: (s) => s.createdByName ?? "",
+    },
+  });
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -138,15 +149,29 @@ export function CountsPage() {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted hover:bg-muted">
-                <TableHead>Count Date</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Lines</TableHead>
-                <TableHead>Encoded By</TableHead>
-                <TableHead className="w-24" />
+                <SortableTableHead sortKey="countDate" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Count Date
+                </SortableTableHead>
+                <SortableTableHead sortKey="status" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Status
+                </SortableTableHead>
+                <SortableTableHead
+                  sortKey="lines"
+                  activeKey={sortKey}
+                  direction={sortDirection}
+                  onSort={toggleSort}
+                  className="text-right"
+                >
+                  Lines
+                </SortableTableHead>
+                <SortableTableHead sortKey="encodedBy" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Encoded By
+                </SortableTableHead>
+                <SortableTableHead sortable={false} className="w-24" />
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((s) => (
+              {sortedRows.map((s) => (
                 <TableRow key={s.id} className={s.status === "VOID" ? "opacity-50" : undefined}>
                   <TableCell className="tnum font-medium">{formatDate(s.countDate)}</TableCell>
                   <TableCell>

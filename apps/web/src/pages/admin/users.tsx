@@ -24,6 +24,7 @@ import {
 } from "@/api/admin";
 import { useMe } from "@/api/auth";
 import { ApiError } from "@/api/http";
+import { useSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { UserSessionsDialog } from "@/components/user-sessions-dialog";
@@ -46,10 +47,10 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 import {
   Dialog,
   DialogContent,
@@ -142,6 +143,20 @@ export function AdminUsersPage() {
         : u.clientAccess.some((a) => a.client.subscription?.billingCycle === billingFilter));
 
     return matchesStatus && matchesSearch && matchesPkg && matchesModule && matchesBilling;
+  });
+
+  const { sortedRows, sortKey, sortDirection, toggleSort } = useSort(filtered, {
+    accessors: {
+      name: (u) => `${u.firstName} ${u.lastName}`,
+      role: (u) => ROLE_LABELS[u.role] ?? u.role,
+      clients: (u) => u.clientAccess.map((a) => a.client.name).join(", "),
+      modules: (u) =>
+        u.clientAccess
+          .flatMap((a) => a.client.subscription?.modules ?? [])
+          .map((m) => MODULE_TYPE_LABELS[m as ModuleType] ?? m)
+          .join(", "),
+      status: (u) => (u.status === "ACTIVE" ? 0 : 1),
+    },
   });
 
   // `editing` only tracks which row's dialog is open (set once, on click).
@@ -249,16 +264,26 @@ export function AdminUsersPage() {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted hover:bg-muted">
-                <TableHead>User</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead className="w-64">Clients / Packages</TableHead>
-                <TableHead className="w-40">Modules</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="w-16" />
+                <SortableTableHead sortKey="name" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  User
+                </SortableTableHead>
+                <SortableTableHead sortKey="role" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Role
+                </SortableTableHead>
+                <SortableTableHead sortKey="clients" activeKey={sortKey} direction={sortDirection} onSort={toggleSort} className="w-64">
+                  Clients / Packages
+                </SortableTableHead>
+                <SortableTableHead sortKey="modules" activeKey={sortKey} direction={sortDirection} onSort={toggleSort} className="w-40">
+                  Modules
+                </SortableTableHead>
+                <SortableTableHead sortKey="status" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Status
+                </SortableTableHead>
+                <SortableTableHead sortable={false} className="w-16" />
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((u) => (
+              {sortedRows.map((u) => (
                 <TableRow key={u.id} className={u.status === "DISABLED" ? "opacity-60" : undefined}>
                   <TableCell>
                     <div className="font-medium">

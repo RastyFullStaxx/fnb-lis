@@ -10,6 +10,7 @@ import { displayVariantLabel } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { cn } from "@/lib/utils";
 import { useItemDisplayUnit } from "@/lib/preferences";
+import { useSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarSearch, queryFailed } from "@/components/table-surface";
@@ -34,10 +35,10 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 import { Toggle } from "@/components/toggle-chip";
 import { AttachItemDialog } from "./attach-dialog";
 import { PriceEdit } from "./price-edit";
@@ -143,6 +144,27 @@ export function StockPage() {
   // 13" laptop that is width taken from the numbers people came to read.
   const showAssetDetails = locationModules.includes("ASSET");
 
+  const { sortedRows, sortKey, sortDirection, toggleSort } = useSort(rows.data ?? [], {
+    accessors: {
+      item: (r) => r.itemVariant.item.name,
+      category: (r) => r.itemVariant.item.category.name,
+      cost: (r) => r.cost ?? 0,
+      par: (r) => r.parLevel ?? -Infinity,
+      weight: (r) =>
+        resolveBottleWeights(r, r.itemVariant, r.itemVariant.item.category.defaultDensityFactor).tareWeight ??
+        -Infinity,
+      status: (r) => {
+        const missing = isMissingPrice(r, r.itemVariant.item.category.productType);
+        const weigh = weighInfo(r);
+        if (missing) return 0;
+        if (weigh.incomplete) return 1;
+        if (r.itemVariant.weightReviewNote) return 2;
+        return 3;
+      },
+      expires: (r) => (resolveIsPerishable(r, r.itemVariant.item.category.defaultPerishable) ? 1 : 0),
+    },
+  });
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader
@@ -244,13 +266,37 @@ export function StockPage() {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted hover:bg-muted">
-                <TableHead>Item</TableHead>
+                <SortableTableHead sortKey="item" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Item
+                </SortableTableHead>
                 {/* Category costs ~120px it can't justify on a 13" laptop, so
                     below 2xl it moves under the item name instead of being
                     dropped — same information, no horizontal scroll. */}
-                <TableHead className="hidden 2xl:table-cell">Category</TableHead>
-                <TableHead className="text-right">Cost / Retail</TableHead>
-                <TableHead className="text-right">
+                <SortableTableHead
+                  sortKey="category"
+                  activeKey={sortKey}
+                  direction={sortDirection}
+                  onSort={toggleSort}
+                  className="hidden 2xl:table-cell"
+                >
+                  Category
+                </SortableTableHead>
+                <SortableTableHead
+                  sortKey="cost"
+                  activeKey={sortKey}
+                  direction={sortDirection}
+                  onSort={toggleSort}
+                  className="text-right"
+                >
+                  Cost / Retail
+                </SortableTableHead>
+                <SortableTableHead
+                  sortKey="par"
+                  activeKey={sortKey}
+                  direction={sortDirection}
+                  onSort={toggleSort}
+                  className="text-right"
+                >
                   {/* "Par" is bar-trade jargon — keep it for the pros, but a
                       hover note spells it out for everyone else. */}
                   <TooltipProvider>
@@ -265,18 +311,39 @@ export function StockPage() {
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
-                </TableHead>
+                </SortableTableHead>
                 {/* The weigh control lives in this cell rather than a column of
                     its own — a reserved column costs horizontal scroll on a
                     laptop, which is where counting actually happens. */}
                 {/* The second number is millilitres per unit of the first, and
                     rendered bare it read as an unexplained "1.0625". The header
                     is the only place with room to say so. */}
-                <TableHead className="text-right" title="Empty bottle weight, and millilitres of content per unit of that weight">
+                <SortableTableHead
+                  sortKey="weight"
+                  activeKey={sortKey}
+                  direction={sortDirection}
+                  onSort={toggleSort}
+                  className="text-right"
+                  title="Empty bottle weight, and millilitres of content per unit of that weight"
+                >
                   Empty Weight / ml per unit
-                </TableHead>
-                <TableHead className="text-right">Status</TableHead>
-                <TableHead className="text-right">
+                </SortableTableHead>
+                <SortableTableHead
+                  sortKey="status"
+                  activeKey={sortKey}
+                  direction={sortDirection}
+                  onSort={toggleSort}
+                  className="text-right"
+                >
+                  Status
+                </SortableTableHead>
+                <SortableTableHead
+                  sortKey="expires"
+                  activeKey={sortKey}
+                  direction={sortDirection}
+                  onSort={toggleSort}
+                  className="text-right"
+                >
                   {/* Whether this row needs an expiry date at receiving —
                       resolved from the category default unless overridden
                       here (expiry-date-plan.md). */}
@@ -293,12 +360,12 @@ export function StockPage() {
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
-                </TableHead>
-                {showAssetDetails && <TableHead className="text-right">Asset Details</TableHead>}
+                </SortableTableHead>
+                {showAssetDetails && <SortableTableHead sortable={false} className="text-right">Asset Details</SortableTableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.data!.map((row) => {
+              {sortedRows.map((row) => {
                 const missing = isMissingPrice(row, row.itemVariant.item.category.productType);
                 const weigh = weighInfo(row);
                 const isAsset = row.itemVariant.item.category.productType === "Asset";

@@ -10,6 +10,7 @@ import { useTransfer, useTransferMutations } from "@/api/ops";
 import { variantLabel, type LocationItem, type TransferLine } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { formatMoney } from "@/lib/utils";
+import { useSort } from "@/hooks/use-sort";
 import { EntryActions } from "@/components/entry-fact";
 import { ItemCombobox } from "@/components/item-combobox";
 import { VoidDialog } from "@/components/void-dialog";
@@ -44,10 +45,10 @@ import {
   TableBody,
   TableCell,
   TableFooter,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 import { cn } from "@/lib/utils";
 
 export function TransferEditorPage() {
@@ -137,6 +138,16 @@ export function TransferEditorPage() {
   const canVoidReceipt = !isSource && can(role, "entries.void");
   const activeLines = t.lines.filter((l) => l.status === "ACTIVE");
   const total = activeLines.reduce((s, l) => s + l.lineTotal, 0);
+
+  const { sortedRows: sortedLines, sortKey, sortDirection, toggleSort } = useSort(t.lines, {
+    accessors: {
+      item: (l) => l.locationItem.itemVariant.item.name,
+      sent: (l) => l.qty,
+      received: (l) => l.receipts[0]?.qtyReceived ?? -Infinity,
+      unitCost: (l) => l.unitCost,
+      total: (l) => l.lineTotal,
+    },
+  });
 
   const addLine = async () => {
     if (!item) return;
@@ -235,12 +246,46 @@ export function TransferEditorPage() {
         <Table>
           <TableHeader>
             <TableRow className="bg-muted hover:bg-muted">
-              <TableHead>Item</TableHead>
-              <TableHead className="text-right">Sent</TableHead>
-              <TableHead className="text-right">Received</TableHead>
-              <TableHead className="text-right">Unit Cost</TableHead>
-              <TableHead className="text-right">Total</TableHead>
-              <TableHead className="w-16" />
+              <SortableTableHead sortKey="item" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                Item
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="sent"
+                activeKey={sortKey}
+                direction={sortDirection}
+                onSort={toggleSort}
+                className="text-right"
+              >
+                Sent
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="received"
+                activeKey={sortKey}
+                direction={sortDirection}
+                onSort={toggleSort}
+                className="text-right"
+              >
+                Received
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="unitCost"
+                activeKey={sortKey}
+                direction={sortDirection}
+                onSort={toggleSort}
+                className="text-right"
+              >
+                Unit Cost
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="total"
+                activeKey={sortKey}
+                direction={sortDirection}
+                onSort={toggleSort}
+                className="text-right"
+              >
+                Total
+              </SortableTableHead>
+              <SortableTableHead sortable={false} className="w-16" />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -251,7 +296,7 @@ export function TransferEditorPage() {
                 </TableCell>
               </TableRow>
             ) : (
-              t.lines.map((line) => {
+              sortedLines.map((line) => {
                 const voided = line.status === "VOID";
                 const receipt = line.receipts[0];
                 const short = receipt !== undefined && receipt.qtyReceived < line.qty;

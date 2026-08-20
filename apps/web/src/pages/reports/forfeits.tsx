@@ -5,6 +5,7 @@ import { useCountDates } from "@/api/ops";
 import { useLocationId } from "@/api/location";
 import { exportUrl, useForfeitsReport } from "@/api/reports";
 import { formatMoney, formatNumber, formatDate } from "@/lib/utils";
+import { useSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
 import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarSearch, queryFailed } from "@/components/table-surface";
 import { DateRangeControl, ExportButtons } from "@/components/report-toolbar";
@@ -15,10 +16,10 @@ import {
   TableBody,
   TableCell,
   TableFooter,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 import { useReportRange } from "./use-report-range";
 
 
@@ -39,6 +40,18 @@ export function ForfeitsReportPage() {
     const q = query.trim().toLowerCase();
     return q ? all.filter((r) => r.name.toLowerCase().includes(q)) : all;
   }, [report.data, query]);
+
+  const { sortedRows, sortKey, sortDirection, toggleSort } = useSort(rows, {
+    accessors: {
+      date: (r) => r.date,
+      item: (r) => r.name,
+      uom: (r) => r.uom,
+      qty: (r) => r.qty,
+      contentEquiv: (r) => r.contentEquiv,
+      cost: (r) => r.costValue,
+      retail: (r) => r.retailValue,
+    },
+  });
 
   // The report lists one line per return, so the same bottle recurs across
   // dates — rolled up by item it answers the question the table can't: which
@@ -108,17 +121,55 @@ export function ForfeitsReportPage() {
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted hover:bg-muted">
-                  <TableHead>Date</TableHead>
-                  <TableHead>Item</TableHead>
-                  <TableHead>UOM</TableHead>
-                  <TableHead className="text-right">Qty</TableHead>
-                  <TableHead className="text-right">Open Content (Units)</TableHead>
-                  <TableHead className="text-right">At Cost</TableHead>
-                  <TableHead className="text-right">At Retail</TableHead>
+                  <SortableTableHead sortKey="date" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                    Date
+                  </SortableTableHead>
+                  <SortableTableHead sortKey="item" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                    Item
+                  </SortableTableHead>
+                  <SortableTableHead sortKey="uom" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                    UOM
+                  </SortableTableHead>
+                  <SortableTableHead
+                    sortKey="qty"
+                    activeKey={sortKey}
+                    direction={sortDirection}
+                    onSort={toggleSort}
+                    className="text-right"
+                  >
+                    Qty
+                  </SortableTableHead>
+                  <SortableTableHead
+                    sortKey="contentEquiv"
+                    activeKey={sortKey}
+                    direction={sortDirection}
+                    onSort={toggleSort}
+                    className="text-right"
+                  >
+                    Open Content (Units)
+                  </SortableTableHead>
+                  <SortableTableHead
+                    sortKey="cost"
+                    activeKey={sortKey}
+                    direction={sortDirection}
+                    onSort={toggleSort}
+                    className="text-right"
+                  >
+                    At Cost
+                  </SortableTableHead>
+                  <SortableTableHead
+                    sortKey="retail"
+                    activeKey={sortKey}
+                    direction={sortDirection}
+                    onSort={toggleSort}
+                    className="text-right"
+                  >
+                    At Retail
+                  </SortableTableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((row, i) => (
+                {sortedRows.map((row, i) => (
                   <TableRow key={i}>
                     <TableCell className="tnum">{formatDate(row.date)}</TableCell>
                     {/* Wrapped, not truncated — an auditor has to read the whole

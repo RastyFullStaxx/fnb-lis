@@ -6,6 +6,7 @@ import { useMe } from "@/api/auth";
 import { exportUrl, useParLevelReport } from "@/api/reports";
 import { useIncludeHiddenInReports } from "@/api/settings";
 import { formatMoney, formatNumber, formatDate } from "@/lib/utils";
+import { useSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
 import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarSearch, queryFailed } from "@/components/table-surface";
 import { ExportButtons } from "@/components/report-toolbar";
@@ -18,10 +19,10 @@ import {
   TableBody,
   TableCell,
   TableFooter,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 import { cn } from "@/lib/utils";
 
 
@@ -71,6 +72,18 @@ export function ParLevelReportPage() {
       .slice(0, REORDER_BAR_CAP)
       .map((r) => ({ label: r.name, value: round2(r.orderValue) }));
   }, [report.data]);
+
+  const { sortedRows, sortKey, sortDirection, toggleSort } = useSort(rows, {
+    accessors: {
+      item: (r) => r.name,
+      category: (r) => r.category,
+      onHand: (r) => r.onHand,
+      par: (r) => r.parLevel ?? -Infinity,
+      used: (r) => r.usage ?? -Infinity,
+      suggestedOrder: (r) => r.suggestedOrder,
+      orderValue: (r) => r.orderValue,
+    },
+  });
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -133,17 +146,63 @@ export function ParLevelReportPage() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted hover:bg-muted">
-                    <TableHead>Item</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead className="text-right">On Hand</TableHead>
-                    <TableHead className="text-right">Par</TableHead>
-                    {showUsage && <TableHead className="text-right">Used (last period)</TableHead>}
-                    <TableHead className="text-right">Suggested Order</TableHead>
-                    <TableHead className="text-right">Order Value</TableHead>
+                    <SortableTableHead sortKey="item" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                      Item
+                    </SortableTableHead>
+                    <SortableTableHead sortKey="category" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                      Category
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="onHand"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      On Hand
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="par"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      Par
+                    </SortableTableHead>
+                    {showUsage && (
+                      <SortableTableHead
+                        sortKey="used"
+                        activeKey={sortKey}
+                        direction={sortDirection}
+                        onSort={toggleSort}
+                        className="text-right"
+                      >
+                        Used (last period)
+                      </SortableTableHead>
+                    )}
+                    <SortableTableHead
+                      sortKey="suggestedOrder"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      Suggested Order
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="orderValue"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      Order Value
+                    </SortableTableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {rows.map((row) => (
+                  {sortedRows.map((row) => (
                     <TableRow key={row.locationItemId} className={cn(row.belowPar && "bg-warning/5")}>
                       <TableCell className="max-w-[22rem] font-medium break-words">
                         {row.name}

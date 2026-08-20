@@ -5,6 +5,7 @@ import { useLocationId } from "@/api/location";
 import { useCountDates } from "@/api/ops";
 import { exportUrl, useSalesReport, type SalesReportView } from "@/api/reports";
 import { formatMoney, formatNumber, formatDate } from "@/lib/utils";
+import { useSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
 import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarField, ToolbarSearch, queryFailed } from "@/components/table-surface";
 import { DateRangeControl, ExportButtons } from "@/components/report-toolbar";
@@ -18,10 +19,10 @@ import {
   TableBody,
   TableCell,
   TableFooter,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 import { useReportRange } from "./use-report-range";
 
 
@@ -58,6 +59,19 @@ export function SalesReportPage() {
       .sort(([a], [b]) => (a < b ? -1 : 1))
       .map(([date, net]) => ({ label: shortDate(date), value: round2(net), tooltipLabel: date }));
   }, [report.data]);
+
+  const { sortedRows, sortKey, sortDirection, toggleSort } = useSort(rows, {
+    accessors: {
+      date: (r) => r.saleDate,
+      item: (r) => r.name,
+      category: (r) => r.category ?? "",
+      qty: (r) => r.qty,
+      unitPrice: (r) => r.unitPrice,
+      discount: (r) => r.discountPct ?? -Infinity,
+      gross: (r) => r.gross,
+      net: (r) => r.net,
+    },
+  });
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -138,18 +152,64 @@ export function SalesReportPage() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted hover:bg-muted">
-                    <TableHead>Date</TableHead>
-                    <TableHead>Item / Menu</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead className="text-right">Qty</TableHead>
-                    <TableHead className="text-right">Unit Price</TableHead>
-                    <TableHead className="text-right">Disc.</TableHead>
-                    <TableHead className="text-right">Gross</TableHead>
-                    <TableHead className="text-right">Net</TableHead>
+                    <SortableTableHead sortKey="date" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                      Date
+                    </SortableTableHead>
+                    <SortableTableHead sortKey="item" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                      Item / Menu
+                    </SortableTableHead>
+                    <SortableTableHead sortKey="category" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                      Category
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="qty"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      Qty
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="unitPrice"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      Unit Price
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="discount"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      Disc.
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="gross"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      Gross
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="net"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      Net
+                    </SortableTableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {rows.map((row, i) => (
+                  {sortedRows.map((row, i) => (
                     <TableRow key={i}>
                       <TableCell className="tnum">{formatDate(row.saleDate)}</TableCell>
                       <TableCell className="max-w-[22rem] break-words font-medium">

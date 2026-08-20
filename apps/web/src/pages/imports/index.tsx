@@ -6,6 +6,7 @@ import { useMe } from "@/api/auth";
 import { useLocationId } from "@/api/location";
 import { useImportBatches, useUploadImport, type ImportKind } from "@/api/imports";
 import { ApiError } from "@/api/http";
+import { useSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
 import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarField, ToolbarSearch, queryFailed } from "@/components/table-surface";
 import { Badge } from "@/components/ui/badge";
@@ -29,10 +30,10 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 import { cn, formatDate } from "@/lib/utils";
 
 export const KIND_LABELS: Record<string, string> = {
@@ -69,6 +70,18 @@ export function ImportsPage() {
     const matchesKind = kind === "ALL" || b.kind === kind;
     const matchesSearch = !q || b.fileName.toLowerCase().includes(q);
     return matchesKind && matchesSearch;
+  });
+
+  const { sortedRows, sortKey, sortDirection, toggleSort } = useSort(filtered, {
+    accessors: {
+      file: (b) => b.fileName,
+      uploaded: (b) => b.createdAt,
+      type: (b) => KIND_LABELS[b.kind] ?? b.kind,
+      source: (b) => SOURCE_LABELS[b.sourceType] ?? b.sourceType,
+      status: (b) => STATUS_BADGE[b.status]?.label ?? b.status,
+      rows: (b) => b._count?.rows ?? 0,
+      uploadedBy: (b) => b.createdByName ?? "",
+    },
   });
 
   return (
@@ -143,18 +156,38 @@ export function ImportsPage() {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted hover:bg-muted">
-                <TableHead>File</TableHead>
-                <TableHead>Uploaded</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Source</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Rows</TableHead>
-                <TableHead>Uploaded By</TableHead>
-                <TableHead className="w-24" />
+                <SortableTableHead sortKey="file" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  File
+                </SortableTableHead>
+                <SortableTableHead sortKey="uploaded" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Uploaded
+                </SortableTableHead>
+                <SortableTableHead sortKey="type" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Type
+                </SortableTableHead>
+                <SortableTableHead sortKey="source" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Source
+                </SortableTableHead>
+                <SortableTableHead sortKey="status" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Status
+                </SortableTableHead>
+                <SortableTableHead
+                  sortKey="rows"
+                  activeKey={sortKey}
+                  direction={sortDirection}
+                  onSort={toggleSort}
+                  className="text-right"
+                >
+                  Rows
+                </SortableTableHead>
+                <SortableTableHead sortKey="uploadedBy" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Uploaded By
+                </SortableTableHead>
+                <SortableTableHead sortable={false} className="w-24" />
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((b) => (
+              {sortedRows.map((b) => (
                 <TableRow key={b.id} className={cn(b.status === "REVERSED" && "opacity-60")}>
                   <TableCell className="max-w-56 truncate font-medium" title={b.fileName}>{b.fileName}</TableCell>
                   <TableCell className="tnum text-muted-foreground">{formatDate(b.createdAt.slice(0, 10))}</TableCell>

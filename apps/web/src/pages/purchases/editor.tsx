@@ -10,6 +10,7 @@ import { usePurchase, usePurchaseMutations } from "@/api/ops";
 import { variantLabel, type LocationItem, type PurchaseLine } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { formatMoney, formatDate } from "@/lib/utils";
+import { useSort } from "@/hooks/use-sort";
 import { EntryActions } from "@/components/entry-fact";
 import { ItemCombobox } from "@/components/item-combobox";
 import { TableFailure, TableSurface, queryPaused } from "@/components/table-surface";
@@ -44,10 +45,10 @@ import {
   TableBody,
   TableCell,
   TableFooter,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 import { cn } from "@/lib/utils";
 
 export function PurchaseEditorPage() {
@@ -116,6 +117,16 @@ export function PurchaseEditorPage() {
   const canEdit = canVoid && can(role, "entries.create");
   const activeLines = p.lines.filter((l) => l.status === "ACTIVE");
   const total = activeLines.reduce((s, l) => s + l.lineTotal, 0);
+
+  const { sortedRows: sortedLines, sortKey, sortDirection, toggleSort } = useSort(p.lines, {
+    accessors: {
+      item: (l) => l.locationItem.itemVariant.item.name,
+      qty: (l) => l.qty,
+      unitCost: (l) => l.unitCost,
+      total: (l) => l.lineTotal,
+      expiry: (l) => l.expiryDate ?? "",
+    },
+  });
 
   const pickItem = (li: LocationItem) => {
     setItem(li);
@@ -285,23 +296,51 @@ export function PurchaseEditorPage() {
         <Table>
           <TableHeader>
             <TableRow className="bg-muted hover:bg-muted">
-              <TableHead>Item</TableHead>
-              <TableHead className="text-right">Qty</TableHead>
-              <TableHead className="text-right">Unit Cost</TableHead>
-              <TableHead className="text-right">Total</TableHead>
-              <TableHead>Expiry</TableHead>
-              <TableHead className="w-32" />
+              <SortableTableHead sortKey="item" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                Item
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="qty"
+                activeKey={sortKey}
+                direction={sortDirection}
+                onSort={toggleSort}
+                className="text-right"
+              >
+                Qty
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="unitCost"
+                activeKey={sortKey}
+                direction={sortDirection}
+                onSort={toggleSort}
+                className="text-right"
+              >
+                Unit Cost
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="total"
+                activeKey={sortKey}
+                direction={sortDirection}
+                onSort={toggleSort}
+                className="text-right"
+              >
+                Total
+              </SortableTableHead>
+              <SortableTableHead sortKey="expiry" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                Expiry
+              </SortableTableHead>
+              <SortableTableHead sortable={false} className="w-32" />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {p.lines.length === 0 ? (
+            {sortedLines.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
                   No lines yet — add the delivered items above.
                 </TableCell>
               </TableRow>
             ) : (
-              p.lines.map((line) => {
+              sortedLines.map((line) => {
                 const voided = line.status === "VOID";
                 return (
                   <TableRow key={line.id} className={cn(voided && "opacity-50")}>

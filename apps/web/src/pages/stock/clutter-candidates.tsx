@@ -5,6 +5,7 @@ import { round2 } from "@fnb/core";
 import { useClutterCandidatesReport, useHideLocationItem } from "@/api/location";
 import { ApiError } from "@/api/http";
 import { formatMoney, formatNumber, formatUnitPrice } from "@/lib/utils";
+import { useSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
 import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarSearch, queryFailed } from "@/components/table-surface";
 import { ChartBlock } from "@/components/charts/chart-block";
@@ -15,10 +16,10 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 
 const CLUTTER_BAR_CAP = 8;
 
@@ -54,6 +55,17 @@ export function ClutterCandidatesPage() {
       .slice(0, CLUTTER_BAR_CAP)
       .map((r) => ({ label: r.name, value: round2(r.costValue) }));
   }, [report.data]);
+
+  const { sortedRows, sortKey, sortDirection, toggleSort } = useSort(rows, {
+    accessors: {
+      item: (r) => r.name,
+      category: (r) => r.category,
+      onHand: (r) => r.onHand,
+      cost: (r) => (r.onHand > 0 ? r.costValue / r.onHand : -Infinity),
+      costValue: (r) => r.costValue,
+      checked: (r) => r.monthsChecked,
+    },
+  });
 
   const onHide = async (locationItemId: string, name: string) => {
     try {
@@ -111,17 +123,55 @@ export function ClutterCandidatesPage() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted hover:bg-muted">
-                    <TableHead>Item</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead className="text-right">On Hand</TableHead>
-                    <TableHead className="text-right">Cost</TableHead>
-                    <TableHead className="text-right">Cost Value</TableHead>
-                    <TableHead className="text-right">Checked</TableHead>
-                    <TableHead className="text-right">Action</TableHead>
+                    <SortableTableHead sortKey="item" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                      Item
+                    </SortableTableHead>
+                    <SortableTableHead sortKey="category" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                      Category
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="onHand"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      On Hand
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="cost"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      Cost
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="costValue"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      Cost Value
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="checked"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      Checked
+                    </SortableTableHead>
+                    <SortableTableHead sortable={false} className="text-right">
+                      Action
+                    </SortableTableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {rows.map((row) => (
+                  {sortedRows.map((row) => (
                     <TableRow key={row.locationItemId}>
                       <TableCell className="max-w-[22rem] font-medium break-words">{row.name}</TableCell>
                       <TableCell className="text-muted-foreground">{row.category}</TableCell>

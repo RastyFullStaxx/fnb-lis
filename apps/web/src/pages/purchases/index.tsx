@@ -10,6 +10,7 @@ import { useForfeitMutations, useForfeits, usePurchaseMutations, usePurchases } 
 import { variantLabel, type Forfeit, type LocationItem } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { formatMoney, formatDate } from "@/lib/utils";
+import { useSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
 import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarField, ToolbarSearch, queryFailed } from "@/components/table-surface";
 import { EntryActions, EntryFact, EntryFacts } from "@/components/entry-fact";
@@ -40,10 +41,10 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -161,8 +162,19 @@ function PurchasesTab({
     return matchesStatus && matchesSearch;
   })
     // Drafts first — same reason as the Counts list: the only rows you can
-    // still finish shouldn't be buried under months of committed ones.
+    // still finish shouldn't be buried under months of committed ones. This
+    // is the default order; clicking a column header takes over from here.
     .sort((a, b) => Number(b.status === "DRAFT") - Number(a.status === "DRAFT"));
+
+  const { sortedRows, sortKey, sortDirection, toggleSort } = useSort(filtered, {
+    accessors: {
+      date: (p) => p.purchaseDate,
+      supplier: (p) => p.supplier?.name ?? "",
+      status: (p) => p.status,
+      lines: (p) => p.lineCount,
+      total: (p) => p.total ?? 0,
+    },
+  });
 
   return (
     <>
@@ -197,16 +209,38 @@ function PurchasesTab({
         <Table>
           <TableHeader>
             <TableRow className="bg-muted hover:bg-muted">
-              <TableHead>Date</TableHead>
-              <TableHead>Supplier / Ref</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Lines</TableHead>
-              <TableHead className="text-right">Total</TableHead>
-              <TableHead className="w-24" />
+              <SortableTableHead sortKey="date" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                Date
+              </SortableTableHead>
+              <SortableTableHead sortKey="supplier" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                Supplier / Ref
+              </SortableTableHead>
+              <SortableTableHead sortKey="status" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                Status
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="lines"
+                activeKey={sortKey}
+                direction={sortDirection}
+                onSort={toggleSort}
+                className="text-right"
+              >
+                Lines
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="total"
+                activeKey={sortKey}
+                direction={sortDirection}
+                onSort={toggleSort}
+                className="text-right"
+              >
+                Total
+              </SortableTableHead>
+              <SortableTableHead sortable={false} className="w-24" />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.map((p) => (
+            {sortedRows.map((p) => (
               <TableRow key={p.id} className={p.status === "VOID" ? "opacity-50" : undefined}>
                 <TableCell className="tnum font-medium">{formatDate(p.purchaseDate)}</TableCell>
                 <TableCell className="max-w-[22rem] break-words text-muted-foreground">

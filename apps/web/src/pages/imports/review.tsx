@@ -8,6 +8,7 @@ import { useImportBatch, useImportRowMutations, type ImportRow } from "@/api/imp
 import { variantLabel } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { formatMoney } from "@/lib/utils";
+import { useSort } from "@/hooks/use-sort";
 import { TableFailure, TableLoading, TableSurface } from "@/components/table-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -37,10 +38,10 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 import { cn } from "@/lib/utils";
 
 const METHOD_BADGE: Record<string, { label: string; className: string }> = {
@@ -140,6 +141,20 @@ export function ImportReviewPage() {
   const editable = b.status === "NEEDS_REVIEW";
   const rows = b.rows;
   const approvedCount = rows.filter((r) => r.status === "APPROVED").length;
+
+  const { sortedRows, sortKey, sortDirection, toggleSort } = useSort(rows, {
+    accessors: {
+      fromFile: (r) => r.itemText,
+      matchedTo: (r) => {
+        const id = r.matchedLocationItemId ?? r.matchedMenuItemId;
+        return id ? (labelMap.get(id) ?? "") : "";
+      },
+      qty: (r) => r.qty ?? -Infinity,
+      amount: (r) => (b.kind === "PURCHASES" ? r.unitCost : r.unitPrice) ?? -Infinity,
+      date: (r) => r.rowDate ?? "",
+      status: (r) => r.status,
+    },
+  });
 
   const setStatus = (row: ImportRow, status: "PENDING" | "APPROVED" | "REJECTED") =>
     mutations.updateRow.mutateAsync({ rowId: row.id, status }).catch((e) => toast.error(e instanceof ApiError ? e.message : "Failed"));
@@ -298,16 +313,46 @@ export function ImportReviewPage() {
         <Table className="w-full table-fixed">
           <TableHeader>
             <TableRow className="bg-muted hover:bg-muted">
-              <TableHead>From File</TableHead>
-              <TableHead>Matched To</TableHead>
-              <TableHead className="w-16 text-right">Qty</TableHead>
-              <TableHead className="w-24 text-right">{b.kind === "PURCHASES" ? "Cost" : "Price"}</TableHead>
-              <TableHead className="w-24">Date</TableHead>
-              <TableHead className="w-28 text-right">{editable ? "Action" : "Status"}</TableHead>
+              <SortableTableHead sortKey="fromFile" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                From File
+              </SortableTableHead>
+              <SortableTableHead sortKey="matchedTo" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                Matched To
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="qty"
+                activeKey={sortKey}
+                direction={sortDirection}
+                onSort={toggleSort}
+                className="w-16 text-right"
+              >
+                Qty
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="amount"
+                activeKey={sortKey}
+                direction={sortDirection}
+                onSort={toggleSort}
+                className="w-24 text-right"
+              >
+                {b.kind === "PURCHASES" ? "Cost" : "Price"}
+              </SortableTableHead>
+              <SortableTableHead sortKey="date" activeKey={sortKey} direction={sortDirection} onSort={toggleSort} className="w-24">
+                Date
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="status"
+                activeKey={sortKey}
+                direction={sortDirection}
+                onSort={toggleSort}
+                className="w-28 text-right"
+              >
+                {editable ? "Action" : "Status"}
+              </SortableTableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.map((row) => (
+            {sortedRows.map((row) => (
               // Rows stay white; a declined row just fades back.
               <TableRow key={row.id} className={cn(row.status === "REJECTED" && "opacity-45")}>
                 {/* whitespace-normal is load-bearing: TableCell defaults to

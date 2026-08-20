@@ -3,6 +3,7 @@ import { Wrench } from "lucide-react";
 import { useLocationId } from "@/api/location";
 import { exportUrl, useAssetRegisterReport } from "@/api/reports";
 import { formatMoney, formatDate, formatNumber } from "@/lib/utils";
+import { useSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
 import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarSearch, queryFailed } from "@/components/table-surface";
 import { ExportButtons } from "@/components/report-toolbar";
@@ -14,10 +15,10 @@ import {
   TableBody,
   TableCell,
   TableFooter,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 
 
 /**
@@ -49,6 +50,26 @@ export function AssetRegisterReportPage() {
         (r.serialNo ?? "").toLowerCase().includes(q),
     );
   }, [report.data, query]);
+
+  const { sortedRows, sortKey, sortDirection, toggleSort } = useSort(rows, {
+    accessors: {
+      assetCode: (r) => r.assetCode,
+      item: (r) => r.name,
+      brand: (r) => [r.brand, r.model].filter(Boolean).join(" / "),
+      category: (r) => r.category,
+      serialNo: (r) => r.serialNo,
+      condition: (r) => r.condition,
+      status: (r) => r.status,
+      industry: (r) => r.industry,
+      qty: (r) => r.qty,
+      initialCost: (r) => r.initialCost,
+      currentCost: (r) => r.currentCost,
+      value: (r) => r.currentValue,
+      supplier: (r) => r.supplier,
+      remarks: (r) => r.remarks,
+      latestNote: (r) => r.latestNote,
+    },
+  });
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -100,27 +121,110 @@ export function AssetRegisterReportPage() {
           <TableEmpty icon={Wrench} title="No rows match the search" description="Try a different code, item, brand, or serial number." />
         ) : (
           <Table>
+            <colgroup>
+              <col />
+              <col />
+              {!compact && <col />}
+              <col />
+              {!compact && <col />}
+              <col />
+              <col />
+              {!compact && <col />}
+              <col className="w-px" />
+              <col className="w-px" />
+              <col className="w-px" />
+              <col className="w-px" />
+              {!compact && <col />}
+              {!compact && <col />}
+              {!compact && <col />}
+            </colgroup>
             <TableHeader>
               <TableRow className="bg-muted hover:bg-muted">
-                <TableHead>Asset Code</TableHead>
-                <TableHead>Item</TableHead>
-                {!compact && <TableHead>Brand / Model</TableHead>}
-                <TableHead>Category</TableHead>
-                {!compact && <TableHead>Serial No.</TableHead>}
-                <TableHead>Condition</TableHead>
-                <TableHead>Status</TableHead>
-                {!compact && <TableHead>Industry</TableHead>}
-                <TableHead className="text-right">Qty</TableHead>
-                <TableHead className="text-right">Initial Cost</TableHead>
-                <TableHead className="text-right">Current Cost</TableHead>
-                <TableHead className="text-right">Value</TableHead>
-                {!compact && <TableHead>Supplier</TableHead>}
-                {!compact && <TableHead>Remarks</TableHead>}
-                {!compact && <TableHead>Last Note</TableHead>}
+                <SortableTableHead sortKey="assetCode" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Asset Code
+                </SortableTableHead>
+                <SortableTableHead sortKey="item" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Item
+                </SortableTableHead>
+                {!compact && (
+                  <SortableTableHead sortKey="brand" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                    Brand / Model
+                  </SortableTableHead>
+                )}
+                <SortableTableHead sortKey="category" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Category
+                </SortableTableHead>
+                {!compact && (
+                  <SortableTableHead sortKey="serialNo" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                    Serial No.
+                  </SortableTableHead>
+                )}
+                <SortableTableHead sortKey="condition" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Condition
+                </SortableTableHead>
+                <SortableTableHead sortKey="status" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Status
+                </SortableTableHead>
+                {!compact && (
+                  <SortableTableHead sortKey="industry" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                    Industry
+                  </SortableTableHead>
+                )}
+                <SortableTableHead
+                  sortKey="qty"
+                  activeKey={sortKey}
+                  direction={sortDirection}
+                  onSort={toggleSort}
+                  className="text-right"
+                >
+                  Qty
+                </SortableTableHead>
+                <SortableTableHead
+                  sortKey="initialCost"
+                  activeKey={sortKey}
+                  direction={sortDirection}
+                  onSort={toggleSort}
+                  className="text-right"
+                >
+                  Initial Cost
+                </SortableTableHead>
+                <SortableTableHead
+                  sortKey="currentCost"
+                  activeKey={sortKey}
+                  direction={sortDirection}
+                  onSort={toggleSort}
+                  className="text-right"
+                >
+                  Current Cost
+                </SortableTableHead>
+                <SortableTableHead
+                  sortKey="value"
+                  activeKey={sortKey}
+                  direction={sortDirection}
+                  onSort={toggleSort}
+                  className="text-right"
+                >
+                  Value
+                </SortableTableHead>
+                {!compact && (
+                  <SortableTableHead sortKey="supplier" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                    Supplier
+                  </SortableTableHead>
+                )}
+                {!compact && (
+                  <SortableTableHead sortKey="remarks" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                    Remarks
+                  </SortableTableHead>
+                )}
+                {!compact && (
+                  <SortableTableHead sortKey="latestNote" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                    Last Note
+                  </SortableTableHead>
+                )}
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((row) => (
+              {sortedRows.map((row) => (
                 <TableRow key={row.locationItemId}>
                   <TableCell className="tnum font-medium">{row.assetCode ?? "—"}</TableCell>
                   <TableCell className="max-w-[16rem] break-words">
@@ -163,18 +267,20 @@ export function AssetRegisterReportPage() {
             {query.trim() === "" && (
               <TableFooter>
                 <TableRow>
-                  <TableCell colSpan={compact ? 3 : 7} className="font-medium">
+                  <TableCell colSpan={compact ? 5 : 8} className="font-medium">
                     Total ({report.data.totals.count} {report.data.totals.count === 1 ? "asset" : "assets"})
                   </TableCell>
                   <TableCell className="tnum text-right font-semibold">
                     {formatNumber(report.data.totals.qty)}
                   </TableCell>
-                  {/* Money, formatted as money — the footer printed bare
-                      numbers while every row above carried a ₱. */}
-                  <TableCell className="tnum text-right font-semibold">
-                    {formatMoney(report.data.totals.initialCostValue)}
-                  </TableCell>
-                  <TableCell />
+                  {/* Initial Cost and Current Cost are per-unit figures on each
+                      row — summing them across different asset types isn't
+                      meaningful, so those two columns carry no total. One
+                      spanned blank cell (rather than two separate empty
+                      cells) keeps their combined width locked to what the
+                      body rows actually render, so Value's total can't drift
+                      off its own column when its neighbors are empty. */}
+                  <TableCell colSpan={2} />
                   <TableCell className="tnum text-right font-semibold">
                     {formatMoney(report.data.totals.currentCostValue)}
                   </TableCell>

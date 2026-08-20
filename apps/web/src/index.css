@@ -174,6 +174,25 @@
   .tnum {
     font-variant-numeric: tabular-nums;
   }
+  /* Right-aligned table columns (numeric totals, action buttons, etc.) sit in
+     a header cell that's still left-aligned by default. On a `w-full` table
+     the column stretches to fill leftover space, so the right-aligned value
+     ends up far from its own header word even though both belong to the same
+     column. Shrinking the column to its content width keeps the header and
+     the value close together without touching anyone's text-align.
+     With several of these narrowed columns in a row, all the table's leftover
+     width piles up after the last one instead of being shared between them —
+     so give each a little extra right padding as breathing room, the same
+     gap `gap-2`/`px-2` uses elsewhere in the table chrome. */
+  [data-slot="table-head"].text-right,
+  [data-slot="table-cell"].text-right {
+    width: 1%;
+    padding-right: 1.5rem;
+  }
+  [data-slot="table-head"].text-right:last-child,
+  [data-slot="table-cell"].text-right:last-child {
+    padding-right: 0.5rem;
+  }
   /* Reduced motion: collapse movement to (near-)instant. Opacity transitions
      keep a short crossfade — DESIGN.md's reduced-motion contract. */
   @media (prefers-reduced-motion: reduce) {

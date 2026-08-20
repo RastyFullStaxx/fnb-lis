@@ -7,6 +7,7 @@ import { useIncludeHiddenInReports, useVarianceThreshold } from "@/api/settings"
 import { useMe } from "@/api/auth";
 import { exportUrl, useLegacyAuditReport, type LegacyAuditRow } from "@/api/reports";
 import { formatMoney, cn, formatNumber, formatDate } from "@/lib/utils";
+import { useGroupSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { TableFailure, TableLoading, ToolbarField, queryFailed } from "@/components/table-surface";
@@ -28,6 +29,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 
 
 type Variant = "detailed" | "inventory";
@@ -42,35 +44,51 @@ type Variant = "detailed" | "inventory";
  * Do not "sync" the two; they are intentionally different views of the
  * same LegacyAuditRow data.
  * `money` marks the peso columns; the rest are quantities.
+ * `sortKey` is a unique per-column identifier for the sort control — two
+ * columns share the header text "Full" (begin/end) and "Weigh" (begin/end),
+ * so the sortKey uses the underlying field name instead, which is unique.
  */
-const COLUMNS: Array<{ header: string; money?: true; value: (r: LegacyAuditRow) => number | null }> = [
-  { header: "Full", value: (r) => r.beginFull },
-  { header: "Weigh", value: (r) => r.beginOpen },
-  { header: "B-Cost", money: true, value: (r) => r.bCost },
-  { header: "Purchased", value: (r) => r.purchased },
-  { header: "F", value: (r) => r.forfeited },
-  { header: "Full", value: (r) => r.endFull },
-  { header: "Weigh", value: (r) => r.endOpen },
-  { header: "E-Cost", money: true, value: (r) => r.eCost },
-  { header: "USAGE", value: (r) => r.usage },
-  { header: "Usaged Cost", money: true, value: (r) => r.costOfUsage },
-  { header: "Sold", value: (r) => r.shot },
-  { header: "Portion", value: (r) => r.bottle },
-  { header: "Revenue", money: true, value: (r) => r.revenue },
-  { header: "Uses VS Sales", value: (r) => r.usedVsSales },
-  { header: "Non Rev Usage", value: (r) => r.nonRevUsage },
-  { header: "Non Rev Cost", money: true, value: (r) => r.nonRevCost },
-  { header: "Over/Short", value: (r) => r.overallVariance },
-  { header: "%Over/Short", value: (r) => r.variancePct },
-  { header: "Cost", money: true, value: (r) => r.varianceCost },
-  { header: "Retail", money: true, value: (r) => r.varianceRetail },
+const COLUMNS: Array<{ header: string; sortKey: string; money?: true; value: (r: LegacyAuditRow) => number | null }> = [
+  { header: "Full", sortKey: "beginFull", value: (r) => r.beginFull },
+  { header: "Weigh", sortKey: "beginOpen", value: (r) => r.beginOpen },
+  { header: "B-Cost", sortKey: "bCost", money: true, value: (r) => r.bCost },
+  { header: "Purchased", sortKey: "purchased", value: (r) => r.purchased },
+  { header: "F", sortKey: "forfeited", value: (r) => r.forfeited },
+  { header: "Full", sortKey: "endFull", value: (r) => r.endFull },
+  { header: "Weigh", sortKey: "endOpen", value: (r) => r.endOpen },
+  { header: "E-Cost", sortKey: "eCost", money: true, value: (r) => r.eCost },
+  { header: "USAGE", sortKey: "usage", value: (r) => r.usage },
+  { header: "Usaged Cost", sortKey: "costOfUsage", money: true, value: (r) => r.costOfUsage },
+  { header: "Sold", sortKey: "shot", value: (r) => r.shot },
+  { header: "Portion", sortKey: "bottle", value: (r) => r.bottle },
+  { header: "Revenue", sortKey: "revenue", money: true, value: (r) => r.revenue },
+  { header: "Uses VS Sales", sortKey: "usedVsSales", value: (r) => r.usedVsSales },
+  { header: "Non Rev Usage", sortKey: "nonRevUsage", value: (r) => r.nonRevUsage },
+  { header: "Non Rev Cost", sortKey: "nonRevCost", money: true, value: (r) => r.nonRevCost },
+  { header: "Over/Short", sortKey: "overallVariance", value: (r) => r.overallVariance },
+  { header: "%Over/Short", sortKey: "variancePct", value: (r) => r.variancePct },
+  { header: "Cost", sortKey: "varianceCost", money: true, value: (r) => r.varianceCost },
+  { header: "Retail", sortKey: "varianceRetail", money: true, value: (r) => r.varianceRetail },
 ];
 
-/** These three headers wrap onto 2 lines in the leaf header row (client req
+/** Sort accessors for the leaf columns above, keyed by the same sortKey,
+    plus the two identity columns (Product Name / Size-UOM) that sit before
+    them. Nulls sort last regardless of direction — a null %Over/Short (a
+    row with contentTracked === false, see report-suite.ts) has no rank to
+    give it, so it's pushed to the bottom rather than sorting as if it were
+    zero. */
+const SORT_ACCESSORS: Record<string, (r: LegacyAuditRow) => unknown> = {
+  productName: (r) => r.productName,
+  sizeUom: (r) => r.sizeUom,
+  ...Object.fromEntries(COLUMNS.map((c) => [c.sortKey, (r: LegacyAuditRow) => c.value(r) ?? -Infinity])),
+};
+
+/** These headers wrap onto 2 lines in the leaf header row (client req
     2026-08-21 — matches the reference screenshot's own line breaks) while
     every other leaf header stays single-line. Keyed on the exact COLUMNS
     header string above. */
 const TWO_LINE_HEADERS: Record<string, [string, string]> = {
+  "Usaged Cost": ["Usaged", "Cost"],
   "Uses VS Sales": ["Uses VS", "Sales"],
   "Non Rev Usage": ["Non Rev", "Usage"],
   "Non Rev Cost": ["Non Rev", "Cost"],
@@ -155,6 +173,14 @@ export function LegacyAuditPage() {
   const includeHiddenInReports = includeHidden.data?.includeHiddenInReports ?? false;
 
   const exportParams = { begin: effectiveBegin ?? "", end: effectiveEnd ?? "", variant };
+
+  // One sort control for the whole banded table (client req 2026-08-20's
+  // screenshot layout has ONE header row, not one per category): clicking a
+  // column re-sorts every category's rows by it independently, leaving
+  // category order and each category's/the grand total's totals untouched.
+  const { sortedGroups, sortKey, sortDirection, toggleSort } = useGroupSort(report.data?.groups ?? [], {
+    accessors: SORT_ACCESSORS,
+  });
 
   if (countDates.isPending) {
     return (
@@ -263,7 +289,7 @@ export function LegacyAuditPage() {
               description="Pick different boundary dates, or check that the counts were committed."
             />
           ) : (
-            <Table className="border-separate border-spacing-0 text-xs [&_td]:border-b [&_td]:px-1.5 [&_th]:px-1.5">
+            <Table className="border-separate border-spacing-0 text-xs [&_td]:border-b [&_td]:px-2.5 [&_th]:px-2.5">
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
                   {GROUPS.map(([label, span], i) => (
@@ -292,16 +318,37 @@ export function LegacyAuditPage() {
                   ))}
                 </TableRow>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="sticky left-0 top-10 z-30 w-[14rem] min-w-[10rem] border-r border-b bg-muted">Product Name</TableHead>
-                  <TableHead className="sticky top-10 z-20 border-b border-l bg-muted">
+                  <SortableTableHead
+                    sortKey="productName"
+                    activeKey={sortKey}
+                    direction={sortDirection}
+                    onSort={toggleSort}
+                    className="sticky left-0 top-10 z-30 w-[14rem] min-w-[10rem] border-r border-b bg-muted"
+                  >
+                    Product Name
+                  </SortableTableHead>
+                  <SortableTableHead
+                    sortKey="sizeUom"
+                    activeKey={sortKey}
+                    direction={sortDirection}
+                    onSort={toggleSort}
+                    className="sticky top-10 z-20 w-px border-b border-l bg-muted text-center whitespace-nowrap"
+                  >
                     Size
                     <br />
                     UOM
-                  </TableHead>
+                  </SortableTableHead>
                   {COLUMNS.map((c) => {
                     const twoLine = TWO_LINE_HEADERS[c.header];
                     return (
-                      <TableHead key={c.header} className="sticky top-10 z-20 border-b border-l bg-muted text-center whitespace-nowrap">
+                      <SortableTableHead
+                        key={c.sortKey}
+                        sortKey={c.sortKey}
+                        activeKey={sortKey}
+                        direction={sortDirection}
+                        onSort={toggleSort}
+                        className="sticky top-10 z-20 border-b border-l bg-muted text-center whitespace-nowrap"
+                      >
                         {twoLine ? (
                           <>
                             {twoLine[0]}
@@ -311,13 +358,13 @@ export function LegacyAuditPage() {
                         ) : (
                           c.header
                         )}
-                      </TableHead>
+                      </SortableTableHead>
                     );
                   })}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {report.data.groups.map((group) => (
+                {sortedGroups.map((group) => (
                   <Fragment key={group.categoryName}>
                     <TableRow className="bg-secondary/60 hover:bg-secondary/60">
                       <TableCell className="sticky left-0 z-10 w-[14rem] min-w-[10rem] border-r break-words bg-secondary py-1 text-[11px] font-semibold uppercase tracking-wide text-secondary-foreground">
@@ -357,11 +404,11 @@ export function LegacyAuditPage() {
                               </Badge>
                             )}
                           </TableCell>
-                          <TableCell className="whitespace-nowrap text-muted-foreground">{row.sizeUom}</TableCell>
+                          <TableCell className="w-px whitespace-nowrap text-muted-foreground">{row.sizeUom}</TableCell>
                           {COLUMNS.map((c) => {
                             const v = c.value(row);
                             return (
-                              <TableCell key={c.header} className="tnum text-right whitespace-nowrap">
+                              <TableCell key={c.sortKey} className="tnum text-right whitespace-nowrap">
                                 {v === null ? "—" : c.money ? formatMoney(round2(v)) : formatNumber(v)}
                               </TableCell>
                             );
@@ -377,7 +424,7 @@ export function LegacyAuditPage() {
                       {COLUMNS.map((c) => {
                         const v = c.header === "%Over/Short" ? null : c.value(group.totals as unknown as LegacyAuditRow);
                         return (
-                          <TableCell key={c.header} className="tnum text-right whitespace-nowrap">
+                          <TableCell key={c.sortKey} className="tnum text-right whitespace-nowrap">
                             {v === null ? "" : c.money ? formatMoney(round2(v)) : formatNumber(v)}
                           </TableCell>
                         );
@@ -391,7 +438,7 @@ export function LegacyAuditPage() {
                   {COLUMNS.map((c) => {
                     const v = c.header === "%Over/Short" ? null : c.value(report.data.totals as unknown as LegacyAuditRow);
                     return (
-                      <TableCell key={c.header} className="tnum text-right whitespace-nowrap">
+                      <TableCell key={c.sortKey} className="tnum text-right whitespace-nowrap">
                         {v === null ? "" : c.money ? formatMoney(round2(v)) : formatNumber(v)}
                       </TableCell>
                     );
