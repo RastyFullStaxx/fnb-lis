@@ -931,6 +931,14 @@ export async function clutterCandidates(
   const currentMonth = new Date(snap.lastCountDate).getMonth() + 1;
 
   const rows: ClutterCandidateRow[] = snap.items
+    // Unlike the read-only reports (Non-Moving, Par Level), a hidden row is
+    // never kept here even badged: this list is the manager's own action
+    // queue, and a row that already got Hidden is a completed action, not a
+    // candidate — leaving it in would make "click Hide" look like it did
+    // nothing, since the very next fetch would hand the same row straight
+    // back (clutterCandidates() has no includeHiddenInReports toggle for
+    // that reason; there is nothing to badge here, only to drop).
+    .filter((it) => it.isActive)
     .filter((it) => it.onHand > VARIANCE_EPSILON)
     .filter((it) => {
       const usage = hasAnchor.has(it.locationItemId) ? (usage12mo.get(it.locationItemId) ?? 0) : it.usage;
