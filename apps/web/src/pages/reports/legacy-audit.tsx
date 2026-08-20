@@ -66,6 +66,16 @@ const COLUMNS: Array<{ header: string; money?: true; value: (r: LegacyAuditRow) 
   { header: "Retail", money: true, value: (r) => r.varianceRetail },
 ];
 
+/** These three headers wrap onto 2 lines in the leaf header row (client req
+    2026-08-21 — matches the reference screenshot's own line breaks) while
+    every other leaf header stays single-line. Keyed on the exact COLUMNS
+    header string above. */
+const TWO_LINE_HEADERS: Record<string, [string, string]> = {
+  "Uses VS Sales": ["Uses VS", "Sales"],
+  "Non Rev Usage": ["Non Rev", "Usage"],
+  "Non Rev Cost": ["Non Rev", "Cost"],
+};
+
 /** Column groups above the leaf headers — the legacy report's banded look.
     Matches the client's reference screenshot exactly: Purchased/F and
     Usage/Usaged Cost are NOT their own groups (blank band, like B-Cost),
@@ -282,11 +292,22 @@ export function LegacyAuditPage() {
                 <TableRow className="hover:bg-transparent">
                   <TableHead className="sticky left-0 top-10 z-30 w-[14rem] min-w-[10rem] border-r border-b bg-muted">Product Name</TableHead>
                   <TableHead className="sticky top-10 z-20 border-b border-l bg-muted">Size/UOM</TableHead>
-                  {COLUMNS.map((c) => (
-                    <TableHead key={c.header} className="sticky top-10 z-20 border-b border-l bg-muted text-right whitespace-nowrap">
-                      {c.header}
-                    </TableHead>
-                  ))}
+                  {COLUMNS.map((c) => {
+                    const twoLine = TWO_LINE_HEADERS[c.header];
+                    return (
+                      <TableHead key={c.header} className="sticky top-10 z-20 border-b border-l bg-muted text-center whitespace-nowrap">
+                        {twoLine ? (
+                          <>
+                            {twoLine[0]}
+                            <br />
+                            {twoLine[1]}
+                          </>
+                        ) : (
+                          c.header
+                        )}
+                      </TableHead>
+                    );
+                  })}
                 </TableRow>
               </TableHeader>
               <TableBody>
