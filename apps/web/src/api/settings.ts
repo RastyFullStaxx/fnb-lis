@@ -140,7 +140,10 @@ export interface UserPreferences {
 export const DEFAULT_PREFERENCES: UserPreferences = {
   fontSize: "large",
   unitSystem: "metric",
-  preferredVolumeUnit: "ml",
+  // fl oz, not the base unit ml (client req 2026-08-20) — bottles are
+  // volume-kind items and that's how staff actually read them. Mirrors
+  // the server default in apps/server/src/routes/settings.ts.
+  preferredVolumeUnit: "fl oz",
   preferredMassUnit: "g",
 };
 

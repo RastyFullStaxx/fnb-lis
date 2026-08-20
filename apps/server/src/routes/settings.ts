@@ -91,13 +91,17 @@ const userPreferences = z.object({
    * Client req 2026-07-31: each signed-in user picks their own display unit
    * for volume and mass items, independent of anyone else's choice — same
    * per-user row as fontSize/unitSystem, nothing shared. Values are the
-   * units already seeded in seed.ts (see VOLUME/MASS lists there); default
-   * is the base unit of each kind, matching how unitSystem already
-   * defaults to "metric" until a user saves their own pick. Conversion for
-   * display uses `convert()` from packages/core/src/units.ts — the item's
-   * own configured unit stays the source of truth for storage.
+   * units already seeded in seed.ts (see VOLUME/MASS lists there); mass
+   * defaults to the base unit ("g"), matching how unitSystem already
+   * defaults to "metric" until a user saves their own pick. Volume defaults
+   * to "fl oz" instead of the base unit "ml" (client req 2026-08-20): bottles
+   * are volume-kind items and staff read bottle content in fl oz, not ml, so
+   * "ml" as a starting default was wrong for the item type people look at
+   * most. Conversion for display uses `convert()` from
+   * packages/core/src/units.ts — the item's own configured unit stays the
+   * source of truth for storage.
    */
-  preferredVolumeUnit: z.enum(["ml", "L", "fl oz", "gal"]).default("ml"),
+  preferredVolumeUnit: z.enum(["ml", "L", "fl oz", "gal"]).default("fl oz"),
   preferredMassUnit: z.enum(["g", "kg", "oz", "lb"]).default("g"),
   /**
    * Phase 46.4.2: when this user last opened Activity, ISO string. Not a
@@ -116,7 +120,8 @@ export type UserPreferences = z.infer<typeof userPreferences>;
 const DEFAULT_PREFERENCES: UserPreferences = {
   fontSize: "large",
   unitSystem: "metric",
-  preferredVolumeUnit: "ml",
+  // fl oz, not the base unit ml — see the preferredVolumeUnit schema comment above.
+  preferredVolumeUnit: "fl oz",
   preferredMassUnit: "g",
 };
 
