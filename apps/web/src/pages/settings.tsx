@@ -673,12 +673,17 @@ function DisplayPreferencesSection() {
  * Freshly-picked items not yet saved are kept in local state alongside the
  * server rows until the query refetches with them included.
  */
+/** The id/name pair these two sections actually traffic in — both the
+ *  server list endpoints (/item-unit-preferences, /item-unit-defaults) and
+ *  the row components below only ever need this much, not a full Item. */
+type ItemRef = { id: string; name: string };
+
 function StaffItemUnitSection() {
   const saved = useItemUnitPreferences();
-  const [localRows, setLocalRows] = useState<Item[]>([]);
+  const [localRows, setLocalRows] = useState<ItemRef[]>([]);
   const [picking, setPicking] = useState<Item | null>(null);
 
-  const savedRows: Item[] = (saved.data ?? []).map((r) => ({ id: r.itemId, name: r.itemName }));
+  const savedRows: ItemRef[] = (saved.data ?? []).map((r) => ({ id: r.itemId, name: r.itemName }));
   const savedIds = new Set(savedRows.map((r) => r.id));
   // Local-only rows are for an item just picked this visit, before its first
   // save lands in the server list above, once it does, drop the local copy
@@ -686,7 +691,7 @@ function StaffItemUnitSection() {
   const rows = [...savedRows, ...localRows.filter((r) => !savedIds.has(r.id))];
 
   const addRow = (item: Item) => {
-    setLocalRows((r) => (r.some((x) => x.id === item.id) || savedIds.has(item.id) ? r : [...r, item]));
+    setLocalRows((r) => (r.some((x) => x.id === item.id) || savedIds.has(item.id) ? r : [...r, { id: item.id, name: item.name }]));
     setPicking(null);
   };
 
@@ -728,7 +733,7 @@ function StaffItemUnitSection() {
   );
 }
 
-function StaffItemUnitRow({ item, onRemove }: { item: Item; onRemove: () => void }) {
+function StaffItemUnitRow({ item, onRemove }: { item: ItemRef; onRemove: () => void }) {
   const saved = useItemUnitPreference(item.id);
   const set = useSetItemUnitPreference(item.id);
   const clear = useClearItemUnitPreference(item.id);
@@ -830,15 +835,15 @@ function AdminItemUnitDefaultSection() {
   const client = useCurrentClient();
   const clientId = client?.id ?? "";
   const saved = useItemUnitDefaults(clientId);
-  const [localRows, setLocalRows] = useState<Item[]>([]);
+  const [localRows, setLocalRows] = useState<ItemRef[]>([]);
   const [picking, setPicking] = useState<Item | null>(null);
 
-  const savedRows: Item[] = (saved.data ?? []).map((r) => ({ id: r.itemId, name: r.itemName }));
+  const savedRows: ItemRef[] = (saved.data ?? []).map((r) => ({ id: r.itemId, name: r.itemName }));
   const savedIds = new Set(savedRows.map((r) => r.id));
   const rows = [...savedRows, ...localRows.filter((r) => !savedIds.has(r.id))];
 
   const addRow = (item: Item) => {
-    setLocalRows((r) => (r.some((x) => x.id === item.id) || savedIds.has(item.id) ? r : [...r, item]));
+    setLocalRows((r) => (r.some((x) => x.id === item.id) || savedIds.has(item.id) ? r : [...r, { id: item.id, name: item.name }]));
     setPicking(null);
   };
 
@@ -882,7 +887,7 @@ function AdminItemUnitDefaultSection() {
   );
 }
 
-function AdminItemUnitDefaultRow({ item, onRemove }: { item: Item; onRemove: () => void }) {
+function AdminItemUnitDefaultRow({ item, onRemove }: { item: ItemRef; onRemove: () => void }) {
   const client = useCurrentClient();
   const clientId = client?.id ?? "";
   const saved = useItemUnitDefault(clientId, item.id);

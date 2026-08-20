@@ -20,6 +20,8 @@ export interface SalesReport {
     discountPct: number;
     gross: number;
     net: number;
+    /** LocationItem.isActive — null for menu rows (no single LocationItem). */
+    isActive: boolean | null;
   }>;
   // Regular-vs-discounted split (client req 2026-07-21).
   byPriceType: Array<{
@@ -45,6 +47,8 @@ export interface PurchaseReport {
     qty: number;
     unitCost: number;
     lineTotal: number;
+    /** LocationItem.isActive — carried through for the clutter display filter. */
+    isActive: boolean;
   }>;
   bySupplier: Array<{
     supplier: string;
@@ -71,6 +75,8 @@ export interface NonRevenueReport {
     contentOverride: number | null;
     estimatedCost: number | null;
     estimatedRetail: number | null;
+    /** LocationItem.isActive — null for menu rows (no single LocationItem). */
+    isActive: boolean | null;
   }>;
   // Grouped by canonical bucket (+ "Other"); `group` is the stable key.
   byReason: Array<{ group: string; reason: string; count: number; qty: number; cost: number }>;
@@ -90,6 +96,9 @@ export interface OnHandReport {
     costValue: number;
     retailValue: number;
     belowPar: boolean;
+    /** LocationItem.isActive — carried through so the client can badge a
+        hidden-but-active row. */
+    isActive: boolean;
   }>;
   totals: { costValue: number; retailValue: number };
 }
@@ -116,6 +125,9 @@ export interface ParLevelReport {
     suggestedOrder: number;
     orderValue: number;
     belowPar: boolean;
+    /** LocationItem.isActive — carried through so the client can badge a
+        hidden-but-active row. */
+    isActive: boolean;
   }>;
   totals: { belowParCount: number; orderValue: number };
 }
@@ -132,6 +144,9 @@ export interface NonMovingReport {
     cost: number;
     costValue: number;
     retailValue: number;
+    /** LocationItem.isActive — carried through so the client can badge a
+        hidden-but-active row. */
+    isActive: boolean;
   }>;
   totals: { count: number; costValue: number; retailValue: number };
 }
@@ -252,6 +267,9 @@ export interface LegacyAuditRow {
   productName: string;
   sizeUom: string;
   contentTracked: boolean;
+  /** LocationItem.isActive — carried through so the client can badge a
+      hidden-but-active row. */
+  isActive: boolean;
   beginFull: number;
   beginOpen: number;
   bCost: number;
@@ -282,7 +300,7 @@ export interface LegacyAuditReport {
   groups: Array<{
     categoryName: string;
     rows: LegacyAuditRow[];
-    totals: Omit<LegacyAuditRow, "productName" | "sizeUom" | "contentTracked" | "variancePct"> & {
+    totals: Omit<LegacyAuditRow, "productName" | "sizeUom" | "contentTracked" | "isActive" | "variancePct"> & {
       variancePct: null;
     };
   }>;

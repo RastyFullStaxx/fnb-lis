@@ -1,6 +1,6 @@
 // Response shapes for the REST API (server includes noted relations).
 
-import { convert, type PaymentTerms } from "@fnb/core";
+import { convert, type PaymentTerms, type UnitDef } from "@fnb/core";
 
 export interface Unit {
   id: string;
@@ -131,8 +131,8 @@ export function variantLabel(v: { size: number; unit: { name: string } }): strin
  * using this resolver.
  */
 export function displayVariantLabel(
-  v: { size: number; unit: { name: string; kind: string; factorToBase: number } },
-  displayUnit: { name: string; kind: string; factorToBase: number } | null,
+  v: { size: number; unit: UnitDef },
+  displayUnit: UnitDef | null,
 ): string {
   if (!displayUnit || displayUnit.name === v.unit.name) return variantLabel(v);
   const converted = convert(v.size, v.unit, displayUnit);
