@@ -754,6 +754,25 @@ export async function clutterCandidates(
   const usage12mo = new Map<string, number>();
   for (const r of lookbackAudit.rows) usage12mo.set(r.locationItemId, r.usage);
 
+  // Items with no committed count ON lookbackStart itself have no real begin
+  // quantity for reconcile() to work from — buildFullAudit silently treats
+  // "no begin line" as "began at zero", so a normal item with, say, 6 units
+  // on hand and nothing else touching it comes back as usage = 0 - 6 = -6,
+  // which hasVariance() (Math.abs-based) reads as a REAL 6-unit variance and
+  // excludes the item — the opposite of "idle, no movement". This bites any
+  // item newer than the 12-month window, not just deliberately-seeded dead
+  // stock: a location with under a year of count history would exclude
+  // everything from Clutter Candidates. Anchor on whether a begin line
+  // actually exists; where it doesn't, fall back to stockSnapshot's
+  // already-correct single-period usage (periodBegin -> lastCountDate, one
+  // real closed period) rather than trust a fabricated 12-month figure.
+  const anchoredDates = await prisma.countLine.findMany({
+    where: { status: "ACTIVE", countSession: { locationId, countDate: lookbackStart, status: "COMMITTED" } },
+    select: { locationItemId: true },
+    distinct: ["locationItemId"],
+  });
+  const hasAnchor = new Set(anchoredDates.map((r) => r.locationItemId));
+
   const schedules = await prisma.locationItem.findMany({
     where: { id: { in: snap.items.map((it) => it.locationItemId) } },
     select: { id: true, scheduleStartMonth: true, scheduleEndMonth: true },
@@ -763,7 +782,10 @@ export async function clutterCandidates(
 
   const rows: ClutterCandidateRow[] = snap.items
     .filter((it) => it.onHand > VARIANCE_EPSILON)
-    .filter((it) => !hasVariance(usage12mo.get(it.locationItemId) ?? 0))
+    .filter((it) => {
+      const usage = hasAnchor.has(it.locationItemId) ? (usage12mo.get(it.locationItemId) ?? 0) : it.usage;
+      return !hasVariance(usage);
+    })
     .filter((it) => {
       const sched = scheduleMap.get(it.locationItemId);
       return inScheduleWindow(currentMonth, sched?.scheduleStartMonth ?? null, sched?.scheduleEndMonth ?? null);
@@ -774,7 +796,7 @@ export async function clutterCandidates(
       category: it.category,
       onHand: round2(it.onHand),
       costValue: round2(it.onHand * it.cost),
-      monthsChecked: 12,
+      monthsChecked: hasAnchor.has(it.locationItemId) ? 12 : 1,
     }))
     .sort((a, b) => b.costValue - a.costValue || a.name.localeCompare(b.name));
 

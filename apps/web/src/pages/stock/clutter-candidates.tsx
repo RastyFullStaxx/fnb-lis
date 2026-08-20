@@ -116,6 +116,7 @@ export function ClutterCandidatesPage() {
                     <TableHead className="text-right">On Hand</TableHead>
                     <TableHead className="text-right">Cost</TableHead>
                     <TableHead className="text-right">Cost Value</TableHead>
+                    <TableHead className="text-right">Checked</TableHead>
                     <TableHead className="text-right">Action</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -133,6 +134,19 @@ export function ClutterCandidatesPage() {
                         {row.onHand > 0 ? formatUnitPrice(row.costValue / row.onHand) : "—"}
                       </TableCell>
                       <TableCell className="tnum text-right">{formatMoney(row.costValue)}</TableCell>
+                      <TableCell className="text-right text-muted-foreground">
+                        {/* The header above says "12 months" as the norm, but
+                            an item with no committed count that far back (new
+                            stock, or a location under a year old) is only
+                            checked against its last one closed period —
+                            report-lists.ts clutterCandidates() falls back to
+                            that rather than fabricate a 12-month usage figure
+                            from a missing begin count. Surfacing the real
+                            window per row keeps that header claim honest
+                            instead of overstating the evidence behind every
+                            row uniformly. */}
+                        {row.monthsChecked === 12 ? "12 mo" : "1 period"}
+                      </TableCell>
                       <TableCell className="text-right">
                         <Button
                           size="xs"
