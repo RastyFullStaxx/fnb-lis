@@ -74,6 +74,8 @@ const TWO_LINE_HEADERS: Record<string, [string, string]> = {
   "Uses VS Sales": ["Uses VS", "Sales"],
   "Non Rev Usage": ["Non Rev", "Usage"],
   "Non Rev Cost": ["Non Rev", "Cost"],
+  "Over/Short": ["Over/", "Short"],
+  "%Over/Short": ["%Over/", "Short"],
 };
 
 /** Column groups above the leaf headers — the legacy report's banded look.
@@ -291,7 +293,11 @@ export function LegacyAuditPage() {
                 </TableRow>
                 <TableRow className="hover:bg-transparent">
                   <TableHead className="sticky left-0 top-10 z-30 w-[14rem] min-w-[10rem] border-r border-b bg-muted">Product Name</TableHead>
-                  <TableHead className="sticky top-10 z-20 border-b border-l bg-muted">Size/UOM</TableHead>
+                  <TableHead className="sticky top-10 z-20 border-b border-l bg-muted">
+                    Size
+                    <br />
+                    UOM
+                  </TableHead>
                   {COLUMNS.map((c) => {
                     const twoLine = TWO_LINE_HEADERS[c.header];
                     return (
