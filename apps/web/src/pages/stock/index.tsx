@@ -146,7 +146,7 @@ export function StockPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader
-        title="Local Database"
+        title={moduleScope ? `Local Database (${moduleScope})` : "Local Database"}
         actions={
           <>
             {canMasterWrite && (
@@ -213,11 +213,6 @@ export function StockPage() {
               </Toggle>
             )}
           </>
-        }
-        actions={
-          moduleScope ? (
-            <span className="text-xs text-muted-foreground">{moduleScope} catalog</span>
-          ) : undefined
         }
       >
         {queryFailed(rows) ? (
