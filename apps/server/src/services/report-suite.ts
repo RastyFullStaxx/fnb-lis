@@ -1,4 +1,4 @@
-import { openEquivalent, round2, type CostBasis } from "@fnb/core";
+import { openEquivalent, round2, shouldDropHiddenRow, type CostBasis } from "@fnb/core";
 import { buildFullAudit } from "./report-assembly";
 import { weightedAverageCosts } from "./valuation";
 import { prisma } from "../db";
@@ -42,6 +42,9 @@ export interface LegacyAuditRow {
   /** Passed through from the recon row so the over/short highlight can tell a
       1:1 whole-unit item (absolute ±1 rule) from a content-tracked one (%). */
   contentTracked: boolean;
+  /** LocationItem.isActive — carried through so the client can badge a
+      hidden-but-active row (clutter-in-reports-plan.md Phase 6.1). */
+  isActive: boolean;
   beginFull: number;
   beginOpen: number;
   bCost: number;
@@ -74,7 +77,7 @@ export interface LegacyAuditGroup {
 
 export type LegacyAuditTotals = Omit<
   LegacyAuditRow,
-  "productName" | "sizeUom" | "variancePct" | "contentTracked"
+  "productName" | "sizeUom" | "variancePct" | "contentTracked" | "isActive"
 > & {
   variancePct: null;
 };
@@ -108,6 +111,30 @@ function addToTotals(t: LegacyAuditTotals, r: LegacyAuditRow): void {
   t.overallVariance += r.overallVariance; t.varianceCost += r.varianceCost; t.varianceRetail += r.varianceRetail;
 }
 
+/**
+ * Folds one category's ALREADY-COMPLETE totals into the report-level grand
+ * total. Deliberately separate from `addToTotals` (which reads a single
+ * ROW): the grand total must be built from each group's `groupTotals` —
+ * computed before the clutter filter ever ran — never by re-summing
+ * `group.rows`, which is the filtered, display-only array. Re-summing the
+ * filtered rows was the bug this replaces: a hidden-and-idle item can still
+ * carry a nonzero begin/end balance (the filter only checks MOVEMENT, per
+ * clutter-in-reports-decision.md), so dropping its row from the display list
+ * while grand-totalling off that same list silently pulled its beginning/
+ * ending cost out of the report's own headline numbers — exactly what "Totals
+ * are computed before this filter runs, so they never change based on it."
+ * (decision doc) promises will never happen.
+ */
+function foldGroupTotals(t: LegacyAuditTotals, group: LegacyAuditTotals): void {
+  t.beginFull += group.beginFull; t.beginOpen += group.beginOpen; t.bCost += group.bCost;
+  t.purchased += group.purchased; t.purchasedCost += group.purchasedCost; t.forfeited += group.forfeited;
+  t.endFull += group.endFull; t.endOpen += group.endOpen; t.eCost += group.eCost;
+  t.usage += group.usage; t.costOfUsage += group.costOfUsage; t.shot += group.shot; t.bottle += group.bottle;
+  t.costOfSold += group.costOfSold; t.revenue += group.revenue; t.usedVsSales += group.usedVsSales;
+  t.nonRevUsage += group.nonRevUsage; t.nonRevCost += group.nonRevCost;
+  t.overallVariance += group.overallVariance; t.varianceCost += group.varianceCost; t.varianceRetail += group.varianceRetail;
+}
+
 export async function legacyAuditReport(
   locationId: string,
   begin: string,
@@ -115,16 +142,25 @@ export async function legacyAuditReport(
   allowedProductTypes?: readonly string[] | null,
   variant: LegacyAuditVariant = "detailed",
   costBasis: CostBasis = "PRICE",
+  // Clutter-in-reports (docs/clutter-in-reports-decision.md): off by default.
+  // Group totals below are computed from the COMPLETE row set, same as every
+  // other report here — the filter is applied to `groups[].rows` only, after
+  // those totals already exist, so it can never move a single figure.
+  includeHiddenInReports: boolean = false,
 ): Promise<LegacyAuditReport> {
   const report = await buildFullAudit(locationId, begin, end, undefined, allowedProductTypes, costBasis);
 
   const groups: LegacyAuditGroup[] = report.categories.map((cat) => {
     const groupTotals = emptyLegacyTotals();
-    const rows = cat.rows.map((r) => {
+    // Keep the source ReconRow alongside the reshaped legacy row so the
+    // filter below can read isActive + every activity field without a
+    // second lookup or a fragile re-match on display fields.
+    const allRows = cat.rows.map((r) => {
       const row: LegacyAuditRow = {
         productName: r.itemName,
         sizeUom: `${r.size} ${r.unitName}`,
         contentTracked: r.contentTracked,
+        isActive: r.isActive,
         beginFull: r.beginFull,
         beginOpen: r.beginOpenEquiv,
         bCost: r.beginCost,
@@ -152,14 +188,21 @@ export async function legacyAuditReport(
         varianceCost: r.varianceCost,
         varianceRetail: r.varianceRetail,
       };
+      // Totals FIRST, from the complete row set — the display filter below
+      // must never be able to move them (clutter-in-reports-decision.md).
       addToTotals(groupTotals, row);
-      return row;
+      return { row, reconRow: r };
     });
+    const rows = allRows
+      .filter(({ reconRow }) => !shouldDropHiddenRow(reconRow, includeHiddenInReports))
+      .map(({ row }) => row);
     return { categoryName: cat.categoryName, rows, totals: groupTotals };
   });
 
+  // Fold each category's PRE-FILTER totals (see foldGroupTotals) — never
+  // re-derive from `g.rows`, which is the post-filter display list.
   const totals = emptyLegacyTotals();
-  for (const g of groups) for (const r of g.rows) addToTotals(totals, r);
+  for (const g of groups) foldGroupTotals(totals, g.totals);
 
   const numerator = variant === "detailed" ? totals.costOfSold : totals.costOfUsage;
   const costRatio = totals.revenue > 0 ? numerator / totals.revenue : null;

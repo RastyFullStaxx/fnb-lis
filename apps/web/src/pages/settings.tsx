@@ -18,6 +18,7 @@ import {
   useClearItemUnitPreference,
   useCompanyInfo,
   useCostBasis,
+  useIncludeHiddenInReports,
   useItemUnitDefault,
   useItemUnitDefaults,
   useItemUnitPreference,
@@ -26,6 +27,7 @@ import {
   useSetItemUnitPreference,
   useUpdateCompanyInfo,
   useUpdateCostBasis,
+  useUpdateIncludeHiddenInReports,
   useUpdateProductTypes,
   useUpdateVarianceThreshold,
   useVarianceThreshold,
@@ -43,6 +45,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -80,6 +83,7 @@ export function SettingsPage() {
           {can(role, "master.write") && <AdminItemUnitDefaultSection />}
           <CostBasisSection />
           <VarianceThresholdSection />
+          <IncludeHiddenInReportsSection />
           {/* Unlike Cost Basis / Variance Threshold above, this section never
               had a read-only mode — its GET is `master.write`-gated
               server-side too (routes/settings.ts `/company`), so a non-write
@@ -270,6 +274,73 @@ function VarianceThresholdSection() {
         <p className="text-xs leading-5 text-muted-foreground">
           A material short shows red, an over shows amber. Whole-unit items (e.g. bottles sold whole)
           always highlight when off by a single unit, regardless of this percent. Default is 11%.
+        </p>
+        {!canEdit && (
+          <p className="text-xs text-muted-foreground">Only managers and administrators can change this.</p>
+        )}
+      </div>
+    </SettingsSection>
+  );
+}
+
+/**
+ * Include hidden items in reports (docs/clutter-in-reports-decision.md).
+ * An audit-visibility policy saved per establishment, same tier as Cost
+ * Basis and Variance Highlight Threshold above: whether a report row set
+ * differs by who's viewing would let two people read different totals for
+ * the same report, so this is a client-level setting, not a per-visit
+ * toggle. Presentation only — Grand Total never moves either way, only
+ * which rows are listed on the way to it.
+ */
+function IncludeHiddenInReportsSection() {
+  const client = useCurrentClient();
+  const clientId = client?.id ?? "";
+  const saved = useIncludeHiddenInReports(clientId);
+  const update = useUpdateIncludeHiddenInReports(clientId);
+  const me = useMe();
+  const role = (me.data?.user.role ?? "AUDIT_VIEWER_LIMITED") as Role;
+  const canEdit = can(role, "master.write");
+
+  const current = saved.data?.includeHiddenInReports ?? false;
+
+  const change = async (next: boolean) => {
+    try {
+      await update.mutateAsync(next);
+      toast.success(next ? "Hidden items will now show in reports" : "Hidden items are hidden from reports again");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not save this setting");
+    }
+  };
+
+  return (
+    <SettingsSection
+      title="Include Hidden Items In Reports"
+      description="An item hidden from Local Database (idle stock with nothing counted, sold, or moved) also drops off reports. Turn this on to show them anyway."
+    >
+      <div className="max-w-md space-y-2">
+        {saved.isPending ? (
+          <Skeleton className="h-9 w-16" />
+        ) : (
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div className="text-sm">
+              <div>Show hidden items in reports</div>
+              <p className="text-xs text-muted-foreground">
+                Applies to Full Audit, On-Hand, Non-Moving, Sales, Purchases, Non-Revenue, and every
+                other report that lists individual items — on screen and in every export.
+              </p>
+            </div>
+            <Switch
+              checked={current}
+              disabled={!canEdit || update.isPending}
+              onCheckedChange={(v) => void change(v)}
+            />
+          </div>
+        )}
+        <p className="text-xs leading-5 text-muted-foreground">
+          A hidden item that had real activity in the report's period (a count, a sale, a purchase…)
+          always stays visible, badged <span className="whitespace-nowrap">"hidden · active"</span> —
+          no matter this setting. Only a genuinely idle hidden item is affected, and Grand Total is the
+          same either way.
         </p>
         {!canEdit && (
           <p className="text-xs text-muted-foreground">Only managers and administrators can change this.</p>

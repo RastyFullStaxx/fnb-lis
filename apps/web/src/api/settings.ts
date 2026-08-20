@@ -79,6 +79,41 @@ export function useUpdateVarianceThreshold(clientId: string) {
   });
 }
 
+/**
+ * Include hidden (clutter) items in reports — an audit-visibility policy
+ * saved per establishment (docs/clutter-in-reports-decision.md). Off by
+ * default: a hidden item with zero activity in a report's period drops off
+ * that report; one with real activity in the period always stays, badged.
+ * Presentation only — totals are computed before this filter runs, so
+ * flipping it never moves a reconciliation figure.
+ */
+export function useIncludeHiddenInReports(clientId: string) {
+  return useQuery({
+    queryKey: ["settings", "include-hidden-in-reports", clientId],
+    queryFn: () =>
+      api<{ includeHiddenInReports: boolean }>(
+        `/api/settings/include-hidden-in-reports?clientId=${clientId}`,
+      ),
+    enabled: Boolean(clientId),
+  });
+}
+
+export function useUpdateIncludeHiddenInReports(clientId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (includeHiddenInReports: boolean) =>
+      put<{ includeHiddenInReports: boolean }>(
+        `/api/settings/include-hidden-in-reports?clientId=${clientId}`,
+        { includeHiddenInReports },
+      ),
+    onSuccess: (data) => {
+      qc.setQueryData(["settings", "include-hidden-in-reports", clientId], data);
+      // Every item-listing report's row set just changed.
+      void qc.invalidateQueries({ queryKey: ["report"] });
+    },
+  });
+}
+
 export interface UserPreferences {
   fontSize: "default" | "large" | "x-large";
   unitSystem: "metric" | "imperial";

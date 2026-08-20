@@ -25,6 +25,13 @@ export interface StockyContext {
       same way the report pages it links to do. */
   costBasis: CostBasis;
   /**
+   * The client's saved clutter-display policy
+   * (docs/clutter-in-reports-decision.md) — Stocky's get_stock tool reads
+   * On-Hand, so it must drop the same hidden-and-idle rows the report page
+   * does, or its numbers and the page it links to would disagree.
+   */
+  includeHiddenInReports: boolean;
+  /**
    * The calling user's role and variance-view flag (hide-variance-from-staff
    * Phase 3.4) — the gates in explain_variance / get_report_row / get_dashboard
    * need both at call time, the same shape `canViewVariance()` in @fnb/core
@@ -137,7 +144,7 @@ const getStock = tool({
     additionalProperties: false,
   },
   async run(ctx, input) {
-    const report = await onHandReport(ctx.locationId, undefined, ctx.costBasis);
+    const report = await onHandReport(ctx.locationId, undefined, ctx.costBasis, ctx.includeHiddenInReports);
     if (!report.lastCountDate) {
       return { error: "No committed counts yet — stock on hand is unknown until the first count is committed." };
     }

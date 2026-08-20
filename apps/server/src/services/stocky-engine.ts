@@ -335,6 +335,14 @@ ${attItems.length ? `Needs attention:\n${attItems.join("\n")}` : "Nothing needs 
 
 // ---- Name lists for entity extraction (read-only lookups) ----
 
+/**
+ * Every catalog name, DELIBERATELY unfiltered by the clutter-display setting
+ * (docs/clutter-in-reports-decision.md): this feeds fuzzy name-matching for
+ * "what's the count on X", not a report a user reads, so a hidden item must
+ * still resolve if someone asks about it by name. Report-display tools
+ * (get_stock) pass ctx.includeHiddenInReports through instead — see
+ * stocky-tools.ts.
+ */
 async function catalogNames(ctx: StockyContext): Promise<string[]> {
   const report = await onHandReport(ctx.locationId);
   return report.rows.map((r) => r.name);

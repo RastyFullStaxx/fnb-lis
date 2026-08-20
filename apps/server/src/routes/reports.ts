@@ -8,8 +8,9 @@ import {
   MATERIAL_VARIANCE_PCT,
   NON_REVENUE_GROUP_LABELS,
   NON_REVENUE_GROUPS,
+  shouldDropHiddenRow,
   type CostBasis,
-  type NonRevenueGroup, canViewReport, canViewReportForSubscription, canViewVariance, isAuditViewer, type Role, type SessionUser } from "@fnb/core";
+  type NonRevenueGroup, canViewReport, canViewReportForSubscription, canViewVariance, isAuditViewer, type Role, type SessionUser, type ReconReport } from "@fnb/core";
 import { prisma } from "../db";
 import { AppError } from "../lib/errors";
 import { requirePermission, type AppEnv } from "../middleware/auth";
@@ -154,6 +155,36 @@ function topSellersLimit(c: Context<AppEnv>): number {
 function thresholdOf(c: Context<AppEnv>): number {
   const raw = (c.get("client") as { varianceThresholdPct?: number } | undefined)?.varianceThresholdPct;
   return typeof raw === "number" ? raw : MATERIAL_VARIANCE_PCT;
+}
+
+/**
+ * The client's saved clutter-display policy (docs/clutter-in-reports-decision.md)
+ * — a per-establishment setting, never a query parameter, same reasoning as
+ * `basisOf`/`thresholdOf`: two people viewing the same report must see the
+ * same rows. Off by default, matching the schema default and the client's
+ * stated preference.
+ */
+function includeHiddenOf(c: Context<AppEnv>): boolean {
+  const raw = (c.get("client") as { includeHiddenInReports?: boolean } | undefined)?.includeHiddenInReports;
+  return raw === true;
+}
+
+/**
+ * Applies the clutter-in-reports display filter (docs/clutter-in-reports-decision.md)
+ * to a `buildFullAudit()` result. Only `rows` and each category's `rows` are
+ * touched — `totals` and every `ReconCategoryGroup.totals` are left exactly
+ * as `reconcile()` computed them from the COMPLETE input set, so this can
+ * never move a single figure. Shared by Full Audit's screen + export routes.
+ */
+function filterHiddenRows(report: ReconReport, includeHiddenInReports: boolean): ReconReport {
+  if (includeHiddenInReports) return report;
+  return {
+    ...report,
+    rows: report.rows.filter((r) => !shouldDropHiddenRow(r, includeHiddenInReports)),
+    categories: report.categories
+      .map((g) => ({ ...g, rows: g.rows.filter((r) => !shouldDropHiddenRow(r, includeHiddenInReports)) }))
+      .filter((g) => g.rows.length > 0),
+  };
 }
 
 /** Only a non-default basis is stamped into filenames — a "purchase-price"
@@ -364,7 +395,8 @@ export const reportRoutes = new Hono<AppEnv>()
     if (end <= begin) throw new AppError(400, "The ending count date must be after the beginning date");
     const productType = c.req.query("productType") || undefined;
     const allowed = allowedProductTypes(c.get("locationModules"));
-    return c.json(await buildFullAudit(location.id, begin, end, productType, allowed, basisOf(c)));
+    const report = await buildFullAudit(location.id, begin, end, productType, allowed, basisOf(c));
+    return c.json(filterHiddenRows(report, includeHiddenOf(c)));
   })
 
   .get("/reports/full-audit/drill", async (c) => {
@@ -384,9 +416,14 @@ export const reportRoutes = new Hono<AppEnv>()
     if (!DATE_RE.test(begin) || !DATE_RE.test(end) || end <= begin) throw new AppError(400, "Valid begin < end required");
     const productType = c.req.query("productType") || undefined;
     const allowed = allowedProductTypes(c.get("locationModules"));
-    let report = await buildFullAudit(location.id, begin, end, productType, allowed, basisOf(c));
+    let report = filterHiddenRows(
+      await buildFullAudit(location.id, begin, end, productType, allowed, basisOf(c)),
+      includeHiddenOf(c),
+    );
     // ?variance=only → the Variance Report (client req #10): only rows that
     // carry a variance, with subset totals computed from the surviving rows.
+    // Runs AFTER the clutter filter above, so a dropped hidden-and-idle row
+    // never appears in a variance-only export either.
     const varianceOnly = c.req.query("variance") === "only";
     if (varianceOnly) {
       const rows = report.rows.filter((r) => hasVariance(r.variance));
@@ -428,7 +465,7 @@ export const reportRoutes = new Hono<AppEnv>()
     if (!DATE_RE.test(begin) || !DATE_RE.test(end) || end <= begin) throw new AppError(400, "Valid begin < end required");
     const variant: LegacyAuditVariant = c.req.query("variant") === "inventory" ? "inventory" : "detailed";
     const allowed = allowedProductTypes(c.get("locationModules"));
-    return c.json(await legacyAuditReport(location.id, begin, end, allowed, variant, basisOf(c)));
+    return c.json(await legacyAuditReport(location.id, begin, end, allowed, variant, basisOf(c), includeHiddenOf(c)));
   })
 
   .get("/reports/legacy-audit/export", exportGuard, async (c) => {
@@ -439,7 +476,7 @@ export const reportRoutes = new Hono<AppEnv>()
     if (!DATE_RE.test(begin) || !DATE_RE.test(end) || end <= begin) throw new AppError(400, "Valid begin < end required");
     const variant: LegacyAuditVariant = c.req.query("variant") === "inventory" ? "inventory" : "detailed";
     const allowed = allowedProductTypes(c.get("locationModules"));
-    const report = await legacyAuditReport(location.id, begin, end, allowed, variant, basisOf(c));
+    const report = await legacyAuditReport(location.id, begin, end, allowed, variant, basisOf(c), includeHiddenOf(c));
     const user = c.get("user")!;
     const name = `${legacyAuditTitle(variant)}_${location.name}_${begin}_${end}${basisSuffix(basisOf(c))}`.replace(/[^\w.-]+/g, "-");
     const format = c.req.query("format");
@@ -669,7 +706,7 @@ export const reportRoutes = new Hono<AppEnv>()
     const location = c.get("location");
     const { from, to } = requireRange(c);
     const allowed = allowedProductTypes(c.get("locationModules"));
-    return c.json(await salesReport(location.id, from, to, allowed, salesView(c.req.query("view"))));
+    return c.json(await salesReport(location.id, from, to, allowed, salesView(c.req.query("view")), includeHiddenOf(c)));
   })
   .get("/reports/sales/export", exportGuard, async (c) => {
     const location = c.get("location");
@@ -677,7 +714,7 @@ export const reportRoutes = new Hono<AppEnv>()
     const { from, to } = requireRange(c);
     const allowed = allowedProductTypes(c.get("locationModules"));
     const view = salesView(c.req.query("view"));
-    const report = await salesReport(location.id, from, to, allowed, view);
+    const report = await salesReport(location.id, from, to, allowed, view, includeHiddenOf(c));
     const user = c.get("user")!;
     const title =
       view === "discounted" ? "Discounted Sales Report" : view === "production" ? "Production Report" : "Sales Report";
@@ -693,14 +730,14 @@ export const reportRoutes = new Hono<AppEnv>()
     const location = c.get("location");
     const { from, to } = requireRange(c);
     const allowed = allowedProductTypes(c.get("locationModules"));
-    return c.json(await purchaseReport(location.id, from, to, allowed));
+    return c.json(await purchaseReport(location.id, from, to, allowed, includeHiddenOf(c)));
   })
   .get("/reports/purchases/export", exportGuard, async (c) => {
     const location = c.get("location");
     const client = c.get("client");
     const { from, to } = requireRange(c);
     const allowed = allowedProductTypes(c.get("locationModules"));
-    const report = await purchaseReport(location.id, from, to, allowed);
+    const report = await purchaseReport(location.id, from, to, allowed, includeHiddenOf(c));
     const user = c.get("user")!;
     const name = `purchases_${location.name}_${from}_${to}`.replace(/[^\w.-]+/g, "-");
     const format = c.req.query("format");
@@ -714,7 +751,7 @@ export const reportRoutes = new Hono<AppEnv>()
     const location = c.get("location");
     const { from, to } = requireRange(c);
     const allowed = allowedProductTypes(c.get("locationModules"));
-    return c.json(await nonRevenueReport(location.id, from, to, allowed, nrGroup(c.req.query("group"))));
+    return c.json(await nonRevenueReport(location.id, from, to, allowed, nrGroup(c.req.query("group")), includeHiddenOf(c)));
   })
   .get("/reports/non-revenue/export", exportGuard, async (c) => {
     const location = c.get("location");
@@ -722,7 +759,7 @@ export const reportRoutes = new Hono<AppEnv>()
     const { from, to } = requireRange(c);
     const allowed = allowedProductTypes(c.get("locationModules"));
     const group = nrGroup(c.req.query("group"));
-    const report = await nonRevenueReport(location.id, from, to, allowed, group);
+    const report = await nonRevenueReport(location.id, from, to, allowed, group, includeHiddenOf(c));
     const user = c.get("user")!;
     const title = group ? `Non-Revenue Report — ${NON_REVENUE_GROUP_LABELS[group]}` : "Non-Revenue Report";
     const name = `${group ? group.toLowerCase() : "non-revenue"}_${location.name}_${from}_${to}`.replace(/[^\w.-]+/g, "-");
@@ -763,13 +800,13 @@ export const reportRoutes = new Hono<AppEnv>()
   .get("/reports/on-hand", async (c) => {
     const location = c.get("location");
     const allowed = allowedProductTypes(c.get("locationModules"));
-    return c.json(await onHandReport(location.id, allowed, basisOf(c)));
+    return c.json(await onHandReport(location.id, allowed, basisOf(c), includeHiddenOf(c)));
   })
   .get("/reports/on-hand/export", exportGuard, async (c) => {
     const location = c.get("location");
     const client = c.get("client");
     const allowed = allowedProductTypes(c.get("locationModules"));
-    const report = await onHandReport(location.id, allowed, basisOf(c));
+    const report = await onHandReport(location.id, allowed, basisOf(c), includeHiddenOf(c));
     const user = c.get("user")!;
     const name = `on-hand_${location.name}_${report.lastCountDate ?? "current"}${basisSuffix(basisOf(c))}`.replace(/[^\w.-]+/g, "-");
     const format = c.req.query("format");
@@ -782,14 +819,14 @@ export const reportRoutes = new Hono<AppEnv>()
   .get("/reports/par-level", async (c) => {
     const location = c.get("location");
     const allowed = allowedProductTypes(c.get("locationModules"));
-    const report = await parLevelReport(location.id, allowed, basisOf(c));
+    const report = await parLevelReport(location.id, allowed, basisOf(c), includeHiddenOf(c));
     return c.json(trimParLevelForBlockedStaff(report, c.get("user")!));
   })
   .get("/reports/par-level/export", exportGuard, async (c) => {
     const location = c.get("location");
     const client = c.get("client");
     const allowed = allowedProductTypes(c.get("locationModules"));
-    const report = await parLevelReport(location.id, allowed, basisOf(c));
+    const report = await parLevelReport(location.id, allowed, basisOf(c), includeHiddenOf(c));
     const user = c.get("user")!;
     const name = `par-level_${location.name}_${report.lastCountDate ?? "current"}`.replace(/[^\w.-]+/g, "-");
     const format = c.req.query("format");
@@ -802,13 +839,13 @@ export const reportRoutes = new Hono<AppEnv>()
   .get("/reports/non-moving", async (c) => {
     const location = c.get("location");
     const allowed = allowedProductTypes(c.get("locationModules"));
-    return c.json(await nonMovingReport(location.id, allowed, basisOf(c)));
+    return c.json(await nonMovingReport(location.id, allowed, basisOf(c), includeHiddenOf(c)));
   })
   .get("/reports/non-moving/export", exportGuard, async (c) => {
     const location = c.get("location");
     const client = c.get("client");
     const allowed = allowedProductTypes(c.get("locationModules"));
-    const report = await nonMovingReport(location.id, allowed, basisOf(c));
+    const report = await nonMovingReport(location.id, allowed, basisOf(c), includeHiddenOf(c));
     const user = c.get("user")!;
     const name = `non-moving_${location.name}_${report.lastCountDate ?? "current"}`.replace(/[^\w.-]+/g, "-");
     const format = c.req.query("format");
@@ -864,7 +901,7 @@ export const reportRoutes = new Hono<AppEnv>()
   .get("/stock/on-hand", async (c) => {
     const location = c.get("location");
     const allowed = allowedProductTypes(c.get("locationModules"));
-    const report = await onHandReport(location.id, allowed, basisOf(c));
+    const report = await onHandReport(location.id, allowed, basisOf(c), includeHiddenOf(c));
     return c.json(report.rows.map((r) => ({ locationItemId: r.locationItemId, onHand: r.onHand, lastCountDate: report.lastCountDate })));
   });
 

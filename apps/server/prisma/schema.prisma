@@ -249,6 +249,15 @@ model Client {
   // 11 = @fnb/core MATERIAL_VARIANCE_PCT. Presentation only; never touches the
   // reconciliation math.
   varianceThresholdPct Float @default(11)
+  // Whether hidden (clutter) items with no activity in a report's period are
+  // included in that report's item rows (docs/clutter-in-reports-decision.md).
+  // Off by default, per the client's stated preference: a hidden item drops
+  // out of a report only when it has zero activity in that period; one with
+  // real activity always stays, badged, no matter this setting. Presentation
+  // only — computed before this filter runs, so Grand Total never moves.
+  // Editable in Settings by ADMIN/MANAGER only, same gate as
+  // varianceThresholdPct; read-only for report viewers.
+  includeHiddenInReports Boolean @default(false)
   // Whether this establishment may SEE bottle tare / liquid weights (client
   // decision 2026-07-25). Off by default: that calibration library is LIS's
   // own IP, shown to a client only when the LIS admin turns it on for them.

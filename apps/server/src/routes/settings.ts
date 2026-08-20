@@ -38,6 +38,14 @@ const varianceThresholdBody = z.object({
   varianceThresholdPct: z.number().min(VARIANCE_THRESHOLD_MIN).max(VARIANCE_THRESHOLD_MAX),
 });
 
+// ── Include hidden (clutter) items in reports — audit-visibility policy
+// (docs/clutter-in-reports-decision.md). Same tier as costBasis /
+// varianceThresholdPct: one establishment-wide switch, not a per-viewer
+// toggle, so two people reading the same report never see different rows.
+const includeHiddenInReportsBody = z.object({
+  includeHiddenInReports: z.boolean(),
+});
+
 /**
  * Client req 2026-07-31 (docs/per-user-per-item-uom-plan.md): the unit an
  * admin default or staff override may hold for one item. Same 8-value list
@@ -262,6 +270,22 @@ export const preferencesRoutes = new Hono<AppEnv>()
       select: { varianceThresholdPct: true },
     });
     return c.json({ varianceThresholdPct: client?.varianceThresholdPct ?? MATERIAL_VARIANCE_PCT });
+  })
+
+  // Read-only like cost-basis and variance-threshold: every report screen
+  // needs this to know whether a hidden row was dropped or is showing with
+  // the "hidden · active" badge, so anyone who can read a report must be able
+  // to read the setting. Writing stays gated (settingsRoutes).
+  .get("/include-hidden-in-reports", async (c) => {
+    const user = c.get("user")!;
+    const clientId = c.req.query("clientId") ?? "";
+    if (!clientId) throw new AppError(400, "clientId is required");
+    await assertClientAccess(user.id, user.role, clientId);
+    const client = await prisma.client.findUnique({
+      where: { id: clientId },
+      select: { includeHiddenInReports: true },
+    });
+    return c.json({ includeHiddenInReports: client?.includeHiddenInReports ?? false });
   });
 
 /**
@@ -490,5 +514,45 @@ export const settingsRoutes = new Hono<AppEnv>()
       );
     });
     return c.json({ varianceThresholdPct });
-  });
+  })
+
+  // ── Include hidden items in reports (audit-visibility policy —
+  // docs/clutter-in-reports-decision.md) ──
+  // Per-establishment, same reasoning as cost basis and the variance
+  // threshold: a report's row set must not vary by who is looking at it.
+  // Presentation only — report-lists.ts / report-suite.ts already compute
+  // totals before this setting is applied (Phase 3), so flipping it never
+  // moves a reconciliation figure.
+  .put(
+    "/include-hidden-in-reports",
+    writeGuard,
+    zValidator("json", includeHiddenInReportsBody),
+    async (c) => {
+      const user = c.get("user")!;
+      const clientId = c.req.query("clientId") ?? "";
+      if (!clientId) throw new AppError(400, "clientId is required");
+      await assertClientAccess(user.id, user.role, clientId);
+      const { includeHiddenInReports } = c.req.valid("json");
+      const before = await prisma.client.findUnique({
+        where: { id: clientId },
+        select: { includeHiddenInReports: true },
+      });
+      await prisma.$transaction(async (tx) => {
+        await tx.client.update({ where: { id: clientId }, data: { includeHiddenInReports } });
+        await logActivity(
+          {
+            user,
+            clientId,
+            action: "settings.includeHiddenInReports",
+            entity: "Client",
+            entityId: clientId,
+            summary: `Include hidden items in reports: ${includeHiddenInReports ? "on" : "off"}`,
+            details: { from: before?.includeHiddenInReports ?? false, to: includeHiddenInReports },
+          },
+          tx,
+        );
+      });
+      return c.json({ includeHiddenInReports });
+    },
+  );
 

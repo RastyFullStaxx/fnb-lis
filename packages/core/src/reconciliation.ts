@@ -43,6 +43,16 @@ export interface ReconItemInput {
   size: number;
   unitName: string;
   contentTracked: boolean;
+  /**
+   * LocationItem.isActive, carried straight through (clutter-in-reports-plan.md
+   * Phase 3.1). Reconciliation itself never reads this — it decides nothing
+   * about usage, cost or variance — but it rides along on `ReconRow` so the
+   * report layer can apply its display filter (`hasReportActivity`) without a
+   * second query back to LocationItem. Optional so every existing caller that
+   * doesn't pass it keeps behaving exactly as before (defaults true, i.e.
+   * "not hidden", which is a no-op for the filter).
+   */
+  isActive?: boolean;
 
   beginFullQty: number;
   beginOpenContent: number;
@@ -104,6 +114,8 @@ export interface ReconRow {
   size: number;
   unitName: string;
   contentTracked: boolean;
+  /** LocationItem.isActive, passed through unchanged — see ReconItemInput.isActive. */
+  isActive: boolean;
 
   beginFull: number;
   beginOpenEquiv: number;
@@ -154,6 +166,78 @@ export const VARIANCE_EPSILON = 1e-6;
 /** Whether a variance is a real finding rather than float residue. */
 export function hasVariance(variance: number): boolean {
   return Math.abs(variance) > VARIANCE_EPSILON;
+}
+
+/**
+ * Whether a row moved at all in its report period — the rule behind hiding
+ * clutter items from reports (docs/clutter-in-reports-decision.md). A hidden
+ * item can drop out of a report ONLY when this is false: dropping a row with
+ * real activity would change that report's totals, so those rows always stay
+ * (badged) no matter the client's `includeHiddenInReports` setting.
+ *
+ * "Activity" is movement, not balance: `beginFull`/`endFull` deliberately do
+ * NOT count, per the client's confirmation that this is about idle items, not
+ * idle-looking on-hand stock. Pure predicate over already-computed outputs —
+ * it changes no reconciliation number (sibling of `hasVariance`).
+ */
+export function hasReportActivity(row: {
+  purchased: number;
+  forfeited: number;
+  transferIn: number;
+  transferOut: number;
+  usage: number;
+  soldDirect: number;
+  soldPortion: number;
+  nonRevenue: number;
+  production: number;
+  variance: number;
+}): boolean {
+  return (
+    row.purchased !== 0 ||
+    row.forfeited !== 0 ||
+    row.transferIn !== 0 ||
+    row.transferOut !== 0 ||
+    row.usage !== 0 ||
+    row.soldDirect !== 0 ||
+    row.soldPortion !== 0 ||
+    row.nonRevenue !== 0 ||
+    row.production !== 0 ||
+    hasVariance(row.variance)
+  );
+}
+
+/**
+ * Whether a report row should be DROPPED by the clutter display filter
+ * (clutter-in-reports-decision.md / -plan.md Phase 3.2). Only a hidden item
+ * with zero activity in the report's own period ever drops — and only when
+ * the client hasn't opted to show hidden items anyway. Everything else
+ * (visible items, and hidden items that moved) stays, because dropping a row
+ * with real activity would change the report's totals.
+ *
+ * Callers apply this AFTER totals are computed from the full row set, never
+ * before — that ordering is what keeps a report's Grand Total unaffected by
+ * the filter. This function itself computes nothing; it only decides
+ * inclusion, same boundary as `varianceSeverity` deciding a highlight.
+ */
+export function shouldDropHiddenRow(
+  row: {
+    isActive: boolean;
+    purchased: number;
+    forfeited: number;
+    transferIn: number;
+    transferOut: number;
+    usage: number;
+    soldDirect: number;
+    soldPortion: number;
+    nonRevenue: number;
+    production: number;
+    variance: number;
+  },
+  includeHiddenInReports: boolean,
+): boolean {
+  if (includeHiddenInReports) return false;
+  if (row.isActive) return false;
+  return !hasReportActivity(row);
 }
 
 /**
@@ -291,6 +375,7 @@ export function reconcileItem(input: ReconItemInput): ReconRow {
     size,
     unitName: input.unitName,
     contentTracked,
+    isActive: input.isActive ?? true,
     beginFull: input.beginFullQty,
     beginOpenEquiv,
     beginCost,
