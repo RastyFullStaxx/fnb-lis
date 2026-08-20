@@ -33,50 +33,63 @@ import {
 type Variant = "detailed" | "inventory";
 
 /**
- * The 24 legacy columns, in the client's own order. Kept as one spec so the
- * header row and the body can never drift — the same discipline the export's
- * LEGACY_HEADERS / legacyRowCells pair uses (services/exports-suite.ts).
- * `money` marks the peso columns (legacy LEGACY_MONEY_COLS); the rest are
- * quantities.
+ * The 20 leaf columns after Product Name/Size-UOM, in the client's own
+ * order (client req 2026-08-20 — screenshot of the old system's exact
+ * on-screen header). This is a SCREEN-ONLY layout: the Excel/CSV/PDF
+ * export (services/exports-suite.ts, LEGACY_HEADERS/legacyRowCells) keeps
+ * its own richer 25-column set — Cost of Purchase, Cost of Sold, and a
+ * Flag column — on purpose (client req 2026-08-20: downloads stay as-is).
+ * Do not "sync" the two; they are intentionally different views of the
+ * same LegacyAuditRow data.
+ * `money` marks the peso columns; the rest are quantities.
  */
 const COLUMNS: Array<{ header: string; money?: true; value: (r: LegacyAuditRow) => number | null }> = [
-  { header: "Begin Full", value: (r) => r.beginFull },
-  { header: "Begin Open", value: (r) => r.beginOpen },
+  { header: "Full", value: (r) => r.beginFull },
+  { header: "Weigh", value: (r) => r.beginOpen },
   { header: "B-Cost", money: true, value: (r) => r.bCost },
   { header: "Purchased", value: (r) => r.purchased },
-  { header: "Cost of Purchase", money: true, value: (r) => r.purchasedCost },
   { header: "F", value: (r) => r.forfeited },
-  { header: "End Full", value: (r) => r.endFull },
-  { header: "End Open", value: (r) => r.endOpen },
+  { header: "Full", value: (r) => r.endFull },
+  { header: "Weigh", value: (r) => r.endOpen },
   { header: "E-Cost", money: true, value: (r) => r.eCost },
-  { header: "Usage", value: (r) => r.usage },
-  { header: "Cost of Usage", money: true, value: (r) => r.costOfUsage },
-  { header: "Shot", value: (r) => r.shot },
-  { header: "Bottle", value: (r) => r.bottle },
-  { header: "Cost of Sold", money: true, value: (r) => r.costOfSold },
+  { header: "USAGE", value: (r) => r.usage },
+  { header: "Usaged Cost", money: true, value: (r) => r.costOfUsage },
+  { header: "Sold", value: (r) => r.shot },
+  { header: "Portion", value: (r) => r.bottle },
   { header: "Revenue", money: true, value: (r) => r.revenue },
-  { header: "Used vs Sales", value: (r) => r.usedVsSales },
+  { header: "Uses VS Sales", value: (r) => r.usedVsSales },
   { header: "Non Rev Usage", value: (r) => r.nonRevUsage },
   { header: "Non Rev Cost", money: true, value: (r) => r.nonRevCost },
   { header: "Over/Short", value: (r) => r.overallVariance },
   { header: "%Over/Short", value: (r) => r.variancePct },
   { header: "Cost", money: true, value: (r) => r.varianceCost },
-  { header: "At Retail", money: true, value: (r) => r.varianceRetail },
+  { header: "Retail", money: true, value: (r) => r.varianceRetail },
 ];
 
-/** Column groups above the leaf headers — the legacy report's banded look. */
+/** Column groups above the leaf headers — the legacy report's banded look.
+    Matches the client's reference screenshot exactly: Purchased/F and
+    Usage/Usaged Cost are NOT their own groups (blank band, like B-Cost),
+    SALES spans only Sold+Portion (Revenue sits outside it), and Variance
+    spans only Uses VS Sales (Non Rev Usage/Cost sit outside it).
+    A blank entry spans exactly 1 leaf column — never merged — so every
+    leaf column gets its own row-1 cell and its vertical divider runs the
+    full header height instead of only appearing once row 2 starts. */
 const GROUPS: Array<[string, number]> = [
+  ["", 1],
   ["", 1],
   ["Beginning Inventory", 2],
   ["", 1],
-  ["Purchased", 2],
+  ["", 1],
   ["", 1],
   ["Ending Inventory", 2],
   ["", 1],
-  ["Usage", 2],
-  ["Sales", 2],
-  ["", 2],
-  ["Variance", 3],
+  ["", 1],
+  ["", 1],
+  ["SALES", 2],
+  ["", 1],
+  ["Variance", 1],
+  ["", 1],
+  ["", 1],
   ["Overall Variance", 4],
 ];
 
@@ -231,7 +244,7 @@ export function LegacyAuditPage() {
               description="Pick different boundary dates, or check that the counts were committed."
             />
           ) : (
-            <Table className="border-separate border-spacing-0 text-xs [&_td]:border-b [&_td]:px-1.5 [&_th]:border-b [&_th]:px-1.5">
+            <Table className="border-separate border-spacing-0 text-xs [&_td]:border-b [&_td]:px-1.5 [&_th]:px-1.5">
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
                   {GROUPS.map(([label, span], i) => (
@@ -241,6 +254,18 @@ export function LegacyAuditPage() {
                       className={cn(
                         "sticky top-0 z-20 bg-muted text-center text-[11px] font-medium text-muted-foreground",
                         i > 0 && "border-l",
+                        // Blank group cells (B-Cost, Purchased, F, USAGE, Revenue,
+                        // Non Rev Usage/Cost, etc.) have nothing labeling them, so
+                        // the reference screenshot merges them visually with the
+                        // leaf header below — no horizontal rule between the two
+                        // rows for those columns. Only labeled groups (Beginning/
+                        // Ending Inventory, SALES, Variance, Overall Variance) get
+                        // the divider under their label. Applying border-b only on
+                        // the true branch (rather than border-b globally via the
+                        // table wrapper + border-b-0 to cancel it) avoids a Tailwind
+                        // v4 specificity tie between two same-weight utility classes,
+                        // where the cancelling class isn't guaranteed to win.
+                        label !== "" && "border-b",
                       )}
                     >
                       {label}
@@ -248,10 +273,10 @@ export function LegacyAuditPage() {
                   ))}
                 </TableRow>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="sticky left-0 top-10 z-30 w-[14rem] min-w-[10rem] border-r bg-muted">Product Name</TableHead>
-                  <TableHead className="sticky top-10 z-20 bg-muted">Size/UOM</TableHead>
+                  <TableHead className="sticky left-0 top-10 z-30 w-[14rem] min-w-[10rem] border-r border-b bg-muted">Product Name</TableHead>
+                  <TableHead className="sticky top-10 z-20 border-b border-l bg-muted">Size/UOM</TableHead>
                   {COLUMNS.map((c) => (
-                    <TableHead key={c.header} className="sticky top-10 z-20 bg-muted text-right whitespace-nowrap">
+                    <TableHead key={c.header} className="sticky top-10 z-20 border-b border-l bg-muted text-right whitespace-nowrap">
                       {c.header}
                     </TableHead>
                   ))}
