@@ -1604,7 +1604,7 @@ async function seedClutterInReportsDemo() {
     await prisma.purchaseLine.create({
       data: {
         purchaseId: purchase.id, locationItemId: active.id, qty: 3, unitCost: active.cost,
-        lineTotal: round2(3 * active.cost), ...staff,
+        lineTotal: round2(3 * active.cost), expiryDate: addDays(purchase.purchaseDate, 730), ...staff,
       },
     });
     await prisma.saleRecord.create({

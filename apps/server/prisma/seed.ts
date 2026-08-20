@@ -1120,7 +1120,7 @@ async function seedOpenWork() {
         note: "Seeded draft purchase for review",
         createdById: staff.id,
         createdByName: staff.name,
-        lines: { create: [{ locationItemId: cola.id, qty: 12, unitCost: cola.cost, lineTotal: 12 * cola.cost, createdById: staff.id, createdByName: staff.name }] },
+        lines: { create: [{ locationItemId: cola.id, qty: 12, unitCost: cola.cost, lineTotal: 12 * cola.cost, expiryDate: "2027-01-05", createdById: staff.id, createdByName: staff.name }] },
       },
     });
   }
