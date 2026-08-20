@@ -574,6 +574,7 @@ function OpenSession({ session }: { session: SessionWithLines }) {
                 id="count-qty"
                 className="tnum h-11 text-lg"
                 placeholder="0"
+                allowDecimal={false}
                 value={qty}
                 onChange={(e) => setQty(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && save()}
@@ -1163,6 +1164,7 @@ function EditLineDialog({
                 id="ec-qty"
                 className="tnum"
                 placeholder="0"
+                allowDecimal={false}
                 value={qty}
                 onChange={(e) => setQty(e.target.value)}
               />
