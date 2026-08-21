@@ -218,7 +218,13 @@ export function CostSnapshotPage() {
                     >
                       Value
                     </SortableTableHead>
-                    <SortableTableHead sortKey="basis" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                    <SortableTableHead
+                      sortKey="basis"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="w-px whitespace-nowrap"
+                    >
                       Cost Basis
                     </SortableTableHead>
                   </TableRow>
@@ -231,7 +237,7 @@ export function CostSnapshotPage() {
                       <TableCell className="tnum text-right">{formatNumber(row.qty)}</TableCell>
                       <TableCell className="tnum text-right">{formatUnitPrice(row.cost)}</TableCell>
                       <TableCell className="tnum text-right">{formatMoney(row.value)}</TableCell>
-                      <TableCell>
+                      <TableCell className="w-px whitespace-nowrap">
                         <Badge variant={row.basis === "average" ? "secondary" : "outline"}>
                           {row.basis === "average" ? "Avg Purchase" : "Cost Price"}
                         </Badge>

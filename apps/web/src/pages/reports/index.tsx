@@ -52,19 +52,19 @@ type Report = {
 const SECTIONS: Array<{ title: string; blurb: string; reports: Report[] }> = [
   {
     title: "Reconciliation",
-    blurb: "Count to count — what should have been used, against what was.",
+    blurb: "Count to count: what should have been used, against what was.",
     reports: [
+      {
+        path: "legacy-audit",
+        icon: BarChart3,
+        title: "Full Audit by Category",
+        description: "24-column audit grouped by category, with the cost ratio.",
+      },
       {
         path: "full-audit?variance=only",
         icon: BarChart3,
         title: "Variance Report",
         description: "Only the items that missed or beat expectation, at cost and retail.",
-      },
-      {
-        path: "legacy-audit",
-        icon: BarChart3,
-        title: "Full Audit by Category",
-        description: "The client's original 24-column layout, grouped by category, with the cost ratio.",
       },
       {
         path: "variance-summary",
@@ -82,7 +82,7 @@ const SECTIONS: Array<{ title: string; blurb: string; reports: Report[] }> = [
         path: "cost-snapshot",
         icon: Coins,
         title: "Beginning / Ending Cost",
-        description: "Counted stock on an audit date, valued on the client's cost basis.",
+        description: "Counted stock on an audit date, valued at cost.",
       },
     ],
   },
@@ -101,7 +101,7 @@ const SECTIONS: Array<{ title: string; blurb: string; reports: Report[] }> = [
         requiresProductTypes: ["Beverage", "Food"],
         icon: Receipt,
         title: "Sales",
-        description: "Revenue and quantities by day, item, and menu — with Discounted and Production views.",
+        description: "Revenue and quantities by day, item, and menu, with Discounted and Production views.",
       },
       {
         path: "sales-by-item",
@@ -140,7 +140,7 @@ const SECTIONS: Array<{ title: string; blurb: string; reports: Report[] }> = [
         path: "transfers",
         icon: ArrowLeftRight,
         title: "Transfers (Requisition)",
-        description: "Stock sent to and received from this client's other locations, at cost and retail.",
+        description: "Stock sent to and received from other locations, at cost and retail.",
       },
       {
         path: "on-hand",
@@ -153,33 +153,33 @@ const SECTIONS: Array<{ title: string; blurb: string; reports: Report[] }> = [
         icon: ClipboardList,
         title: "Bottle Keep & Forfeited Inventory",
         description:
-          "Bottles a guest paid for and left behind — who holds what, what has passed its keep date, and forfeiting it back to stock at zero cost.",
+          "Bottles a guest paid for and left behind: who holds what, what has passed its keep date, and what forfeits back to stock at zero cost.",
       },
       {
         path: "blank-forms",
         icon: ClipboardList,
         title: "Blank Entry Forms",
         description:
-          "Printable Sales, Purchase and Non-Revenue forms to fill in by hand — then import the file back, or let Stocky read it.",
+          "Printable Sales, Purchase, and Non-Revenue forms for filling in by hand, then importing back or scanning with Stocky.",
       },
       {
         path: "count-sheet",
         icon: ClipboardList,
         title: "Physical Count Sheet",
         description:
-          "Printable blind sheet for counting the shelf — no expected figures, so what's written down is what's there.",
+          "Printable blind sheet for counting the shelf. No expected figures shown, so what's written down is what's there.",
       },
       {
         path: "par-level",
         icon: ClipboardList,
         title: "Par Level",
-        description: "Stock vs reorder point, with recent movement and a suggested order — a purchasing guide.",
+        description: "Stock vs reorder point, with recent movement and a suggested order.",
       },
       {
         path: "non-moving",
         icon: PackageX,
         title: "Non-Moving Items",
-        description: "Dead stock — items on hand that saw no movement last period, ranked by idle value.",
+        description: "Items on hand that saw no movement last period, ranked by idle value.",
       },
       {
         path: "expiring-batches",
@@ -190,7 +190,7 @@ const SECTIONS: Array<{ title: string; blurb: string; reports: Report[] }> = [
         requiresProductTypes: ["Beverage", "Food"],
         icon: AlertTriangle,
         title: "Expiring Batches",
-        description: "Every open, dated delivery batch on the shelf — expired first, then soonest to expire.",
+        description: "Every open, dated delivery batch on the shelf, expired first then soonest to expire.",
       },
     ],
   },
@@ -202,7 +202,7 @@ const SECTIONS: Array<{ title: string; blurb: string; reports: Report[] }> = [
         path: "non-revenue",
         icon: Wine,
         title: "Non-Revenue",
-        description: "Spoilage & spillages, trimming, marketing — grouped by reason.",
+        description: "Spoilage, spillage, trimming, and marketing use, grouped by reason.",
       },
       {
         path: "forfeits",
@@ -216,27 +216,27 @@ const SECTIONS: Array<{ title: string; blurb: string; reports: Report[] }> = [
         requiresProductTypes: ["Asset"],
         icon: Wrench,
         title: "Asset Breakage",
-        description: "Equipment that broke, went missing, or was retired — what happened, valued at cost. (Asset locations.)",
+        description: "Equipment that broke, went missing, or was retired, valued at cost.",
       },
     ],
   },
   {
     title: "Asset",
-    blurb: "The equipment register and its Beginning/Ending count. (Asset locations.)",
+    blurb: "The equipment register and its Beginning/Ending count.",
     reports: [
       {
         path: "asset-register",
         requiresProductTypes: ["Asset"],
         icon: ClipboardCheck,
         title: "Asset Register",
-        description: "Every registered asset — code, condition, status, cost, supplier, and its last note.",
+        description: "Every registered asset: code, condition, status, cost, supplier, and its last note.",
       },
       {
         path: "asset-inventory",
         requiresProductTypes: ["Asset"],
         icon: Boxes,
         title: "Asset Inventory",
-        description: "Beginning vs Ending count for asset items, with the quantity change.",
+        description: "Beginning vs ending count for asset items, with the quantity change.",
       },
     ],
   },

@@ -273,14 +273,20 @@ export function AssetRegisterReportPage() {
                   <TableCell className="tnum text-right font-semibold">
                     {formatNumber(report.data.totals.qty)}
                   </TableCell>
-                  {/* Initial Cost and Current Cost are per-unit figures on each
-                      row — summing them across different asset types isn't
-                      meaningful, so those two columns carry no total. One
-                      spanned blank cell (rather than two separate empty
-                      cells) keeps their combined width locked to what the
-                      body rows actually render, so Value's total can't drift
-                      off its own column when its neighbors are empty. */}
-                  <TableCell colSpan={2} />
+                  {/* Both cost columns are quantity-extended here (see the
+                      backend comment in asset-register.ts) specifically so
+                      they add up to something meaningful across different
+                      asset types — a plain per-unit sum would understate the
+                      total badly once one code covers dozens of physical
+                      units. Value's total is the same figure as Current
+                      Cost's: Value is qty × current cost on every row, so
+                      their column sums are identical by construction. */}
+                  <TableCell className="tnum text-right font-semibold">
+                    {formatMoney(report.data.totals.initialCostValue)}
+                  </TableCell>
+                  <TableCell className="tnum text-right font-semibold">
+                    {formatMoney(report.data.totals.currentCostValue)}
+                  </TableCell>
                   <TableCell className="tnum text-right font-semibold">
                     {formatMoney(report.data.totals.currentCostValue)}
                   </TableCell>

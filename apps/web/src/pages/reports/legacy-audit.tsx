@@ -289,7 +289,7 @@ export function LegacyAuditPage() {
               description="Pick different boundary dates, or check that the counts were committed."
             />
           ) : (
-            <Table className="border-separate border-spacing-0 text-xs [&_td]:border-b [&_td]:px-2.5 [&_th]:px-2.5">
+            <Table className="border-separate border-spacing-0 text-xs [&_td]:border-b [&_td]:px-2.5 [&_th]:px-1.5 [&_th_button]:gap-0.5 [&_th:not(.product-name-th)_button]:justify-center">
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
                   {GROUPS.map(([label, span], i) => (
@@ -323,7 +323,7 @@ export function LegacyAuditPage() {
                     activeKey={sortKey}
                     direction={sortDirection}
                     onSort={toggleSort}
-                    className="sticky left-0 top-10 z-30 w-[14rem] min-w-[10rem] border-r border-b bg-muted"
+                    className="product-name-th sticky left-0 top-10 z-30 w-[14rem] min-w-[10rem] border-r border-b bg-muted"
                   >
                     Product Name
                   </SortableTableHead>
