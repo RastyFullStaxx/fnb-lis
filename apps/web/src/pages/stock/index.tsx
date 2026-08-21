@@ -143,6 +143,12 @@ export function StockPage() {
   // Asset Details is a whole column of "—" on a Bar or Kitchen catalog, and on a
   // 13" laptop that is width taken from the numbers people came to read.
   const showAssetDetails = locationModules.includes("ASSET");
+  // Mirror of the above: Empty Weight / ml per unit is a whole column of "—"
+  // on an Asset-only catalog — nothing on that register goes on a scale.
+  // Supplies has no module of its own (MODULE_TYPES is just BAR/KITCHEN/ASSET),
+  // so it rides under whichever of Bar/Kitchen it's attached to and the column
+  // still shows there, same as it always has.
+  const showWeighColumn = locationModules.includes("BAR") || locationModules.includes("KITCHEN");
 
   const { sortedRows, sortKey, sortDirection, toggleSort } = useSort(rows.data ?? [], {
     accessors: {
@@ -318,6 +324,11 @@ export function StockPage() {
                 {/* The second number is millilitres per unit of the first, and
                     rendered bare it read as an unexplained "1.0625". The header
                     is the only place with room to say so. */}
+                {/* Hidden on an Asset-only location, same reasoning as
+                    Asset Details being hidden on a Bar/Kitchen-only one:
+                    nothing on that register ever goes on a scale, so this
+                    column would be a solid line of "—" top to bottom. */}
+                {showWeighColumn && (
                 <SortableTableHead
                   sortKey="weight"
                   activeKey={sortKey}
@@ -328,6 +339,7 @@ export function StockPage() {
                 >
                   Empty Weight / ml per unit
                 </SortableTableHead>
+                )}
                 <SortableTableHead
                   sortKey="status"
                   activeKey={sortKey}
@@ -368,7 +380,20 @@ export function StockPage() {
               {sortedRows.map((row) => {
                 const missing = isMissingPrice(row, row.itemVariant.item.category.productType);
                 const weigh = weighInfo(row);
-                const isAsset = row.itemVariant.item.category.productType === "Asset";
+                const category = row.itemVariant.item.category;
+                const isAsset = category.productType === "Asset";
+                // Assets never spoil, full stop — same treatment as the Asset
+                // Details column below, just inverted. Supplies hides too,
+                // UNLESS this category actually opts into expiry (e.g. a
+                // future "Cleaning Chemicals" category with
+                // defaultPerishable: true) or this location already carries
+                // its own override — so an existing override never goes
+                // silently orphaned by this gate.
+                const showExpiryCell =
+                  !isAsset &&
+                  (category.productType !== "Supplies" ||
+                    category.defaultPerishable ||
+                    row.isPerishable != null);
                 return (
                   <TableRow
                     key={row.id}
@@ -393,6 +418,7 @@ export function StockPage() {
                     <TableCell className="tnum text-right">
                       {row.parLevel ?? <span className="text-muted-foreground">—</span>}
                     </TableCell>
+                    {showWeighColumn && (
                     <TableCell className="tnum whitespace-nowrap">
                       {weigh.weighable ? (
                         <div className="flex items-center justify-end gap-1.5">
@@ -423,6 +449,7 @@ export function StockPage() {
                         <span className="block text-right text-muted-foreground">—</span>
                       )}
                     </TableCell>
+                    )}
                     <TableCell className="text-right">
                       {missing ? (
                         <Badge variant="destructive">No price</Badge>
@@ -452,6 +479,7 @@ export function StockPage() {
                       )}
                     </TableCell>
                     <TableCell className="text-right">
+                      {showExpiryCell ? (
                       <div className="flex items-center justify-end gap-1.5">
                         <span>
                           {resolveIsPerishable(row, row.itemVariant.item.category.defaultPerishable) ? (
@@ -513,6 +541,28 @@ export function StockPage() {
                           )
                         )}
                       </div>
+                      ) : (
+                        // Asset (always), or a Supplies category that hasn't opted
+                        // into expiry and carries no location override — nothing
+                        // downstream needs a date here, so no cell, no icon, same
+                        // "—" treatment as the Asset Details column uses in reverse.
+                        // Restore still has to live somewhere for an inactive row,
+                        // so it rides along here rather than disappearing with the
+                        // rest of this cell's contents.
+                        <div className="flex items-center justify-end gap-1.5">
+                          <span className="text-muted-foreground">—</span>
+                          {!row.isActive && canMasterWrite && (
+                            <Button
+                              size="xs"
+                              variant="outline"
+                              disabled={restore.isPending}
+                              onClick={() => void onRestore(row.id, row.itemVariant.item.name)}
+                            >
+                              Restore
+                            </Button>
+                          )}
+                        </div>
+                      )}
                     </TableCell>
                     {showAssetDetails && (
                     <TableCell className="text-right">

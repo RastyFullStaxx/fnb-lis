@@ -21,6 +21,8 @@ const ALL = "__all__";
 export function ItemsPage() {
   const [tab, setTab] = useState("items");
   const [search, setSearch] = useState("");
+  const [catSearch, setCatSearch] = useState("");
+  const [catProductType, setCatProductType] = useState(ALL);
   const [productType, setProductType] = useState(ALL);
   const [itemFormOpen, setItemFormOpen] = useState(false);
   const [catCreateOpen, setCatCreateOpen] = useState(false);
@@ -86,6 +88,32 @@ export function ItemsPage() {
                   </ToolbarField>
                 </>
               )}
+              {tab === "categories" && (
+                <>
+                  <ToolbarSearch
+                    value={catSearch}
+                    onChange={setCatSearch}
+                    placeholder="Find a category…"
+                    label="Search"
+                  />
+                  <ToolbarField label="Product Type" htmlFor="categories-product-type">
+                    <Select value={catProductType} onValueChange={setCatProductType}>
+                      {/* Same no-aria-label convention as the Items filter above. */}
+                      <SelectTrigger id="categories-product-type" className="w-40 bg-background">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={ALL}>All Types</SelectItem>
+                        {(productTypes.data?.productTypes ?? []).map((t) => (
+                          <SelectItem key={t} value={t}>
+                            {t}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </ToolbarField>
+                </>
+              )}
             </>
           }
         >
@@ -93,7 +121,12 @@ export function ItemsPage() {
             <ItemsTab search={search} productType={productType} formOpen={itemFormOpen} setFormOpen={setItemFormOpen} />
           </TabsContent>
           <TabsContent value="categories" className="m-0">
-            <CategoriesTab createOpen={catCreateOpen} setCreateOpen={setCatCreateOpen} />
+            <CategoriesTab
+              search={catSearch}
+              productType={catProductType}
+              createOpen={catCreateOpen}
+              setCreateOpen={setCatCreateOpen}
+            />
           </TabsContent>
           <TabsContent value="units" className="m-0">
             <UnitsTab createOpen={unitCreateOpen} setCreateOpen={setUnitCreateOpen} />

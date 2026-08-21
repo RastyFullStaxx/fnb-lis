@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Tags } from "lucide-react";
@@ -36,28 +36,36 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { SortableTableHead } from "@/components/ui/sortable-table-head";
-import { TableEmpty, TableFailure, TableLoading, ToolbarSearch, queryFailed } from "@/components/table-surface";
+import { TableEmpty, TableFailure, TableLoading, queryFailed } from "@/components/table-surface";
 
 /** Sentinel for the "Other" branch in the Industry select — same convention as AssetDetailsEdit. */
 const OTHER = "__other__";
+const ALL = "__all__";
 
 export function CategoriesTab({
+  search,
+  productType,
   createOpen,
   setCreateOpen,
 }: {
+  search: string;
+  productType: string;
   createOpen: boolean;
   setCreateOpen: (open: boolean) => void;
 }) {
   const categories = useCategories();
   const [editing, setEditing] = useState<Category | null>(null);
-  const [query, setQuery] = useState("");
 
-  const q = query.trim().toLowerCase();
-  // The page toolbar's search only filters the Items tab, so 48 categories had
-  // to be found by eye.
-  const rows = (categories.data ?? []).filter(
-    (c) => !q || c.name.toLowerCase().includes(q) || c.productType.toLowerCase().includes(q),
-  );
+  // Search and Product Type now live in the page toolbar's tab row (next to
+  // items' filters), instead of separate controls rendered under the tabs.
+  const rows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return (categories.data ?? []).filter(
+      (c) =>
+        (!q || c.name.toLowerCase().includes(q) || c.productType.toLowerCase().includes(q)) &&
+        (productType === ALL || c.productType === productType),
+    );
+  }, [categories.data, search, productType]);
 
   const { sortedRows, sortKey, sortDirection, toggleSort } = useSort(rows, {
     accessors: {
@@ -69,24 +77,25 @@ export function CategoriesTab({
 
   return (
     <>
-      {(categories.data ?? []).length > 0 && (
-        <div className="mb-3">
-          <ToolbarSearch value={query} onChange={setQuery} placeholder="Find a category…" label="Search" />
-        </div>
-      )}
       {queryFailed(categories) ? (
         <TableFailure query={categories} title="Couldn't load categories" />
       ) : categories.isPending ? (
         <TableLoading />
-      ) : (categories.data ?? []).length === 0 ? (
+      ) : rows.length === 0 ? (
         <TableEmpty
           icon={Tags}
-          title="No categories yet"
-          description="Add a category to group items for reports and count sheets."
+          title={search || productType !== ALL ? "Nothing matches the current filter" : "No categories yet"}
+          description={
+            search || productType !== ALL
+              ? "Clear the search or type filter to see everything."
+              : "Add a category to group items for reports and count sheets."
+          }
           action={
-            <Button onClick={() => setCreateOpen(true)}>
-              <Plus className="size-4" /> New Category
-            </Button>
+            !(search || productType !== ALL) && (
+              <Button onClick={() => setCreateOpen(true)}>
+                <Plus className="size-4" /> New Category
+              </Button>
+            )
           }
         />
       ) : (
