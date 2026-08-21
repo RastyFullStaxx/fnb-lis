@@ -40,7 +40,7 @@ export function SortableTableHead({
   onSort?: (key: string) => void;
   /** Set false to render a non-sortable header (e.g. an actions column). */
   sortable?: boolean;
-} & Omit<ComponentProps<typeof TableHead>, "onClick" | "children">) {
+} & Omit<ComponentProps<typeof TableHead>, "onClick">) {
   const isSortable = sortable && !!sortKey && !!onSort;
   const isActive = isSortable && activeKey === sortKey;
 
