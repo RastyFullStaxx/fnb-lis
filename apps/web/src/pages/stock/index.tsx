@@ -13,7 +13,7 @@ import { useItemDisplayUnit } from "@/lib/preferences";
 import { useSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarSearch, queryFailed } from "@/components/table-surface";
+import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarField, ToolbarSearch, queryFailed } from "@/components/table-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -74,6 +74,8 @@ function weighInfo(row: LocationItem) {
 }
 import { AssetDetailsEdit } from "./asset-details-edit";
 
+const ALL_CATEGORIES = "__all__";
+
 export function StockPage() {
   const me = useMe();
   const location = useCurrentLocation();
@@ -81,6 +83,10 @@ export function StockPage() {
   // ?q= seeds the search — the command palette deep-links here with it.
   const [params] = useSearchParams();
   const [search, setSearch] = useState(params.get("q") ?? "");
+  // Category filter, client-side like needsWeightOnly/reportedOnly below —
+  // the catalog per location is small enough that a second server round trip
+  // isn't worth it, and it keeps this in sync with the same rows on screen.
+  const [category, setCategory] = useState(ALL_CATEGORIES);
   const [missingOnly, setMissingOnly] = useState(params.get("missingPrices") === "1");
   // The notification bell deep-links here; without a matching filter it just
   // dropped you on the whole catalog and left you to find the row.
@@ -100,6 +106,7 @@ export function StockPage() {
   const rows = {
     ...fetched,
     data: fetched.data?.filter((r) => {
+      if (category !== ALL_CATEGORIES && r.itemVariant.item.category.id !== category) return false;
       if (needsWeightOnly && !weighInfo(r).incomplete) return false;
       if (reportedOnly && !r.itemVariant.weightReviewNote) return false;
       return true;
@@ -108,6 +115,18 @@ export function StockPage() {
   // Unfiltered catalog just for the missing-price count, so the chip's label
   // stays stable under search and the filter never strands the user.
   const catalog = useLocationItems();
+  // Category options come from this location's own catalog, not the master
+  // list — a Bar-only location shouldn't offer Kitchen categories it can
+  // never contain a row for. Sorted the same way the master catalog sorts
+  // categories (sortOrder), then name as a tiebreaker.
+  const categoryOptions = useMemo(() => {
+    const byId = new Map<string, { id: string; name: string; sortOrder: number }>();
+    for (const r of catalog.data ?? []) {
+      const c = r.itemVariant.item.category;
+      if (!byId.has(c.id)) byId.set(c.id, { id: c.id, name: c.name, sortOrder: c.sortOrder });
+    }
+    return Array.from(byId.values()).sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
+  }, [catalog.data]);
 
   // Per-item display unit resolver (client req 2026-07-31,
   // docs/per-user-per-item-uom-plan.md) — same hook Counts and Recipes use,
@@ -154,6 +173,11 @@ export function StockPage() {
     accessors: {
       item: (r) => r.itemVariant.item.name,
       category: (r) => r.itemVariant.item.category.name,
+      // Raw stored size, not the resolved display value — sorting stays
+      // stable regardless of which unit a given viewer's preference resolves
+      // to, and avoids comparing across mixed units (ml vs oz) as if they
+      // were the same scale.
+      size: (r) => r.itemVariant.size,
       cost: (r) => r.cost ?? 0,
       par: (r) => r.parLevel ?? -Infinity,
       weight: (r) =>
@@ -207,6 +231,23 @@ export function StockPage() {
               placeholder="Search this catalog…"
               label="Search"
             />
+            <ToolbarField label="Category" htmlFor="stock-category">
+              {/* No aria-label: the visible "Category" caption is the
+                  accessible name (ToolbarField's htmlFor points at this id). */}
+              <Select value={category} onValueChange={setCategory}>
+                <SelectTrigger id="stock-category" className="w-40 bg-background">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_CATEGORIES}>All Categories</SelectItem>
+                  {categoryOptions.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </ToolbarField>
             {/* No caption on the chip — its own label already names the filter. */}
             {(missingOnly || missingCount > 0) && (
               <Toggle pressed={missingOnly} onPressedChange={setMissingOnly}>
@@ -250,9 +291,13 @@ export function StockPage() {
         ) : (rows.data ?? []).length === 0 ? (
           <TableEmpty
             icon={Boxes}
-            title={search || missingOnly ? "Nothing matches the current filter" : "This location's catalog is empty"}
+            title={
+              search || category !== ALL_CATEGORIES || missingOnly
+                ? "Nothing matches the current filter"
+                : "This location's catalog is empty"
+            }
             description={
-              search || missingOnly
+              search || category !== ALL_CATEGORIES || missingOnly
                 ? "Clear the search or filter to see everything."
                 : `Add items from the master catalog, or copy another location's catalog to start fast.${
                     moduleScope ? ` This location's catalog covers ${moduleScope} items only.` : ""
@@ -261,6 +306,7 @@ export function StockPage() {
             action={
               canEditPrices &&
               !search &&
+              category === ALL_CATEGORIES &&
               !missingOnly && (
                 <Button onClick={() => setAttachOpen(true)}>
                   <Plus className="size-4" /> Add Items
@@ -274,6 +320,21 @@ export function StockPage() {
               <TableRow className="bg-muted hover:bg-muted">
                 <SortableTableHead sortKey="item" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
                   Item
+                </SortableTableHead>
+                {/* Size/quantity used to be squeezed inline next to the item
+                    name — now a column of its own, kept immediately after
+                    Item so it still reads right next to the name rather than
+                    landing far down the row (client req 2026-08-21). Applies
+                    to every module: an Asset row's "quantity" IS its variant
+                    size (e.g. "1 unit"), same field as a Bar bottle's
+                    "700 ml" or Kitchen's "1 case". */}
+                <SortableTableHead
+                  sortKey="size"
+                  activeKey={sortKey}
+                  direction={sortDirection}
+                  onSort={toggleSort}
+                >
+                  Size / Qty
                 </SortableTableHead>
                 {/* Category costs ~120px it can't justify on a 13" laptop, so
                     below 2xl it moves under the item name instead of being
@@ -402,12 +463,12 @@ export function StockPage() {
                     {/* Wrap rather than truncate — an auditor has to read the whole item name. */}
                     <TableCell className="max-w-[22rem] break-words">
                       <span className="font-medium">{row.itemVariant.item.name}</span>
-                      <span className="ml-2 text-sm text-muted-foreground">
-                        {displayVariantLabel(row.itemVariant, resolveDisplay(row.itemVariant.item.id, row.itemVariant.unit))}
-                      </span>
                       <span className="block text-xs text-muted-foreground 2xl:hidden">
                         {row.itemVariant.item.category.name}
                       </span>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {displayVariantLabel(row.itemVariant, resolveDisplay(row.itemVariant.item.id, row.itemVariant.unit))}
                     </TableCell>
                     <TableCell className="hidden text-muted-foreground 2xl:table-cell">
                       {row.itemVariant.item.category.name}
