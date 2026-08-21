@@ -53,6 +53,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 
 /** Same 8-value list the server accepts (itemDisplayUnitBody, routes/settings.ts). */
 const ITEM_DISPLAY_UNITS: ItemDisplayUnit[] = ["ml", "L", "fl oz", "gal", "g", "kg", "oz", "lb"];
@@ -65,22 +74,29 @@ export function SettingsPage() {
     <div>
       <PageHeader title="Settings" />
       {/* Flat sections split by hairlines, one surface, never stacked cards.
-          Grouped, because the two halves are not peers: see SettingsGroup. */}
-      <div className="space-y-10">
+          Grouped, because the three tiers are not peers: see SettingsGroup. */}
+      <div className="space-y-16">
         <SettingsGroup
           title="Your preferences"
           description="Only affect your own account. Nobody else sees a difference."
         >
           <DisplayPreferencesSection />
-          <StaffItemUnitSection />
           <DevicePinSection />
+        </SettingsGroup>
+
+        <SettingsGroup
+          title="Units"
+          description="How quantities are displayed, from most specific to most general."
+        >
+          {can(role, "master.write") && <AdminItemUnitDefaultSection />}
+          <StaffItemUnitSection />
+          <StaffDefaultUnitSection />
         </SettingsGroup>
 
         <SettingsGroup
           title="Establishment settings"
           description="Shared by everyone at this establishment. Changes here move the figures in reports and exports."
         >
-          {can(role, "master.write") && <AdminItemUnitDefaultSection />}
           <CostBasisSection />
           <VarianceThresholdSection />
           <IncludeHiddenInReportsSection />
@@ -103,38 +119,52 @@ export function SettingsPage() {
 }
 
 /**
- * The two halves of this page, told apart.
+ * The three tiers of this page, told apart.
  *
- * Seven sections used to run down one hairline-divided list as visual peers,
- * and two of them are not peers with the rest: **Inventory Cost Basis restates
- * every valuation figure** and **Variance Highlight Threshold changes what the
- * Full Audit flags on screen and in every download**, for the whole client.
- * Text Size changes nothing but your own browser. Rendering an accounting
- * policy and a font control identically invites exactly the wrong click.
+ * Started as seven sections running down one hairline-divided list as visual
+ * peers, which flattened distinctions that matter: **Inventory Cost Basis
+ * restates every valuation figure**, **Variance Highlight Threshold changes
+ * what the Full Audit flags on screen and in every download**, and — the
+ * case that prompted this split — three separately-named "display unit"
+ * settings (personal, personal per-item, establishment per-item) were spread
+ * across two of those groups, so their precedence over one another had to be
+ * inferred from paragraph text instead of position. Rendering an accounting
+ * policy, a font control, and a three-level unit hierarchy identically
+ * invites exactly the wrong click, or the wrong question about which setting
+ * does what.
  *
- * Proximity carries the distinction that identical styling erased, and the
- * subheads say the consequence in words rather than relying on someone
- * inferring it from position. It also chunks seven sections into two groups,
- * which is the difference between scanning a list and reading one.
+ * Proximity now carries what identical styling erased: **Your preferences**
+ * (personal, no one else affected), **Units** (a hybrid tier — mostly
+ * personal, with one admin-gated establishment-wide row, kept together
+ * because it's one hierarchy the eye should read as one ladder rather than
+ * split by who each row affects), and **Establishment settings** (shared,
+ * moves the figures in reports).
  *
- * Personal first: far more people change their text size than an establishment's
- * cost basis, and the section that should be reached by accident least often
- * should not be the one nearest the top.
+ * Personal first: far more people change their text size than an
+ * establishment's cost basis, and the section that should be reached by
+ * accident least often should not be the one nearest the top. Units sits
+ * between the two — it has both personal and shared rows — rather than
+ * forcing it into one side or the other.
  */
 function SettingsGroup({
   title,
   description,
   children,
+  divider = false,
 }: {
   title: string;
   description: string;
   children: React.ReactNode;
+  /** Hairline above the group, marking a new tier rather than relying on
+   * whitespace alone. Omitted on the first group, PageHeader already
+   * separates it from the page title above. */
+  divider?: boolean;
 }) {
   return (
-    <section>
+    <section className={divider ? "border-t pt-16" : undefined}>
       <h2 className="text-base font-semibold tracking-tight">{title}</h2>
-      <p className="mt-1 max-w-prose text-sm text-muted-foreground">{description}</p>
-      <div className="mt-5 divide-y border-t pt-1">{children}</div>
+      <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+      <div className="mt-5 space-y-6 border-t pt-5">{children}</div>
     </section>
   );
 }
@@ -198,7 +228,7 @@ function CostBasisSection() {
         )}
         <p className="text-xs leading-5 text-muted-foreground">
           Accounting standards expect one basis applied consistently, so this is saved for the whole
-          client rather than chosen per download. Exports name the basis in the file and in the header.
+          client rather than chosen per download.
         </p>
       </div>
     </SettingsSection>
@@ -272,8 +302,8 @@ function VarianceThresholdSection() {
           <p className="text-xs text-destructive">Enter a percent between 0 and 100.</p>
         )}
         <p className="text-xs leading-5 text-muted-foreground">
-          A material short shows red, an over shows amber. Whole-unit items (e.g. bottles sold whole)
-          always highlight when off by a single unit, regardless of this percent. Default is 11%.
+          A material short shows red, an over shows amber. Whole-unit items always highlight when off
+          by a single unit, regardless of this percent. Default is 11%.
         </p>
         {!canEdit && (
           <p className="text-xs text-muted-foreground">Only managers and administrators can change this.</p>
@@ -315,20 +345,14 @@ function IncludeHiddenInReportsSection() {
   return (
     <SettingsSection
       title="Include Hidden Items In Reports"
-      description="An item hidden from Local Database (idle stock with nothing counted, sold, or moved) also drops off reports. Turn this on to show them anyway."
+      description="An item hidden from Local Database also drops off reports. Turn this on to show them anyway."
     >
       <div className="max-w-md space-y-2">
         {saved.isPending ? (
           <Skeleton className="h-9 w-16" />
         ) : (
           <div className="flex items-center justify-between rounded-lg border p-3">
-            <div className="text-sm">
-              <div>Show hidden items in reports</div>
-              <p className="text-xs text-muted-foreground">
-                Applies to Full Audit, On-Hand, Non-Moving, Sales, Purchases, Non-Revenue, and every
-                other report that lists individual items — on screen and in every export.
-              </p>
-            </div>
+            <div className="text-sm">Show hidden items in reports</div>
             <Switch
               checked={current}
               disabled={!canEdit || update.isPending}
@@ -337,10 +361,9 @@ function IncludeHiddenInReportsSection() {
           </div>
         )}
         <p className="text-xs leading-5 text-muted-foreground">
-          A hidden item that had real activity in the report's period (a count, a sale, a purchase…)
-          always stays visible, badged <span className="whitespace-nowrap">"hidden · active"</span> —
-          no matter this setting. Only a genuinely idle hidden item is affected, and Grand Total is the
-          same either way.
+          A hidden item with real activity in the period still shows, badged{" "}
+          <span className="whitespace-nowrap">"hidden · active"</span>. Only idle hidden items are
+          affected.
         </p>
         {!canEdit && (
           <p className="text-xs text-muted-foreground">Only managers and administrators can change this.</p>
@@ -382,10 +405,10 @@ function SettingsSection({
   children: React.ReactNode;
 }) {
   return (
-    <section className="py-6 first:pt-0 last:pb-0">
+    <section>
       <h3 className="text-sm font-semibold">{title}</h3>
       {description ? (
-        <p className="mt-1 max-w-prose text-sm text-muted-foreground">{description}</p>
+        <p className="mt-1 text-sm text-muted-foreground">{description}</p>
       ) : null}
       <div className="mt-4">{children}</div>
     </section>
@@ -407,6 +430,10 @@ function DevicePinSection() {
   const status = useDevicePin();
   const save = useSetDevicePin();
   const clear = useClearDevicePin();
+
+  // The form itself only exists inside the modal now; this is just whether
+  // that modal is open.
+  const [open, setOpen] = useState(false);
 
   const [pin, setPin] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -441,6 +468,7 @@ function DevicePinSection() {
       });
       toast.success(res.via === "recovery" ? "PIN reset, your administrator has been notified" : "Device PIN saved");
       reset();
+      setOpen(false);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not save the PIN");
     }
@@ -450,6 +478,7 @@ function DevicePinSection() {
     try {
       await clear.mutateAsync();
       toast.success("Device PIN removed, you can no longer sign in offline");
+      setOpen(false);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not remove the PIN");
     }
@@ -463,7 +492,7 @@ function DevicePinSection() {
       {status.isPending ? (
         <Skeleton className="h-9 w-56" />
       ) : (
-        <div className="max-w-md space-y-4">
+        <div className="flex items-center gap-3">
           {hasPin && (
             <div className="flex items-center gap-2">
               <Badge variant="success">PIN set</Badge>
@@ -473,91 +502,140 @@ function DevicePinSection() {
             </div>
           )}
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="pin-new">{hasPin ? "New PIN" : "PIN"}</Label>
-              <Input
-                id="pin-new"
-                type="password"
-                inputMode="numeric"
-                autoComplete="off"
-                placeholder="6 digits"
-                value={pin}
-                onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, PIN_LENGTH))}
-              />
-              {pinProblem && <p className="text-xs text-destructive">{pinProblem}</p>}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="pin-confirm">Confirm PIN</Label>
-              <Input
-                id="pin-confirm"
-                type="password"
-                inputMode="numeric"
-                autoComplete="off"
-                value={confirm}
-                onChange={(e) => setConfirm(e.target.value.replace(/\D/g, "").slice(0, PIN_LENGTH))}
-              />
-            </div>
-          </div>
+          <Dialog
+            open={open}
+            onOpenChange={(next) => {
+              setOpen(next);
+              if (!next) reset();
+            }}
+          >
+            <DialogTrigger asChild>
+              <Button variant={hasPin ? "outline" : "default"}>{hasPin ? "Change PIN" : "Set PIN"}</Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{hasPin ? "Change offline desktop PIN" : "Set offline desktop PIN"}</DialogTitle>
+                <DialogDescription>
+                  Signs you in on the bar computer when there's no internet. It works on that computer only, it is
+                  not your password, and it can't be used to sign in here.
+                </DialogDescription>
+              </DialogHeader>
 
-          <div className="space-y-2">
-            <Label htmlFor="pin-question">Recovery question</Label>
-            <Input
-              id="pin-question"
-              placeholder="e.g. What was the name of my first bar?"
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-            />
-            {/* Write-your-own rather than a canned list: "mother's maiden name"
-                is the weakest link in every design that ships one. */}
-            <p className="text-xs text-muted-foreground">
-              Only used if you forget your PIN with no internet. Pick something nobody at work could guess.
-            </p>
-          </div>
+              <div className="space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="pin-new">{hasPin ? "New PIN" : "PIN"}</Label>
+                    <Input
+                      id="pin-new"
+                      name="fnb-device-pin-new"
+                      type="password"
+                      inputMode="numeric"
+                      autoComplete="new-password"
+                      autoCorrect="off"
+                      autoCapitalize="off"
+                      spellCheck={false}
+                      placeholder="6 digits"
+                      value={pin}
+                      onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, PIN_LENGTH))}
+                    />
+                    {pinProblem && <p className="text-xs text-destructive">{pinProblem}</p>}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="pin-confirm">Confirm PIN</Label>
+                    <Input
+                      id="pin-confirm"
+                      name="fnb-device-pin-confirm"
+                      type="password"
+                      inputMode="numeric"
+                      autoComplete="new-password"
+                      autoCorrect="off"
+                      autoCapitalize="off"
+                      spellCheck={false}
+                      value={confirm}
+                      onChange={(e) => setConfirm(e.target.value.replace(/\D/g, "").slice(0, PIN_LENGTH))}
+                    />
+                  </div>
+                </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="pin-answer">Answer</Label>
-            <Input id="pin-answer" autoComplete="off" value={answer} onChange={(e) => setAnswer(e.target.value)} />
-          </div>
+                <div className="space-y-2">
+                  <Label htmlFor="pin-question">Recovery question</Label>
+                  <Input
+                    id="pin-question"
+                    name="fnb-device-pin-question"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    placeholder="e.g. What was the name of my first bar?"
+                    value={question}
+                    onChange={(e) => setQuestion(e.target.value)}
+                  />
+                  {/* Write-your-own rather than a canned list: "mother's maiden name"
+                      is the weakest link in every design that ships one. */}
+                  <p className="text-xs text-muted-foreground">
+                    Only used if you forget your PIN with no internet. Pick something nobody at work could guess.
+                  </p>
+                </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="pin-proof">
-              {mode === "password" ? "Confirm with your password" : "Answer your current recovery question"}
-            </Label>
-            {mode === "recovery" && status.data?.recoveryQuestion && (
-              <p className="text-sm text-muted-foreground">“{status.data.recoveryQuestion}”</p>
-            )}
-            <Input
-              id="pin-proof"
-              type="password"
-              autoComplete="off"
-              value={proof}
-              onChange={(e) => setProof(e.target.value)}
-            />
-            {hasPin && (
-              <button
-                type="button"
-                className="text-xs text-muted-foreground underline underline-offset-2"
-                onClick={() => {
-                  setMode(mode === "password" ? "recovery" : "password");
-                  setProof("");
-                }}
-              >
-                {mode === "password" ? "I forgot my password, use my recovery question" : "Use my password instead"}
-              </button>
-            )}
-          </div>
+                <div className="space-y-2">
+                  <Label htmlFor="pin-answer">Answer</Label>
+                  <Input
+                    id="pin-answer"
+                    name="fnb-device-pin-answer"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    value={answer}
+                    onChange={(e) => setAnswer(e.target.value)}
+                  />
+                </div>
 
-          <div className="flex items-center gap-2">
-            <Button onClick={() => void submit()} disabled={save.isPending || !pin || !proof}>
-              {hasPin ? "Change PIN" : "Set PIN"}
-            </Button>
-            {hasPin && (
-              <Button variant="ghost" onClick={() => void remove()} disabled={clear.isPending}>
-                Remove
-              </Button>
-            )}
-          </div>
+                <div className="space-y-2">
+                  <Label htmlFor="pin-proof">
+                    {mode === "password" ? "Confirm with your password" : "Answer your current recovery question"}
+                  </Label>
+                  {mode === "recovery" && status.data?.recoveryQuestion && (
+                    <p className="text-sm text-muted-foreground">“{status.data.recoveryQuestion}”</p>
+                  )}
+                  <Input
+                    id="pin-proof"
+                    name="fnb-device-pin-proof"
+                    type="password"
+                    autoComplete="new-password"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                    value={proof}
+                    onChange={(e) => setProof(e.target.value)}
+                  />
+                  {hasPin && (
+                    <button
+                      type="button"
+                      className="text-xs text-muted-foreground underline underline-offset-2"
+                      onClick={() => {
+                        setMode(mode === "password" ? "recovery" : "password");
+                        setProof("");
+                      }}
+                    >
+                      {mode === "password"
+                        ? "I forgot my password, use my recovery question"
+                        : "Use my password instead"}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <DialogFooter className="sm:justify-between">
+                {hasPin ? (
+                  <Button variant="ghost" onClick={() => void remove()} disabled={clear.isPending}>
+                    Remove
+                  </Button>
+                ) : (
+                  <span />
+                )}
+                <Button onClick={() => void submit()} disabled={save.isPending || !pin || !proof}>
+                  {hasPin ? "Change PIN" : "Set PIN"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       )}
     </SettingsSection>
@@ -590,7 +668,7 @@ function DisplayPreferencesSection() {
           </Select>
         </div>
         <div className="space-y-2">
-          <Label htmlFor="pref-unit-system">Preferred Unit of Measurement</Label>
+          <Label htmlFor="pref-unit-system">Scale Reading Unit</Label>
           <Select
             value={preferences.unitSystem}
             onValueChange={(v) =>
@@ -602,13 +680,42 @@ function DisplayPreferencesSection() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="metric">Metric (g / kg)</SelectItem>
-              <SelectItem value="imperial">Imperial (oz / lb)</SelectItem>
+              <SelectItem value="metric">Metric (g)</SelectItem>
+              <SelectItem value="imperial">Imperial (oz)</SelectItem>
             </SelectContent>
           </Select>
+          <p className="text-xs text-muted-foreground">
+            Starting unit when weighing an item on a scale. Separate from how quantities are
+            displayed elsewhere, see "Units" below.
+          </p>
         </div>
+      </div>
+    </SettingsSection>
+  );
+}
+
+/**
+ * Your general fallback unit for volume/mass quantities (client req
+ * 2026-07-31). Bottom rung of the "Units" ladder — applies to every item you
+ * haven't set a personal override for, and is itself overridden by an
+ * establishment item default. Was previously two of four fields inside
+ * "Display" under "Your preferences," sharing a section with Text Size and a
+ * separately-named "Preferred Unit of Measurement" metric/imperial toggle;
+ * moved into its own "Units" group, alongside the item-level sections it has
+ * a precedence relationship with, so the three no longer read as unrelated
+ * settings that each happen to say "display unit."
+ */
+function StaffDefaultUnitSection() {
+  const { preferences, setPreferences, isSaving } = usePreferencesContext();
+
+  return (
+    <SettingsSection
+      title="Your default unit"
+      description="Falls back to this for any item without a more specific unit set below. Only changes how you see it — storage and calculations keep the item's own unit."
+    >
+      <div className="grid gap-4 sm:grid-cols-2 max-w-md">
         <div className="space-y-2">
-          <Label htmlFor="pref-volume-unit">Volume Display Unit</Label>
+          <Label htmlFor="pref-volume-unit">Volume</Label>
           <Select
             value={preferences.preferredVolumeUnit}
             onValueChange={(v) =>
@@ -626,12 +733,9 @@ function DisplayPreferencesSection() {
               <SelectItem value="gal">gal</SelectItem>
             </SelectContent>
           </Select>
-          <p className="text-xs text-muted-foreground">
-            Only changes how you see it. Storage and calculations keep the item's own unit.
-          </p>
         </div>
         <div className="space-y-2">
-          <Label htmlFor="pref-mass-unit">Mass Display Unit</Label>
+          <Label htmlFor="pref-mass-unit">Mass</Label>
           <Select
             value={preferences.preferredMassUnit}
             onValueChange={(v) =>
@@ -649,9 +753,6 @@ function DisplayPreferencesSection() {
               <SelectItem value="lb">lb</SelectItem>
             </SelectContent>
           </Select>
-          <p className="text-xs text-muted-foreground">
-            Only changes how you see it. Storage and calculations keep the item's own unit.
-          </p>
         </div>
       </div>
     </SettingsSection>
@@ -660,11 +761,18 @@ function DisplayPreferencesSection() {
 
 /**
  * Staff's own per-item display-unit overrides (client req 2026-07-31,
- * docs/per-user-per-item-uom-plan.md). Direct sibling of the volume/mass
- * pickers above, same helper-text convention, own choice, requireAuth only.
- * A row here beats the admin default and this user's general
- * preferredVolumeUnit/preferredMassUnit for that one item (see
+ * docs/per-user-per-item-uom-plan.md). Second rung of the "Units" group,
+ * between the establishment default above it and this user's general
+ * default unit below it — a row here beats both for that one item (see
  * resolveDisplayUnit() in @fnb/core).
+ *
+ * Formerly "Per-item display units," living in "Your preferences" while its
+ * establishment-wide counterpart lived across the page in "Establishment
+ * settings" — same underlying concept, split by who it affects rather than
+ * grouped by what it does. Renamed and moved next to that counterpart (see
+ * the "Units" SettingsGroup in SettingsPage) so the three-level precedence
+ * — establishment default → your item override → your general default —
+ * reads as one ladder instead of three separately-named settings.
  *
  * Seeded from GET /item-unit-preferences (the "list mine" endpoint) so the
  * list survives navigating away and back, previously this only tracked
@@ -699,8 +807,8 @@ function StaffItemUnitSection() {
 
   return (
     <SettingsSection
-      title="Per-item display units"
-      description="Show a specific item in its own unit, just for you. Overrides both your general preference above and any default your manager has set."
+      title="Your item overrides"
+      description="Show specific items in a unit just for you, regardless of your default unit or the establishment default."
     >
       <div className="max-w-md space-y-4">
         {saved.isPending ? (
@@ -722,12 +830,6 @@ function StaffItemUnitSection() {
             placeholder="Search items…"
           />
         </div>
-
-        {!saved.isPending && rows.length === 0 && (
-          <p className="text-xs text-muted-foreground">
-            No items customized yet. Pick one above to set a unit just for you.
-          </p>
-        )}
       </div>
     </SettingsSection>
   );
@@ -815,15 +917,19 @@ function StaffItemUnitRow({ item, onRemove }: { item: ItemRef; onRemove: () => v
 
 /**
  * Admin/manager default per-item display unit (client req 2026-07-31,
- * docs/per-user-per-item-uom-plan.md). The third rung of the same
- * display-unit ladder as Display and Per-item display units in "Your
- * preferences" above (general preference -> personal per-item override ->
- * this establishment-wide default), placed first in this group so it stays
- * adjacent to the two it extends rather than being separated by Cost Basis
- * and Variance Threshold. It is, like those two, an establishment policy set
- * once and gated master.write. Applies to every user of this client with no
- * override of their own for that item (see resolveDisplayUnit() in
- * @fnb/core).
+ * docs/per-user-per-item-uom-plan.md). Most-specific rung of the "Units"
+ * group's precedence ladder — placed first because it's the first thing
+ * beaten by anything below it (a staff item override, then a staff general
+ * default). Applies to every user of this client with no override of their
+ * own for that item (see resolveDisplayUnit() in @fnb/core).
+ *
+ * Formerly "Per-item display unit defaults," living in "Establishment
+ * settings" — correctly gated master.write, but physically separated from
+ * its personal counterparts by Cost Basis and Variance Threshold, which made
+ * the shared "display unit" naming across all three read as coincidence
+ * rather than a stated hierarchy. Still master.write-gated (this changes
+ * what everyone sees), just grouped by topic now — see the "Units"
+ * SettingsGroup in SettingsPage, whose description notes the admin-only row.
  */
 /**
  * Seeded from GET /item-unit-defaults, same fix and same reason as
@@ -851,8 +957,8 @@ function AdminItemUnitDefaultSection() {
 
   return (
     <SettingsSection
-      title="Per-item display unit defaults"
-      description="The establishment-wide version of Per-item display units above. Sets the unit an item shows in by default, for everyone here who hasn't picked their own unit for it."
+      title="Establishment item defaults"
+      description="Sets the unit specific items show in for everyone here, unless a staff member has set their own override below."
     >
       <div className="max-w-md space-y-4">
         {saved.isPending ? (
@@ -876,12 +982,6 @@ function AdminItemUnitDefaultSection() {
             placeholder="Search items…"
           />
         </div>
-
-        {!saved.isPending && rows.length === 0 && (
-          <p className="text-xs text-muted-foreground">
-            No item defaults set yet. Pick one above to set a default unit for everyone.
-          </p>
-        )}
       </div>
     </SettingsSection>
   );
@@ -1107,17 +1207,12 @@ function StorageAreasSection() {
   return (
     <SettingsSection
       title="Storage Areas"
-      description="Where stock sits inside this establishment: the bar, the lounge, the stock room. Each one becomes a column on the printed count sheet, and counters tally them separately."
+      description="Where stock sits inside this establishment. Each one becomes a column on the printed count sheet, and counters tally them separately."
     >
       <div className="max-w-md space-y-3">
         {areas.isPending ? (
           <Skeleton className="h-9 w-full" />
-        ) : list.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No areas yet. The count sheet prints one tally column, which suits an establishment that
-            keeps its stock in one place.
-          </p>
-        ) : (
+        ) : list.length === 0 ? null : (
           <ul className="divide-y rounded-md border">
             {list.map((a) => (
               <li key={a.id} className="flex items-center gap-2 px-3 py-2">
