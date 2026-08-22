@@ -103,7 +103,7 @@ sync, idempotency or device paths.**
 | MFA and other integrations — specified, waiting to be connected | [security-mfa.md](security-mfa.md) |
 | What the client asked for, and what we did about it | [2026-07-21-client-requests-review.md](2026-07-21-client-requests-review.md) (shipped) · [2026-08-02-client-requests-plan.md](2026-08-02-client-requests-plan.md) (in flight) |
 | How the legacy system behaved (answer key) | [reference/](reference/) — read-only |
-| Original project brief | `AGENTS.md` (repo root, historical) |
+| Original project brief | Held by the developer, outside this repo. Historical scoping document, superseded by the docs listed above |
 
 ## Stack of record
 

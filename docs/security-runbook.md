@@ -9,6 +9,93 @@ than prose.
 
 ---
 
+## 0. Provisioning a Linux VPS, and continuous deploy
+
+Do this once per host, before §1. It ends with `git push` being the whole deploy.
+
+**Shared/cPanel hosting cannot run this system.** The server is a long-lived Node process holding an
+open SQLite handle (`@hono/node-server` + `better-sqlite3`); PHP-only hosting has nowhere to put it.
+A small KVM VPS — 1 vCPU / 4 GB — is the target, and is comfortably more than this workload needs.
+
+### Host
+
+- [ ] Ubuntu 24.04 LTS. A non-root user owns everything:
+      `adduser fnb && usermod -aG sudo fnb`, then disable password SSH (`PasswordAuthentication no`)
+- [ ] Node 22, matching CI — mismatched majors and a native `better-sqlite3` build is a bad pairing
+- [ ] `apt install -y build-essential python3` — `better-sqlite3` compiles if no prebuild matches
+- [ ] `ufw allow OpenSSH && ufw allow 80 && ufw allow 443 && ufw enable`. **3001 stays closed**;
+      only the proxy reaches it (§1, Process and filesystem)
+- [ ] Clone to `/srv/fnb-lis`, owned by `fnb`, using a **read-only deploy key** on the GitHub repo.
+      Read-only because the server never needs to push, and a writable key on an internet-facing
+      host is a route back into the source of the audit trail
+- [ ] `apps/server/.env` written by hand — never from the repo, never through CI. Generate a fresh
+      `FNB_MFA_KEY` here (§1) and set `FNB_TRUST_PROXY=1`, since Caddy is about to sit in front
+- [ ] `FNB_BACKUP_DIR` pointed at a path that is **not** the app disk, then the hourly schedule from
+      §2 as a systemd timer or cron entry
+
+### Service
+
+`/etc/systemd/system/fnb-lis.service` — the supervisor §1 asks for:
+
+```ini
+[Unit]
+Description=fnb-lis
+After=network.target
+
+[Service]
+User=fnb
+WorkingDirectory=/srv/fnb-lis
+ExecStart=/usr/bin/npm start -w @fnb/server
+Restart=always
+RestartSec=5
+# The database and every uploaded import live under data/. Nothing else on the
+# filesystem needs to be writable by this process.
+ProtectSystem=strict
+ReadWritePaths=/srv/fnb-lis/apps/server/data /home/fnb/.npm
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
+```
+
+- [ ] `systemctl enable --now fnb-lis`
+- [ ] Caddy installed with the config in §1 (Transport) — that four-line block is the whole TLS story
+- [ ] One narrow sudoers line so the deploy can restart the service and nothing else.
+      `visudo -f /etc/sudoers.d/fnb`:
+
+      fnb ALL=(root) NOPASSWD: /usr/bin/systemctl restart fnb-lis, /usr/bin/systemctl status fnb-lis
+
+### Continuous deploy
+
+`.github/workflows/deploy.yml` runs `scripts/deploy.sh` over SSH. It triggers on **CI completing
+successfully on `main`**, not on push — so a commit that breaks a golden fixture cannot reach the
+server. `scripts/deploy.sh` backs up first, then checks out the exact SHA CI verified, installs,
+runs `migrate deploy`, builds the SPA, restarts, and polls `/api/health` for 30 s before reporting
+success. A deploy that does not come back healthy fails loudly instead of quietly.
+
+Four repository secrets, under a `production` environment so a required reviewer can be added later:
+
+| Secret | |
+|---|---|
+| `SSH_HOST` | The VPS address |
+| `SSH_USER` | `fnb` |
+| `SSH_KEY` | Private half of a key whose public half is in `/home/fnb/.ssh/authorized_keys`. Generated **for CI**, used nowhere else, so it can be revoked without locking anyone out |
+| `SSH_KNOWN_HOSTS` | Output of `ssh-keyscan -H <host>` run **once, from a machine you trust**. Pinned rather than re-scanned at deploy time — keyscanning on the day trusts whatever answers, which is the entire attack |
+
+- [ ] Deploy key added, secrets set, `workflow_dispatch` run once by hand to prove the path
+- [ ] Branch protection on `main` (§5) — with CD wired up, "no direct pushes, CI must pass" is now
+      also what stands between a bad commit and production
+- [ ] Developer access is **collaborator + this key**, not shared ownership. The client owns the repo
+      and the hosting account; maintenance needs push rights and an SSH key, and neither requires
+      handing over an account
+
+`migrate deploy` and `db:seed` are different in a way that matters here: the deploy script runs the
+first and must never run the second. The seeder is idempotent, which in production makes it *more*
+dangerous, not less — it would cheerfully re-create demo clients alongside real ones (§1).
+
+---
+
 ## 1. Production pre-flight
 
 Run through this **once per environment**, before the first real client's data lands. Anything
@@ -60,7 +147,8 @@ on.
       import)
 - [ ] Port 3001 is **not** reachable from outside the host — only the proxy reaches it
 - [ ] Full-disk encryption on the server, and on **every** desktop running the mirror
-- [ ] A process supervisor restarts the app on crash (Windows Service, NSSM, or pm2)
+- [ ] A process supervisor restarts the app on crash (systemd on Linux — the unit is in §0;
+      Windows Service, NSSM, or pm2 elsewhere)
 
 ### Verify
 

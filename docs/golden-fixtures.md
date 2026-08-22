@@ -2,7 +2,7 @@
 
 Every number below is **hand-computed**, then verified against the engine. This file is the
 regression suite the project deliberately has instead of a test framework (no automated tests
-during the initial build, per AGENTS.md).
+during the initial build, per the original project brief).
 
 > **Re-verify the affected fixture after ANY change to `packages/core`** —
 > `reconciliation.ts`, `weighing.ts`, `pricing.ts`, `rounding.ts`, `billing.ts`, `cost-analysis.ts`

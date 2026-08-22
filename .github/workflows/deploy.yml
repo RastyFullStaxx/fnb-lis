@@ -1,0 +1,55 @@
+name: Deploy
+
+# Fires only when CI has already gone GREEN on main. Never on a raw push:
+# the golden fixtures, the sync guarantees and the 119 security checks are
+# the gate, and a deploy that skips them can put arithmetic the client trusts
+# absolutely onto the live server. See docs/security-runbook.md §0.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+# Never two at once, and never cancel one mid-flight — a deploy that is
+# interrupted between `migrate deploy` and the restart leaves a schema the
+# running code does not expect.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    environment: production
+    steps:
+      - name: Resolve the commit CI actually verified
+        id: sha
+        run: echo "sha=${{ github.event.workflow_run.head_sha || github.sha }}" >> "$GITHUB_OUTPUT"
+
+      # Plain ssh, no marketplace action. A third-party action here would run
+      # with the production deploy key in its environment.
+      - name: Open SSH
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          # Pinned from the secret, NOT ssh-keyscan. Keyscanning at deploy time
+          # trusts whatever answers on the day, which is the whole attack.
+          printf '%s\n' "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy
+        run: |
+          ssh -p "${{ secrets.SSH_PORT || 22 }}" \
+            "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" \
+            "/srv/fnb-lis/scripts/deploy.sh ${{ steps.sha.outputs.sha }}"
+
+      - name: Close SSH
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519

@@ -146,7 +146,7 @@ lives, and the open client decisions.
 | [docs/golden-fixtures.md](docs/golden-fixtures.md) | The hand-computed numbers that must never change |
 | [docs/sync-and-data-lifecycle.md](docs/sync-and-data-lifecycle.md) | Offline desktop mirror: ownership, the two flows, retention/backup |
 | [docs/security.md](docs/security.md) | Threat model, audit findings, what's fixed and what's deliberately open |
-| [docs/security-runbook.md](docs/security-runbook.md) | Production pre-flight, backup/DR, monitoring, incident response |
+| [docs/security-runbook.md](docs/security-runbook.md) | VPS provisioning + continuous deploy, production pre-flight, backup/DR, monitoring, incident response |
 | [docs/security-mfa.md](docs/security-mfa.md) | TOTP and other integrations — specified, ready to connect |
 | [docs/build-log.md](docs/build-log.md) | What shipped when, and what the audits found |
 | [docs/2026-08-02-client-requests-plan.md](docs/2026-08-02-client-requests-plan.md) | Current client notes: what to build, the traps, what's blocked |

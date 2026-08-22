@@ -18,7 +18,8 @@
     "mfa:reset": "tsx scripts/mfa-reset.ts",
     "seal-history": "tsx scripts/seal-activity-history.ts",
     "backfill:subscription-reports": "tsx scripts/backfill-subscription-reports.ts",
-    "verify:races": "node prisma/verify-races.mjs"
+    "verify:races": "node prisma/verify-races.mjs",
+    "db:deploy": "prisma migrate deploy"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

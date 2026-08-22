@@ -13,6 +13,14 @@ apps/server/src/generated/
 CLAUDE.md
 AGENTS.md
 # Desktop packaging output — installers are ~90 MB and rebuilt from source.
-apps/desktop/release/
-apps/desktop/release-installer/
+# release-new/ was missed and shipped a 43 MB app.asar into the pack; it is the
+# reason this list is a prefix match rather than three exact paths.
+apps/desktop/release*/
 # NOT apps/desktop/build/ — that holds icon.png, a build INPUT.
+
+# Agent/editor tooling. Third-party skills and personal working instructions —
+# not project truth, which lives in docs/ and README.md. These were TRACKED
+# despite being listed here, because .gitignore does not untrack what git
+# already carries; untracked with `git rm --cached` on 2026-08-22.
+.codex
+.impeccable

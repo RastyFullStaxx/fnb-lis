@@ -147,9 +147,9 @@ Pipeline: upload (sha256, stored under `apps/server/data/uploads/`) → parse: C
 | 5 | Prices snapshotted on every line | Legacy used current `default_cost/retail` | Historical reports must not change when prices change (legacy bug) |
 | 6 | Recipe version snapshotted per sale | Legacy re-read current recipe | Report correctness after menu edits |
 | 7 | Uniform `[begin, end)` activity window | Legacy mixed `end−1day` / inclusive-end | One rule, explained in the report UI |
-| 8 | Web first, Electron later | Proposal's desktop-primary | AGENTS.md directive; core/schemas/SPA architected for reuse |
-| 9 | No automated tests during initial build | Proposal §5.4 | AGENTS.md explicit instruction; verification = golden seeded cycle with hand-computed numbers + live checks |
-| 10 | PostHog/Sentry deferred to polish phase, env-gated | AGENTS.md tooling list | No keys exist yet; wiring is additive |
+| 8 | Web first, Electron later | Proposal's desktop-primary | Original brief directive; core/schemas/SPA architected for reuse |
+| 9 | No automated tests during initial build | Proposal §5.4 | Original brief, explicit instruction; verification = golden seeded cycle with hand-computed numbers + live checks |
+| 10 | PostHog/Sentry deferred to polish phase, env-gated | Original brief, tooling list | No keys exist yet; wiring is additive |
 | 11 | Inter-location transfers are greenfield (no legacy precedent) | Legacy had no transfer/requisition feature at all | Client reqs #10/#13; correctness rests on the hand-computed 10-sent/8-received fixture in golden-fixtures.md §2 — flag for client sign-off before first live use |
 | 12 | Transfer window semantics: out on `businessDate` (source), in on `receiptDate` (destination) | — | Sent-vs-received gaps stay visible as the difference between the two locations' Transfer reports; that visibility is the audit point |
 | 13 | Cost Analysis uses 1.12 (12% VAT) uniformly; VAT row shows the amount | Legacy `food_downloadCA` divided some always-zero rows by 1.22 and put net-sales in the "VAT" cell | Dead cells and a mislabel, not formulas to preserve; under uniform 1.12, NET % ≡ GROSS % (legacy's differed only via the 1.22 quirk). Confirm with LIS before first client delivery |
