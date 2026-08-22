@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
 import { Info, PieChart } from "lucide-react";
-import { round2 } from "@fnb/core";
+import { canViewVariance, round2 } from "@fnb/core";
+import { useMe } from "@/api/auth";
 import { useCountDates } from "@/api/ops";
 import { useLocationId } from "@/api/location";
 import { exportUrl, useCostAnalysisReport } from "@/api/reports";
 import { cn, formatMoney, formatDate } from "@/lib/utils";
+import { useSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { TableFailure, TableLoading, TableSurface, ToolbarField, queryFailed } from "@/components/table-surface";
@@ -24,14 +26,149 @@ import {
   TableBody,
   TableCell,
   TableFooter,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const pct = (v: number | null) => (v === null ? "—" : `${round2(v).toFixed(2)}%`);
 const pctShort = (v: number) => `${round2(v).toFixed(1)}%`;
+
+type CostAnalysisRow = ReturnType<typeof useCostAnalysisReport>["data"] extends { sections: (infer S)[] } | undefined
+  ? S extends { rows: (infer R)[] }
+    ? R
+    : never
+  : never;
+
+/** One section's category table — its own component so each product-type
+    section (Beverage, Food, …) gets an independent useSort instance; the
+    parent maps over an unknown number of sections, and useSort can't be
+    called inside that loop. */
+function CostAnalysisSectionTable({ rows }: { rows: CostAnalysisRow[] }) {
+  const { sortedRows, sortKey, sortDirection, toggleSort } = useSort(rows, {
+    accessors: {
+      category: (r) => r.category,
+      beginning: (r) => r.beginningCost,
+      purchases: (r) => r.purchasesCost,
+      transfers: (r) => r.transfersCost,
+      ending: (r) => r.endingCost,
+      cost: (r) => r.cost,
+      costNet: (r) => r.costNet,
+      costPct: (r) => r.grossPct ?? -Infinity,
+    },
+  });
+
+  return (
+    <>
+      <TableHeader>
+        <TableRow className="bg-muted hover:bg-muted">
+          <SortableTableHead sortKey="category" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+            Category
+          </SortableTableHead>
+          <SortableTableHead
+            sortKey="beginning"
+            activeKey={sortKey}
+            direction={sortDirection}
+            onSort={toggleSort}
+            className="text-right"
+          >
+            Beginning
+          </SortableTableHead>
+          <SortableTableHead
+            sortKey="purchases"
+            activeKey={sortKey}
+            direction={sortDirection}
+            onSort={toggleSort}
+            className="text-right"
+          >
+            Purchases
+          </SortableTableHead>
+          <SortableTableHead
+            sortKey="transfers"
+            activeKey={sortKey}
+            direction={sortDirection}
+            onSort={toggleSort}
+            className="text-right"
+          >
+            Transfers
+          </SortableTableHead>
+          <SortableTableHead
+            sortKey="ending"
+            activeKey={sortKey}
+            direction={sortDirection}
+            onSort={toggleSort}
+            className="text-right"
+          >
+            Ending
+          </SortableTableHead>
+          <SortableTableHead
+            sortKey="cost"
+            activeKey={sortKey}
+            direction={sortDirection}
+            onSort={toggleSort}
+            className="text-right font-semibold"
+          >
+            Cost
+          </SortableTableHead>
+          <SortableTableHead
+            sortKey="costNet"
+            activeKey={sortKey}
+            direction={sortDirection}
+            onSort={toggleSort}
+            className="text-right"
+          >
+            Cost Net
+          </SortableTableHead>
+          {/* One column, not two. netPct is costNet/netSales and grossPct is
+              cost/grossSales — both sides divided by the same 1.12, so the two
+              were identical in every row by construction. A cost RATIO is
+              VAT-neutral; showing it twice invited the reader to hunt for a
+              difference that cannot exist. The peso Gross/Net Profit figures
+              elsewhere do differ, and both are still shown. */}
+          <SortableTableHead
+            sortKey="costPct"
+            activeKey={sortKey}
+            direction={sortDirection}
+            onSort={toggleSort}
+            className="text-right"
+          >
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex cursor-help items-center gap-1">
+                    Cost % <Info className="size-3.5 text-muted-foreground" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">
+                  Cost of goods as a share of sales. Identical whether measured
+                  VAT-inclusive or net of VAT — the ratio is unaffected, so there
+                  is one figure, not two.
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </SortableTableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {sortedRows.map((row) => (
+          <TableRow key={row.category}>
+            <TableCell className="max-w-[22rem] font-medium break-words">{row.category}</TableCell>
+            <TableCell className="tnum text-right">{formatMoney(round2(row.beginningCost))}</TableCell>
+            <TableCell className="tnum text-right">{formatMoney(round2(row.purchasesCost))}</TableCell>
+            <TableCell className="tnum text-right">
+              {row.transfersCost === 0 ? "—" : formatMoney(round2(row.transfersCost))}
+            </TableCell>
+            <TableCell className="tnum text-right">{formatMoney(round2(row.endingCost))}</TableCell>
+            <TableCell className="tnum text-right font-medium">{formatMoney(round2(row.cost))}</TableCell>
+            <TableCell className="tnum text-right">{formatMoney(round2(row.costNet))}</TableCell>
+            <TableCell className="tnum text-right">{pct(row.grossPct)}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </>
+  );
+}
 
 // Past eight bars the ranking stops being scannable and the table below is the
 // better instrument — the cut is disclosed in the chart's hint.
@@ -40,6 +177,12 @@ const TOP_CATEGORIES = 8;
 export function CostAnalysisPage() {
   const locationId = useLocationId();
   const countDates = useCountDates();
+  const me = useMe();
+  // Cost Analysis stays visible to every STAFF account (hide-variance-from-
+  // staff-plan.md: no variance column, no Usage/Sold column, so it can't be
+  // used to back-solve a fake count) — only its one tooltip that NAMES
+  // variance gets reworded for a blocked STAFF viewer (Phase 2.3/4.3).
+  const varianceBlocked = me.data ? me.data.user.role === "STAFF" && !canViewVariance(me.data.user) : false;
   const [begin, setBegin] = useState<string | undefined>(undefined);
   const [end, setEnd] = useState<string | undefined>(undefined);
 
@@ -65,6 +208,17 @@ export function CostAnalysisPage() {
         return { section, bars: ranked.slice(0, TOP_CATEGORIES), rankedCount: ranked.length };
       }),
     [report.data],
+  );
+
+  const { sortedRows: sortedSalesByType, sortKey: salesSortKey, sortDirection: salesSortDirection, toggleSort: toggleSalesSort } = useSort(
+    report.data?.sales.byType ?? [],
+    {
+      accessors: {
+        sales: (t) => t.productType,
+        gross: (t) => t.gross,
+        net: (t) => t.net,
+      },
+    },
   );
 
   if (countDates.isPending) {
@@ -162,13 +316,31 @@ export function CostAnalysisPage() {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted hover:bg-muted">
-                <TableHead>Sales</TableHead>
-                <TableHead className="text-right">Gross</TableHead>
-                <TableHead className="text-right">Net (÷1.12)</TableHead>
+                <SortableTableHead sortKey="sales" activeKey={salesSortKey} direction={salesSortDirection} onSort={toggleSalesSort}>
+                  Sales
+                </SortableTableHead>
+                <SortableTableHead
+                  sortKey="gross"
+                  activeKey={salesSortKey}
+                  direction={salesSortDirection}
+                  onSort={toggleSalesSort}
+                  className="text-right"
+                >
+                  Gross
+                </SortableTableHead>
+                <SortableTableHead
+                  sortKey="net"
+                  activeKey={salesSortKey}
+                  direction={salesSortDirection}
+                  onSort={toggleSalesSort}
+                  className="text-right"
+                >
+                  Net (÷1.12)
+                </SortableTableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {report.data.sales.byType.map((t) => (
+              {sortedSalesByType.map((t) => (
                 <TableRow key={t.productType}>
                   <TableCell>{t.productType} gross sales</TableCell>
                   <TableCell className="tnum text-right">{formatMoney(round2(t.gross))}</TableCell>
@@ -227,7 +399,13 @@ export function CostAnalysisPage() {
                         a usage-derived cost (qty × unit cost) for the same
                         period, and the two differ by whatever hasn't reconciled.
                         Both are correct; saying which is which stops it reading
-                        as a discrepancy. */}
+                        as a discrepancy. A blocked STAFF viewer gets the same
+                        two-methods framing with the word "variance" and the gap
+                        it names left out (hide-variance-from-staff Phase 2.3/
+                        4.3) — this report has no Usage/Sold column to back-solve
+                        a fake count with, so it stays visible, but this one line
+                        would otherwise name the concept this feature exists to
+                        hide. */}
                     <p className="text-xs font-medium text-muted-foreground">
                       <TooltipProvider>
                         <Tooltip>
@@ -237,10 +415,21 @@ export function CostAnalysisPage() {
                             </span>
                           </TooltipTrigger>
                           <TooltipContent className="max-w-xs">
-                            Beginning stock + purchases + transfers − ending stock. This is the
-                            balance method, so it includes anything unaccounted for. The Full
-                            Audit's usage figure counts what was actually sold and used, so the
-                            two differ by the period's variance.
+                            {varianceBlocked ? (
+                              <>
+                                Beginning stock + purchases + transfers − ending stock. This is
+                                the balance method. The Full Audit measures cost a different way,
+                                from what was actually sold and used, so the two figures are
+                                expected to read differently.
+                              </>
+                            ) : (
+                              <>
+                                Beginning stock + purchases + transfers − ending stock. This is the
+                                balance method, so it includes anything unaccounted for. The Full
+                                Audit's usage figure counts what was actually sold and used, so the
+                                two differ by the period's variance.
+                              </>
+                            )}
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
@@ -273,56 +462,13 @@ export function CostAnalysisPage() {
                   </ChartBlock>
                 )}
                 <Table>
-                  <TableHeader>
-                    <TableRow className="bg-muted hover:bg-muted">
-                      <TableHead>Category</TableHead>
-                      <TableHead className="text-right">Beginning</TableHead>
-                      <TableHead className="text-right">Purchases</TableHead>
-                      <TableHead className="text-right">Transfers</TableHead>
-                      <TableHead className="text-right">Ending</TableHead>
-                      <TableHead className="text-right font-semibold">Cost</TableHead>
-                      <TableHead className="text-right">Cost Net</TableHead>
-                      {/* One column, not two. netPct is costNet/netSales and
-                          grossPct is cost/grossSales — both sides divided by the
-                          same 1.12, so the two were identical in every row by
-                          construction. A cost RATIO is VAT-neutral; showing it
-                          twice invited the reader to hunt for a difference that
-                          cannot exist. The peso Gross/Net Profit figures below
-                          do differ, and both are still shown. */}
-                      <TableHead className="text-right">
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span className="inline-flex cursor-help items-center gap-1">
-                                Cost % <Info className="size-3.5 text-muted-foreground" />
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent className="max-w-xs">
-                              Cost of goods as a share of sales. Identical whether measured
-                              VAT-inclusive or net of VAT — the ratio is unaffected, so there
-                              is one figure, not two.
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {section.rows.map((row) => (
-                      <TableRow key={row.category}>
-                        <TableCell className="max-w-[22rem] font-medium break-words">{row.category}</TableCell>
-                        <TableCell className="tnum text-right">{formatMoney(round2(row.beginningCost))}</TableCell>
-                        <TableCell className="tnum text-right">{formatMoney(round2(row.purchasesCost))}</TableCell>
-                        <TableCell className="tnum text-right">
-                          {row.transfersCost === 0 ? "—" : formatMoney(round2(row.transfersCost))}
-                        </TableCell>
-                        <TableCell className="tnum text-right">{formatMoney(round2(row.endingCost))}</TableCell>
-                        <TableCell className="tnum text-right font-medium">{formatMoney(round2(row.cost))}</TableCell>
-                        <TableCell className="tnum text-right">{formatMoney(round2(row.costNet))}</TableCell>
-                        <TableCell className="tnum text-right">{pct(row.grossPct)}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
+                  <CostAnalysisSectionTable rows={section.rows} />
+                  {/* Total row is a fixed footer derived from section.totals, not
+                      part of the sorted array — same treatment as every other
+                      page's totals row (see variance-summary's Grand Total, and
+                      this file's own VAT-amount row on the Sales table above), so
+                      it stays outside CostAnalysisSectionTable and keeps its own
+                      independent JSX here. */}
                   <TableFooter>
                     <TableRow>
                       <TableCell className="font-medium">Total</TableCell>

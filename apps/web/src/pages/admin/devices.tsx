@@ -9,6 +9,7 @@ import {
   type AdminDevice,
 } from "@/api/admin";
 import { ApiError } from "@/api/http";
+import { useSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
 import { TableEmpty, TableFailure, TableLoading, TableSurface, queryFailed } from "@/components/table-surface";
 import { Badge } from "@/components/ui/badge";
@@ -30,7 +31,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 
 /**
  * Registered offline desktops.
@@ -72,6 +74,15 @@ export function AdminDevicesPage() {
   const [reason, setReason] = useState("");
 
   const rows = devices.data ?? [];
+
+  const { sortedRows, sortKey, sortDirection, toggleSort } = useSort(rows, {
+    accessors: {
+      establishment: (d) => d.client.name,
+      location: (d) => d.location?.name ?? "",
+      lastSync: (d) => d.lastSyncAt ?? "",
+      status: (d) => (d.status === "REVOKED" ? 2 : isStale(d) ? 1 : 0),
+    },
+  });
 
   const submitRevoke = async () => {
     if (!revoking) return;
@@ -118,16 +129,26 @@ export function AdminDevicesPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Computer</TableHead>
-                <TableHead>Establishment</TableHead>
-                <TableHead>Location</TableHead>
-                <TableHead>Last sync</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="w-24" />
+                <SortableTableHead sortKey="name" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Computer
+                </SortableTableHead>
+                <SortableTableHead sortKey="establishment" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Establishment
+                </SortableTableHead>
+                <SortableTableHead sortKey="location" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Location
+                </SortableTableHead>
+                <SortableTableHead sortKey="lastSync" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Last sync
+                </SortableTableHead>
+                <SortableTableHead sortKey="status" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Status
+                </SortableTableHead>
+                <SortableTableHead sortable={false} className="w-24" />
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((d) => {
+              {sortedRows.map((d) => {
                 const locations = clients.data?.find((c) => c.id === d.client.id)?.locations ?? [];
                 return (
                   <TableRow key={d.id} className={d.status === "REVOKED" ? "opacity-50" : undefined}>

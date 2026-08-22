@@ -1,6 +1,7 @@
 import { Hono } from "hono";
-import { allowedProductTypes, can, type Role } from "@fnb/core";
+import { allowedProductTypes, can, canViewVariance, type Role } from "@fnb/core";
 import { prisma } from "../db";
+import { AppError } from "../lib/errors";
 import { requirePermission, type AppEnv } from "../middleware/auth";
 import { buildDashboard } from "../services/dashboard";
 import { buildTrends } from "../services/trends";
@@ -38,10 +39,23 @@ export const dashboardRoutes = new Hono<AppEnv>()
         allowed,
         can(user.role as Role, "activity.view"),
         activityViewedAt,
+        canViewVariance(user),
       ),
     );
   })
+  /**
+   * Every field TrendPeriod carries (varianceCost, varianceRetail,
+   * shortageCost, surplusCost, itemsShort, itemsOver) is variance-derived —
+   * this endpoint is the sole source for the dashboard's two headline
+   * variance tiles and the Variance by Period chart (Phase 4.5). Gating the
+   * whole route rather than trimming fields, same 404 convention the report
+   * routes use: a blocked STAFF account trying this endpoint directly should
+   * find nothing there, not a redacted shape (hide-variance-from-staff Phase
+   * 2.5).
+   */
   .get("/dashboard/trends", async (c) => {
+    const user = c.get("user")!;
+    if (user.role === "STAFF" && !canViewVariance(user)) throw new AppError(404, "Not found");
     const location = c.get("location");
     const allowed = allowedProductTypes(c.get("locationModules"));
     const raw = Number(c.req.query("periods") ?? 8);

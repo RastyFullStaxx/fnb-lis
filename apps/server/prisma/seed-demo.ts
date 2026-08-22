@@ -142,6 +142,41 @@ const KITCHEN_PROFILES: Record<KitchenKey, Profile> = {
 };
 
 /**
+ * Shelf life in days from delivery, by item name — expiry-date-plan.md /
+ * phases doc Phase 3. Keyed by name (not `BarKey`/`KitchenKey`) because it
+ * mirrors `Category.defaultPerishable` from seed.ts's master catalog, not
+ * this file's own per-location item defs. A name absent from this table is
+ * non-perishable (Vodka, Whisky, Rum, Gin, Tequila — all seeded
+ * `defaultPerishable: false`) and gets no `expiryDate`, same as a real
+ * receiving screen would never show the field for those categories.
+ * Fixed offsets, not randomised — this generator's LCG stream must stay
+ * exactly as consumed today, or every other jittered figure in the demo
+ * history reseeds to a different number.
+ */
+const SHELF_LIFE_DAYS: Record<string, number> = {
+  "Grenadine Syrup": 365, // Syrup
+  "House Red Wine": 730, // Wine
+  "San Miguel Pale Pilsen": 180, // Beer
+  "Tonic Water": 270, // Soda & Mixers
+  Cola: 270, // Soda & Mixers
+  "Orange Juice": 14, // Juices
+  "Chicken Breast": 5, // Poultry
+  "Ribeye Steak": 7, // Meat
+  "Salmon Fillet": 3, // Seafood
+  Butter: 45, // Dairy
+  "Potato Fries": 180, // Frozen
+  "Cooking Oil": 365, // Dry Goods
+};
+/** `purchaseDate` plus a fixed day offset, string arithmetic only — no
+    `Date`/timezone involved, matching the architecture.md §2 portability
+    rule the `expiryDate` column itself follows. */
+function addDays(isoDate: string, days: number): string {
+  const d = new Date(`${isoDate}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
  * Deliberate variances, in units, keyed `period:item`. Everything unlisted
  * reconciles to zero — a demo where every row is off reads as a broken
  * system, and one where none is reads as a pointless report. These are the
@@ -541,6 +576,7 @@ async function runLedger<K extends string>(opts: {
         },
       });
       for (const line of bucket) {
+        const shelfLife = SHELF_LIFE_DAYS[line.item.def.name];
         await prisma.purchaseLine.create({
           data: {
             purchaseId: purchase.id,
@@ -548,6 +584,7 @@ async function runLedger<K extends string>(opts: {
             qty: line.qty,
             unitCost: line.unitCost,
             lineTotal: round2(line.qty * line.unitCost),
+            expiryDate: shelfLife !== undefined ? addDays(purchase.purchaseDate, shelfLife) : null,
             ...opts.who,
           },
         });
@@ -947,8 +984,17 @@ async function seedOpenPeriod() {
     },
   });
   for (const [key, qty, unitCost] of [["beer330", 48, 47], ["tonic200", 24, 33], ["absolut700", 6, 649]] as Array<[BarKey, number, number]>) {
+    const shelfLife = SHELF_LIFE_DAYS[BAR_ITEMS[key].name];
     await prisma.purchaseLine.create({
-      data: { purchaseId: purchase.id, locationItemId: items[key].id, qty, unitCost, lineTotal: round2(qty * unitCost), ...who },
+      data: {
+        purchaseId: purchase.id,
+        locationItemId: items[key].id,
+        qty,
+        unitCost,
+        lineTotal: round2(qty * unitCost),
+        expiryDate: shelfLife !== undefined ? addDays(purchase.purchaseDate, shelfLife) : null,
+        ...who,
+      },
     });
   }
   const purchase2 = await prisma.purchase.create({
@@ -958,8 +1004,17 @@ async function seedOpenPeriod() {
     },
   });
   for (const [key, qty, unitCost] of [["cola1", 12, 45], ["oj1", 10, 85]] as Array<[BarKey, number, number]>) {
+    const shelfLife = SHELF_LIFE_DAYS[BAR_ITEMS[key].name];
     await prisma.purchaseLine.create({
-      data: { purchaseId: purchase2.id, locationItemId: items[key].id, qty, unitCost, lineTotal: round2(qty * unitCost), ...who },
+      data: {
+        purchaseId: purchase2.id,
+        locationItemId: items[key].id,
+        qty,
+        unitCost,
+        lineTotal: round2(qty * unitCost),
+        expiryDate: shelfLife !== undefined ? addDays(purchase2.purchaseDate, shelfLife) : null,
+        ...who,
+      },
     });
   }
 
@@ -1075,8 +1130,17 @@ async function seedFoodOpenPeriod(clientName: string, locationName: string, refP
     },
   });
   for (const [key, qty, unitCost] of [["chicken", 12, 190], ["fries", 15, 117], ["salmon", 4, 655]] as Array<[KitchenKey, number, number]>) {
+    const shelfLife = SHELF_LIFE_DAYS[KITCHEN_ITEMS[key].name];
     await prisma.purchaseLine.create({
-      data: { purchaseId: purchase.id, locationItemId: items[key].id, qty, unitCost, lineTotal: round2(qty * unitCost), ...who },
+      data: {
+        purchaseId: purchase.id,
+        locationItemId: items[key].id,
+        qty,
+        unitCost,
+        lineTotal: round2(qty * unitCost),
+        expiryDate: shelfLife !== undefined ? addDays(purchase.purchaseDate, shelfLife) : null,
+        ...who,
+      },
     });
   }
 
@@ -1224,13 +1288,15 @@ async function seedAssets() {
   });
 
   // Asset categories (productType Asset) — from the client's data, verbatim.
+  // defaultPerishable: false, same as every other Asset category in
+  // seed.ts's seedCategories() — assets don't spoil (expiry-date-plan.md).
   const categoryId = new Map<string, string>();
   let sort = 41;
   for (const name of [...new Set(ASSET_ITEMS.map((i) => i.category))]) {
     const c = await prisma.category.upsert({
       where: { name },
       update: {},
-      create: { name, productType: "Asset", sortOrder: sort++ },
+      create: { name, productType: "Asset", sortOrder: sort++, defaultPerishable: false },
     });
     categoryId.set(name, c.id);
   }
@@ -1426,6 +1492,130 @@ async function seedFeatureShowcase() {
   await seedDeadStock("Casa Verde Restaurant", "Main", { item: "Truffle Paste", category: "Sauces & Dressings", size: 1, unit: "kg", cost: 1850, retail: 0, qty: 3 });
 }
 
+/**
+ * Clutter-in-reports demo case (docs/clutter-in-reports-decision.md /
+ * -plan.md Phase 7.1) — two hidden (`LocationItem.isActive = false`) items at
+ * Main Bar so the new display filter has both outcomes to show with
+ * `includeHiddenInReports` off:
+ *
+ *  - **Forgotten Amaretto**: hidden with ZERO activity anywhere it's counted
+ *    (equal counts on the 07-14 / 07-20 boundaries, same zero-movement shape
+ *    as `seedDeadStock`, no purchases or sales at all) → `hasReportActivity`
+ *    is false, so `shouldDropHiddenRow` drops it. It disappears from the
+ *    07-14 → 07-20 Full Audit, from On-Hand, and from every export.
+ *  - **Melon Liqueur**: hidden but WITH activity — a 07-20 purchase and a
+ *    07-21 sale, i.e. strictly AFTER 2026-07-20, the last committed count
+ *    and golden-fixtures.md §0's stated safe boundary ("after the last
+ *    committed count is the safe place"). `hasReportActivity` is true there,
+ *    so `shouldDropHiddenRow` keeps it, badged, wherever that activity is
+ *    actually queried.
+ *
+ * These two do NOT share one Full Audit window on purpose. golden-fixtures.md
+ * §0 pins Main Bar 2026-07-14 → 07-20 at EXACTLY −537 / −1410 — the "latest
+ * closed period" anchor, added after a near-miss where a 07-16 correction
+ * shifted this same window by its exact quantity. Any purchase or sale dated
+ * inside [07-14, 07-20) would repeat that near-miss and move a pinned number,
+ * so Melon Liqueur's activity is deliberately dated AFTER the window closes
+ * instead, alongside `seedOpenPeriod`'s own 07-20/07-21 activity. That later
+ * activity still lands inside `onHandAudit`'s own query window (last count →
+ * far future), which is what On-Hand, Non-Moving, and Par Level all read
+ * their `isActive`/`hasReportActivity` flags from (report-lists.ts
+ * `stockSnapshot`/`onHandReport`) — so it shows there, badged, even though
+ * the Full Audit PAGE itself defaults to the closed 07-14 → 07-20 period
+ * (apps/web full-audit.tsx: `effectiveBegin`/`effectiveEnd` fall back to the
+ * last two committed count dates) and would not query far enough forward to
+ * see it without the user picking later dates by hand. Forgotten Amaretto
+ * sits inside that closed 07-14 → 07-20 window (matching `seedDeadStock`'s
+ * own placement, already proven safe there) so it drops out of the Full
+ * Audit page's default view; Melon Liqueur proves the "stays, badged" half
+ * of the same rule on On-Hand / Non-Moving instead. Verifying both halves
+ * together means checking On-Hand (or Non-Moving) rather than the Full Audit
+ * page's own default dates — see Phase 8's spot-check.
+ *
+ * Both are brand-new catalog rows the golden fixtures never touch, so no
+ * pinned anchor and no closed period's Grand Total can move either way.
+ * Idempotent, same upsert/exists-guard shape as `seedDeadStock`.
+ */
+async function seedClutterInReportsDemo() {
+  const location = await locationOf("Prime Hospitality Group", "Main Bar");
+  const admin = await prisma.user.findUniqueOrThrow({ where: { username: "admin" } });
+  const staff = await actor("staff");
+  const manager = await prisma.user.findUniqueOrThrow({ where: { username: "manager" } });
+  const category = await prisma.category.findUnique({ where: { name: "Liqueur" } });
+  const unit = await prisma.unit.findUnique({ where: { name: "ml" } });
+  if (!category || !unit) return;
+
+  const ensureHiddenItem = async (spec: { item: string; size: number; cost: number; retail: number }) => {
+    const item =
+      (await prisma.item.findFirst({ where: { name: spec.item } })) ??
+      (await prisma.item.create({ data: { name: spec.item, categoryId: category.id, createdById: admin.id } }));
+    const variant = await prisma.itemVariant.upsert({
+      where: { itemId_size_unitId: { itemId: item.id, size: spec.size, unitId: unit.id } },
+      update: {},
+      create: { itemId: item.id, size: spec.size, unitId: unit.id, contentTracked: false },
+    });
+    const li = await prisma.locationItem.upsert({
+      where: { locationId_itemVariantId: { locationId: location.id, itemVariantId: variant.id } },
+      update: { cost: spec.cost, retail: spec.retail, isActive: false },
+      create: {
+        locationId: location.id, itemVariantId: variant.id, cost: spec.cost, retail: spec.retail,
+        parLevel: null, isActive: false,
+      },
+    });
+    return li;
+  };
+
+  // ── Idle: zero activity in the 07-14 → 07-20 period, drops from reports by default ──
+  const idle = await ensureHiddenItem({ item: "Forgotten Amaretto", size: 700, cost: 520, retail: 980 });
+  for (const date of ["2026-07-14", "2026-07-20"]) {
+    const session = await prisma.countSession.findFirst({
+      where: { locationId: location.id, countDate: date, status: "COMMITTED" },
+    });
+    if (!session) continue;
+    const exists = await prisma.countLine.findFirst({ where: { countSessionId: session.id, locationItemId: idle.id } });
+    if (exists) continue;
+    await prisma.countLine.create({
+      data: {
+        countSessionId: session.id, locationItemId: idle.id, countType: "FULL", qtyFull: 4,
+        remainingContent: 0, unitCost: idle.cost, unitRetail: idle.retail,
+        createdById: staff.createdById, createdByName: staff.createdByName,
+      },
+    });
+  }
+
+  // ── Active: hidden, but moved strictly AFTER 2026-07-20 (the last
+  //    committed count — golden-fixtures.md §0's own "safe place"), so it
+  //    must stay (badged) on On-Hand and any default-range report, without
+  //    going anywhere near the pinned 07-14 → 07-20 anchor. ──
+  const active = await ensureHiddenItem({ item: "Melon Liqueur", size: 700, cost: 560, retail: 1050 });
+  const supplier = await prisma.supplier.findFirst({
+    where: { name: "Metro Beverage Distribution", client: { name: "Prime Hospitality Group" } },
+  });
+  const alreadyMoved = await prisma.saleRecord.findFirst({
+    where: { locationId: location.id, locationItemId: active.id, kind: "SALE" },
+  });
+  if (!alreadyMoved) {
+    const purchase = await prisma.purchase.create({
+      data: {
+        locationId: location.id, purchaseDate: "2026-07-20", supplierId: supplier?.id ?? null,
+        refNo: "BAR-0721-3", status: "COMMITTED", committedAt: new Date(), committedById: manager.id, ...staff,
+      },
+    });
+    await prisma.purchaseLine.create({
+      data: {
+        purchaseId: purchase.id, locationItemId: active.id, qty: 3, unitCost: active.cost,
+        lineTotal: round2(3 * active.cost), expiryDate: addDays(purchase.purchaseDate, 730), ...staff,
+      },
+    });
+    await prisma.saleRecord.create({
+      data: {
+        locationId: location.id, saleDate: "2026-07-21", kind: "SALE", locationItemId: active.id,
+        qty: 1, unitPrice: active.retail, discountPct: 0, ...staff,
+      },
+    });
+  }
+}
+
 export async function seedDemoHistory() {
   // Transfers first: the Main Bar ledger reads them back when it decides each
   // closing count, so they have to exist before it runs.
@@ -1445,6 +1635,7 @@ export async function seedDemoHistory() {
   );
   await seedRicherActivity();
   await seedFeatureShowcase();
+  await seedClutterInReportsDemo();
   await seedAssets();
 
   const done = [

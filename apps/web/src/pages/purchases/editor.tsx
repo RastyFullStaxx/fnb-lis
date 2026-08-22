@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useParams } from "react-router";
 import { ArrowLeft, Check, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { can, lineTotal, type Role } from "@fnb/core";
+import { can, isExpiryDatePast, lineTotal, resolveIsPerishable, type Role } from "@fnb/core";
 import { statusVariant } from "@/lib/status";
 import { useMe } from "@/api/auth";
 import { useLocationId } from "@/api/location";
@@ -10,6 +10,7 @@ import { usePurchase, usePurchaseMutations } from "@/api/ops";
 import { variantLabel, type LocationItem, type PurchaseLine } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { formatMoney, formatDate } from "@/lib/utils";
+import { useSort } from "@/hooks/use-sort";
 import { EntryActions } from "@/components/entry-fact";
 import { ItemCombobox } from "@/components/item-combobox";
 import { TableFailure, TableSurface, queryPaused } from "@/components/table-surface";
@@ -44,10 +45,10 @@ import {
   TableBody,
   TableCell,
   TableFooter,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 import { cn } from "@/lib/utils";
 
 export function PurchaseEditorPage() {
@@ -67,9 +68,16 @@ export function PurchaseEditorPage() {
   const [item, setItem] = useState<LocationItem | null>(null);
   const [qty, setQty] = useState("");
   const [cost, setCost] = useState("");
+  // The date on the box (expiry-date-plan.md). Only asked of perishable
+  // items — resolveIsPerishable() below decides whether the field even
+  // renders, matching the item form's Asset-only-fields conditional (2.2).
+  const [expiryDate, setExpiryDate] = useState("");
+  const [expiryError, setExpiryError] = useState(false);
   const [voidingLine, setVoidingLine] = useState<PurchaseLine | null>(null);
   const [editingLine, setEditingLine] = useState<PurchaseLine | null>(null);
   const comboRef = useRef<HTMLButtonElement>(null);
+  // The expired-batch badge's "on or past today" comparison (Phase 5.1).
+  const today = new Date().toISOString().slice(0, 10);
 
   // Same split the Transfer editor makes: unreachable is not "removed", and a
   // paused query never leaves `isPending` — without this the editor sat on a
@@ -110,10 +118,28 @@ export function PurchaseEditorPage() {
   const activeLines = p.lines.filter((l) => l.status === "ACTIVE");
   const total = activeLines.reduce((s, l) => s + l.lineTotal, 0);
 
+  const { sortedRows: sortedLines, sortKey, sortDirection, toggleSort } = useSort(p.lines, {
+    accessors: {
+      item: (l) => l.locationItem.itemVariant.item.name,
+      qty: (l) => l.qty,
+      unitCost: (l) => l.unitCost,
+      total: (l) => l.lineTotal,
+      expiry: (l) => l.expiryDate ?? "",
+    },
+  });
+
   const pickItem = (li: LocationItem) => {
     setItem(li);
     if (cost === "") setCost(String(li.cost || ""));
+    setExpiryError(false);
   };
+
+  // Whether the selected item needs a date at all — same resolver Phase 1/2
+  // already reads from, so this screen never disagrees with the item form or
+  // the stock list about which items spoil.
+  const itemIsPerishable = item
+    ? resolveIsPerishable(item, item.itemVariant.item.category.defaultPerishable)
+    : false;
 
   const addLine = async () => {
     if (!item) return;
@@ -121,11 +147,25 @@ export function PurchaseEditorPage() {
     const c = Number(cost);
     if (!q || q <= 0) return toast.error("Enter the quantity received");
     if (!Number.isFinite(c) || c < 0) return toast.error("Enter the unit cost");
+    // No per-line skip: a perishable line with no date is rejected here
+    // before it ever reaches the server (expiry-date-plan.md — "staff can't
+    // skip the date on a delivery that has one printed on the box").
+    if (itemIsPerishable && !expiryDate) {
+      setExpiryError(true);
+      return;
+    }
     try {
-      await mutations.addLine.mutateAsync({ locationItemId: item.id, qty: q, unitCost: c });
+      await mutations.addLine.mutateAsync({
+        locationItemId: item.id,
+        qty: q,
+        unitCost: c,
+        expiryDate: itemIsPerishable ? expiryDate : undefined,
+      });
       setItem(null);
       setQty("");
       setCost("");
+      setExpiryDate("");
+      setExpiryError(false);
       comboRef.current?.focus();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not add the line");
@@ -193,9 +233,18 @@ export function PurchaseEditorPage() {
             // tracks and the Add button squeeze the Item combobox to nothing.
             // Stack until the strip genuinely has the room. The container is
             // the wrapper, not the grid — an element can't answer its own
-            // container query.
+            // container query. A fifth (Expiry) track joins the same row only
+            // for a perishable item, so a Vodka line never shows an empty
+            // date box (3.3 — conditional-visibility, same resolver as 2.2).
             <div className="@container/strip w-full">
-              <div className="grid gap-3 @2xl/strip:grid-cols-[minmax(0,1fr)_7rem_8rem_auto] @2xl/strip:items-end">
+              <div
+                className={cn(
+                  "grid gap-3 @2xl/strip:items-end",
+                  itemIsPerishable
+                    ? "@2xl/strip:grid-cols-[minmax(0,1fr)_7rem_8rem_9rem_auto]"
+                    : "@2xl/strip:grid-cols-[minmax(0,1fr)_7rem_8rem_auto]",
+                )}
+              >
                 <div className="space-y-2">
                   <Label htmlFor="pl-item">Item</Label>
                   <ItemCombobox id="pl-item" ref={comboRef} value={item} onSelect={pickItem} autoFocus />
@@ -212,6 +261,30 @@ export function PurchaseEditorPage() {
                   <Label htmlFor="pl-cost">Unit Cost</Label>
                   <QuantityInput id="pl-cost" className="tnum bg-background" value={cost} onChange={(e) => setCost(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addLine()} />
                 </div>
+                {itemIsPerishable && (
+                  <div className="space-y-2">
+                    <Label htmlFor="pl-expiry">Expiry Date</Label>
+                    <Input
+                      id="pl-expiry"
+                      type="date"
+                      className={cn("tnum bg-background", expiryError && "border-destructive")}
+                      value={expiryDate}
+                      aria-invalid={expiryError}
+                      onChange={(e) => {
+                        setExpiryDate(e.target.value);
+                        if (e.target.value) setExpiryError(false);
+                      }}
+                      onKeyDown={(e) => e.key === "Enter" && addLine()}
+                    />
+                    {/* The box has a date printed on it — say so plainly
+                        rather than just red-outlining the field (3.3,
+                        DESIGN.md's "helper text present; errors below in
+                        destructive"). */}
+                    {expiryError && (
+                      <p className="text-xs text-destructive">This item expires — enter the date on the box</p>
+                    )}
+                  </div>
+                )}
                 <Button size="sm" onClick={addLine} disabled={!item || mutations.addLine.isPending}>
                   Add
                 </Button>
@@ -223,22 +296,51 @@ export function PurchaseEditorPage() {
         <Table>
           <TableHeader>
             <TableRow className="bg-muted hover:bg-muted">
-              <TableHead>Item</TableHead>
-              <TableHead className="text-right">Qty</TableHead>
-              <TableHead className="text-right">Unit Cost</TableHead>
-              <TableHead className="text-right">Total</TableHead>
-              <TableHead className="w-32" />
+              <SortableTableHead sortKey="item" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                Item
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="qty"
+                activeKey={sortKey}
+                direction={sortDirection}
+                onSort={toggleSort}
+                className="text-right"
+              >
+                Qty
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="unitCost"
+                activeKey={sortKey}
+                direction={sortDirection}
+                onSort={toggleSort}
+                className="text-right"
+              >
+                Unit Cost
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="total"
+                activeKey={sortKey}
+                direction={sortDirection}
+                onSort={toggleSort}
+                className="text-right"
+              >
+                Total
+              </SortableTableHead>
+              <SortableTableHead sortKey="expiry" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                Expiry
+              </SortableTableHead>
+              <SortableTableHead sortable={false} className="w-32" />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {p.lines.length === 0 ? (
+            {sortedLines.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
                   No lines yet — add the delivered items above.
                 </TableCell>
               </TableRow>
             ) : (
-              p.lines.map((line) => {
+              sortedLines.map((line) => {
                 const voided = line.status === "VOID";
                 return (
                   <TableRow key={line.id} className={cn(voided && "opacity-50")}>
@@ -259,6 +361,23 @@ export function PurchaseEditorPage() {
                     <TableCell className="tnum text-right">{line.qty}</TableCell>
                     <TableCell className="tnum text-right">{formatMoney(line.unitCost)}</TableCell>
                     <TableCell className="tnum text-right">{formatMoney(line.lineTotal)}</TableCell>
+                    <TableCell className="tnum">
+                      {line.expiryDate ? (
+                        <span className="inline-flex items-center gap-1.5">
+                          {formatDate(line.expiryDate)}
+                          {/* Computed here, never stored (Phase 5.1) — same
+                              precedent as BottleKeep's dueForForfeit. A void
+                              line shows the date it carried but never the
+                              badge: it left the pool and there's nothing to
+                              write off. */}
+                          {!voided && isExpiryDatePast(line.expiryDate, today) && (
+                            <Badge variant="destructive">Expired</Badge>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-right">
                       {isDraft ? (
                         <Button
@@ -300,6 +419,7 @@ export function PurchaseEditorPage() {
                 </TableCell>
                 <TableCell />
                 <TableCell className="tnum text-right font-semibold">{formatMoney(total)}</TableCell>
+                <TableCell />
                 <TableCell />
               </TableRow>
             </TableFooter>
@@ -351,6 +471,8 @@ function EditLineDialog({
   const mutations = usePurchaseMutations(purchaseId);
   const [qty, setQty] = useState("");
   const [cost, setCost] = useState("");
+  const [expiryDate, setExpiryDate] = useState("");
+  const [expiryError, setExpiryError] = useState(false);
   const [changeReason, setChangeReason] = useState("");
 
   // Re-seed every field when a different line opens the dialog.
@@ -358,6 +480,8 @@ function EditLineDialog({
     if (!line) return;
     setQty(String(line.qty));
     setCost(String(line.unitCost));
+    setExpiryDate(line.expiryDate ?? "");
+    setExpiryError(false);
     setChangeReason("");
   }, [line]);
 
@@ -365,16 +489,28 @@ function EditLineDialog({
   const variant = line.locationItem.itemVariant;
   const q = Number(qty);
   const c = Number(cost);
+  // 3.4 — a committed line follows the standing void-and-replace pattern;
+  // the date rides along inside that correction the same way qty/unitCost
+  // already do, still gated on the same resolver everywhere else reads.
+  const lineIsPerishable = resolveIsPerishable(
+    line.locationItem,
+    line.locationItem.itemVariant.item.category.defaultPerishable,
+  );
 
   const submit = async () => {
     if (qty === "" || !Number.isFinite(q) || q <= 0) return toast.error("Enter the quantity received");
     if (cost === "" || !Number.isFinite(c) || c < 0) return toast.error("Enter the unit cost");
+    if (lineIsPerishable && !expiryDate) {
+      setExpiryError(true);
+      return;
+    }
     if (changeReason.trim().length < 3) return toast.error("Add a reason for the change");
     try {
       await mutations.correctLine.mutateAsync({
         lineId: line.id,
         qty: q,
         unitCost: c,
+        expiryDate: lineIsPerishable ? expiryDate : undefined,
         reason: changeReason.trim(),
       });
       toast.success("Line updated — the original is kept, marked corrected");
@@ -405,6 +541,26 @@ function EditLineDialog({
               <QuantityInput id="el-cost" className="tnum" value={cost} onChange={(e) => setCost(e.target.value)} />
             </div>
           </div>
+
+          {lineIsPerishable && (
+            <div className="space-y-2">
+              <Label htmlFor="el-expiry">Expiry Date</Label>
+              <Input
+                id="el-expiry"
+                type="date"
+                className={cn("tnum", expiryError && "border-destructive")}
+                value={expiryDate}
+                aria-invalid={expiryError}
+                onChange={(e) => {
+                  setExpiryDate(e.target.value);
+                  if (e.target.value) setExpiryError(false);
+                }}
+              />
+              {expiryError && (
+                <p className="text-xs text-destructive">This item expires — enter the date on the box</p>
+              )}
+            </div>
+          )}
 
           {/* The resulting line total, live — the number that reaches the
               report, shown before it is committed rather than after. */}

@@ -9,6 +9,7 @@ import { useTransfer, useTransferMutations, useTransfers } from "@/api/ops";
 import { variantLabel, type Transfer } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { formatMoney, formatDate } from "@/lib/utils";
+import { useSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
 import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarField, queryFailed } from "@/components/table-surface";
 import { QuantityInput } from "@/components/quantity-input";
@@ -35,10 +36,10 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
@@ -134,6 +135,16 @@ function OutgoingTab({ createOpen, setCreateOpen }: { createOpen: boolean; setCr
   const locationId = useLocationId();
   const navigate = useNavigate();
 
+  const { sortedRows, sortKey, sortDirection, toggleSort } = useSort(transfers.data ?? [], {
+    accessors: {
+      date: (t) => t.businessDate,
+      to: (t) => t.toLocation?.name ?? "",
+      status: (t) => t.status,
+      lines: (t) => t.lineCount ?? 0,
+      cost: (t) => t.total ?? 0,
+    },
+  });
+
   return (
     <>
       {queryFailed(transfers) ? (
@@ -155,15 +166,37 @@ function OutgoingTab({ createOpen, setCreateOpen }: { createOpen: boolean; setCr
         <Table>
           <TableHeader>
             <TableRow className="bg-muted hover:bg-muted">
-              <TableHead>Date</TableHead>
-              <TableHead>To</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Lines</TableHead>
-              <TableHead className="text-right">At Cost</TableHead>
+              <SortableTableHead sortKey="date" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                Date
+              </SortableTableHead>
+              <SortableTableHead sortKey="to" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                To
+              </SortableTableHead>
+              <SortableTableHead sortKey="status" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                Status
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="lines"
+                activeKey={sortKey}
+                direction={sortDirection}
+                onSort={toggleSort}
+                className="text-right"
+              >
+                Lines
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="cost"
+                activeKey={sortKey}
+                direction={sortDirection}
+                onSort={toggleSort}
+                className="text-right"
+              >
+                At Cost
+              </SortableTableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {transfers.data!.map((t) => (
+            {sortedRows.map((t) => (
               <TableRow
                 key={t.id}
                 className={cn(
@@ -270,6 +303,16 @@ function IncomingTab() {
   const navigate = useNavigate();
   const [receivingId, setReceivingId] = useState<string | null>(null);
 
+  const { sortedRows, sortKey, sortDirection, toggleSort } = useSort(transfers.data ?? [], {
+    accessors: {
+      sentOn: (t) => t.businessDate,
+      from: (t) => t.fromLocation?.name ?? "",
+      status: (t) => t.status,
+      lines: (t) => t.lineCount ?? 0,
+      cost: (t) => t.total ?? 0,
+    },
+  });
+
   return (
     <>
       {queryFailed(transfers) ? (
@@ -286,16 +329,38 @@ function IncomingTab() {
         <Table>
           <TableHeader>
             <TableRow className="bg-muted hover:bg-muted">
-              <TableHead>Sent On</TableHead>
-              <TableHead>From</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Lines</TableHead>
-              <TableHead className="text-right">At Cost</TableHead>
-              <TableHead className="w-28" />
+              <SortableTableHead sortKey="sentOn" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                Sent On
+              </SortableTableHead>
+              <SortableTableHead sortKey="from" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                From
+              </SortableTableHead>
+              <SortableTableHead sortKey="status" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                Status
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="lines"
+                activeKey={sortKey}
+                direction={sortDirection}
+                onSort={toggleSort}
+                className="text-right"
+              >
+                Lines
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="cost"
+                activeKey={sortKey}
+                direction={sortDirection}
+                onSort={toggleSort}
+                className="text-right"
+              >
+                At Cost
+              </SortableTableHead>
+              <SortableTableHead sortable={false} className="w-28" />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {transfers.data!.map((t) => {
+            {sortedRows.map((t) => {
               const outstanding = t.status === "COMMITTED" && (t.receivedCount ?? 0) < (t.lineCount ?? 0);
               return (
                 <TableRow
@@ -411,10 +476,10 @@ function ReceiveDialog({ transferId, onClose }: { transferId: string; onClose: (
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted hover:bg-muted">
-                    <TableHead>Item</TableHead>
-                    <TableHead className="w-20 text-right">Sent</TableHead>
-                    <TableHead className="w-28">Received</TableHead>
-                    <TableHead>Note (required when it differs)</TableHead>
+                    <SortableTableHead sortable={false}>Item</SortableTableHead>
+                    <SortableTableHead sortable={false} className="w-20 text-right">Sent</SortableTableHead>
+                    <SortableTableHead sortable={false} className="w-28">Received</SortableTableHead>
+                    <SortableTableHead sortable={false}>Note (required when it differs)</SortableTableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

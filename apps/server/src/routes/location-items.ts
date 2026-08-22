@@ -6,6 +6,7 @@ import { prisma } from "../db";
 import { AppError } from "../lib/errors";
 import { assertNotQueuedEdit } from "../lib/two-way";
 import { getTrailingAverage, getTrailingFullQty } from "../lib/weigh-history";
+import { getFifoBatches, getEarliestOpenExpiry } from "../lib/fifo-batches";
 import { logActivity } from "../services/activity";
 import { generateAssetCode } from "../services/asset-supplier";
 import { requirePermission, type AppEnv } from "../middleware/auth";
@@ -106,7 +107,14 @@ export const locationItemRoutes = new Hono<AppEnv>()
       orderBy: { itemVariant: { item: { name: "asc" } } },
       take: 1000,
     });
-    return c.json(items);
+    // Earliest open expiry per row, so the catalog list can flag an expired
+    // batch without a per-row round trip (Phase 5.1) — one query for the
+    // whole page, joined here rather than in the database since Prisma has
+    // no groupBy-then-join in a single call.
+    const earliestExpiry = await getEarliestOpenExpiry(location.id);
+    return c.json(
+      items.map((item) => ({ ...item, earliestOpenExpiry: earliestExpiry.get(item.id) ?? null })),
+    );
   })
 
   .post("/location-items", priceGuard, zValidator("json", locationItemAttach), async (c) => {
@@ -222,6 +230,22 @@ export const locationItemRoutes = new Hono<AppEnv>()
       getTrailingFullQty(itemId),
     ]);
     return c.json({ trailingAverage, trailingFullQty });
+  })
+
+  /**
+   * Open perishable batches for this catalog row, oldest first — the count
+   * screen's FIFO worklist (expiry-date-plan.md, phases doc 4.1). Pure read,
+   * no new schema, sourced straight from PurchaseLine.expiryDate rows
+   * already written in Phase 3. Same access tier as trailing-average above:
+   * reading which batches are on the shelf needs no special permission.
+   */
+  .get("/location-items/:id/fifo-batches", async (c) => {
+    const location = c.get("location");
+    const itemId = c.req.param("id");
+    const existing = await prisma.locationItem.findUnique({ where: { id: itemId } });
+    if (!existing || existing.locationId !== location.id) throw new AppError(404, "Catalog item not found");
+    const batches = await getFifoBatches(itemId);
+    return c.json({ batches });
   })
 
   .put("/location-items/:id", priceGuard, zValidator("json", locationItemUpdate), async (c) => {

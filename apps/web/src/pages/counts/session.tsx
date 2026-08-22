@@ -5,13 +5,13 @@ import { toast } from "sonner";
 // phpRound for DISPLAY of the stored reading: entering in grams converts to the
 // item's own unit, which lands on values like 28.642457103059293. The stored
 // number stays exact — only what is shown is shortened.
-import { can, checkContentVsHistory, checkQtyVsHistory, convert, phpRound, type Role, type UnitDef, type WeighWarning } from "@fnb/core";
+import { can, checkContentVsHistory, checkQtyVsHistory, convert, isExpiryDatePast, phpRound, resolveIsPerishable, type Role, type UnitDef, type WeighWarning } from "@fnb/core";
 import { statusVariant } from "@/lib/status";
 import { useMe } from "@/api/auth";
 import { useItemDisplayUnit } from "@/lib/preferences";
-import { useAreas, useLocationId, useLocationItems, useTrailingAverage } from "@/api/location";
+import { useAreas, useFifoBatches, useLocationId, useLocationItems, useTrailingAverage } from "@/api/location";
 import { useCountMutations, useCountSession } from "@/api/ops";
-import { variantLabel, type CountLine, type LocationItem } from "@/api/types";
+import { displayVariantLabel, variantLabel, type CountLine, type FifoBatch, type LocationItem } from "@/api/types";
 import { ApiError } from "@/api/http";
 import { BottleKeepInline } from "@/components/bottle-keep-inline";
 import { ItemCombobox } from "@/components/item-combobox";
@@ -208,6 +208,15 @@ function OpenSession({ session }: { session: SessionWithLines }) {
   // Weigh Partial preview below and the Open Amount check further down.
   const trailing = useTrailingAverage(item?.id ?? null).data;
   const trailingAverage = trailing?.trailingAverage;
+  // FIFO worklist (expiry-date-plan.md, phases doc Phase 4.2) — same
+  // one-fetch-per-picked-item shape as trailingAverage above. Gated on the
+  // same resolver everywhere else in this feature reads, so picking a
+  // non-perishable item (a Vodka row) never fires a request for a panel it
+  // has nothing to show.
+  const itemIsPerishable = item
+    ? resolveIsPerishable(item, item.itemVariant.item.category.defaultPerishable)
+    : false;
+  const fifoBatches = useFifoBatches(itemIsPerishable ? (item?.id ?? null) : null).data?.batches;
   // What the counter is TYPING in. Starts as the item's own unit and is theirs
   // to change — a bar's scale reads grams whatever unit the bottle was
   // originally weighed in, and before this the field could not accept that.
@@ -565,6 +574,7 @@ function OpenSession({ session }: { session: SessionWithLines }) {
                 id="count-qty"
                 className="tnum h-11 text-lg"
                 placeholder="0"
+                allowDecimal={false}
                 value={qty}
                 onChange={(e) => setQty(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && save()}
@@ -755,6 +765,14 @@ function OpenSession({ session }: { session: SessionWithLines }) {
         <div className="flex min-h-0 flex-col lg:border-l lg:pl-6">
           <CountProgress done={done} total={total} />
 
+          {/* FIFO worklist (expiry-date-plan.md, phases doc Phase 4.2) —
+              joins the same standing panel as the recent-entries list below,
+              informational only: no required interaction, no blocking state,
+              same as the rest of this pane. Only for the item currently
+              picked in the entry form on the left, and only when it resolves
+              perishable — a Vodka pick shows nothing here. */}
+          {item && itemIsPerishable && <FifoWorklist item={item} batches={fifoBatches} />}
+
           {/* Two views of the same pane: what's in, and what's still out. The
               second is the one that keeps a period from locking half-counted. */}
           <Tabs value={pane} onValueChange={(v) => setPane(v as "entered" | "remaining")} className="mb-2 shrink-0">
@@ -789,7 +807,9 @@ function OpenSession({ session }: { session: SessionWithLines }) {
                     }}
                   >
                     <span className="min-w-0 flex-1 truncate text-sm">{li.itemVariant.item.name}</span>
-                    <span className="shrink-0 text-xs text-muted-foreground">{variantLabel(li.itemVariant)}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {displayVariantLabel(li.itemVariant, resolveDisplay(li.itemVariant.item.id, li.itemVariant.unit))}
+                    </span>
                   </button>
                 ))
               )
@@ -819,6 +839,55 @@ function OpenSession({ session }: { session: SessionWithLines }) {
             )}
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The FIFO worklist (expiry-date-plan.md, phases doc Phase 4.2) — every open
+ * committed delivery batch for the item currently picked in the entry form,
+ * oldest expiry first, both dates visible so a counter reaching for the
+ * easy-to-grab case can see an older one is still waiting behind it. Purely
+ * informational: no interaction, no blocking state — same as the rest of
+ * this standing panel. `batches` undefined means "still loading"; an empty
+ * array (a perishable item with no committed dated deliveries yet) renders
+ * nothing rather than an empty box.
+ */
+function FifoWorklist({ item, batches }: { item: LocationItem; batches: FifoBatch[] | undefined }) {
+  // Same "on or past today" rule as everywhere else this flag shows —
+  // computed here at render time, never stored (Phase 5.1).
+  const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  if (batches === undefined) {
+    return (
+      <div className="mb-3 shrink-0 space-y-1.5 rounded-md border p-3">
+        <Skeleton className="h-4 w-40" />
+        <Skeleton className="h-8 w-full" />
+      </div>
+    );
+  }
+  if (batches.length === 0) return null;
+  return (
+    <div className="mb-3 shrink-0 space-y-2 rounded-md border p-3">
+      <p className="text-sm font-medium">
+        On the shelf — {item.itemVariant.item.name}
+        <span className="ml-1.5 font-normal text-muted-foreground">oldest first</span>
+      </p>
+      <div className="space-y-1.5">
+        {batches.map((b) => {
+          const expired = isExpiryDatePast(b.expiryDate, today);
+          return (
+            <div key={b.id} className="flex items-baseline justify-between gap-3">
+              <EntryFacts>
+                <EntryFact label="Expires" value={formatDate(b.expiryDate)} />
+                {expired && <Badge variant="destructive">Expired</Badge>}
+              </EntryFacts>
+              <span className="tnum shrink-0 text-xs text-muted-foreground">
+                {b.qty} · received {formatDate(b.purchaseDate)}
+              </span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -1067,7 +1136,7 @@ function EditLineDialog({
         <DialogHeader>
           <DialogTitle>Edit Line</DialogTitle>
           <DialogDescription>
-            {variant.item.name} {variantLabel(variant)}
+            {variant.item.name} {displayVariantLabel(variant, displayUnit ?? null)}
           </DialogDescription>
         </DialogHeader>
 
@@ -1095,6 +1164,7 @@ function EditLineDialog({
                 id="ec-qty"
                 className="tnum"
                 placeholder="0"
+                allowDecimal={false}
                 value={qty}
                 onChange={(e) => setQty(e.target.value)}
               />
@@ -1182,9 +1252,14 @@ function LineRow({
   const voided = line.status === "VOID";
   const [confirmRemove, setConfirmRemove] = useState(false);
   // remainingContent is stored in the item's own unit; convert once here for
-  // display. The "X of {variantLabel}" fraction badge below stays on the raw
-  // stored value on purpose — that's a fraction of a bottle, not a quantity,
-  // and dividing by variant.size only makes sense in the item's own unit.
+  // display. The name-row size tag above uses displayVariantLabel (resolved
+  // unit) since it is just identifying the bottle at a glance, same as the
+  // Counts entry form and the Not Counted list. The "X of {variantLabel}"
+  // fraction badge below stays on variantLabel (the item's own unit) on
+  // purpose, that's a fraction of a bottle computed by dividing by
+  // variant.size, and only makes sense against the stored unit the size was
+  // recorded in, converting the label there without converting variant.size
+  // itself would make the fraction wrong.
   const shownUnit = displayUnit && displayUnit.kind === variant.unit.kind ? displayUnit : variant.unit;
   const shownContent =
     shownUnit.kind === variant.unit.kind ? convert(line.remainingContent, variant.unit, shownUnit) : line.remainingContent;
@@ -1201,7 +1276,7 @@ function LineRow({
       <p className={cn("text-sm font-medium", voided && "line-through")}>
         {variant.item.name}
         <span className="ml-1.5 whitespace-nowrap font-normal text-muted-foreground">
-          {variantLabel(variant)}
+          {displayVariantLabel(variant, displayUnit ?? null)}
         </span>
       </p>
       <div className="flex items-end justify-between gap-3">
@@ -1248,7 +1323,7 @@ function LineRow({
           open={confirmRemove}
           onOpenChange={setConfirmRemove}
           title="Remove this line?"
-          description={`${variant.item.name} ${variantLabel(variant)} will be taken off this count.`}
+          description={`${variant.item.name} ${displayVariantLabel(variant, displayUnit ?? null)} will be taken off this count.`}
           confirmLabel="Remove"
           destructive
           onConfirm={() => {

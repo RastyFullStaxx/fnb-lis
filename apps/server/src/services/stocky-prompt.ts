@@ -2,6 +2,14 @@
  * Stocky's system prompt. Static rules first, per-session context last.
  * The voice and grounding rules mirror the StockLedger prototype's UX
  * (calm, evidence-driven, no emoji) with a hard read-only stance.
+ *
+ * hide-variance-from-staff Phase 3.5 (checked, no change needed): this prompt
+ * states no variance formula and no example figures as background context —
+ * it only names the Full Audit reconciliation abstractly. The real formula
+ * text and any numbers live entirely behind explain_variance / get_report_row
+ * / get_dashboard (services/stocky-tools.ts), which gate themselves. A gated
+ * tool result is therefore sufficient here; there is nothing in this file for
+ * a blocked STAFF session to already have been handed.
  */
 
 export interface StockyPromptContext {

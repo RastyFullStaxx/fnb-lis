@@ -5,6 +5,7 @@ import { useLocationId } from "@/api/location";
 import { useCountDates } from "@/api/ops";
 import { exportUrl, useNonRevenueReport, useTransferReport } from "@/api/reports";
 import { formatMoney, formatNumber, formatDate } from "@/lib/utils";
+import { useSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
 import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarField, queryFailed } from "@/components/table-surface";
 import { DateRangeControl, ExportButtons } from "@/components/report-toolbar";
@@ -23,10 +24,10 @@ import {
   TableBody,
   TableCell,
   TableFooter,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 import { useReportRange } from "./use-report-range";
 
 
@@ -60,6 +61,35 @@ export function NonRevenueReportPage() {
       .map((g) => ({ label: g.reason, value: round2(g.cost) }));
     return { bars, bucketCount: eligible.length };
   }, [report.data]);
+
+  const transferRows = transfers.data?.rows ?? [];
+  const { sortedRows: sortedTransferRows, sortKey: transferSortKey, sortDirection: transferSortDirection, toggleSort: toggleTransferSort } = useSort(
+    transferRows,
+    {
+      accessors: {
+        date: (r) => r.date,
+        to: (r) => r.counterparty,
+        item: (r) => r.name,
+        qtySent: (r) => r.qtySent,
+        atCost: (r) => r.costValue,
+        atRetail: (r) => r.retailValue,
+      },
+    },
+  );
+
+  const nonRevenueRows = report.data?.rows ?? [];
+  const { sortedRows: sortedNonRevenueRows, sortKey: nrSortKey, sortDirection: nrSortDirection, toggleSort: toggleNrSort } = useSort(nonRevenueRows, {
+    accessors: {
+      date: (r) => r.saleDate,
+      item: (r) => r.name,
+      uom: (r) => r.uom ?? "",
+      reason: (r) => r.reason,
+      qty: (r) => r.qty,
+      contentPerUnit: (r) => r.contentOverride ?? -Infinity,
+      estCost: (r) => r.estimatedCost ?? -Infinity,
+      estRetail: (r) => r.estimatedRetail ?? -Infinity,
+    },
+  });
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -126,16 +156,46 @@ export function NonRevenueReportPage() {
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted hover:bg-muted">
-                  <TableHead>Date</TableHead>
-                  <TableHead>To</TableHead>
-                  <TableHead>Item</TableHead>
-                  <TableHead className="text-right">Qty Sent</TableHead>
-                  <TableHead className="text-right">At Cost</TableHead>
-                  <TableHead className="text-right">At Retail</TableHead>
+                  <SortableTableHead sortKey="date" activeKey={transferSortKey} direction={transferSortDirection} onSort={toggleTransferSort}>
+                    Date
+                  </SortableTableHead>
+                  <SortableTableHead sortKey="to" activeKey={transferSortKey} direction={transferSortDirection} onSort={toggleTransferSort}>
+                    To
+                  </SortableTableHead>
+                  <SortableTableHead sortKey="item" activeKey={transferSortKey} direction={transferSortDirection} onSort={toggleTransferSort}>
+                    Item
+                  </SortableTableHead>
+                  <SortableTableHead
+                    sortKey="qtySent"
+                    activeKey={transferSortKey}
+                    direction={transferSortDirection}
+                    onSort={toggleTransferSort}
+                    className="text-right"
+                  >
+                    Qty Sent
+                  </SortableTableHead>
+                  <SortableTableHead
+                    sortKey="atCost"
+                    activeKey={transferSortKey}
+                    direction={transferSortDirection}
+                    onSort={toggleTransferSort}
+                    className="text-right"
+                  >
+                    At Cost
+                  </SortableTableHead>
+                  <SortableTableHead
+                    sortKey="atRetail"
+                    activeKey={transferSortKey}
+                    direction={transferSortDirection}
+                    onSort={toggleTransferSort}
+                    className="text-right"
+                  >
+                    At Retail
+                  </SortableTableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {transfers.data.rows.map((row, i) => (
+                {sortedTransferRows.map((row, i) => (
                   <TableRow key={i}>
                     <TableCell className="tnum">{formatDate(row.date)}</TableCell>
                     <TableCell className="max-w-[14rem] break-words text-muted-foreground">{row.counterparty}</TableCell>
@@ -177,23 +237,73 @@ export function NonRevenueReportPage() {
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted hover:bg-muted">
-                  <TableHead>Date</TableHead>
-                  <TableHead>Item / Menu</TableHead>
-                  <TableHead>UOM</TableHead>
-                  <TableHead>Reason</TableHead>
-                  <TableHead className="text-right">Qty</TableHead>
-                  <TableHead className="text-right">Content/Unit</TableHead>
-                  <TableHead className="text-right">Est. Cost</TableHead>
-                  <TableHead className="text-right">Est. Retail</TableHead>
+                  <SortableTableHead sortKey="date" activeKey={nrSortKey} direction={nrSortDirection} onSort={toggleNrSort}>
+                    Date
+                  </SortableTableHead>
+                  <SortableTableHead sortKey="item" activeKey={nrSortKey} direction={nrSortDirection} onSort={toggleNrSort}>
+                    Item / Menu
+                  </SortableTableHead>
+                  <SortableTableHead sortKey="uom" activeKey={nrSortKey} direction={nrSortDirection} onSort={toggleNrSort}>
+                    UOM
+                  </SortableTableHead>
+                  <SortableTableHead sortKey="reason" activeKey={nrSortKey} direction={nrSortDirection} onSort={toggleNrSort}>
+                    Reason
+                  </SortableTableHead>
+                  <SortableTableHead
+                    sortKey="qty"
+                    activeKey={nrSortKey}
+                    direction={nrSortDirection}
+                    onSort={toggleNrSort}
+                    className="text-right"
+                  >
+                    Qty
+                  </SortableTableHead>
+                  <SortableTableHead
+                    sortKey="contentPerUnit"
+                    activeKey={nrSortKey}
+                    direction={nrSortDirection}
+                    onSort={toggleNrSort}
+                    className="text-right"
+                  >
+                    Content/Unit
+                  </SortableTableHead>
+                  <SortableTableHead
+                    sortKey="estCost"
+                    activeKey={nrSortKey}
+                    direction={nrSortDirection}
+                    onSort={toggleNrSort}
+                    className="text-right"
+                  >
+                    Est. Cost
+                  </SortableTableHead>
+                  <SortableTableHead
+                    sortKey="estRetail"
+                    activeKey={nrSortKey}
+                    direction={nrSortDirection}
+                    onSort={toggleNrSort}
+                    className="text-right"
+                  >
+                    Est. Retail
+                  </SortableTableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {report.data.rows.map((row, i) => (
+                {sortedNonRevenueRows.map((row, i) => (
                   <TableRow key={i}>
                     <TableCell className="tnum">{formatDate(row.saleDate)}</TableCell>
                     {/* Menu names run long; wrapping keeps them fully readable
                         without pushing the money columns off-screen. */}
-                    <TableCell className="max-w-[22rem] font-medium break-words">{row.name}</TableCell>
+                    <TableCell className="max-w-[22rem] font-medium break-words">
+                      {row.name}
+                      {/* A non-revenue row IS the activity, so isActive === false
+                          here always means a hidden item that moved — never one
+                          the server could have dropped (report-lists.ts). */}
+                      {row.isActive === false && (
+                        <Badge variant="warning" className="ml-2">
+                          hidden · active
+                        </Badge>
+                      )}
+                    </TableCell>
                     <TableCell className="text-muted-foreground">{row.uom ?? "—"}</TableCell>
                     <TableCell>
                       <Badge variant="outline">{row.reason}</Badge>

@@ -1,11 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { can, type Role } from "@fnb/core";
 import { useNavigate } from "react-router";
 import { BarChart3, Martini, Package, Search, Truck } from "lucide-react";
 import { useLocationItems, useSuppliers } from "@/api/location";
 import { useMenus } from "@/api/menus";
 import { useMe } from "@/api/auth";
-import { variantLabel } from "@/api/types";
+import { displayVariantLabel, variantLabel } from "@/api/types";
+import { useItemDisplayUnit } from "@/lib/preferences";
 import type { NavItem } from "@/lib/nav";
 import { Button } from "@/components/ui/button";
 import {
@@ -111,20 +112,34 @@ function EntityResults({ onGo }: { onGo: (path: string) => void }) {
   const canSeeMenus = can(role, "menus.write");
   const canSeeSuppliers = can(role, "master.write");
 
+  // Client req 2026-07-31 (docs/per-user-per-item-uom-plan.md): show the
+  // resolved display unit here too, same as every other item picker. Only
+  // resolves for the (at most 200) items actually rendered below, and only
+  // while this component is mounted, i.e. only while the palette is open,
+  // same fetch-on-open shape as the rest of this component already has.
+  const shownItems = (items.data ?? []).slice(0, 200);
+  const shownItemIds = useMemo(() => shownItems.map((li) => li.itemVariant.item.id), [shownItems]);
+  const { resolve: resolveDisplay } = useItemDisplayUnit(shownItemIds);
+
   return (
     <>
       {(items.data ?? []).length > 0 && (
         <CommandGroup heading="Items">
-          {items.data!.slice(0, 200).map((li) => {
-            const label = `${li.itemVariant.item.name} ${variantLabel(li.itemVariant)}`;
+          {shownItems.map((li) => {
+            const resolvedLabel = `${li.itemVariant.item.name} ${displayVariantLabel(li.itemVariant, resolveDisplay(li.itemVariant.item.id, li.itemVariant.unit))}`;
+            // The Stock page's ?q= only ever matches item.name server-side
+            // (see location-items.ts), so which unit text rides along in the
+            // query string here has no effect on what that page finds —
+            // safe to use the resolved label for both the shown text and
+            // the deep link.
             return (
               <CommandItem
                 key={li.id}
-                value={`item ${label}`}
-                onSelect={() => onGo(`stock?q=${encodeURIComponent(label)}`)}
+                value={`item ${resolvedLabel} ${variantLabel(li.itemVariant)}`}
+                onSelect={() => onGo(`stock?q=${encodeURIComponent(resolvedLabel)}`)}
               >
                 <Package className="size-4" />
-                {label}
+                {resolvedLabel}
               </CommandItem>
             );
           })}

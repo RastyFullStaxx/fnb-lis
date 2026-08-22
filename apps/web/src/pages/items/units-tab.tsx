@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { unitCreate, type UnitCreate } from "@fnb/core";
 import { useCreateUnit, useUnits } from "@/api/master";
 import { ApiError } from "@/api/http";
+import { useSort } from "@/hooks/use-sort";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,10 +30,10 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 import { TableEmpty, TableFailure, TableLoading, queryFailed } from "@/components/table-surface";
 
 const KIND_LABELS: Record<string, { label: string; base: string }> = {
@@ -49,6 +50,13 @@ export function UnitsTab({
   setCreateOpen: (open: boolean) => void;
 }) {
   const units = useUnits();
+
+  const { sortedRows, sortKey, sortDirection, toggleSort } = useSort(units.data ?? [], {
+    accessors: {
+      kind: (u) => KIND_LABELS[u.kind]?.label ?? u.kind,
+      source: (u) => (u.isSystem ? "System" : "Custom"),
+    },
+  });
 
   return (
     <>
@@ -71,14 +79,34 @@ export function UnitsTab({
         <Table>
           <TableHeader>
             <TableRow className="bg-muted hover:bg-muted">
-              <TableHead>Unit</TableHead>
-              <TableHead>Kind</TableHead>
-              <TableHead className="text-right">Factor to Base</TableHead>
-              <TableHead className="text-right">Source</TableHead>
+              <SortableTableHead sortKey="name" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                Unit
+              </SortableTableHead>
+              <SortableTableHead sortKey="kind" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                Kind
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="factorToBase"
+                activeKey={sortKey}
+                direction={sortDirection}
+                onSort={toggleSort}
+                className="text-right"
+              >
+                Factor to Base
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="source"
+                activeKey={sortKey}
+                direction={sortDirection}
+                onSort={toggleSort}
+                className="text-right"
+              >
+                Source
+              </SortableTableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {units.data!.map((unit) => (
+            {sortedRows.map((unit) => (
               <TableRow key={unit.id}>
                 <TableCell className="font-medium">{unit.name}</TableCell>
                 <TableCell className="text-muted-foreground">

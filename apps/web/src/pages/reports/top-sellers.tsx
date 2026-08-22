@@ -5,6 +5,7 @@ import { useLocationId } from "@/api/location";
 import { useCountDates } from "@/api/ops";
 import { exportUrl, useTopSellersReport } from "@/api/reports";
 import { formatMoney } from "@/lib/utils";
+import { useSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
 import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarField, queryFailed } from "@/components/table-surface";
 import { DateRangeControl, ExportButtons } from "@/components/report-toolbar";
@@ -19,6 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 import { useReportRange } from "./use-report-range";
 
 const LIMITS = [10, 25, 50] as const;
@@ -52,6 +54,42 @@ export function TopSellersPage() {
     (report.data.topBrands.length > 0 ||
       report.data.topMenus.length > 0 ||
       report.data.topIngredients.length > 0);
+
+  // Each table's "#" always shows the row's rank in the server's own
+  // qty-descending order, never its position after a client-side re-sort —
+  // sorting reorders the rows shown but must not relabel what "#3" means.
+  const topBrands = report.data?.topBrands ?? [];
+  const topMenus = report.data?.topMenus ?? [];
+  const topIngredients = report.data?.topIngredients ?? [];
+
+  const { sortedRows: sortedBrands, sortKey: brandsSortKey, sortDirection: brandsSortDirection, toggleSort: toggleBrandsSort } = useSort(topBrands, {
+    accessors: {
+      item: (r) => r.name,
+      category: (r) => r.category ?? "",
+      qty: (r) => r.qty,
+      revenue: (r) => r.revenue,
+    },
+  });
+  const { sortedRows: sortedMenus, sortKey: menusSortKey, sortDirection: menusSortDirection, toggleSort: toggleMenusSort } = useSort(topMenus, {
+    accessors: {
+      item: (r) => r.name,
+      qty: (r) => r.qty,
+      revenue: (r) => r.revenue,
+    },
+  });
+  const { sortedRows: sortedIngredients, sortKey: ingredientsSortKey, sortDirection: ingredientsSortDirection, toggleSort: toggleIngredientsSort } = useSort(
+    topIngredients,
+    {
+      accessors: {
+        item: (r) => r.name,
+        category: (r) => r.category ?? "",
+        qty: (r) => r.qty,
+      },
+    },
+  );
+  const brandRank = new Map(topBrands.map((r, i) => [r.id, i + 1]));
+  const menuRank = new Map(topMenus.map((r, i) => [r.id, i + 1]));
+  const ingredientRank = new Map(topIngredients.map((r, i) => [r.id, i + 1]));
 
   return (
     <div>
@@ -118,16 +156,36 @@ export function TopSellersPage() {
               <TableHeader>
                 <TableRow className="bg-muted hover:bg-muted">
                   <TableHead className="w-10 text-right">#</TableHead>
-                  <TableHead>Item</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead className="text-right">Qty</TableHead>
-                  <TableHead className="text-right">Revenue</TableHead>
+                  <SortableTableHead sortKey="item" activeKey={brandsSortKey} direction={brandsSortDirection} onSort={toggleBrandsSort}>
+                    Item
+                  </SortableTableHead>
+                  <SortableTableHead sortKey="category" activeKey={brandsSortKey} direction={brandsSortDirection} onSort={toggleBrandsSort}>
+                    Category
+                  </SortableTableHead>
+                  <SortableTableHead
+                    sortKey="qty"
+                    activeKey={brandsSortKey}
+                    direction={brandsSortDirection}
+                    onSort={toggleBrandsSort}
+                    className="text-right"
+                  >
+                    Qty
+                  </SortableTableHead>
+                  <SortableTableHead
+                    sortKey="revenue"
+                    activeKey={brandsSortKey}
+                    direction={brandsSortDirection}
+                    onSort={toggleBrandsSort}
+                    className="text-right"
+                  >
+                    Revenue
+                  </SortableTableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {report.data!.topBrands.map((row, i) => (
+                {sortedBrands.map((row) => (
                   <TableRow key={row.id}>
-                    <TableCell className="tnum text-right text-muted-foreground">{i + 1}</TableCell>
+                    <TableCell className="tnum text-right text-muted-foreground">{brandRank.get(row.id)}</TableCell>
                     <TableCell className="max-w-[22rem] font-medium break-words">{row.name}</TableCell>
                     <TableCell className="text-muted-foreground">{row.category ?? "—"}</TableCell>
                     <TableCell className="tnum text-right">{n6(row.qty)}</TableCell>
@@ -150,15 +208,33 @@ export function TopSellersPage() {
               <TableHeader>
                 <TableRow className="bg-muted hover:bg-muted">
                   <TableHead className="w-10 text-right">#</TableHead>
-                  <TableHead>Menu / Cocktail</TableHead>
-                  <TableHead className="text-right">Qty</TableHead>
-                  <TableHead className="text-right">Revenue</TableHead>
+                  <SortableTableHead sortKey="item" activeKey={menusSortKey} direction={menusSortDirection} onSort={toggleMenusSort}>
+                    Menu / Cocktail
+                  </SortableTableHead>
+                  <SortableTableHead
+                    sortKey="qty"
+                    activeKey={menusSortKey}
+                    direction={menusSortDirection}
+                    onSort={toggleMenusSort}
+                    className="text-right"
+                  >
+                    Qty
+                  </SortableTableHead>
+                  <SortableTableHead
+                    sortKey="revenue"
+                    activeKey={menusSortKey}
+                    direction={menusSortDirection}
+                    onSort={toggleMenusSort}
+                    className="text-right"
+                  >
+                    Revenue
+                  </SortableTableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {report.data!.topMenus.map((row, i) => (
+                {sortedMenus.map((row) => (
                   <TableRow key={row.id}>
-                    <TableCell className="tnum text-right text-muted-foreground">{i + 1}</TableCell>
+                    <TableCell className="tnum text-right text-muted-foreground">{menuRank.get(row.id)}</TableCell>
                     <TableCell className="max-w-[22rem] font-medium break-words">{row.name}</TableCell>
                     <TableCell className="tnum text-right">{n6(row.qty)}</TableCell>
                     <TableCell className="tnum text-right">{formatMoney(row.revenue)}</TableCell>
@@ -180,15 +256,27 @@ export function TopSellersPage() {
               <TableHeader>
                 <TableRow className="bg-muted hover:bg-muted">
                   <TableHead className="w-10 text-right">#</TableHead>
-                  <TableHead>Ingredient</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead className="text-right">Qty Consumed</TableHead>
+                  <SortableTableHead sortKey="item" activeKey={ingredientsSortKey} direction={ingredientsSortDirection} onSort={toggleIngredientsSort}>
+                    Ingredient
+                  </SortableTableHead>
+                  <SortableTableHead sortKey="category" activeKey={ingredientsSortKey} direction={ingredientsSortDirection} onSort={toggleIngredientsSort}>
+                    Category
+                  </SortableTableHead>
+                  <SortableTableHead
+                    sortKey="qty"
+                    activeKey={ingredientsSortKey}
+                    direction={ingredientsSortDirection}
+                    onSort={toggleIngredientsSort}
+                    className="text-right"
+                  >
+                    Qty Consumed
+                  </SortableTableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {report.data!.topIngredients.map((row, i) => (
+                {sortedIngredients.map((row) => (
                   <TableRow key={row.id}>
-                    <TableCell className="tnum text-right text-muted-foreground">{i + 1}</TableCell>
+                    <TableCell className="tnum text-right text-muted-foreground">{ingredientRank.get(row.id)}</TableCell>
                     <TableCell className="max-w-[22rem] font-medium break-words">{row.name}</TableCell>
                     <TableCell className="text-muted-foreground">{row.category ?? "—"}</TableCell>
                     <TableCell className="tnum text-right">{n6(row.qty)}</TableCell>

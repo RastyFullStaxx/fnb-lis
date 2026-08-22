@@ -9,6 +9,7 @@ import {
   purchaseLineCreate,
   remainingContent,
   resolveDensityFactor,
+  resolveIsPerishable,
   voidRequest,
 } from "@fnb/core";
 import { prisma } from "../db";
@@ -56,6 +57,28 @@ async function assertSupplierInClient(supplierId: string | null | undefined, cli
   if (!supplierId) return;
   const supplier = await prisma.supplier.findUnique({ where: { id: supplierId }, select: { clientId: true } });
   if (!supplier || supplier.clientId !== clientId) throw new AppError(404, "Supplier not found");
+}
+
+/**
+ * Server-side half of the "required when perishable" rule (expiry-date-plan.md,
+ * phases doc 3.2). purchaseLineCreate/purchaseLineCorrect in packages/core can
+ * only check the SHAPE of expiryDate (a real YYYY-MM-DD or absent) — whether it
+ * is actually mandatory depends on resolveIsPerishable(), which needs the
+ * LocationItem and its category's defaultPerishable from the database, and
+ * packages/core does no I/O. Same split as assertWeighModeValid in
+ * routes/master.ts: zod checks the shape a body is allowed to take, the route
+ * checks the DB-backed truth. No per-line skip — a perishable line with no
+ * date is rejected outright, matching the source plan's stated requirement
+ * that staff can't skip the date "just this once".
+ */
+function assertExpiryDateValid(
+  locationItem: { isPerishable: boolean | null; itemVariant: { item: { category: { defaultPerishable: boolean } } } },
+  expiryDate: string | null | undefined,
+): void {
+  const perishable = resolveIsPerishable(locationItem, locationItem.itemVariant.item.category.defaultPerishable);
+  if (perishable && !expiryDate) {
+    throw new AppError(400, "This item expires — enter the date on the box before saving this line");
+  }
 }
 
 export const purchaseRoutes = new Hono<AppEnv>()
@@ -165,8 +188,12 @@ export const purchaseRoutes = new Hono<AppEnv>()
     );
     if (already) return c.json(already, 200);
 
-    const locationItem = await prisma.locationItem.findUnique({ where: { id: body.locationItemId } });
+    const locationItem = await prisma.locationItem.findUnique({
+      where: { id: body.locationItemId },
+      include: { itemVariant: { include: { item: { include: { category: true } } } } },
+    });
     if (!locationItem || locationItem.locationId !== location.id) throw new AppError(404, "Item not found in this catalog");
+    assertExpiryDateValid(locationItem, body.expiryDate);
     const line = await prisma.$transaction(async (tx) => {
       await holdParentOpen(
         () => tx.purchase.updateMany({ where: { id: purchase.id, status: "DRAFT" }, data: { status: "DRAFT" } }),
@@ -180,6 +207,7 @@ export const purchaseRoutes = new Hono<AppEnv>()
           locationItemId: body.locationItemId,
           qty: body.qty,
           unitCost: body.unitCost,
+          expiryDate: body.expiryDate ?? null,
           lineTotal: lineTotal(body.qty, body.unitCost),
           createdById: user.id,
           createdByName: `${user.firstName} ${user.lastName}`,
@@ -339,6 +367,11 @@ export const purchaseRoutes = new Hono<AppEnv>()
     if (!line || line.purchaseId !== purchase.id) throw new AppError(404, "Purchase line not found");
     if (line.status === "VOID") throw new AppError(409, "Already voided — correct the replacement instead");
     const unitCost = body.unitCost ?? line.unitCost;
+    // Omitting expiryDate keeps the original's date, same convention as
+    // unitCost above — a correction to qty shouldn't silently blank a date
+    // that was already right.
+    const expiryDate = body.expiryDate ?? line.expiryDate;
+    assertExpiryDateValid(line.locationItem, expiryDate);
     const replacement = await prisma.$transaction(async (tx) => {
       await tx.purchaseLine.update({
         where: { id: line.id },
@@ -352,6 +385,7 @@ export const purchaseRoutes = new Hono<AppEnv>()
           locationItemId: line.locationItemId,
           qty: body.qty,
           unitCost,
+          expiryDate,
           lineTotal: lineTotal(body.qty, unitCost),
           correctionOfId: line.id,
           createdById: user.id,

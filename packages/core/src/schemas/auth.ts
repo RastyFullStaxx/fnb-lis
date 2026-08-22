@@ -167,6 +167,13 @@ export interface SessionUser {
    * flagged for review (docs/sync-and-data-lifecycle.md §7.5).
    */
   actorDisabled?: boolean;
+  /**
+   * Per-STAFF-account gate on Variance and the numbers that can back-solve it
+   * (hide-variance-from-staff-plan.md). Read only by `canViewVariance()` for a
+   * STAFF role -- every other role's access is unconditional and ignores this
+   * field. Optional/undefined reads as false, same as an unset column.
+   */
+  canViewVariance?: boolean;
 }
 
 export interface MeLocation {

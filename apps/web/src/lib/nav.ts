@@ -33,6 +33,14 @@ export interface NavItem {
    * built from Beverage/Food items — never Supplies/Asset) need this.
    */
   requiresProductTypes?: readonly string[];
+  /**
+   * When true, the item is excluded from sidebar rendering (visibleNav) but
+   * still participates in permissionForPath, so its route stays gated even
+   * with no corresponding link in the nav. Used for screens reached from
+   * inside another page's chrome (e.g. a button on Local Database) rather
+   * than from the sidebar itself.
+   */
+  hidden?: boolean;
 }
 
 export const MAIN_NAV: NavItem[] = [
@@ -63,7 +71,32 @@ export const MAIN_NAV: NavItem[] = [
 export const CATALOG_NAV: NavItem[] = [
   { title: "Main Database", path: "items", icon: Package, permission: "master.write" },
   { title: "Suppliers", path: "suppliers", icon: Truck, permission: "master.write" },
-  { title: "Settings", path: "settings", icon: Settings, permission: "master.write" },
+  // No `permission` here on purpose — unlike its two siblings above, Settings
+  // is not an establishment-admin screen. Its "Your preferences" group (font
+  // size, per-item display unit override, offline desktop PIN) is every
+  // signed-in user's own account data, matching the server: `/api/settings
+  // /preferences`, `/item-unit-preference`, and `/pin` are all `requireAuth`
+  // only, no `master.write` (routes/settings.ts, routes/pin.ts) — the PIN is
+  // explicitly documented as settable by "any role"
+  // (sync-and-data-lifecycle.md §5). Gating the nav link/route on
+  // `master.write` shut STAFF/ACCOUNTANT/AUDIT_VIEWER/AUDIT_VIEWER_LIMITED
+  // out of a page that already has sections built for them. The page itself
+  // still hides every establishment-wide section (`can(role, "master.write")`
+  // / `"admin.manage"` checks around AdminItemUnitDefaultSection,
+  // CompanySection, StorageAreasSection, CatalogExportSection,
+  // ProductTypesSection, and the disabled-input state on CostBasisSection /
+  // VarianceThresholdSection, whose GETs are read-only for everyone) — this
+  // only opens the door to the page, it grants no new write access.
+  { title: "Settings", path: "settings", icon: Settings },
+  // Reached via a button on Local Database (stock/index.tsx), not the sidebar —
+  // hidden keeps it out of visibleNav while still gating the URL below.
+  {
+    title: "Clutter Candidates",
+    path: "stock/clutter-candidates",
+    icon: Package,
+    permission: "master.write",
+    hidden: true,
+  },
 ];
 
 // Subscriptions are managed inline inside the Clients page — no separate nav item.
@@ -83,6 +116,7 @@ export const ADMIN_NAV: NavItem[] = [
 export function visibleNav(items: NavItem[], role: Role, locationModules?: readonly string[] | null): NavItem[] {
   const allowedTypes = allowedProductTypes(locationModules);
   return items.filter((item) => {
+    if (item.hidden) return false;
     if (item.permission && !can(role, item.permission)) return false;
     if (item.requiresProductTypes && allowedTypes) {
       if (!item.requiresProductTypes.some((t) => allowedTypes.includes(t))) return false;

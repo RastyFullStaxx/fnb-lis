@@ -380,6 +380,7 @@ async function completeLogin(
     role: string;
     failedLoginCount: number;
     modules: { module: string }[];
+    canViewVariance: boolean;
   },
   opts: { rememberMe?: boolean; device?: DeviceLogin; via?: "totp" | "backup" },
 ) {
@@ -474,6 +475,7 @@ async function completeLogin(
       lastName: user.lastName,
       role: user.role,
       modules: user.role === "ADMIN" || user.modules.length === 0 ? null : user.modules.map((m) => m.module),
+      canViewVariance: user.canViewVariance,
     };
     await logActivity({
       user: sessionUser as MeResponse["user"],

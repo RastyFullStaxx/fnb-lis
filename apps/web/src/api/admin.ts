@@ -127,6 +127,15 @@ export interface AdminUser {
   /** Per-user module restriction (client req #9): empty = unrestricted. */
   modules: string[];
   clientAccess: AdminUserClientAccess[];
+  /**
+   * Per-STAFF-account gate on Variance and the numbers that can back-solve it
+   * (hide-variance-from-staff-plan.md). Only meaningful for STAFF — every
+   * other role's access is unconditional. Set via `useUpdateVarianceAccess`
+   * (PUT /users/:id/variance-access), a route separate from `useUpdateUser`
+   * because it is gated on `variance.grant` (ADMIN/OWNER/MANAGER), wider than
+   * `users.manage` (ADMIN/OWNER only) which guards everything else here.
+   */
+  canViewVariance?: boolean;
 }
 
 // ── Access state (thin wrappers over @fnb/core/billing — the single source
@@ -351,6 +360,21 @@ export function useUpdateUserAccess() {
   return useMutation({
     mutationFn: ({ id, clientIds }: { id: string; clientIds: string[] }) =>
       put<{ ok: boolean }>(`/api/admin/users/${id}/access`, { clientIds }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "users"] }),
+  });
+}
+
+/**
+ * Flip a STAFF account's `canViewVariance` flag (hide-variance-from-staff
+ * Phase 6.2). Hits the dedicated route from Phase 1.5/1.6 — gated on
+ * `variance.grant` server-side, not `users.manage` — so MANAGER can reach it
+ * even though `useUpdateUser` above is ADMIN/OWNER only.
+ */
+export function useUpdateVarianceAccess() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, canViewVariance }: { id: string; canViewVariance: boolean }) =>
+      put<{ ok: boolean; canViewVariance: boolean }>(`/api/admin/users/${id}/variance-access`, { canViewVariance }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "users"] }),
   });
 }

@@ -6,6 +6,7 @@ import { DashboardPage } from "./pages/dashboard";
 import { ComingSoonPage } from "./pages/coming-soon";
 import { ItemsPage } from "./pages/items";
 import { StockPage } from "./pages/stock";
+import { ClutterCandidatesPage } from "./pages/stock/clutter-candidates";
 import { SuppliersPage } from "./pages/suppliers";
 import { CountsPage } from "./pages/counts";
 import { CountSessionPage } from "./pages/counts/session";
@@ -27,8 +28,10 @@ import { BlankFormsPage } from "./pages/reports/blank-forms";
 import { BottleKeepPage } from "./pages/reports/bottle-keep";
 import { CountSheetPage } from "./pages/reports/count-sheet";
 import { NonMovingReportPage } from "./pages/reports/non-moving";
+import { ExpiringBatchesReportPage } from "./pages/reports/expiring-batches";
 import { AssetBreakageReportPage } from "./pages/reports/asset-breakage";
 import { LegacyAuditPage } from "./pages/reports/legacy-audit";
+import { VarianceSummaryPage } from "./pages/reports/variance-summary";
 import { AssetRegisterReportPage } from "./pages/reports/asset-register";
 import { AssetInventoryReportPage } from "./pages/reports/asset-inventory";
 import { TopSellersPage } from "./pages/reports/top-sellers";
@@ -62,6 +65,7 @@ export const router = createBrowserRouter([
       { index: true, element: <Navigate to="dashboard" replace /> },
       { path: "dashboard", element: <DashboardPage /> },
       { path: "stock", element: <StockPage /> },
+      { path: "stock/clutter-candidates", element: <ClutterCandidatesPage /> },
       { path: "counts", element: <CountsPage /> },
       { path: "counts/:sessionId", element: <CountSessionPage /> },
       { path: "purchases", element: <PurchasesPage /> },
@@ -85,8 +89,10 @@ export const router = createBrowserRouter([
       { path: "reports/blank-forms", element: <BlankFormsPage /> },
       { path: "reports/bottle-keep", element: <BottleKeepPage /> },
       { path: "reports/non-moving", element: <NonMovingReportPage /> },
+      { path: "reports/expiring-batches", element: <ExpiringBatchesReportPage /> },
       { path: "reports/asset-breakage", element: <AssetBreakageReportPage /> },
       { path: "reports/legacy-audit", element: <LegacyAuditPage /> },
+      { path: "reports/variance-summary", element: <VarianceSummaryPage /> },
       { path: "reports/asset-register", element: <AssetRegisterReportPage /> },
       { path: "reports/asset-inventory", element: <AssetInventoryReportPage /> },
       { path: "reports/top-sellers", element: <TopSellersPage /> },

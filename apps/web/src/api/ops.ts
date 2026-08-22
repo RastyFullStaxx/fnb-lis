@@ -143,9 +143,21 @@ export function usePurchaseMutations(purchaseId?: string) {
     }),
     // Post-commit fix: voids the line and writes the replacement onto this same
     // delivery, so the correction keeps the invoice's date and report period.
+    // expiryDate follows unitCost's own convention here: omit it and the
+    // server keeps the original line's date (routes/purchases.ts correct
+    // handler), so a qty-only fix never silently blanks a date that was
+    // already right.
     correctLine: useMutation({
-      mutationFn: ({ lineId, ...body }: { lineId: string; qty: number; unitCost?: number; reason: string }) =>
-        post<PurchaseLine>(`${base(locationId)}/purchases/${purchaseId}/lines/${lineId}/correct`, body),
+      mutationFn: ({
+        lineId,
+        ...body
+      }: {
+        lineId: string;
+        qty: number;
+        unitCost?: number;
+        expiryDate?: string;
+        reason: string;
+      }) => post<PurchaseLine>(`${base(locationId)}/purchases/${purchaseId}/lines/${lineId}/correct`, body),
       onSuccess: invalidate,
     }),
   };

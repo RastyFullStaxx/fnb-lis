@@ -2,8 +2,11 @@ import { useMemo, useState } from "react";
 import { ClipboardList } from "lucide-react";
 import { round2 } from "@fnb/core";
 import { useLocationId } from "@/api/location";
+import { useMe } from "@/api/auth";
 import { exportUrl, useParLevelReport } from "@/api/reports";
+import { useIncludeHiddenInReports } from "@/api/settings";
 import { formatMoney, formatNumber, formatDate } from "@/lib/utils";
+import { useSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
 import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarSearch, queryFailed } from "@/components/table-surface";
 import { ExportButtons } from "@/components/report-toolbar";
@@ -16,10 +19,10 @@ import {
   TableBody,
   TableCell,
   TableFooter,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 import { cn } from "@/lib/utils";
 
 
@@ -32,8 +35,18 @@ const REORDER_BAR_CAP = 8;
  */
 export function ParLevelReportPage() {
   const locationId = useLocationId();
+  const me = useMe();
   const report = useParLevelReport();
   const [query, setQuery] = useState("");
+
+  // Same reasoning as On-Hand/Non-Moving: ParLevelRow.usage is the reorder
+  // depletion rate, not the purchases/forfeits/transfers/variance signal the
+  // server filter actually checks (report-lists.ts's hasOnHandPeriodActivity),
+  // and that signal isn't on the wire — so the badge is only unambiguous when
+  // the setting is off (docs/clutter-in-reports-decision.md).
+  const location = me.data?.clients.flatMap((c) => c.locations).find((l) => l.id === locationId);
+  const includeHidden = useIncludeHiddenInReports(location?.clientId ?? "");
+  const includeHiddenInReports = includeHidden.data?.includeHiddenInReports ?? false;
 
   const rows = useMemo(() => {
     const all = report.data?.rows ?? [];
@@ -43,6 +56,15 @@ export function ParLevelReportPage() {
       : all;
   }, [report.data, query]);
 
+  // "Used (last period)" is genuinely ABSENT from the wire response for a
+  // blocked STAFF account (hide-variance-from-staff Phase 2.4/4.4), not
+  // zeroed — driven off the data itself, same as every other presence check
+  // on this page, rather than a second read of the role/flag this page has
+  // no other reason to know about. Checked against the full row set, not the
+  // filtered/searched `rows`, so a search that happens to match zero rows
+  // can never flip the column on or off.
+  const showUsage = (report.data?.rows ?? []).some((r) => r.usage !== undefined);
+
   // What to buy: the biggest suggested orders by value.
   const reorderBars = useMemo(() => {
     return (report.data?.rows ?? [])
@@ -50,6 +72,18 @@ export function ParLevelReportPage() {
       .slice(0, REORDER_BAR_CAP)
       .map((r) => ({ label: r.name, value: round2(r.orderValue) }));
   }, [report.data]);
+
+  const { sortedRows, sortKey, sortDirection, toggleSort } = useSort(rows, {
+    accessors: {
+      item: (r) => r.name,
+      category: (r) => r.category,
+      onHand: (r) => r.onHand,
+      par: (r) => r.parLevel ?? -Infinity,
+      used: (r) => r.usage ?? -Infinity,
+      suggestedOrder: (r) => r.suggestedOrder,
+      orderValue: (r) => r.orderValue,
+    },
+  });
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -112,17 +146,63 @@ export function ParLevelReportPage() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted hover:bg-muted">
-                    <TableHead>Item</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead className="text-right">On Hand</TableHead>
-                    <TableHead className="text-right">Par</TableHead>
-                    <TableHead className="text-right">Used (last period)</TableHead>
-                    <TableHead className="text-right">Suggested Order</TableHead>
-                    <TableHead className="text-right">Order Value</TableHead>
+                    <SortableTableHead sortKey="item" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                      Item
+                    </SortableTableHead>
+                    <SortableTableHead sortKey="category" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                      Category
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="onHand"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      On Hand
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="par"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      Par
+                    </SortableTableHead>
+                    {showUsage && (
+                      <SortableTableHead
+                        sortKey="used"
+                        activeKey={sortKey}
+                        direction={sortDirection}
+                        onSort={toggleSort}
+                        className="text-right"
+                      >
+                        Used (last period)
+                      </SortableTableHead>
+                    )}
+                    <SortableTableHead
+                      sortKey="suggestedOrder"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      Suggested Order
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="orderValue"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      Order Value
+                    </SortableTableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {rows.map((row) => (
+                  {sortedRows.map((row) => (
                     <TableRow key={row.locationItemId} className={cn(row.belowPar && "bg-warning/5")}>
                       <TableCell className="max-w-[22rem] font-medium break-words">
                         {row.name}
@@ -131,11 +211,20 @@ export function ParLevelReportPage() {
                             Below par
                           </Badge>
                         )}
+                        {!row.isActive && !includeHiddenInReports && (
+                          <Badge variant="warning" className="ml-2">
+                            hidden · active
+                          </Badge>
+                        )}
                       </TableCell>
                       <TableCell className="text-muted-foreground">{row.category}</TableCell>
                       <TableCell className={cn("tnum text-right", row.belowPar && "text-warning-text")}>{formatNumber(row.onHand)}</TableCell>
                       <TableCell className="tnum text-right text-muted-foreground">{formatNumber(row.parLevel)}</TableCell>
-                      <TableCell className="tnum text-right text-muted-foreground">{formatNumber(row.usage)}</TableCell>
+                      {showUsage && (
+                        <TableCell className="tnum text-right text-muted-foreground">
+                          {row.usage !== undefined ? formatNumber(row.usage) : "—"}
+                        </TableCell>
+                      )}
                       <TableCell className="tnum text-right font-medium">{row.suggestedOrder > 0 ? formatNumber(row.suggestedOrder) : "—"}</TableCell>
                       <TableCell className="tnum text-right">{row.orderValue > 0 ? formatMoney(row.orderValue) : "—"}</TableCell>
                     </TableRow>
@@ -144,7 +233,7 @@ export function ParLevelReportPage() {
                 {query.trim() === "" && (
                   <TableFooter>
                     <TableRow>
-                      <TableCell colSpan={5} className="font-medium">
+                      <TableCell colSpan={showUsage ? 5 : 4} className="font-medium">
                         {report.data.totals.belowParCount} below par
                       </TableCell>
                       <TableCell className="text-right font-medium">Total to buy</TableCell>

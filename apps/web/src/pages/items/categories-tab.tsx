@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Tags } from "lucide-react";
@@ -7,10 +7,12 @@ import { categoryUpsert, type CategoryUpsert } from "@fnb/core";
 import { useAddIndustryOption, useCategories, useCreateCategory, useIndustryOptions, useProductTypes, useUpdateCategory } from "@/api/master";
 import type { Category } from "@/api/types";
 import { ApiError } from "@/api/http";
+import { useSort } from "@/hooks/use-sort";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { QuantityInput } from "@/components/quantity-input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -30,75 +32,130 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { TableEmpty, TableFailure, TableLoading, ToolbarSearch, queryFailed } from "@/components/table-surface";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
+import { TableEmpty, TableFailure, TableLoading, queryFailed } from "@/components/table-surface";
 
 /** Sentinel for the "Other" branch in the Industry select — same convention as AssetDetailsEdit. */
 const OTHER = "__other__";
+const ALL = "__all__";
 
 export function CategoriesTab({
+  search,
+  productType,
   createOpen,
   setCreateOpen,
 }: {
+  search: string;
+  productType: string;
   createOpen: boolean;
   setCreateOpen: (open: boolean) => void;
 }) {
   const categories = useCategories();
   const [editing, setEditing] = useState<Category | null>(null);
-  const [query, setQuery] = useState("");
 
-  const q = query.trim().toLowerCase();
-  // The page toolbar's search only filters the Items tab, so 48 categories had
-  // to be found by eye.
-  const rows = (categories.data ?? []).filter(
-    (c) => !q || c.name.toLowerCase().includes(q) || c.productType.toLowerCase().includes(q),
-  );
+  // Search and Product Type now live in the page toolbar's tab row (next to
+  // items' filters), instead of separate controls rendered under the tabs.
+  const rows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return (categories.data ?? []).filter(
+      (c) =>
+        (!q || c.name.toLowerCase().includes(q) || c.productType.toLowerCase().includes(q)) &&
+        (productType === ALL || c.productType === productType),
+    );
+  }, [categories.data, search, productType]);
+
+  const { sortedRows, sortKey, sortDirection, toggleSort } = useSort(rows, {
+    accessors: {
+      liquidWeight: (c) => c.defaultDensityFactor ?? -Infinity,
+      expires: (c) => (c.defaultPerishable ? 1 : 0),
+      items: (c) => c._count?.items ?? 0,
+    },
+  });
 
   return (
     <>
-      {(categories.data ?? []).length > 0 && (
-        <div className="mb-3">
-          <ToolbarSearch value={query} onChange={setQuery} placeholder="Find a category…" label="Search" />
-        </div>
-      )}
       {queryFailed(categories) ? (
         <TableFailure query={categories} title="Couldn't load categories" />
       ) : categories.isPending ? (
         <TableLoading />
-      ) : (categories.data ?? []).length === 0 ? (
+      ) : rows.length === 0 ? (
         <TableEmpty
           icon={Tags}
-          title="No categories yet"
-          description="Add a category to group items for reports and count sheets."
+          title={search || productType !== ALL ? "Nothing matches the current filter" : "No categories yet"}
+          description={
+            search || productType !== ALL
+              ? "Clear the search or type filter to see everything."
+              : "Add a category to group items for reports and count sheets."
+          }
           action={
-            <Button onClick={() => setCreateOpen(true)}>
-              <Plus className="size-4" /> New Category
-            </Button>
+            !(search || productType !== ALL) && (
+              <Button onClick={() => setCreateOpen(true)}>
+                <Plus className="size-4" /> New Category
+              </Button>
+            )
           }
         />
       ) : (
         <Table>
           <TableHeader>
             <TableRow className="bg-muted hover:bg-muted">
-              <TableHead>Category</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Industry</TableHead>
-              <TableHead className="text-right">Liquid Weight (default)</TableHead>
-              <TableHead className="text-right">Items</TableHead>
-              <TableHead className="w-20" />
+              <SortableTableHead sortKey="name" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                Category
+              </SortableTableHead>
+              <SortableTableHead sortKey="productType" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                Type
+              </SortableTableHead>
+              <SortableTableHead sortKey="industry" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                Industry
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="liquidWeight"
+                activeKey={sortKey}
+                direction={sortDirection}
+                onSort={toggleSort}
+                className="text-right"
+              >
+                Liquid Weight (default)
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="expires"
+                activeKey={sortKey}
+                direction={sortDirection}
+                onSort={toggleSort}
+                className="text-right"
+              >
+                Expires
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="items"
+                activeKey={sortKey}
+                direction={sortDirection}
+                onSort={toggleSort}
+                className="text-right"
+              >
+                Items
+              </SortableTableHead>
+              <SortableTableHead sortable={false} className="w-20" />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.map((cat) => (
+            {sortedRows.map((cat) => (
               <TableRow key={cat.id}>
                 <TableCell className="font-medium">{cat.name}</TableCell>
                 <TableCell className="text-muted-foreground">{cat.productType}</TableCell>
                 <TableCell className="text-muted-foreground">{cat.industry ?? "—"}</TableCell>
                 <TableCell className="tnum text-right">
                   {cat.defaultDensityFactor ?? <span className="text-muted-foreground">—</span>}
+                </TableCell>
+                <TableCell className="text-right">
+                  {cat.defaultPerishable ? (
+                    <span className="text-muted-foreground">Yes</span>
+                  ) : (
+                    <span className="text-muted-foreground">No</span>
+                  )}
                 </TableCell>
                 <TableCell className="tnum text-right">{cat._count?.items ?? 0}</TableCell>
                 <TableCell className="text-right">
@@ -152,6 +209,9 @@ function CategoryDialog({
       defaultDensityFactor: category?.defaultDensityFactor ?? null,
       sortOrder: category?.sortOrder ?? 0,
       industry: category?.industry ?? null,
+      // New categories start perishable — most of the catalog spoils, spirits
+      // are the exception (expiry-date-plan.md), matching the schema default.
+      defaultPerishable: category?.defaultPerishable ?? true,
     },
   });
 
@@ -236,6 +296,26 @@ function CategoryDialog({
             {form.formState.errors.productType && (
               <p className="text-sm text-destructive">Choose a product type</p>
             )}
+          </div>
+
+          {/* Policy call, not a physical measurement (expiry-date-plan.md) —
+              whether items in this category spoil at all. Applies to every
+              product type: Vodka and Supplies default off, everything else
+              defaults on. A LocationItem can still override this per
+              establishment, same helper-text pattern as Track Open Content
+              in the item form. */}
+          <div className="flex items-center justify-between gap-4 rounded-md border p-3">
+            <div>
+              <p className="text-sm font-medium">Items in this category expire</p>
+              <p className="text-xs text-muted-foreground">
+                On: items need an expiry date at receiving and get flagged once past it. Off: no date
+                is asked for or tracked — spirits, supplies, and other shelf-stable goods.
+              </p>
+            </div>
+            <Switch
+              checked={form.watch("defaultPerishable") ?? true}
+              onCheckedChange={(v) => form.setValue("defaultPerishable", v, { shouldDirty: true })}
+            />
           </div>
 
           {isAsset && (

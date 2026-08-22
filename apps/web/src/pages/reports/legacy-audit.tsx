@@ -3,10 +3,11 @@ import { BarChart3 } from "lucide-react";
 import { MATERIAL_VARIANCE_PCT, round2, varianceSeverity } from "@fnb/core";
 import { useLocationId } from "@/api/location";
 import { useCountDates } from "@/api/ops";
-import { useVarianceThreshold } from "@/api/settings";
+import { useIncludeHiddenInReports, useVarianceThreshold } from "@/api/settings";
 import { useMe } from "@/api/auth";
 import { exportUrl, useLegacyAuditReport, type LegacyAuditRow } from "@/api/reports";
 import { formatMoney, cn, formatNumber, formatDate } from "@/lib/utils";
+import { useGroupSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { TableFailure, TableLoading, ToolbarField, queryFailed } from "@/components/table-surface";
@@ -28,57 +29,115 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 
 
 type Variant = "detailed" | "inventory";
 
 /**
- * The 24 legacy columns, in the client's own order. Kept as one spec so the
- * header row and the body can never drift — the same discipline the export's
- * LEGACY_HEADERS / legacyRowCells pair uses (services/exports-suite.ts).
- * `money` marks the peso columns (legacy LEGACY_MONEY_COLS); the rest are
- * quantities.
+ * The 20 leaf columns after Product Name/Size-UOM, in the client's own
+ * order (client req 2026-08-20 — screenshot of the old system's exact
+ * on-screen header). This is a SCREEN-ONLY layout: the Excel/CSV/PDF
+ * export (services/exports-suite.ts, LEGACY_HEADERS/legacyRowCells) keeps
+ * its own richer 25-column set — Cost of Purchase, Cost of Sold, and a
+ * Flag column — on purpose (client req 2026-08-20: downloads stay as-is).
+ * Do not "sync" the two; they are intentionally different views of the
+ * same LegacyAuditRow data.
+ * `money` marks the peso columns; the rest are quantities.
+ * `sortKey` is a unique per-column identifier for the sort control — two
+ * columns share the header text "Full" (begin/end) and "Weigh" (begin/end),
+ * so the sortKey uses the underlying field name instead, which is unique.
  */
-const COLUMNS: Array<{ header: string; money?: true; value: (r: LegacyAuditRow) => number | null }> = [
-  { header: "Begin Full", value: (r) => r.beginFull },
-  { header: "Begin Open", value: (r) => r.beginOpen },
-  { header: "B-Cost", money: true, value: (r) => r.bCost },
-  { header: "Purchased", value: (r) => r.purchased },
-  { header: "Cost of Purchase", money: true, value: (r) => r.purchasedCost },
-  { header: "F", value: (r) => r.forfeited },
-  { header: "End Full", value: (r) => r.endFull },
-  { header: "End Open", value: (r) => r.endOpen },
-  { header: "E-Cost", money: true, value: (r) => r.eCost },
-  { header: "Usage", value: (r) => r.usage },
-  { header: "Cost of Usage", money: true, value: (r) => r.costOfUsage },
-  { header: "Shot", value: (r) => r.shot },
-  { header: "Bottle", value: (r) => r.bottle },
-  { header: "Cost of Sold", money: true, value: (r) => r.costOfSold },
-  { header: "Revenue", money: true, value: (r) => r.revenue },
-  { header: "Used vs Sales", value: (r) => r.usedVsSales },
-  { header: "Non Rev Usage", value: (r) => r.nonRevUsage },
-  { header: "Non Rev Cost", money: true, value: (r) => r.nonRevCost },
-  { header: "Over/Short", value: (r) => r.overallVariance },
-  { header: "%Over/Short", value: (r) => r.variancePct },
-  { header: "Cost", money: true, value: (r) => r.varianceCost },
-  { header: "At Retail", money: true, value: (r) => r.varianceRetail },
+const COLUMNS: Array<{ header: string; sortKey: string; money?: true; value: (r: LegacyAuditRow) => number | null }> = [
+  { header: "Full", sortKey: "beginFull", value: (r) => r.beginFull },
+  { header: "Weigh", sortKey: "beginOpen", value: (r) => r.beginOpen },
+  { header: "B-Cost", sortKey: "bCost", money: true, value: (r) => r.bCost },
+  { header: "Purchased", sortKey: "purchased", value: (r) => r.purchased },
+  { header: "F", sortKey: "forfeited", value: (r) => r.forfeited },
+  { header: "Full", sortKey: "endFull", value: (r) => r.endFull },
+  { header: "Weigh", sortKey: "endOpen", value: (r) => r.endOpen },
+  { header: "E-Cost", sortKey: "eCost", money: true, value: (r) => r.eCost },
+  { header: "USAGE", sortKey: "usage", value: (r) => r.usage },
+  { header: "Usaged Cost", sortKey: "costOfUsage", money: true, value: (r) => r.costOfUsage },
+  { header: "Sold", sortKey: "shot", value: (r) => r.shot },
+  { header: "Portion", sortKey: "bottle", value: (r) => r.bottle },
+  { header: "Revenue", sortKey: "revenue", money: true, value: (r) => r.revenue },
+  { header: "Uses VS Sales", sortKey: "usedVsSales", value: (r) => r.usedVsSales },
+  { header: "Non Rev Usage", sortKey: "nonRevUsage", value: (r) => r.nonRevUsage },
+  { header: "Non Rev Cost", sortKey: "nonRevCost", money: true, value: (r) => r.nonRevCost },
+  { header: "Over/Short", sortKey: "overallVariance", value: (r) => r.overallVariance },
+  { header: "%Over/Short", sortKey: "variancePct", value: (r) => r.variancePct },
+  { header: "Cost", sortKey: "varianceCost", money: true, value: (r) => r.varianceCost },
+  { header: "Retail", sortKey: "varianceRetail", money: true, value: (r) => r.varianceRetail },
 ];
 
-/** Column groups above the leaf headers — the legacy report's banded look. */
+/** Sort accessors for the leaf columns above, keyed by the same sortKey,
+    plus the two identity columns (Product Name / Size-UOM) that sit before
+    them. Nulls sort last regardless of direction — a null %Over/Short (a
+    row with contentTracked === false, see report-suite.ts) has no rank to
+    give it, so it's pushed to the bottom rather than sorting as if it were
+    zero. */
+const SORT_ACCESSORS: Record<string, (r: LegacyAuditRow) => unknown> = {
+  productName: (r) => r.productName,
+  sizeUom: (r) => r.sizeUom,
+  ...Object.fromEntries(COLUMNS.map((c) => [c.sortKey, (r: LegacyAuditRow) => c.value(r) ?? -Infinity])),
+};
+
+/** These headers wrap onto 2 lines in the leaf header row (client req
+    2026-08-21 — matches the reference screenshot's own line breaks) while
+    every other leaf header stays single-line. Keyed on the exact COLUMNS
+    header string above. */
+const TWO_LINE_HEADERS: Record<string, [string, string]> = {
+  "Usaged Cost": ["Usaged", "Cost"],
+  "Uses VS Sales": ["Uses VS", "Sales"],
+  "Non Rev Usage": ["Non Rev", "Usage"],
+  "Non Rev Cost": ["Non Rev", "Cost"],
+  "Over/Short": ["Over/", "Short"],
+  "%Over/Short": ["%Over/", "Short"],
+};
+
+/** Column groups above the leaf headers — the legacy report's banded look.
+    Matches the client's reference screenshot exactly: Purchased/F and
+    Usage/Usaged Cost are NOT their own groups (blank band, like B-Cost),
+    SALES spans only Sold+Portion (Revenue sits outside it), and Variance
+    spans only Uses VS Sales (Non Rev Usage/Cost sit outside it).
+    A blank entry spans exactly 1 leaf column — never merged — so every
+    leaf column gets its own row-1 cell and its vertical divider runs the
+    full header height instead of only appearing once row 2 starts. */
 const GROUPS: Array<[string, number]> = [
+  ["", 1],
   ["", 1],
   ["Beginning Inventory", 2],
   ["", 1],
-  ["Purchased", 2],
+  ["", 1],
   ["", 1],
   ["Ending Inventory", 2],
   ["", 1],
-  ["Usage", 2],
-  ["Sales", 2],
-  ["", 2],
-  ["Variance", 3],
+  ["", 1],
+  ["", 1],
+  ["SALES", 2],
+  ["", 1],
+  ["Variance", 1],
+  ["", 1],
+  ["", 1],
   ["Overall Variance", 4],
 ];
+
+/** Solid tint for the sticky-left cell on highlighted rows — translucent
+    tints (bg-destructive/5, bg-warning/10) let scrolled-under columns bleed
+    through a pinned cell, since this report is intentionally wide by design
+    and meant to be scrolled. Same values as full-audit.tsx's identical fix,
+    hand-matched to those two translucent tints over `--background` in the
+    LIGHT theme, which is the only theme the app ships (no `.dark` toggle
+    exists). If a dark theme is ever added these literals must gain a `dark:`
+    twin, or highlighted rows will pin a near-white cell against a dark table. */
+const SHORT_ROW_STICKY_BG = "bg-[oklch(0.977_0.011_25)]";
+const OVER_ROW_STICKY_BG = "bg-[oklch(0.972_0.024_75)]";
+/** Solid equivalent of `bg-muted/50` (the category-total row's tint) over the
+    LIGHT theme's `--background` (pure white) — same reasoning and same
+    hand-match technique as the two constants above, for the one other
+    sticky-left cell that sat on a translucent row background. */
+const TOTAL_ROW_STICKY_BG = "bg-[oklch(0.986_0.002_239.3)]";
 
 /**
  * The client's legacy "Full Audit Report By Category" rendered on screen
@@ -105,8 +164,23 @@ export function LegacyAuditPage() {
   const location = me.data?.clients.flatMap((c) => c.locations).find((l) => l.id === locationId);
   const threshold = useVarianceThreshold(location?.clientId ?? "");
   const thresholdPct = threshold.data?.varianceThresholdPct ?? MATERIAL_VARIANCE_PCT;
+  // LegacyAuditRow has no activity fields to re-derive hasReportActivity from
+  // (report-suite.ts filters on the internal ReconRow before reshaping), so
+  // the badge is only unambiguous when the setting is off — the one case
+  // where a surviving hidden row can only mean "it moved"
+  // (docs/clutter-in-reports-decision.md).
+  const includeHidden = useIncludeHiddenInReports(location?.clientId ?? "");
+  const includeHiddenInReports = includeHidden.data?.includeHiddenInReports ?? false;
 
   const exportParams = { begin: effectiveBegin ?? "", end: effectiveEnd ?? "", variant };
+
+  // One sort control for the whole banded table (client req 2026-08-20's
+  // screenshot layout has ONE header row, not one per category): clicking a
+  // column re-sorts every category's rows by it independently, leaving
+  // category order and each category's/the grand total's totals untouched.
+  const { sortedGroups, sortKey, sortDirection, toggleSort } = useGroupSort(report.data?.groups ?? [], {
+    accessors: SORT_ACCESSORS,
+  });
 
   if (countDates.isPending) {
     return (
@@ -203,7 +277,7 @@ export function LegacyAuditPage() {
           )}
         </div>
 
-        <div className="min-h-0 flex-1 overflow-auto">
+        <div className="min-h-0 flex-1 overflow-auto [&_[data-slot=table-container]]:overflow-visible">
           {queryFailed(report) ? (
             <TableFailure query={report} />
           ) : report.isPending ? (
@@ -215,7 +289,7 @@ export function LegacyAuditPage() {
               description="Pick different boundary dates, or check that the counts were committed."
             />
           ) : (
-            <Table className="border-separate border-spacing-0 text-xs [&_td]:border-b [&_td]:px-1.5 [&_th]:border-b [&_th]:px-1.5">
+            <Table className="border-separate border-spacing-0 text-xs [&_td]:border-b [&_td]:px-2.5 [&_th]:px-1.5 [&_th_button]:gap-0.5 [&_th:not(.product-name-th)_button]:justify-center">
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
                   {GROUPS.map(([label, span], i) => (
@@ -225,6 +299,18 @@ export function LegacyAuditPage() {
                       className={cn(
                         "sticky top-0 z-20 bg-muted text-center text-[11px] font-medium text-muted-foreground",
                         i > 0 && "border-l",
+                        // Blank group cells (B-Cost, Purchased, F, USAGE, Revenue,
+                        // Non Rev Usage/Cost, etc.) have nothing labeling them, so
+                        // the reference screenshot merges them visually with the
+                        // leaf header below — no horizontal rule between the two
+                        // rows for those columns. Only labeled groups (Beginning/
+                        // Ending Inventory, SALES, Variance, Overall Variance) get
+                        // the divider under their label. Applying border-b only on
+                        // the true branch (rather than border-b globally via the
+                        // table wrapper + border-b-0 to cancel it) avoids a Tailwind
+                        // v4 specificity tie between two same-weight utility classes,
+                        // where the cancelling class isn't guaranteed to win.
+                        label !== "" && "border-b",
                       )}
                     >
                       {label}
@@ -232,25 +318,59 @@ export function LegacyAuditPage() {
                   ))}
                 </TableRow>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="sticky left-0 top-8 z-30 min-w-[12rem] bg-muted">Product Name</TableHead>
-                  <TableHead className="sticky top-8 z-20 border-l bg-muted">Size/UOM</TableHead>
-                  {COLUMNS.map((c) => (
-                    <TableHead key={c.header} className="sticky top-8 z-20 bg-muted text-right whitespace-nowrap">
-                      {c.header}
-                    </TableHead>
-                  ))}
+                  <SortableTableHead
+                    sortKey="productName"
+                    activeKey={sortKey}
+                    direction={sortDirection}
+                    onSort={toggleSort}
+                    className="product-name-th sticky left-0 top-10 z-30 w-[14rem] min-w-[10rem] border-r border-b bg-muted"
+                  >
+                    Product Name
+                  </SortableTableHead>
+                  <SortableTableHead
+                    sortKey="sizeUom"
+                    activeKey={sortKey}
+                    direction={sortDirection}
+                    onSort={toggleSort}
+                    className="sticky top-10 z-20 w-px border-b border-l bg-muted text-center whitespace-nowrap"
+                  >
+                    Size
+                    <br />
+                    UOM
+                  </SortableTableHead>
+                  {COLUMNS.map((c) => {
+                    const twoLine = TWO_LINE_HEADERS[c.header];
+                    return (
+                      <SortableTableHead
+                        key={c.sortKey}
+                        sortKey={c.sortKey}
+                        activeKey={sortKey}
+                        direction={sortDirection}
+                        onSort={toggleSort}
+                        className="sticky top-10 z-20 border-b border-l bg-muted text-center whitespace-nowrap"
+                      >
+                        {twoLine ? (
+                          <>
+                            {twoLine[0]}
+                            <br />
+                            {twoLine[1]}
+                          </>
+                        ) : (
+                          c.header
+                        )}
+                      </SortableTableHead>
+                    );
+                  })}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {report.data.groups.map((group) => (
+                {sortedGroups.map((group) => (
                   <Fragment key={group.categoryName}>
                     <TableRow className="bg-secondary/60 hover:bg-secondary/60">
-                      <TableCell
-                        colSpan={COLUMNS.length + 2}
-                        className="py-1 text-[11px] font-semibold uppercase tracking-wide text-secondary-foreground"
-                      >
+                      <TableCell className="sticky left-0 z-10 w-[14rem] min-w-[10rem] border-r break-words bg-secondary py-1 text-[11px] font-semibold uppercase tracking-wide text-secondary-foreground">
                         {group.categoryName}
                       </TableCell>
+                      <TableCell colSpan={COLUMNS.length + 1} className="py-1" />
                     </TableRow>
                     {group.rows.map((row, i) => {
                       // Same materiality highlight as the Full Audit and the
@@ -259,6 +379,15 @@ export function LegacyAuditPage() {
                         { variance: row.overallVariance, variancePct: row.variancePct, contentTracked: row.contentTracked },
                         thresholdPct,
                       );
+                      // The row tint is translucent by design (it needs to sit
+                      // over the row's own alternating/hover background), but
+                      // the STICKY cell can't use it — see SHORT/OVER_ROW_STICKY_BG
+                      // above. bg-background is the sticky cell's own opaque
+                      // fallback for an untinted row, not bg-inherit, which
+                      // would resolve to the unstyled <tr>'s transparent
+                      // background and let scrolled columns show through it.
+                      const stickyBg =
+                        sev === "short" ? SHORT_ROW_STICKY_BG : sev === "over" ? OVER_ROW_STICKY_BG : "bg-background";
                       return (
                         <TableRow
                           key={`${group.categoryName}-${i}`}
@@ -267,14 +396,19 @@ export function LegacyAuditPage() {
                             sev === "over" && "bg-warning/10",
                           )}
                         >
-                          <TableCell className="sticky left-0 z-10 max-w-[14rem] break-words bg-inherit font-medium">
+                          <TableCell className={cn("sticky left-0 z-10 w-[14rem] min-w-[10rem] border-r break-words font-medium", stickyBg)}>
                             {row.productName}
+                            {!row.isActive && !includeHiddenInReports && (
+                              <Badge variant="warning" className="ml-2">
+                                hidden · active
+                              </Badge>
+                            )}
                           </TableCell>
-                          <TableCell className="border-l whitespace-nowrap text-muted-foreground">{row.sizeUom}</TableCell>
+                          <TableCell className="w-px whitespace-nowrap text-muted-foreground">{row.sizeUom}</TableCell>
                           {COLUMNS.map((c) => {
                             const v = c.value(row);
                             return (
-                              <TableCell key={c.header} className="tnum text-right whitespace-nowrap">
+                              <TableCell key={c.sortKey} className="tnum text-right whitespace-nowrap">
                                 {v === null ? "—" : c.money ? formatMoney(round2(v)) : formatNumber(v)}
                               </TableCell>
                             );
@@ -283,14 +417,14 @@ export function LegacyAuditPage() {
                       );
                     })}
                     <TableRow className="bg-muted/50 font-medium hover:bg-muted/50">
-                      <TableCell className="sticky left-0 z-10 bg-muted/50 uppercase">
+                      <TableCell className={cn("sticky left-0 z-10 w-[14rem] min-w-[10rem] border-r break-words uppercase", TOTAL_ROW_STICKY_BG)}>
                         {group.categoryName} total
                       </TableCell>
-                      <TableCell className="border-l" />
+                      <TableCell />
                       {COLUMNS.map((c) => {
                         const v = c.header === "%Over/Short" ? null : c.value(group.totals as unknown as LegacyAuditRow);
                         return (
-                          <TableCell key={c.header} className="tnum text-right whitespace-nowrap">
+                          <TableCell key={c.sortKey} className="tnum text-right whitespace-nowrap">
                             {v === null ? "" : c.money ? formatMoney(round2(v)) : formatNumber(v)}
                           </TableCell>
                         );
@@ -299,12 +433,12 @@ export function LegacyAuditPage() {
                   </Fragment>
                 ))}
                 <TableRow className="bg-muted font-semibold hover:bg-muted [&_td]:border-t-2">
-                  <TableCell className="sticky left-0 z-10 bg-muted">GRAND TOTAL</TableCell>
-                  <TableCell className="border-l" />
+                  <TableCell className="sticky left-0 z-10 w-[14rem] min-w-[10rem] border-r break-words bg-muted">GRAND TOTAL</TableCell>
+                  <TableCell />
                   {COLUMNS.map((c) => {
                     const v = c.header === "%Over/Short" ? null : c.value(report.data.totals as unknown as LegacyAuditRow);
                     return (
-                      <TableCell key={c.header} className="tnum text-right whitespace-nowrap">
+                      <TableCell key={c.sortKey} className="tnum text-right whitespace-nowrap">
                         {v === null ? "" : c.money ? formatMoney(round2(v)) : formatNumber(v)}
                       </TableCell>
                     );

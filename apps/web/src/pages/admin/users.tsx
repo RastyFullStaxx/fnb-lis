@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { BadgeCheck, Copy, History, KeyRound, Package, Plus, RefreshCw, UserCog } from "lucide-react";
+import { BadgeCheck, Copy, Eye, History, KeyRound, Package, Plus, RefreshCw, UserCog } from "lucide-react";
 import { toast } from "sonner";
 import {
   ROLES,
@@ -8,6 +8,7 @@ import {
   MODULE_TYPES,
   PACKAGE_LABELS,
   MODULE_TYPE_LABELS,
+  can,
   type Role,
   type PackageType,
   type ModuleType,
@@ -18,10 +19,12 @@ import {
   useCreateUser,
   useUpdateUser,
   useUpdateUserAccess,
+  useUpdateVarianceAccess,
   type AdminUser,
 } from "@/api/admin";
 import { useMe } from "@/api/auth";
 import { ApiError } from "@/api/http";
+import { useSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { UserSessionsDialog } from "@/components/user-sessions-dialog";
@@ -32,6 +35,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -43,10 +47,10 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 import {
   Dialog,
   DialogContent,
@@ -140,6 +144,30 @@ export function AdminUsersPage() {
 
     return matchesStatus && matchesSearch && matchesPkg && matchesModule && matchesBilling;
   });
+
+  const { sortedRows, sortKey, sortDirection, toggleSort } = useSort(filtered, {
+    accessors: {
+      name: (u) => `${u.firstName} ${u.lastName}`,
+      role: (u) => ROLE_LABELS[u.role] ?? u.role,
+      clients: (u) => u.clientAccess.map((a) => a.client.name).join(", "),
+      modules: (u) =>
+        u.clientAccess
+          .flatMap((a) => a.client.subscription?.modules ?? [])
+          .map((m) => MODULE_TYPE_LABELS[m as ModuleType] ?? m)
+          .join(", "),
+      status: (u) => (u.status === "ACTIVE" ? 0 : 1),
+    },
+  });
+
+  // `editing` only tracks which row's dialog is open (set once, on click).
+  // The dialog's actual data must come from the live query result instead of
+  // that captured object — otherwise fields the dialog updates in place
+  // (e.g. the variance-access toggle, which intentionally stays open after
+  // saving) keep showing the value from the moment "Edit" was clicked, even
+  // though `useUpdateVarianceAccess`'s onSuccess invalidates and refetches
+  // ["admin", "users"] behind it. Re-resolving by id here keeps the dialog
+  // in sync with that refetch while `editing` still only drives open/close.
+  const editingUser = editing ? (users.data ?? []).find((u) => u.id === editing.id) ?? editing : null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -236,16 +264,26 @@ export function AdminUsersPage() {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted hover:bg-muted">
-                <TableHead>User</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead className="w-64">Clients / Packages</TableHead>
-                <TableHead className="w-40">Modules</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="w-16" />
+                <SortableTableHead sortKey="name" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  User
+                </SortableTableHead>
+                <SortableTableHead sortKey="role" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Role
+                </SortableTableHead>
+                <SortableTableHead sortKey="clients" activeKey={sortKey} direction={sortDirection} onSort={toggleSort} className="w-64">
+                  Clients / Packages
+                </SortableTableHead>
+                <SortableTableHead sortKey="modules" activeKey={sortKey} direction={sortDirection} onSort={toggleSort} className="w-40">
+                  Modules
+                </SortableTableHead>
+                <SortableTableHead sortKey="status" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Status
+                </SortableTableHead>
+                <SortableTableHead sortable={false} className="w-16" />
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((u) => (
+              {sortedRows.map((u) => (
                 <TableRow key={u.id} className={u.status === "DISABLED" ? "opacity-60" : undefined}>
                   <TableCell>
                     <div className="font-medium">
@@ -334,7 +372,7 @@ export function AdminUsersPage() {
       </TableSurface>
 
       <CreateUserDialog open={creating} onOpenChange={setCreating} onPassword={setIssued} />
-      <EditUserDialog user={editing} onClose={() => setEditing(null)} onPassword={setIssued} />
+      <EditUserDialog user={editingUser} onClose={() => setEditing(null)} onPassword={setIssued} />
       <PasswordRevealDialog issued={issued} onClose={() => setIssued(null)} />
       <UserSessionsDialog
         userId={sessionsFor?.id ?? null}
@@ -691,12 +729,22 @@ function EditUserDialog({
 }) {
   const update = useUpdateUser();
   const updateAccess = useUpdateUserAccess();
+  const updateVarianceAccess = useUpdateVarianceAccess();
+  const me = useMe();
   const [role, setRole] = useState<Role>("STAFF");
   const [resetPw, setResetPw] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
   const [clientIds, setClientIds] = useState<Set<string>>(new Set());
   const [modules, setModules] = useState<Set<ModuleType>>(new Set());
 
+  // Keyed on `user.id`, not on `user` itself: `user` now re-resolves from the
+  // live query on every refetch (see AdminUsersPage's `editingUser`), so its
+  // reference can change while the dialog stays open on the same row (e.g.
+  // right after the variance toggle's own invalidation). Re-running this
+  // sync on every such refetch would stomp in-progress role/client/module
+  // edits the viewer hasn't saved yet. Re-sync only when the dialog opens or
+  // switches to a different user; canViewVariance itself is read straight
+  // off the live `user` prop below, so it still stays current.
   useEffect(() => {
     if (user) {
       setRole(user.role);
@@ -704,7 +752,8 @@ function EditUserDialog({
       setModules(new Set(user.modules as ModuleType[]));
       setResetPw(null);
     }
-  }, [user]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   const toggle = (id: string) =>
     setClientIds((prev) => {
@@ -764,6 +813,22 @@ function EditUserDialog({
     }
   };
 
+  // hide-variance-from-staff Phase 6.2: wired to the dedicated
+  // variance-access endpoint (Phase 1.5/1.6), not `update` — that route is
+  // gated on `variance.grant` (ADMIN/OWNER/MANAGER), wider than the
+  // `users.manage` guard on every other control in this dialog. Toggles
+  // immediately, no confirm step — same weight as the Module Access
+  // checkboxes above it, not the destructive Reset Password / Disable
+  // actions below.
+  const toggleVarianceAccess = async (next: boolean) => {
+    try {
+      await updateVarianceAccess.mutateAsync({ id: user.id, canViewVariance: next });
+      toast.success(next ? `Granted ${user.firstName} access to Variance` : `Revoked ${user.firstName}'s access to Variance`);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not update variance access");
+    }
+  };
+
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
@@ -816,6 +881,30 @@ function EditUserDialog({
               void doReset();
             }}
           />
+
+          {/* hide-variance-from-staff Phase 6.1: STAFF-only, and only for a
+              viewer holding variance.grant (ADMIN/OWNER/MANAGER) — a MANAGER
+              sees this one row without gaining any other account control,
+              since every other row here still checks users.manage via the
+              route it calls. */}
+          {user.role === "STAFF" && me.data && can(me.data.user.role, "variance.grant") && (
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div className="flex items-center gap-2 text-sm">
+                <Eye className="size-4 text-muted-foreground" />
+                <div>
+                  <div>Can view variance</div>
+                  <p className="text-xs text-muted-foreground">
+                    Full Audit, Variance Summary, Legacy Audit, and Ask Stocky's variance answers.
+                  </p>
+                </div>
+              </div>
+              <Switch
+                checked={user.canViewVariance === true}
+                disabled={updateVarianceAccess.isPending}
+                onCheckedChange={(v) => void toggleVarianceAccess(v)}
+              />
+            </div>
+          )}
 
           <div className="flex items-center justify-between rounded-lg border p-3">
             <div className="text-sm">

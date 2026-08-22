@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { useBottleKeepMutations, useBottleKeeps, useCurrentLocation } from "@/api/location";
 import { ApiError } from "@/api/http";
 import { formatDate } from "@/lib/utils";
+import { useSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,10 +23,10 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 import {
   Select,
   SelectContent,
@@ -107,6 +108,17 @@ export function BottleKeepPage() {
       ? { ...report.data, rows: report.data.rows.filter((r) => r.dueForForfeit) }
       : report.data
     : undefined;
+
+  const { sortedRows, sortKey, sortDirection, toggleSort } = useSort(data?.rows ?? [], {
+    accessors: {
+      customer: (r) => r.customerName,
+      item: (r) => r.locationItem.itemVariant.item.name,
+      where: (r) => r.area?.name ?? "",
+      kept: (r) => r.keptDate,
+      expires: (r) => r.expiresOn,
+      status: (r) => statusLook(r.status, r.dueForForfeit).label,
+    },
+  });
 
   const act = async (kind: "claim" | "forfeit", id: string, who: string) => {
     try {
@@ -199,17 +211,31 @@ export function BottleKeepPage() {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted hover:bg-muted">
-                <TableHead>Customer</TableHead>
-                <TableHead>Item</TableHead>
-                <TableHead>Where</TableHead>
-                <TableHead>Kept</TableHead>
-                <TableHead>Expires</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right print:hidden">Action</TableHead>
+                <SortableTableHead sortKey="customer" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Customer
+                </SortableTableHead>
+                <SortableTableHead sortKey="item" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Item
+                </SortableTableHead>
+                <SortableTableHead sortKey="where" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Where
+                </SortableTableHead>
+                <SortableTableHead sortKey="kept" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Kept
+                </SortableTableHead>
+                <SortableTableHead sortKey="expires" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Expires
+                </SortableTableHead>
+                <SortableTableHead sortKey="status" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Status
+                </SortableTableHead>
+                <SortableTableHead sortable={false} className="text-right print:hidden">
+                  Action
+                </SortableTableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data.rows.map((r) => (
+              {sortedRows.map((r) => (
                 <TableRow key={r.id} className={r.status === "VOID" ? "opacity-55" : undefined}>
                   <TableCell className={r.status === "VOID" ? "font-medium line-through" : "font-medium"}>
                     {r.customerName}

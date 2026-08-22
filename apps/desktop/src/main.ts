@@ -26,8 +26,8 @@ const webDist = app.isPackaged
   ? path.join(process.resourcesPath, "web")
   : path.resolve(here, "..", "..", "web", "dist");
 
-/** `--sidebar` from apps/web/src/index.css, converted from oklch(0.28 0.09 264). */
-const TITLE_BAR_COLOR = "#112555";
+/** `--sidebar` from apps/web/src/index.css, converted from oklch(0.28 0.09 239.3). */
+const TITLE_BAR_COLOR = "#002c50";
 const TITLE_BAR_HEIGHT = 32;
 
 let host: UtilityProcess | null = null;
@@ -199,7 +199,7 @@ async function createSetupWindow(): Promise<void> {
     // Same caption treatment as the main window — a black OS title bar on the
     // FIRST screen anyone sees is the worst place to skip it.
     titleBarStyle: "hidden",
-    titleBarOverlay: { color: TITLE_BAR_COLOR, symbolColor: "#e8ecf8", height: TITLE_BAR_HEIGHT },
+    titleBarOverlay: { color: TITLE_BAR_COLOR, symbolColor: "#e3eef7", height: TITLE_BAR_HEIGHT },
     backgroundColor: TITLE_BAR_COLOR,
     // See the note on the main window — without this, Windows 11's Mica
     // backdrop wins over backgroundColor and the caption strip renders
@@ -303,12 +303,12 @@ async function createWindow(): Promise<void> {
      * (snap layouts, tooltips, accessibility) while the strip takes our colour.
      *
      * The colours are the design tokens converted from oklch, not eyeballed:
-     * `--sidebar: oklch(0.28 0.09 264)` is #112555. Picking a "close enough"
+     * `--sidebar: oklch(0.28 0.09 239.3)` is #002c50. Picking a "close enough"
      * blue is exactly how a product ends up with five slightly different brand
      * colours.
      */
     titleBarStyle: "hidden",
-    titleBarOverlay: { color: TITLE_BAR_COLOR, symbolColor: "#e8ecf8", height: TITLE_BAR_HEIGHT },
+    titleBarOverlay: { color: TITLE_BAR_COLOR, symbolColor: "#e3eef7", height: TITLE_BAR_HEIGHT },
     backgroundColor: TITLE_BAR_COLOR,
     /**
      * Opt OUT of the Windows 11 backdrop.
@@ -437,7 +437,7 @@ async function createWindow(): Promise<void> {
      */
     win?.setTitleBarOverlay({
       color: TITLE_BAR_COLOR,
-      symbolColor: "#e8ecf8",
+      symbolColor: "#e3eef7",
       height: TITLE_BAR_HEIGHT,
     });
 

@@ -5,6 +5,7 @@ import { useCountDates } from "@/api/ops";
 import { useLocationId } from "@/api/location";
 import { exportUrl, useAssetInventoryReport } from "@/api/reports";
 import { PageHeader } from "@/components/page-header";
+import { useSort } from "@/hooks/use-sort";
 import { EmptyState } from "@/components/empty-state";
 import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarField, queryFailed } from "@/components/table-surface";
 import { ExportButtons } from "@/components/report-toolbar";
@@ -20,10 +21,10 @@ import {
   TableBody,
   TableCell,
   TableFooter,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 import { cn, formatDate } from "@/lib/utils";
 
 const n2 = (v: number) => round2(v).toLocaleString("en-US", { maximumFractionDigits: 2 });
@@ -48,6 +49,19 @@ export function AssetInventoryReportPage() {
 
   const report = useAssetInventoryReport(beginningDate, endingDate);
   const exportParams = { beginningDate: beginningDate ?? "", endingDate: endingDate ?? "" };
+
+  const { sortedRows, sortKey, sortDirection, toggleSort } = useSort(report.data?.rows ?? [], {
+    accessors: {
+      assetCode: (r) => r.assetCode ?? "",
+      item: (r) => r.name,
+      category: (r) => r.category,
+      industry: (r) => r.industry ?? "",
+      uom: (r) => r.uom,
+      beginning: (r) => r.beginningQty,
+      ending: (r) => r.endingQty,
+      change: (r) => r.change,
+    },
+  });
 
   if (!countDates.isPending && dates.length === 0) {
     return (
@@ -122,18 +136,52 @@ export function AssetInventoryReportPage() {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted hover:bg-muted">
-                <TableHead>Asset Code</TableHead>
-                <TableHead>Item</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead>Industry</TableHead>
-                <TableHead>UOM</TableHead>
-                <TableHead className="text-right">Beginning</TableHead>
-                <TableHead className="text-right">Ending</TableHead>
-                <TableHead className="text-right">Change</TableHead>
+                <SortableTableHead sortKey="assetCode" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Asset Code
+                </SortableTableHead>
+                <SortableTableHead sortKey="item" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Item
+                </SortableTableHead>
+                <SortableTableHead sortKey="category" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Category
+                </SortableTableHead>
+                <SortableTableHead sortKey="industry" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Industry
+                </SortableTableHead>
+                <SortableTableHead sortKey="uom" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  UOM
+                </SortableTableHead>
+                <SortableTableHead
+                  sortKey="beginning"
+                  activeKey={sortKey}
+                  direction={sortDirection}
+                  onSort={toggleSort}
+                  className="text-right"
+                >
+                  Beginning
+                </SortableTableHead>
+                <SortableTableHead
+                  sortKey="ending"
+                  activeKey={sortKey}
+                  direction={sortDirection}
+                  onSort={toggleSort}
+                  className="text-right"
+                >
+                  Ending
+                </SortableTableHead>
+                <SortableTableHead
+                  sortKey="change"
+                  activeKey={sortKey}
+                  direction={sortDirection}
+                  onSort={toggleSort}
+                  className="text-right"
+                >
+                  Change
+                </SortableTableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {report.data.rows.map((row) => (
+              {sortedRows.map((row) => (
                 <TableRow key={row.locationItemId}>
                   <TableCell className="tnum font-medium">{row.assetCode ?? "—"}</TableCell>
                   <TableCell className="max-w-[18rem] break-words">{row.name}</TableCell>

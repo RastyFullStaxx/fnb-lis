@@ -17,6 +17,11 @@ export const categoryUpsert = z.object({
   // Asset-only, nullable (client req 2026-07-24). One industry/vertical
   // per category, e.g. "Dental Equipment" -> "Dental".
   industry: z.string().trim().max(60).nullable().optional(),
+  // Whether items in this category spoil (expiry-date-plan.md). A policy
+  // call per category, not derived from productType. Defaults true on the
+  // schema/column itself, so this stays optional here — the create route
+  // still passes it through explicitly when set.
+  defaultPerishable: z.boolean().optional(),
 });
 export type CategoryUpsert = z.infer<typeof categoryUpsert>;
 
@@ -96,6 +101,10 @@ export const locationItemUpdate = z.object({
   status: z.string().trim().max(60).nullable().optional(),
   remarks: z.string().trim().max(500).nullable().optional(),
   assetCode: z.string().trim().max(20).nullable().optional(),
+  // Per-location override of Category.defaultPerishable (expiry-date-plan.md).
+  // null clears the override and falls back to the category default — same
+  // nullable-override shape as tareWeight/densityFactor above.
+  isPerishable: z.boolean().nullable().optional(),
 });
 export type LocationItemUpdate = z.infer<typeof locationItemUpdate>;
 

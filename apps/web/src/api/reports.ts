@@ -20,6 +20,8 @@ export interface SalesReport {
     discountPct: number;
     gross: number;
     net: number;
+    /** LocationItem.isActive — null for menu rows (no single LocationItem). */
+    isActive: boolean | null;
   }>;
   // Regular-vs-discounted split (client req 2026-07-21).
   byPriceType: Array<{
@@ -45,6 +47,8 @@ export interface PurchaseReport {
     qty: number;
     unitCost: number;
     lineTotal: number;
+    /** LocationItem.isActive — carried through for the clutter display filter. */
+    isActive: boolean;
   }>;
   bySupplier: Array<{
     supplier: string;
@@ -71,6 +75,8 @@ export interface NonRevenueReport {
     contentOverride: number | null;
     estimatedCost: number | null;
     estimatedRetail: number | null;
+    /** LocationItem.isActive — null for menu rows (no single LocationItem). */
+    isActive: boolean | null;
   }>;
   // Grouped by canonical bucket (+ "Other"); `group` is the stable key.
   byReason: Array<{ group: string; reason: string; count: number; qty: number; cost: number }>;
@@ -90,6 +96,9 @@ export interface OnHandReport {
     costValue: number;
     retailValue: number;
     belowPar: boolean;
+    /** LocationItem.isActive — carried through so the client can badge a
+        hidden-but-active row. */
+    isActive: boolean;
   }>;
   totals: { costValue: number; retailValue: number };
 }
@@ -104,10 +113,21 @@ export interface ParLevelReport {
     category: string;
     onHand: number;
     parLevel: number;
-    usage: number;
+    /**
+     * The "Used (last period)" figure. Genuinely ABSENT from the wire
+     * response — not zeroed — for a STAFF account without `canViewVariance`
+     * (hide-variance-from-staff Phase 2.4/4.4): it hands over the same
+     * target-usage number Variance would. Optional here to match; the page
+     * drops the column entirely when it's missing rather than rendering an
+     * empty one.
+     */
+    usage?: number;
     suggestedOrder: number;
     orderValue: number;
     belowPar: boolean;
+    /** LocationItem.isActive — carried through so the client can badge a
+        hidden-but-active row. */
+    isActive: boolean;
   }>;
   totals: { belowParCount: number; orderValue: number };
 }
@@ -124,8 +144,27 @@ export interface NonMovingReport {
     cost: number;
     costValue: number;
     retailValue: number;
+    /** LocationItem.isActive — carried through so the client can badge a
+        hidden-but-active row. */
+    isActive: boolean;
   }>;
   totals: { count: number; costValue: number; retailValue: number };
+}
+
+export interface ExpiringBatchesReport {
+  asOfDate: string;
+  rows: Array<{
+    purchaseLineId: string;
+    locationItemId: string;
+    name: string;
+    category: string;
+    productType: string;
+    qty: number;
+    expiryDate: string;
+    purchaseDate: string;
+    isExpired: boolean;
+  }>;
+  totals: { expiredCount: number; upcomingCount: number };
 }
 
 export interface CostAnalysisReport {
@@ -228,6 +267,9 @@ export interface LegacyAuditRow {
   productName: string;
   sizeUom: string;
   contentTracked: boolean;
+  /** LocationItem.isActive — carried through so the client can badge a
+      hidden-but-active row. */
+  isActive: boolean;
   beginFull: number;
   beginOpen: number;
   bCost: number;
@@ -258,7 +300,7 @@ export interface LegacyAuditReport {
   groups: Array<{
     categoryName: string;
     rows: LegacyAuditRow[];
-    totals: Omit<LegacyAuditRow, "productName" | "sizeUom" | "contentTracked" | "variancePct"> & {
+    totals: Omit<LegacyAuditRow, "productName" | "sizeUom" | "contentTracked" | "isActive" | "variancePct"> & {
       variancePct: null;
     };
   }>;
@@ -278,6 +320,35 @@ export function useLegacyAuditReport(
       api<LegacyAuditReport>(
         `${base(locationId)}/reports/legacy-audit?begin=${begin}&end=${end}&variant=${variant}`,
       ),
+    enabled: Boolean(begin && end),
+  });
+}
+
+/** The category-only Variance Summary rollup — mirrors VarianceSummaryRow/Report
+    in apps/server/src/services/report-variance-summary.ts. */
+export interface VarianceSummaryRow {
+  categoryName: string;
+  status: string;
+  brands: string;
+  short: number;
+  over: number;
+  remarks: string;
+}
+export interface VarianceSummaryReport {
+  period: { beginDate: string; endDate: string };
+  rows: VarianceSummaryRow[];
+  totals: { short: number; over: number };
+}
+
+export function useVarianceSummaryReport(begin: string, end: string, productType?: string) {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["report", "variance-summary", locationId, begin, end, productType],
+    queryFn: () => {
+      const qs = new URLSearchParams({ begin, end });
+      if (productType) qs.set("productType", productType);
+      return api<VarianceSummaryReport>(`${base(locationId)}/reports/variance-summary?${qs}`);
+    },
     enabled: Boolean(begin && end),
   });
 }
@@ -436,6 +507,14 @@ export function useNonMovingReport() {
   });
 }
 
+export function useExpiringBatchesReport() {
+  const locationId = useLocationId();
+  return useQuery({
+    queryKey: ["report", "expiring-batches", locationId],
+    queryFn: () => api<ExpiringBatchesReport>(`${base(locationId)}/reports/expiring-batches`),
+  });
+}
+
 export function useFullAuditDrill(begin: string, end: string, locationItemId: string | null) {
   const locationId = useLocationId();
   return useQuery({
@@ -501,6 +580,7 @@ export function exportUrl(
     | "on-hand"
     | "par-level"
     | "non-moving"
+    | "expiring-batches"
     | "asset-breakage"
     | "asset-register"
     | "asset-inventory"
@@ -508,6 +588,7 @@ export function exportUrl(
     | "cost-analysis"
     | "top-sellers"
     | "legacy-audit"
+    | "variance-summary"
     | "cost-snapshot"
     | "forfeits"
     | "usage-cost"

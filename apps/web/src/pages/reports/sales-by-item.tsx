@@ -5,6 +5,7 @@ import { useCountDates } from "@/api/ops";
 import { useLocationId } from "@/api/location";
 import { exportUrl, useSalesByItemReport } from "@/api/reports";
 import { formatMoney, formatNumber, formatDate } from "@/lib/utils";
+import { useSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarField, ToolbarSearch, queryFailed } from "@/components/table-surface";
@@ -23,10 +24,10 @@ import {
   TableBody,
   TableCell,
   TableFooter,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 
 
 /** Sales Report — Shot & Bottle (client report #7): per-item sales for an
@@ -63,6 +64,18 @@ export function SalesByItemReportPage() {
         .map((r) => ({ label: r.name, value: round2(r.retail) })),
     [report.data],
   );
+
+  const { sortedRows, sortKey, sortDirection, toggleSort } = useSort(visibleRows, {
+    accessors: {
+      item: (r) => r.name,
+      uom: (r) => r.uom,
+      shot: (r) => r.shot,
+      bottle: (r) => r.bottle,
+      qty: (r) => r.qty,
+      cost: (r) => r.cost,
+      revenue: (r) => r.retail,
+    },
+  });
 
   if (!countDates.isPending && dates.length < 2) {
     return (
@@ -159,17 +172,61 @@ export function SalesByItemReportPage() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted hover:bg-muted">
-                    <TableHead>Item</TableHead>
-                    <TableHead>UOM</TableHead>
-                    <TableHead className="text-right">Shot</TableHead>
-                    <TableHead className="text-right">Bottle</TableHead>
-                    <TableHead className="text-right">Total Qty</TableHead>
-                    <TableHead className="text-right">Cost of Sold</TableHead>
-                    <TableHead className="text-right">Revenue</TableHead>
+                    <SortableTableHead sortKey="item" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                      Item
+                    </SortableTableHead>
+                    <SortableTableHead sortKey="uom" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                      UOM
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="shot"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      Shot
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="bottle"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      Bottle
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="qty"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      Total Qty
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="cost"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      Cost of Sold
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="revenue"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      Revenue
+                    </SortableTableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {visibleRows.map((row, i) => (
+                  {sortedRows.map((row, i) => (
                     <TableRow key={i}>
                       {/* Wrapped, never truncated — an auditor has to read the
                           whole item name to match it against a shelf. */}

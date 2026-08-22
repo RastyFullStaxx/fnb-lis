@@ -6,6 +6,7 @@ import { useMe } from "@/api/auth";
 import { useCountDates } from "@/api/ops";
 import { exportUrl, useTransferReport } from "@/api/reports";
 import { formatMoney, formatNumber, formatDate, formatUnitPrice } from "@/lib/utils";
+import { useSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
 import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarField, queryFailed } from "@/components/table-surface";
 import { DateRangeControl, ExportButtons } from "@/components/report-toolbar";
@@ -24,10 +25,10 @@ import {
   TableBody,
   TableCell,
   TableFooter,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 import { cn } from "@/lib/utils";
 import { useReportRange } from "./use-report-range";
 
@@ -73,6 +74,32 @@ export function TransferReportPage() {
       shortfall: round2(dispatched - received),
     };
   }, [report.data]);
+
+  const transferRows = report.data?.rows ?? [];
+  const { sortedRows, sortKey, sortDirection, toggleSort } = useSort(transferRows, {
+    accessors: {
+      date: (r) => r.date,
+      counterparty: (r) => r.counterparty,
+      item: (r) => r.name,
+      sent: (r) => r.qtySent,
+      received: (r) => r.qtyReceived ?? -Infinity,
+      unitCost: (r) => r.unitCost,
+      atCost: (r) => r.costValue,
+      atRetail: (r) => r.retailValue,
+    },
+  });
+
+  const byCounterpartyRows = report.data?.byCounterparty ?? [];
+  const { sortedRows: sortedByCounterparty, sortKey: byCounterpartySortKey, sortDirection: byCounterpartySortDirection, toggleSort: toggleByCounterpartySort } = useSort(
+    byCounterpartyRows,
+    {
+      accessors: {
+        location: (g) => g.counterparty,
+        qty: (g) => g.qty,
+        cost: (g) => g.cost,
+      },
+    },
+  );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -147,18 +174,64 @@ export function TransferReportPage() {
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted hover:bg-muted">
-                  <TableHead>Date</TableHead>
-                  <TableHead>{direction === "out" ? "To" : "From"}</TableHead>
-                  <TableHead>Item</TableHead>
-                  <TableHead className="text-right">Sent</TableHead>
-                  <TableHead className="text-right">Received</TableHead>
-                  <TableHead className="text-right">Unit Cost</TableHead>
-                  <TableHead className="text-right">At Cost</TableHead>
-                  <TableHead className="text-right">At Retail</TableHead>
+                  <SortableTableHead sortKey="date" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                    Date
+                  </SortableTableHead>
+                  <SortableTableHead sortKey="counterparty" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                    {direction === "out" ? "To" : "From"}
+                  </SortableTableHead>
+                  <SortableTableHead sortKey="item" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                    Item
+                  </SortableTableHead>
+                  <SortableTableHead
+                    sortKey="sent"
+                    activeKey={sortKey}
+                    direction={sortDirection}
+                    onSort={toggleSort}
+                    className="text-right"
+                  >
+                    Sent
+                  </SortableTableHead>
+                  <SortableTableHead
+                    sortKey="received"
+                    activeKey={sortKey}
+                    direction={sortDirection}
+                    onSort={toggleSort}
+                    className="text-right"
+                  >
+                    Received
+                  </SortableTableHead>
+                  <SortableTableHead
+                    sortKey="unitCost"
+                    activeKey={sortKey}
+                    direction={sortDirection}
+                    onSort={toggleSort}
+                    className="text-right"
+                  >
+                    Unit Cost
+                  </SortableTableHead>
+                  <SortableTableHead
+                    sortKey="atCost"
+                    activeKey={sortKey}
+                    direction={sortDirection}
+                    onSort={toggleSort}
+                    className="text-right"
+                  >
+                    At Cost
+                  </SortableTableHead>
+                  <SortableTableHead
+                    sortKey="atRetail"
+                    activeKey={sortKey}
+                    direction={sortDirection}
+                    onSort={toggleSort}
+                    className="text-right"
+                  >
+                    At Retail
+                  </SortableTableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {report.data.rows.map((row, i) => {
+                {sortedRows.map((row, i) => {
                   const short = row.qtyReceived !== null && row.qtyReceived < row.qtySent;
                   return (
                     <TableRow key={i}>
@@ -207,13 +280,31 @@ export function TransferReportPage() {
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead>Location</TableHead>
-                <TableHead className="text-right">Qty</TableHead>
-                <TableHead className="text-right">At Cost</TableHead>
+                <SortableTableHead sortKey="location" activeKey={byCounterpartySortKey} direction={byCounterpartySortDirection} onSort={toggleByCounterpartySort}>
+                  Location
+                </SortableTableHead>
+                <SortableTableHead
+                  sortKey="qty"
+                  activeKey={byCounterpartySortKey}
+                  direction={byCounterpartySortDirection}
+                  onSort={toggleByCounterpartySort}
+                  className="text-right"
+                >
+                  Qty
+                </SortableTableHead>
+                <SortableTableHead
+                  sortKey="cost"
+                  activeKey={byCounterpartySortKey}
+                  direction={byCounterpartySortDirection}
+                  onSort={toggleByCounterpartySort}
+                  className="text-right"
+                >
+                  At Cost
+                </SortableTableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {report.data.byCounterparty.map((g) => (
+              {sortedByCounterparty.map((g) => (
                 <TableRow key={g.counterparty}>
                   <TableCell className="font-medium">{g.counterparty}</TableCell>
                   <TableCell className="tnum text-right">{formatNumber(g.qty)}</TableCell>

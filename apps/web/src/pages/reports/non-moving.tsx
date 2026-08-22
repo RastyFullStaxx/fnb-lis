@@ -2,23 +2,27 @@ import { useMemo, useState } from "react";
 import { PackageX } from "lucide-react";
 import { round2 } from "@fnb/core";
 import { useLocationId } from "@/api/location";
+import { useMe } from "@/api/auth";
 import { exportUrl, useNonMovingReport } from "@/api/reports";
+import { useIncludeHiddenInReports } from "@/api/settings";
 import { formatMoney, formatNumber, formatUnitPrice } from "@/lib/utils";
+import { useSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
 import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarSearch, queryFailed } from "@/components/table-surface";
 import { ExportButtons } from "@/components/report-toolbar";
 import { ChartBlock } from "@/components/charts/chart-block";
 import { MagnitudeBars } from "@/components/charts/magnitude-bars";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
   TableCell,
   TableFooter,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 
 
 const DEAD_BAR_CAP = 8;
@@ -30,8 +34,19 @@ const DEAD_BAR_CAP = 8;
  */
 export function NonMovingReportPage() {
   const locationId = useLocationId();
+  const me = useMe();
   const report = useNonMovingReport();
   const [query, setQuery] = useState("");
+
+  // Every row here has zero usage by construction — the report's own
+  // subject. A hidden row still on the list survived because of purchases/
+  // forfeits/transfers/variance in the window, which NonMovingRow doesn't
+  // carry to the client, or because the setting shows it regardless
+  // (docs/clutter-in-reports-decision.md). The badge is only unambiguous
+  // when the setting is off.
+  const location = me.data?.clients.flatMap((c) => c.locations).find((l) => l.id === locationId);
+  const includeHidden = useIncludeHiddenInReports(location?.clientId ?? "");
+  const includeHiddenInReports = includeHidden.data?.includeHiddenInReports ?? false;
 
   const rows = useMemo(() => {
     const all = report.data?.rows ?? [];
@@ -47,6 +62,17 @@ export function NonMovingReportPage() {
       .slice(0, DEAD_BAR_CAP)
       .map((r) => ({ label: r.name, value: round2(r.costValue) }));
   }, [report.data]);
+
+  const { sortedRows, sortKey, sortDirection, toggleSort } = useSort(rows, {
+    accessors: {
+      item: (r) => r.name,
+      category: (r) => r.category,
+      onHand: (r) => r.onHand,
+      cost: (r) => r.cost,
+      costValue: (r) => r.costValue,
+      retailValue: (r) => r.retailValue,
+    },
+  });
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -104,18 +130,61 @@ export function NonMovingReportPage() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted hover:bg-muted">
-                    <TableHead>Item</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead className="text-right">On Hand</TableHead>
-                    <TableHead className="text-right">Cost</TableHead>
-                    <TableHead className="text-right">Cost Value</TableHead>
-                    <TableHead className="text-right">Retail Value</TableHead>
+                    <SortableTableHead sortKey="item" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                      Item
+                    </SortableTableHead>
+                    <SortableTableHead sortKey="category" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                      Category
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="onHand"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      On Hand
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="cost"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      Cost
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="costValue"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      Cost Value
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="retailValue"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      Retail Value
+                    </SortableTableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {rows.map((row) => (
+                  {sortedRows.map((row) => (
                     <TableRow key={row.locationItemId}>
-                      <TableCell className="max-w-[22rem] font-medium break-words">{row.name}</TableCell>
+                      <TableCell className="max-w-[22rem] font-medium break-words">
+                        {row.name}
+                        {!row.isActive && !includeHiddenInReports && (
+                          <Badge variant="warning" className="ml-2">
+                            hidden · active
+                          </Badge>
+                        )}
+                      </TableCell>
                       <TableCell className="text-muted-foreground">{row.category}</TableCell>
                       <TableCell className="tnum text-right">{formatNumber(row.onHand)}</TableCell>
                       <TableCell className="tnum text-right">{formatUnitPrice(row.cost)}</TableCell>

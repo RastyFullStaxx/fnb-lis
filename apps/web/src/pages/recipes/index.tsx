@@ -7,6 +7,7 @@ import { useMe } from "@/api/auth";
 import { ApiError } from "@/api/http";
 import { useCopyMenusFromLocation, useMenus, type MenuSummary } from "@/api/menus";
 import { cn, formatMoney } from "@/lib/utils";
+import { useSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
 import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarSearch, queryFailed } from "@/components/table-surface";
 import { Badge } from "@/components/ui/badge";
@@ -30,10 +31,10 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 import { RecipeBuilderSheet } from "./builder";
 import { MenuDetailSheet } from "./detail";
 
@@ -52,6 +53,20 @@ export function RecipesPage() {
 
   const q = search.trim().toLowerCase();
   const filtered = (menus.data ?? []).filter((m) => !q || m.name.toLowerCase().includes(q));
+
+  const { sortedRows, sortKey, sortDirection, toggleSort } = useSort(filtered, {
+    accessors: {
+      menu: (m) => m.name,
+      version: (m) => m.current?.versionNo ?? 0,
+      cost: (m) => m.current?.costAtPublish ?? 0,
+      srp: (m) => m.current?.srp ?? 0,
+      margin: (m) => {
+        const cur = m.current;
+        return cur && cur.srp > 0 ? ((cur.srp - cur.costAtPublish) / cur.srp) * 100 : -Infinity;
+      },
+      sales: (m) => m.salesCount,
+    },
+  });
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -99,17 +114,59 @@ export function RecipesPage() {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted hover:bg-muted">
-                <TableHead>Menu</TableHead>
-                <TableHead className="text-right">Version</TableHead>
-                <TableHead className="text-right">Cost</TableHead>
-                <TableHead className="text-right">SRP</TableHead>
-                <TableHead className="text-right">Margin</TableHead>
-                <TableHead className="text-right">Sales</TableHead>
-                <TableHead className="w-40" />
+                <SortableTableHead sortKey="menu" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                  Menu
+                </SortableTableHead>
+                <SortableTableHead
+                  sortKey="version"
+                  activeKey={sortKey}
+                  direction={sortDirection}
+                  onSort={toggleSort}
+                  className="text-right"
+                >
+                  Version
+                </SortableTableHead>
+                <SortableTableHead
+                  sortKey="cost"
+                  activeKey={sortKey}
+                  direction={sortDirection}
+                  onSort={toggleSort}
+                  className="text-right"
+                >
+                  Cost
+                </SortableTableHead>
+                <SortableTableHead
+                  sortKey="srp"
+                  activeKey={sortKey}
+                  direction={sortDirection}
+                  onSort={toggleSort}
+                  className="text-right"
+                >
+                  SRP
+                </SortableTableHead>
+                <SortableTableHead
+                  sortKey="margin"
+                  activeKey={sortKey}
+                  direction={sortDirection}
+                  onSort={toggleSort}
+                  className="text-right"
+                >
+                  Margin
+                </SortableTableHead>
+                <SortableTableHead
+                  sortKey="sales"
+                  activeKey={sortKey}
+                  direction={sortDirection}
+                  onSort={toggleSort}
+                  className="text-right"
+                >
+                  Sales
+                </SortableTableHead>
+                <SortableTableHead sortable={false} className="w-40" />
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((menu) => {
+              {sortedRows.map((menu) => {
                 const cur = menu.current;
                 const margin = cur && cur.srp > 0 ? ((cur.srp - cur.costAtPublish) / cur.srp) * 100 : null;
                 return (

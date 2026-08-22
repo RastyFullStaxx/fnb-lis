@@ -186,7 +186,10 @@ export async function buildFullAudit(
     }
   }
 
-  // Item metadata for every touched catalog row.
+  // Item metadata for every touched catalog row. No `select` here, so this
+  // already returns every LocationItem scalar — including `isActive`, read
+  // below and carried onto ReconRow (clutter-in-reports-plan.md Phase 3.1)
+  // so the report layer can filter hidden-and-idle rows without a second query.
   const locationItems = await prisma.locationItem.findMany({
     where: { id: { in: [...aggs.keys()] } },
     include: { itemVariant: { include: { unit: true, item: { include: { category: true } } } } },
@@ -215,6 +218,7 @@ export async function buildFullAudit(
       size: li.itemVariant.size,
       unitName: li.itemVariant.unit.name,
       contentTracked: li.itemVariant.contentTracked,
+      isActive: li.isActive,
       currentCost: li.cost,
       currentRetail: li.retail,
       ...(beginWac.has(li.id) ? { beginValuationUnitCost: beginWac.get(li.id) } : {}),

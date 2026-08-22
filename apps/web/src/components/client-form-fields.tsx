@@ -97,9 +97,9 @@ export function PackageAndModulesFields({
   const tier = derivePackageType(billingCycle, maxEntities, maxUsers);
   const isStandalone = billingCycle === "STANDALONE";
 
-  // Picking a monthly tier sets its user cap (Basic 1 / Medium 5 / Full 10) —
-  // the tier IS the cap (client req 2026-07-21). Locations follow along so a
-  // 1-user Basic can't hold 5 locations.
+  // Picking a monthly tier sets its user cap (Basic 2 / Medium 5 / Full 10) —
+  // the tier IS the cap (client req 2026-07-21, revised 2026-08-10). Locations
+  // follow along so a 2-user Basic can't hold 5 locations.
   const handleTierChange = (next: PackageType) => {
     onMaxUsersChange(PACKAGE_MAX_USERS[next]);
     if (next === "BASIC") onMaxEntitiesChange(1);
@@ -150,7 +150,7 @@ export function PackageAndModulesFields({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="BASIC">Basic — 1 user</SelectItem>
+                <SelectItem value="BASIC">Basic — up to 2 users</SelectItem>
                 <SelectItem value="MEDIUM">Medium — up to 5 users</SelectItem>
                 <SelectItem value="FULL">Full — up to 10 users</SelectItem>
               </SelectContent>

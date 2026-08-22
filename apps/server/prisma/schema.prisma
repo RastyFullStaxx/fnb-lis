@@ -28,6 +28,15 @@ model User {
   status           String    @default("ACTIVE") // ACTIVE | DISABLED
   failedLoginCount Int       @default(0)
   failedLoginAt    DateTime?
+  // Per-STAFF-account gate on variance and every number that can back-fill it
+  // (Usage, Sold, Par Level's Used column, Ask Stocky's variance tools) — see
+  // hide-variance-from-staff-plan.md. Read only for STAFF; every other role's
+  // access is unconditional and never checks this column (canViewVariance() in
+  // @fnb/core). Defaults false: every STAFF account, new or existing, starts
+  // blocked — trust is a deliberate grant, not a migration default. Settable by
+  // MANAGER, OWNER, or ADMIN only (PERMISSIONS["variance.grant"]), never by the
+  // STAFF member themself.
+  canViewVariance  Boolean   @default(false)
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
@@ -240,6 +249,15 @@ model Client {
   // 11 = @fnb/core MATERIAL_VARIANCE_PCT. Presentation only; never touches the
   // reconciliation math.
   varianceThresholdPct Float @default(11)
+  // Whether hidden (clutter) items with no activity in a report's period are
+  // included in that report's item rows (docs/clutter-in-reports-decision.md).
+  // Off by default, per the client's stated preference: a hidden item drops
+  // out of a report only when it has zero activity in that period; one with
+  // real activity always stays, badged, no matter this setting. Presentation
+  // only — computed before this filter runs, so Grand Total never moves.
+  // Editable in Settings by ADMIN/MANAGER only, same gate as
+  // varianceThresholdPct; read-only for report viewers.
+  includeHiddenInReports Boolean @default(false)
   // Whether this establishment may SEE bottle tare / liquid weights (client
   // decision 2026-07-25). Off by default: that calibration library is LIS's
   // own IP, shown to a client only when the LIS admin turns it on for them.
@@ -521,6 +539,15 @@ model Category {
   // every asset in a category shares one industry/vertical by design.
   // data-driven list, Setting "industryOptions".
   industry             String?
+  // Whether items in this category spoil (expiry-date-plan.md). A policy call
+  // per category, not derived from productType — Wine and Vodka are both
+  // productType "Beverage" but only one spoils; Cooking Oil and Ribeye are
+  // both "Food" but spoil on very different timelines. Defaults true because
+  // most of the catalog spoils; true spirits, Supplies, and Asset categories
+  // are seeded false (seed.ts). Read through resolveIsPerishable() in
+  // packages/core, never compared directly — LocationItem.isPerishable below
+  // can override it per establishment.
+  defaultPerishable    Boolean @default(true)
 
   items Item[]
 }
@@ -624,6 +651,15 @@ model LocationItem {
   // candidate; inside it, no movement is a real signal.
   scheduleStartMonth Int?
   scheduleEndMonth   Int?
+  // Per-location override of Category.defaultPerishable (expiry-date-plan.md).
+  // Null = inherit the category default; set = this establishment's own call
+  // for this one catalog row (e.g. tracking expiry on Cooking Oil even though
+  // most Dry Goods items aren't tracked). Same nullable-override shape as
+  // tareWeight/densityFactor above (deviation #27) and the same reasoning:
+  // the establishment-specific fact belongs on LocationItem, not on the
+  // global ItemVariant or Category row. Resolved by resolveIsPerishable() in
+  // packages/core — never read directly, always through the resolver.
+  isPerishable  Boolean?
   updatedById   String?
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
@@ -867,6 +903,17 @@ model PurchaseLine {
   createdByName  String
   createdAt      DateTime       @default(now())
   occurredAt     DateTime? // device time — see CountSession.occurredAt
+  // The date on the box, entered at receiving (expiry-date-plan.md). One
+  // delivery on one day is one fact — the date belongs here, not on the
+  // catalog item (many deliveries, many dates, on shelf at once) and not on
+  // a count line (a tally of possibly several mixed deliveries, one date
+  // would be a guess). String 'YYYY-MM-DD', not DateTime, per architecture.md
+  // §2's business-date rule and the BottleKeep.expiresOn precedent above.
+  // Nullable at the schema layer on purpose: null for non-perishable lines
+  // and for historical lines written before this column existed.
+  // "Required when resolveIsPerishable() is true" is enforced in the zod
+  // schema and the UI (Phase 3), not as a NOT NULL constraint here.
+  expiryDate     String?
 
   @@index([purchaseId])
   @@index([locationItemId])

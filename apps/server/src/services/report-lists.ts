@@ -1,6 +1,7 @@
 import {
   ASSET_LOSS_REASON_LABELS,
   costLine,
+  hasReportActivity,
   hasVariance,
   isPaymentTerms,
   netOfVat,
@@ -9,6 +10,7 @@ import {
   nonRevenueGroupOf,
   pctOf,
   round2,
+  shouldDropHiddenRow,
   VARIANCE_EPSILON,
   type AssetLossReason,
   type CostBasis,
@@ -58,6 +60,10 @@ export interface SalesReportRow {
   discountPct: number;
   gross: number; // unitPrice × qty (legacy getSales basis)
   net: number; // gross × (1 − discount/100)
+  /** LocationItem.isActive — null for menu rows (no single LocationItem).
+      Carried through for the clutter display filter and the Phase 6.1 badge;
+      see clutter-in-reports-decision.md. */
+  isActive: boolean | null;
 }
 /** Regular = no discount, Discounted = any discount (client req 2026-07-21).
     Derived from discountPct, so it's a view of the same rows, not a new query. */
@@ -80,6 +86,14 @@ export async function salesReport(
   to: string,
   allowedProductTypes?: readonly string[] | null,
   view: SalesReportView = "sales",
+  // Clutter-in-reports (docs/clutter-in-reports-decision.md): off by default.
+  // Every row here IS a transaction — a hidden item's row only exists because
+  // it moved in this exact window — so `hasReportActivity` is true for every
+  // row by construction and nothing is ever actually dropped. Still threaded
+  // through for the same reason every other report carries it: one client
+  // policy applied consistently, never a per-viewer difference, and it keeps
+  // this report honest if a future row source ever stops implying activity.
+  includeHiddenInReports: boolean = false,
 ): Promise<SalesReport> {
   const sales = await prisma.saleRecord.findMany({
     where: {
@@ -99,7 +113,7 @@ export async function salesReport(
     orderBy: [{ saleDate: "asc" }, { createdAt: "asc" }],
   });
 
-  const rows: SalesReportRow[] = sales.map((s) => {
+  const allRows: SalesReportRow[] = sales.map((s) => {
     const gross = s.unitPrice * s.qty;
     const net = gross * (1 - s.discountPct / 100);
     return {
@@ -112,11 +126,12 @@ export async function salesReport(
       discountPct: s.discountPct,
       gross,
       net,
+      isActive: s.locationItem?.isActive ?? null,
     };
   });
 
   const ptMap = new Map<SalesPriceType, { count: number; qty: number; gross: number; discount: number; net: number }>();
-  for (const r of rows) {
+  for (const r of allRows) {
     const type: SalesPriceType = r.discountPct > 0 ? "DISCOUNTED" : "REGULAR";
     const agg = ptMap.get(type) ?? { count: 0, qty: 0, gross: 0, discount: 0, net: 0 };
     agg.count += 1;
@@ -128,7 +143,9 @@ export async function salesReport(
   }
   const byPriceType = PRICE_TYPE_ORDER.filter((t) => ptMap.has(t)).map((t) => ({ type: t, ...ptMap.get(t)! }));
 
-  const totals = rows.reduce(
+  // Totals FIRST, from the complete row set — the display filter below must
+  // never be able to move them (clutter-in-reports-decision.md).
+  const totals = allRows.reduce(
     (acc, r) => ({
       qty: acc.qty + r.qty,
       gross: acc.gross + r.gross,
@@ -137,6 +154,16 @@ export async function salesReport(
     }),
     { qty: 0, gross: 0, discount: 0, net: 0 },
   );
+
+  // A row here IS the activity — it exists because a sale posted in this
+  // window — so a hidden item's row always has qty/revenue > 0 and never
+  // qualifies for dropping. This mirrors shouldDropHiddenRow's own rule
+  // (isActive === false AND zero activity) without needing a full ReconRow.
+  const rows =
+    includeHiddenInReports
+      ? allRows
+      : allRows.filter((r) => r.isActive !== false || r.qty !== 0 || r.gross !== 0);
+
   return { from, to, rows, byPriceType, totals };
 }
 
@@ -151,6 +178,9 @@ export interface PurchaseReportRow {
   qty: number;
   unitCost: number;
   lineTotal: number;
+  /** LocationItem.isActive — carried through for the clutter display filter
+      and the Phase 6.1 badge; see clutter-in-reports-decision.md. */
+  isActive: boolean;
 }
 export interface PurchaseReport {
   from: string;
@@ -176,6 +206,11 @@ export async function purchaseReport(
   from: string,
   to: string,
   allowedProductTypes?: readonly string[] | null,
+  // Clutter-in-reports (docs/clutter-in-reports-decision.md): off by default.
+  // Same reasoning as salesReport — a row here IS a purchase that landed in
+  // this window, so it is activity by construction and nothing is ever
+  // actually dropped. Threaded through for policy consistency regardless.
+  includeHiddenInReports: boolean = false,
 ): Promise<PurchaseReport> {
   const lines = await prisma.purchaseLine.findMany({
     where: {
@@ -189,7 +224,7 @@ export async function purchaseReport(
     orderBy: { purchase: { purchaseDate: "asc" } },
   });
 
-  const rows: PurchaseReportRow[] = lines.map((l) => ({
+  const allRows: PurchaseReportRow[] = lines.map((l) => ({
     purchaseDate: l.purchase.purchaseDate,
     supplier: l.purchase.supplier?.name ?? "—",
     refNo: l.purchase.refNo,
@@ -198,6 +233,7 @@ export async function purchaseReport(
     qty: l.qty,
     unitCost: l.unitCost,
     lineTotal: l.lineTotal,
+    isActive: l.locationItem.isActive,
   }));
 
   // Keyed by supplier ID, not name: two distinct suppliers can legitimately
@@ -235,10 +271,21 @@ export async function purchaseReport(
   }
   const bySupplier = [...supplierMap.values()].sort((a, b) => b.cost - a.cost);
 
-  const totals = rows.reduce(
+  // Totals FIRST, from the complete row set — the display filter below must
+  // never be able to move them (clutter-in-reports-decision.md).
+  const totals = allRows.reduce(
     (acc, r) => ({ qty: acc.qty + r.qty, cost: acc.cost + r.lineTotal }),
     { qty: 0, cost: 0 },
   );
+
+  // A row here IS the activity — it exists because a purchase line landed in
+  // this window — so a hidden item's row always has qty/lineTotal > 0 and
+  // never qualifies for dropping (mirrors shouldDropHiddenRow's own rule).
+  const rows =
+    includeHiddenInReports
+      ? allRows
+      : allRows.filter((r) => r.isActive || r.qty !== 0 || r.lineTotal !== 0);
+
   return { from, to, rows, bySupplier, totals };
 }
 
@@ -269,6 +316,10 @@ export interface NonRevenueRow {
   contentOverride: number | null;
   estimatedCost: number | null; // qty × current cost for direct item entries
   estimatedRetail: number | null; // qty × current retail (client req #8)
+  /** LocationItem.isActive — null for menu rows (no single LocationItem).
+      Carried through for the clutter display filter and the Phase 6.1 badge;
+      see clutter-in-reports-decision.md. */
+  isActive: boolean | null;
 }
 /** All three canonical buckets, plus an "Other / Unspecified" catch-all. */
 export type NonRevenueBucket = NonRevenueGroup | "OTHER";
@@ -295,6 +346,11 @@ export async function nonRevenueReport(
   to: string,
   allowedProductTypes?: readonly string[] | null,
   group?: NonRevenueGroup,
+  // Clutter-in-reports (docs/clutter-in-reports-decision.md): off by default.
+  // Same reasoning as salesReport/purchaseReport — a row here IS a
+  // non-revenue entry that posted in this window, so it is activity by
+  // construction and nothing is ever actually dropped.
+  includeHiddenInReports: boolean = false,
 ): Promise<NonRevenueReport> {
   const found = await prisma.saleRecord.findMany({
     where: {
@@ -313,7 +369,7 @@ export async function nonRevenueReport(
   // via nonRevenueGroupOf; unmapped reasons appear only in the unfiltered view.
   const records = group ? found.filter((r) => nonRevenueGroupOf(r.reason) === group) : found;
 
-  const rows: NonRevenueRow[] = records.map((r) => {
+  const allRows: NonRevenueRow[] = records.map((r) => {
     const estimatedCost = r.locationItem ? r.qty * r.locationItem.cost : null;
     const estimatedRetail = r.locationItem ? r.qty * r.locationItem.retail : null;
     return {
@@ -325,6 +381,7 @@ export async function nonRevenueReport(
       contentOverride: r.contentOverride,
       estimatedCost,
       estimatedRetail,
+      isActive: r.locationItem?.isActive ?? null,
     };
   });
 
@@ -347,7 +404,9 @@ export async function nonRevenueReport(
     ...bucketMap.get(b)!,
   }));
 
-  const totals = rows.reduce(
+  // Totals FIRST, from the complete row set — the display filter below must
+  // never be able to move them (clutter-in-reports-decision.md).
+  const totals = allRows.reduce(
     (acc, r) => ({
       count: acc.count + 1,
       qty: acc.qty + r.qty,
@@ -356,6 +415,16 @@ export async function nonRevenueReport(
     }),
     { count: 0, qty: 0, cost: 0, retail: 0 },
   );
+
+  // A row here IS the activity — it exists because a non-revenue entry
+  // posted in this window — so a hidden item's row always has qty > 0 and
+  // never qualifies for dropping (mirrors shouldDropHiddenRow's own rule,
+  // same reasoning as salesReport/purchaseReport above).
+  const rows =
+    includeHiddenInReports
+      ? allRows
+      : allRows.filter((r) => r.isActive !== false || r.qty !== 0 || (r.estimatedCost ?? 0) !== 0);
+
   return { from, to, rows, byReason, totals };
 }
 
@@ -372,6 +441,9 @@ export interface OnHandRow {
   costValue: number;
   retailValue: number;
   belowPar: boolean;
+  /** LocationItem.isActive — carried through so the client can badge a
+      hidden-but-active row (clutter-in-reports-plan.md Phase 6.1). */
+  isActive: boolean;
 }
 export interface OnHandReport {
   lastCountDate: string | null;
@@ -384,6 +456,12 @@ export async function onHandReport(
   allowedProductTypes?: readonly string[] | null,
   // On-hand worth is a VALUATION, so it follows the client's cost basis.
   costBasis: CostBasis = "PRICE",
+  // Clutter-in-reports (docs/clutter-in-reports-decision.md): off by default,
+  // matching Client.includeHiddenInReports' own default. When false, a
+  // hidden item with zero activity in this report's period is dropped from
+  // `rows` — but never before `totals` below is computed from the FULL set,
+  // so the filter can never move the report's own numbers.
+  includeHiddenInReports: boolean = false,
 ): Promise<OnHandReport> {
   const dates = await committedCountDates(locationId);
   const lastDate = dates.at(-1) ?? null;
@@ -401,7 +479,7 @@ export async function onHandReport(
   });
   const priceMap = new Map(priceRows.map((p) => [p.id, p]));
 
-  const rows: OnHandRow[] = report.rows.map((row) => {
+  const allRows: OnHandRow[] = report.rows.map((row) => {
     const price = priceMap.get(row.locationItemId);
     const onHand =
       row.beginFull + row.beginOpenEquiv + row.purchased + row.forfeited + row.transferIn - row.transferOut -
@@ -422,13 +500,23 @@ export async function onHandReport(
       costValue: onHand * cost,
       retailValue: onHand * retail,
       belowPar: price?.parLevel != null && onHand < price.parLevel,
+      isActive: row.isActive,
     };
   });
 
-  const totals = rows.reduce(
+  // Totals FIRST, from the complete row set — the display filter below must
+  // never be able to move them (clutter-in-reports-decision.md).
+  const totals = allRows.reduce(
     (acc, r) => ({ costValue: acc.costValue + r.costValue, retailValue: acc.retailValue + r.retailValue }),
     { costValue: 0, retailValue: 0 },
   );
+
+  const reportRowById = new Map(report.rows.map((r) => [r.locationItemId, r]));
+  const rows = allRows.filter((r) => {
+    const reportRow = reportRowById.get(r.locationItemId)!;
+    return !shouldDropHiddenRow(reportRow, includeHiddenInReports);
+  });
+
   return { lastCountDate: lastDate, rows, totals };
 }
 
@@ -448,6 +536,16 @@ interface StockSnapshotItem {
   retail: number;
   parLevel: number | null;
   usage: number; // consumption over the latest closed period; 0 if no closed period
+  /** LocationItem.isActive — carried through from onHandAudit so the reports
+      built on this snapshot (Non-Moving today; Par Level in a later phase)
+      can apply the clutter display filter without a second query. */
+  isActive: boolean;
+  /** Whether this item has any activity in the SAME window onHandAudit read
+      (last count → now) — the input `shouldDropHiddenRow` needs. Distinct
+      from `usage` above, which is the closed-period figure a different report
+      column displays; this one must match the period the row's own totals
+      were drawn from, per the decision doc. */
+  hasOnHandPeriodActivity: boolean;
 }
 
 export async function stockSnapshot(
@@ -494,6 +592,8 @@ export async function stockSnapshot(
       retail: price?.retail ?? 0,
       parLevel: price?.parLevel ?? null,
       usage: usageByItem.get(row.locationItemId) ?? 0,
+      isActive: row.isActive,
+      hasOnHandPeriodActivity: hasReportActivity(row),
     };
   });
   return { lastCountDate: lastDate, periodBegin, periodEnd: lastDate, items };
@@ -509,6 +609,9 @@ export interface ParLevelRow {
   suggestedOrder: number; // max(0, par − on hand)
   orderValue: number; // suggestedOrder × cost
   belowPar: boolean;
+  /** LocationItem.isActive — carried through so the client can badge a
+      hidden-but-active row (clutter-in-reports-plan.md Phase 6.1). */
+  isActive: boolean;
 }
 export interface ParLevelReport {
   lastCountDate: string | null;
@@ -528,10 +631,17 @@ export async function parLevelReport(
   locationId: string,
   allowedProductTypes?: readonly string[] | null,
   costBasis: CostBasis = "PRICE",
+  // Clutter-in-reports (docs/clutter-in-reports-decision.md): off by default.
+  // Same window rule as nonMovingReport — a hidden item is dropped only when
+  // it ALSO had no activity in the SAME window stockSnapshot computed onHand
+  // over (`hasOnHandPeriodActivity`), so this can never move the totals below,
+  // which are computed from the complete par-eligible set first.
+  includeHiddenInReports: boolean = false,
 ): Promise<ParLevelReport> {
   const snap = await stockSnapshot(locationId, allowedProductTypes, costBasis);
-  const rows: ParLevelRow[] = snap.items
-    .filter((it) => it.parLevel != null)
+  const eligible = snap.items.filter((it) => it.parLevel != null);
+
+  const allRows: ParLevelRow[] = eligible
     .map((it) => {
       const par = it.parLevel!;
       const suggestedOrder = Math.max(0, round2(par - it.onHand));
@@ -545,15 +655,28 @@ export async function parLevelReport(
         suggestedOrder,
         orderValue: round2(suggestedOrder * it.cost),
         belowPar: it.onHand < par,
+        isActive: it.isActive,
       };
     })
     // Below-par first, then by the biggest gap to fill, then by name.
     .sort((a, b) => Number(b.belowPar) - Number(a.belowPar) || b.suggestedOrder - a.suggestedOrder || a.name.localeCompare(b.name));
 
-  const totals = rows.reduce(
+  // Totals FIRST, from the complete row set — the display filter below must
+  // never be able to move them (clutter-in-reports-decision.md).
+  const totals = allRows.reduce(
     (acc, r) => ({ belowParCount: acc.belowParCount + (r.belowPar ? 1 : 0), orderValue: acc.orderValue + r.orderValue }),
     { belowParCount: 0, orderValue: 0 },
   );
+
+  // Same shape as nonMovingReport's own filter: isActive/hasOnHandPeriodActivity
+  // both live on the snapshot item, keyed by locationItemId.
+  const eligibleById = new Map(eligible.map((it) => [it.locationItemId, it]));
+  const rows = allRows.filter((r) => {
+    const it = eligibleById.get(r.locationItemId)!;
+    if (includeHiddenInReports || it.isActive) return true;
+    return it.hasOnHandPeriodActivity; // keep (badged) only if it actually moved
+  });
+
   return { lastCountDate: snap.lastCountDate, periodBegin: snap.periodBegin, periodEnd: snap.periodEnd, rows, totals: { belowParCount: totals.belowParCount, orderValue: round2(totals.orderValue) } };
 }
 
@@ -565,6 +688,9 @@ export interface NonMovingRow {
   cost: number;
   costValue: number;
   retailValue: number;
+  /** LocationItem.isActive — carried through so the client can badge a
+      hidden-but-active row (clutter-in-reports-plan.md Phase 6.1). */
+  isActive: boolean;
 }
 export interface NonMovingReport {
   lastCountDate: string | null;
@@ -585,26 +711,140 @@ export async function nonMovingReport(
   locationId: string,
   allowedProductTypes?: readonly string[] | null,
   costBasis: CostBasis = "PRICE",
+  // Clutter-in-reports (docs/clutter-in-reports-decision.md): off by default.
+  // Every row here already has zero usage by construction — that's the
+  // report's own subject — but a hidden item can still be excluded only when
+  // it ALSO had no purchases/forfeits/transfers/variance in the same window
+  // onHand itself was computed over (`hasOnHandPeriodActivity`), so this
+  // never drops a row the report's own totals below would still reflect.
+  includeHiddenInReports: boolean = false,
 ): Promise<NonMovingReport> {
   const snap = await stockSnapshot(locationId, allowedProductTypes, costBasis);
-  const rows: NonMovingRow[] = snap.items
-    .filter((it) => !hasVariance(it.usage) && it.onHand > VARIANCE_EPSILON)
-    .map((it) => ({
-      locationItemId: it.locationItemId,
-      name: it.name,
-      category: it.category,
-      onHand: round2(it.onHand),
-      cost: it.cost, // unit price keeps its centavo fractions (client req 2026-07-28)
-      costValue: round2(it.onHand * it.cost),
-      retailValue: round2(it.onHand * it.retail),
-    }))
-    .sort((a, b) => b.costValue - a.costValue || a.name.localeCompare(b.name));
+  const candidates = snap.items.filter((it) => !hasVariance(it.usage) && it.onHand > VARIANCE_EPSILON);
 
-  const totals = rows.reduce(
+  const allRows: NonMovingRow[] = candidates.map((it) => ({
+    locationItemId: it.locationItemId,
+    name: it.name,
+    category: it.category,
+    onHand: round2(it.onHand),
+    cost: it.cost, // unit price keeps its centavo fractions (client req 2026-07-28)
+    costValue: round2(it.onHand * it.cost),
+    retailValue: round2(it.onHand * it.retail),
+    isActive: it.isActive,
+  }));
+
+  // Totals FIRST, from the complete row set — the display filter below must
+  // never be able to move them (clutter-in-reports-decision.md).
+  const totals = allRows.reduce(
     (acc, r) => ({ count: acc.count + 1, costValue: acc.costValue + r.costValue, retailValue: acc.retailValue + r.retailValue }),
     { count: 0, costValue: 0, retailValue: 0 },
   );
+
+  // Every row here has zero `usage` by construction (the report's own filter
+  // above already guarantees it), so whether a hidden row survives comes down
+  // to `hasOnHandPeriodActivity` alone — the same purchases/forfeits/
+  // transfers/variance activity `shouldDropHiddenRow` checks, already folded
+  // into one boolean by stockSnapshot for this exact window.
+  const candidateById = new Map(candidates.map((it) => [it.locationItemId, it]));
+  const rows = allRows
+    .filter((r) => {
+      const it = candidateById.get(r.locationItemId)!;
+      if (includeHiddenInReports || it.isActive) return true;
+      return it.hasOnHandPeriodActivity; // keep (badged) only if it actually moved
+    })
+    .sort((a, b) => b.costValue - a.costValue || a.name.localeCompare(b.name));
+
   return { lastCountDate: snap.lastCountDate, periodBegin: snap.periodBegin, periodEnd: snap.periodEnd, rows, totals: { count: totals.count, costValue: round2(totals.costValue), retailValue: round2(totals.retailValue) } };
+}
+
+// ── Expiring Batches (expiry-date-plan.md, phases doc Phase 6.1) ──
+// The manager-level "what's expiring across the board" view. Extends the
+// per-item FIFO worklist (fifo-batches.ts, Phase 4.1) to the whole location:
+// same "open batch" definition — an ACTIVE line on a COMMITTED purchase,
+// dated lines only — just not filtered down to one LocationItem. Pure read,
+// no new schema, sourced straight from PurchaseLine.expiryDate rows already
+// written at receiving (Phase 3).
+
+export interface ExpiringBatchRow {
+  purchaseLineId: string;
+  locationItemId: string;
+  name: string;
+  category: string;
+  productType: string;
+  qty: number;
+  expiryDate: string;
+  purchaseDate: string;
+  /** Computed live against today, never stored — same precedent as
+      BottleKeep.dueForForfeit (expiry-date-plan.md, "computed, not stored"). */
+  isExpired: boolean;
+}
+export interface ExpiringBatchesReport {
+  asOfDate: string;
+  rows: ExpiringBatchRow[];
+  totals: { expiredCount: number; upcomingCount: number };
+}
+
+/**
+ * Every open, dated batch across a location, expired first (oldest expiry
+ * first within that group), then everything still ahead sorted
+ * soonest-to-expire — the ordering the source plan asks for ("expired
+ * first, then soonest-to-expire").
+ *
+ * `allowedProductTypes` mirrors every other report here (a Kitchen-only
+ * location has no use for a Beverage batch, and vice versa) even though
+ * perishable rows in practice skew Food/Beverage — Supplies and Asset
+ * default `defaultPerishable: false` per the source plan, so they rarely
+ * appear here at all, but the filter costs nothing to keep consistent.
+ */
+export async function expiringBatchesReport(
+  locationId: string,
+  allowedProductTypes?: readonly string[] | null,
+): Promise<ExpiringBatchesReport> {
+  const today = todayBusinessDate();
+  const lines = await prisma.purchaseLine.findMany({
+    where: {
+      status: "ACTIVE",
+      expiryDate: { not: null },
+      purchase: { status: "COMMITTED", locationId },
+      ...(allowedProductTypes
+        ? { locationItem: { itemVariant: { item: { category: { productType: { in: [...allowedProductTypes] } } } } } }
+        : {}),
+    },
+    include: {
+      purchase: { select: { purchaseDate: true } },
+      locationItem: { include: LI_INCLUDE },
+    },
+    orderBy: [{ expiryDate: "asc" }, { createdAt: "asc" }],
+  });
+
+  const rows: ExpiringBatchRow[] = lines.map((l) => ({
+    purchaseLineId: l.id,
+    locationItemId: l.locationItemId,
+    name: itemLabel(l.locationItem),
+    category: l.locationItem.itemVariant.item.category.name,
+    productType: l.locationItem.itemVariant.item.category.productType,
+    qty: round2(l.qty),
+    expiryDate: l.expiryDate!, // filtered not-null above
+    purchaseDate: l.purchase.purchaseDate,
+    isExpired: l.expiryDate! <= today,
+  }));
+
+  // Expired first (still oldest-expiry-first within that group, since the
+  // query is already sorted ascending by expiryDate), then upcoming batches
+  // in the same soonest-first order the query already produced.
+  rows.sort((a, b) => {
+    if (a.isExpired !== b.isExpired) return a.isExpired ? -1 : 1;
+    return a.expiryDate.localeCompare(b.expiryDate);
+  });
+
+  const totals = rows.reduce(
+    (acc, r) => ({
+      expiredCount: acc.expiredCount + (r.isExpired ? 1 : 0),
+      upcomingCount: acc.upcomingCount + (r.isExpired ? 0 : 1),
+    }),
+    { expiredCount: 0, upcomingCount: 0 },
+  );
+  return { asOfDate: today, rows, totals };
 }
 
 // ── Clutter candidates (clutter-item-removal plan, Phase 3) ──
@@ -664,6 +904,25 @@ export async function clutterCandidates(
   const usage12mo = new Map<string, number>();
   for (const r of lookbackAudit.rows) usage12mo.set(r.locationItemId, r.usage);
 
+  // Items with no committed count ON lookbackStart itself have no real begin
+  // quantity for reconcile() to work from — buildFullAudit silently treats
+  // "no begin line" as "began at zero", so a normal item with, say, 6 units
+  // on hand and nothing else touching it comes back as usage = 0 - 6 = -6,
+  // which hasVariance() (Math.abs-based) reads as a REAL 6-unit variance and
+  // excludes the item — the opposite of "idle, no movement". This bites any
+  // item newer than the 12-month window, not just deliberately-seeded dead
+  // stock: a location with under a year of count history would exclude
+  // everything from Clutter Candidates. Anchor on whether a begin line
+  // actually exists; where it doesn't, fall back to stockSnapshot's
+  // already-correct single-period usage (periodBegin -> lastCountDate, one
+  // real closed period) rather than trust a fabricated 12-month figure.
+  const anchoredDates = await prisma.countLine.findMany({
+    where: { status: "ACTIVE", countSession: { locationId, countDate: lookbackStart, status: "COMMITTED" } },
+    select: { locationItemId: true },
+    distinct: ["locationItemId"],
+  });
+  const hasAnchor = new Set(anchoredDates.map((r) => r.locationItemId));
+
   const schedules = await prisma.locationItem.findMany({
     where: { id: { in: snap.items.map((it) => it.locationItemId) } },
     select: { id: true, scheduleStartMonth: true, scheduleEndMonth: true },
@@ -672,8 +931,19 @@ export async function clutterCandidates(
   const currentMonth = new Date(snap.lastCountDate).getMonth() + 1;
 
   const rows: ClutterCandidateRow[] = snap.items
+    // Unlike the read-only reports (Non-Moving, Par Level), a hidden row is
+    // never kept here even badged: this list is the manager's own action
+    // queue, and a row that already got Hidden is a completed action, not a
+    // candidate — leaving it in would make "click Hide" look like it did
+    // nothing, since the very next fetch would hand the same row straight
+    // back (clutterCandidates() has no includeHiddenInReports toggle for
+    // that reason; there is nothing to badge here, only to drop).
+    .filter((it) => it.isActive)
     .filter((it) => it.onHand > VARIANCE_EPSILON)
-    .filter((it) => !hasVariance(usage12mo.get(it.locationItemId) ?? 0))
+    .filter((it) => {
+      const usage = hasAnchor.has(it.locationItemId) ? (usage12mo.get(it.locationItemId) ?? 0) : it.usage;
+      return !hasVariance(usage);
+    })
     .filter((it) => {
       const sched = scheduleMap.get(it.locationItemId);
       return inScheduleWindow(currentMonth, sched?.scheduleStartMonth ?? null, sched?.scheduleEndMonth ?? null);
@@ -684,7 +954,7 @@ export async function clutterCandidates(
       category: it.category,
       onHand: round2(it.onHand),
       costValue: round2(it.onHand * it.cost),
-      monthsChecked: 12,
+      monthsChecked: hasAnchor.has(it.locationItemId) ? 12 : 1,
     }))
     .sort((a, b) => b.costValue - a.costValue || a.name.localeCompare(b.name));
 

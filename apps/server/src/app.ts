@@ -16,7 +16,7 @@ import { rateLimit, securityHeaders } from "./middleware/security";
 import { authRoutes } from "./routes/auth";
 import { mfaRoutes, mfaAdminRoutes } from "./routes/mfa";
 import { pinRoutes, pinAdminRoutes } from "./routes/pin";
-import { adminRoutes, userAdminRoutes } from "./routes/admin";
+import { adminRoutes, userAdminRoutes, varianceAccessRoutes } from "./routes/admin";
 import { deviceRoutes } from "./routes/devices";
 import { masterRoutes } from "./routes/master";
 import { areaRoutes } from "./routes/areas";
@@ -214,6 +214,9 @@ export function createApp() {
   // Same prefix, softer guard: user accounts are managed by the LIS ADMIN and
   // by each establishment's OWNER (client req 2026-07-25).
   app.route("/api/admin", userAdminRoutes);
+  // Same prefix again, its own guard: the variance-visibility toggle is one
+  // MANAGER can flip too, unlike the rest of user administration above.
+  app.route("/api/admin", varianceAccessRoutes);
   // Same prefix again, its own guard: registered desktops are managed by the
   // LIS ADMIN and by each establishment's OWNER (devices.manage).
   app.route("/api/admin", deviceRoutes);

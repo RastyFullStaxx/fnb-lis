@@ -884,7 +884,7 @@ export const userAdminRoutes = new Hono<AppEnv>()
         : { role: { not: "ADMIN" }, clientAccess: { some: { clientId: { in: scope.clientIds } } } },
       select: {
         id: true, username: true, firstName: true, lastName: true, email: true,
-        role: true, status: true, createdAt: true,
+        role: true, status: true, createdAt: true, canViewVariance: true,
         modules: { select: { module: true } },
         clientAccess: {
           // Scope the NESTED rows too. The `where` above correctly limits WHICH
@@ -1129,4 +1129,77 @@ export const userAdminRoutes = new Hono<AppEnv>()
       );
     });
     return c.json({ ok: true });
+  });
+
+const varianceAccessBody = z.object({ canViewVariance: z.boolean() });
+
+/**
+ * Flip a STAFF account's `canViewVariance` flag (hide-variance-from-staff
+ * Phase 1.5/1.6). A DEDICATED route rather than a case inside `PUT /users/:id`
+ * above, because that route — and the whole `userAdminRoutes` group it lives
+ * in — is gated on `users.manage` (ADMIN/OWNER only). The client's ask here is
+ * different and wider: MANAGER, OWNER, and ADMIN can all set THIS ONE flag,
+ * since managers are the ones who actually observe and trust staff day to day,
+ * while every other account control (disable, reset password, role, client
+ * access) stays ADMIN/OWNER only, unchanged. Mounted at the same /api/admin
+ * prefix as userAdminRoutes/mfaAdminRoutes/pinAdminRoutes but with its own
+ * `variance.grant` guard, same shape as those two.
+ */
+export const varianceAccessRoutes = new Hono<AppEnv>()
+  .use("/users/:id/variance-access", requireAuth, requirePermission("variance.grant"))
+  .put("/users/:id/variance-access", zValidator("json", varianceAccessBody), async (c) => {
+    const targetId = c.req.param("id");
+    const { canViewVariance } = c.req.valid("json");
+    const actor = c.get("user")!;
+
+    // Same tenant-scoping shape as assertActorMayTouchUser above (duplicated
+    // rather than imported — admin.ts keeps its own scoping helpers private,
+    // same convention mfaAdminRoutes/pinAdminRoutes already follow in their
+    // own files): an OWNER or MANAGER may only reach staff of their own
+    // establishment, never a cross-tenant account or an LIS ADMIN.
+    const target = await prisma.user.findUnique({
+      where: { id: targetId },
+      select: { id: true, username: true, role: true, canViewVariance: true, clientAccess: { select: { clientId: true } } },
+    });
+    if (!target) throw new AppError(404, "User not found");
+    if (actor.role !== "ADMIN") {
+      if (target.role === "ADMIN") throw new AppError(403, "You cannot manage a system administrator");
+      const mine = await prisma.userClientAccess.findMany({
+        where: { userId: actor.id },
+        select: { clientId: true },
+      });
+      const shared = target.clientAccess.some((a) => mine.some((m) => m.clientId === a.clientId));
+      if (!shared) throw new AppError(404, "User not found");
+    }
+
+    // The flag has meaning for STAFF only — canViewVariance() in @fnb/core
+    // never reads it for any other role. Rejecting outright rather than
+    // silently no-op'ing: a manager toggling this on a MANAGER or ACCOUNTANT
+    // account has misread the screen, and a silent no-op would let them believe
+    // it did something.
+    if (target.role !== "STAFF") {
+      throw new AppError(400, "Variance access only applies to STAFF accounts");
+    }
+
+    if (target.canViewVariance === canViewVariance) {
+      return c.json({ ok: true, canViewVariance });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({ where: { id: targetId }, data: { canViewVariance } });
+      await logActivity(
+        {
+          user: actor,
+          action: canViewVariance ? "user.varianceAccess.grant" : "user.varianceAccess.revoke",
+          entity: "User",
+          entityId: targetId,
+          summary: canViewVariance
+            ? `Granted ${target.username} access to Variance`
+            : `Revoked ${target.username}'s access to Variance`,
+          details: { canViewVariance },
+        },
+        tx,
+      );
+    });
+    return c.json({ ok: true, canViewVariance });
   });

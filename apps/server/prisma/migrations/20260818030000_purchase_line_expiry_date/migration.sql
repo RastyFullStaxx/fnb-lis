@@ -1,0 +1,11 @@
+-- Expiry Date, Phase 1.3 (expiry-date-phases.md): the date on the box,
+-- captured at receiving. String 'YYYY-MM-DD', not DateTime, per
+-- architecture.md §2's business-date rule and the BottleKeep.expiresOn
+-- precedent already in this schema.
+--
+-- Nullable at the schema layer on purpose: null for non-perishable lines and
+-- for every historical line written before this column existed. "Required
+-- when resolveIsPerishable() is true" is enforced one layer up, in the zod
+-- schema and the UI (Phase 3) — not as a NOT NULL constraint here, which
+-- would break every past purchase line on migration.
+ALTER TABLE "PurchaseLine" ADD COLUMN "expiryDate" TEXT;

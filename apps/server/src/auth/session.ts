@@ -127,6 +127,10 @@ export async function getSessionUser(token: string): Promise<SessionUser | null>
     // ADMIN is never module-restricted; no rows = unrestricted.
     modules: u.role === "ADMIN" || u.modules.length === 0 ? null : u.modules.map((m) => m.module),
     deviceId: session.deviceId,
+    // Read for every role; canViewVariance() in @fnb/core only consults it
+    // when role === STAFF. Re-read on every request, same as role and
+    // modules above, so a grant or revoke takes effect on the next call.
+    canViewVariance: u.canViewVariance,
   };
 }
 

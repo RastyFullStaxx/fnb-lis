@@ -38,6 +38,14 @@ const varianceThresholdBody = z.object({
   varianceThresholdPct: z.number().min(VARIANCE_THRESHOLD_MIN).max(VARIANCE_THRESHOLD_MAX),
 });
 
+// ── Include hidden (clutter) items in reports — audit-visibility policy
+// (docs/clutter-in-reports-decision.md). Same tier as costBasis /
+// varianceThresholdPct: one establishment-wide switch, not a per-viewer
+// toggle, so two people reading the same report never see different rows.
+const includeHiddenInReportsBody = z.object({
+  includeHiddenInReports: z.boolean(),
+});
+
 /**
  * Client req 2026-07-31 (docs/per-user-per-item-uom-plan.md): the unit an
  * admin default or staff override may hold for one item. Same 8-value list
@@ -83,13 +91,17 @@ const userPreferences = z.object({
    * Client req 2026-07-31: each signed-in user picks their own display unit
    * for volume and mass items, independent of anyone else's choice — same
    * per-user row as fontSize/unitSystem, nothing shared. Values are the
-   * units already seeded in seed.ts (see VOLUME/MASS lists there); default
-   * is the base unit of each kind, matching how unitSystem already
-   * defaults to "metric" until a user saves their own pick. Conversion for
-   * display uses `convert()` from packages/core/src/units.ts — the item's
-   * own configured unit stays the source of truth for storage.
+   * units already seeded in seed.ts (see VOLUME/MASS lists there); mass
+   * defaults to the base unit ("g"), matching how unitSystem already
+   * defaults to "metric" until a user saves their own pick. Volume defaults
+   * to "fl oz" instead of the base unit "ml" (client req 2026-08-20): bottles
+   * are volume-kind items and staff read bottle content in fl oz, not ml, so
+   * "ml" as a starting default was wrong for the item type people look at
+   * most. Conversion for display uses `convert()` from
+   * packages/core/src/units.ts — the item's own configured unit stays the
+   * source of truth for storage.
    */
-  preferredVolumeUnit: z.enum(["ml", "L", "fl oz", "gal"]).default("ml"),
+  preferredVolumeUnit: z.enum(["ml", "L", "fl oz", "gal"]).default("fl oz"),
   preferredMassUnit: z.enum(["g", "kg", "oz", "lb"]).default("g"),
   /**
    * Phase 46.4.2: when this user last opened Activity, ISO string. Not a
@@ -108,7 +120,8 @@ export type UserPreferences = z.infer<typeof userPreferences>;
 const DEFAULT_PREFERENCES: UserPreferences = {
   fontSize: "large",
   unitSystem: "metric",
-  preferredVolumeUnit: "ml",
+  // fl oz, not the base unit ml — see the preferredVolumeUnit schema comment above.
+  preferredVolumeUnit: "fl oz",
   preferredMassUnit: "g",
 };
 
@@ -173,6 +186,24 @@ export const preferencesRoutes = new Hono<AppEnv>()
     if (!existing) throw new AppError(404, "No override set for this item");
     await prisma.userItemUnitPreference.delete({ where: { userId_itemId: { userId: user.id, itemId } } });
     return c.json({ ok: true });
+  })
+
+  /**
+   * Every item this staffer has customized — the piece the per-item GET/PUT/
+   * DELETE above never provided. Without it, the Settings page's "Per-item
+   * display units" list had nothing to repopulate from and reset to empty on
+   * every navigation, even though the saved override itself was untouched
+   * (the resolver reads UserItemUnitPreference directly, not this list).
+   * Own rows only, requireAuth only — same tier as the per-item routes above.
+   */
+  .get("/item-unit-preferences", async (c) => {
+    const user = c.get("user")!;
+    const rows = await prisma.userItemUnitPreference.findMany({
+      where: { userId: user.id },
+      include: { item: { select: { id: true, name: true } } },
+      orderBy: { item: { name: "asc" } },
+    });
+    return c.json(rows.map((r) => ({ itemId: r.itemId, itemName: r.item.name, unit: r.unit })));
   })
 
   // ── Batch resolve — levels 1 & 2 for many items at once (client req
@@ -244,6 +275,22 @@ export const preferencesRoutes = new Hono<AppEnv>()
       select: { varianceThresholdPct: true },
     });
     return c.json({ varianceThresholdPct: client?.varianceThresholdPct ?? MATERIAL_VARIANCE_PCT });
+  })
+
+  // Read-only like cost-basis and variance-threshold: every report screen
+  // needs this to know whether a hidden row was dropped or is showing with
+  // the "hidden · active" badge, so anyone who can read a report must be able
+  // to read the setting. Writing stays gated (settingsRoutes).
+  .get("/include-hidden-in-reports", async (c) => {
+    const user = c.get("user")!;
+    const clientId = c.req.query("clientId") ?? "";
+    if (!clientId) throw new AppError(400, "clientId is required");
+    await assertClientAccess(user.id, user.role, clientId);
+    const client = await prisma.client.findUnique({
+      where: { id: clientId },
+      select: { includeHiddenInReports: true },
+    });
+    return c.json({ includeHiddenInReports: client?.includeHiddenInReports ?? false });
   });
 
 /**
@@ -355,6 +402,63 @@ export const settingsRoutes = new Hono<AppEnv>()
     return c.json({ unit: row.unit });
   })
 
+  // DELETE mirrors /item-unit-preference/:itemId above. Without it, the X
+  // button on the "Per-item display unit defaults" row on Settings had
+  // nothing to call: it only dropped the row from local state, and the row
+  // reappeared on the next render because the list is seeded from this same
+  // saved ClientItemUnitDefault underneath it. Same writeGuard and audit
+  // logging as PUT above, since clearing this is as much an establishment
+  // policy change as setting it.
+  .delete("/item-unit-default/:itemId", writeGuard, async (c) => {
+    const user = c.get("user")!;
+    const itemId = c.req.param("itemId");
+    const clientId = c.req.query("clientId") ?? "";
+    if (!clientId) throw new AppError(400, "clientId is required");
+    await assertClientAccess(user.id, user.role, clientId);
+    const item = await prisma.item.findUnique({ where: { id: itemId }, select: { id: true, name: true } });
+    if (!item) throw new AppError(404, "Item not found");
+    const existing = await prisma.clientItemUnitDefault.findUnique({
+      where: { clientId_itemId: { clientId, itemId } },
+    });
+    if (!existing) throw new AppError(404, "No default set for this item");
+    await prisma.$transaction(async (tx) => {
+      await tx.clientItemUnitDefault.delete({ where: { clientId_itemId: { clientId, itemId } } });
+      await logActivity(
+        {
+          user,
+          clientId,
+          action: "settings.itemUnitDefault",
+          entity: "ClientItemUnitDefault",
+          entityId: existing.id,
+          summary: `Cleared default display unit for ${item.name}`,
+          details: { itemId, from: existing.unit, to: null },
+        },
+        tx,
+      );
+    });
+    return c.json({ ok: true });
+  })
+
+  /**
+   * Every item this client has a manager-set default for — same reason as
+   * /item-unit-preferences above: the admin default list on Settings reset
+   * to empty on every navigation with no way to repopulate it, even though
+   * each saved default kept working everywhere resolveDisplayUnit() reads
+   * it. Gated master.write, same as reading/writing one row above.
+   */
+  .get("/item-unit-defaults", writeGuard, async (c) => {
+    const user = c.get("user")!;
+    const clientId = c.req.query("clientId") ?? "";
+    if (!clientId) throw new AppError(400, "clientId is required");
+    await assertClientAccess(user.id, user.role, clientId);
+    const rows = await prisma.clientItemUnitDefault.findMany({
+      where: { clientId },
+      include: { item: { select: { id: true, name: true } } },
+      orderBy: { item: { name: "asc" } },
+    });
+    return c.json(rows.map((r) => ({ itemId: r.itemId, itemName: r.item.name, unit: r.unit })));
+  })
+
   // ── Inventory cost basis (accounting policy — client req 2026-07-20) ──
   // Stored on the Client, not passed per request: an accounting policy must
   // not vary between two people exporting the same report. The matching GET
@@ -415,5 +519,45 @@ export const settingsRoutes = new Hono<AppEnv>()
       );
     });
     return c.json({ varianceThresholdPct });
-  });
+  })
+
+  // ── Include hidden items in reports (audit-visibility policy —
+  // docs/clutter-in-reports-decision.md) ──
+  // Per-establishment, same reasoning as cost basis and the variance
+  // threshold: a report's row set must not vary by who is looking at it.
+  // Presentation only — report-lists.ts / report-suite.ts already compute
+  // totals before this setting is applied (Phase 3), so flipping it never
+  // moves a reconciliation figure.
+  .put(
+    "/include-hidden-in-reports",
+    writeGuard,
+    zValidator("json", includeHiddenInReportsBody),
+    async (c) => {
+      const user = c.get("user")!;
+      const clientId = c.req.query("clientId") ?? "";
+      if (!clientId) throw new AppError(400, "clientId is required");
+      await assertClientAccess(user.id, user.role, clientId);
+      const { includeHiddenInReports } = c.req.valid("json");
+      const before = await prisma.client.findUnique({
+        where: { id: clientId },
+        select: { includeHiddenInReports: true },
+      });
+      await prisma.$transaction(async (tx) => {
+        await tx.client.update({ where: { id: clientId }, data: { includeHiddenInReports } });
+        await logActivity(
+          {
+            user,
+            clientId,
+            action: "settings.includeHiddenInReports",
+            entity: "Client",
+            entityId: clientId,
+            summary: `Include hidden items in reports: ${includeHiddenInReports ? "on" : "off"}`,
+            details: { from: before?.includeHiddenInReports ?? false, to: includeHiddenInReports },
+          },
+          tx,
+        );
+      });
+      return c.json({ includeHiddenInReports });
+    },
+  );
 

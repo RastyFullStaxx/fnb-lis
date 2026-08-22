@@ -16,7 +16,7 @@ import {
   TrendingDown,
   type LucideIcon,
 } from "lucide-react";
-import { can, type Permission, type Role } from "@fnb/core";
+import { can, canViewVariance, type Permission, type Role } from "@fnb/core";
 import { useMe } from "@/api/auth";
 import { useDashboard, useTrends, type DashboardData, type TrendPeriod } from "@/api/dashboard";
 // One source for the Dashboard panel and the topbar bell — see lib/attention.ts.
@@ -62,6 +62,12 @@ export function DashboardPage() {
   const role = (me.data?.user.role ?? "AUDIT_VIEWER_LIMITED") as Role;
   const firstName = me.data?.user.firstName ?? "";
   const to = (path: string) => `/l/${locationId}/${path}`;
+  // Hide variance from staff (hide-variance-from-staff-plan.md, Phase 4.5):
+  // a STAFF account without `canViewVariance` loses Variance Leaders, the two
+  // variance headline tiles, and the Variance by Period chart — no
+  // placeholder, the layout reflows. `false` while `me` is still loading, the
+  // same fallback every other role check on this page already makes.
+  const varianceBlocked = me.data ? me.data.user.role === "STAFF" && !canViewVariance(me.data.user) : false;
   // See queryFailed() in table-surface: a pause while the window is in the
   // background is normal and self-healing; only a focused pause is a fault.
   const dashPaused = dash.fetchStatus === "paused" && document.hasFocus();
@@ -100,7 +106,7 @@ export function DashboardPage() {
       ) : dash.isPending ? (
         <DashboardSkeleton />
       ) : dash.data ? (
-        <DashboardContent data={dash.data} role={role} to={to} />
+        <DashboardContent data={dash.data} role={role} to={to} varianceBlocked={varianceBlocked} />
       ) : null}
     </div>
   );
@@ -110,10 +116,12 @@ function DashboardContent({
   data,
   role,
   to,
+  varianceBlocked,
 }: {
   data: DashboardData;
   role: Role;
   to: (path: string) => string;
+  varianceBlocked: boolean;
 }) {
   const stage = getStage(data);
   const unresolved = unresolvedTotal(data);
@@ -121,6 +129,18 @@ function DashboardContent({
   const secondary = SECONDARY_ACTIONS.filter(
     (action) => can(role, action.permission) && action.kind !== primary.kind,
   );
+  // varianceLeaders comes back [] (not omitted) for a blocked STAFF account
+  // (services/dashboard.ts Phase 2.5) — the leaders card is dropped outright
+  // rather than shown empty, same "no placeholder" rule as the rest of this
+  // phase, so it never has to be told apart from a period that genuinely
+  // reconciled clean. Recent Activity keeps its column either way; only the
+  // sibling card changes.
+  const sidebarCard =
+    stage === "SETUP" ? (
+      <SetupChecklist data={data} role={role} to={to} />
+    ) : varianceBlocked ? null : (
+      <VarianceLeaders data={data} to={to} />
+    );
 
   return (
     <div className="space-y-6">
@@ -133,14 +153,10 @@ function DashboardContent({
         </CardContent>
       </Card>
 
-      {data.period.canAudit ? <TrendsBand /> : null}
+      {data.period.canAudit ? <TrendsBand varianceBlocked={varianceBlocked} /> : null}
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.75fr)]">
-        {stage === "SETUP" ? (
-          <SetupChecklist data={data} role={role} to={to} />
-        ) : (
-          <VarianceLeaders data={data} to={to} />
-        )}
+      <div className={sidebarCard ? "grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.75fr)]" : undefined}>
+        {sidebarCard}
         <RecentActivity data={data} role={role} to={to} />
       </div>
     </div>
@@ -267,9 +283,21 @@ function getPrimaryAction(data: DashboardData, role: Role): DashboardAction {
  * variance per closed audit window, with headline tiles for the latest one.
  * Complements Variance leaders (item-level, latest period) with the
  * period-level story: "are we getting better?"
+ *
+ * `/dashboard/trends` 404s outright for a blocked STAFF account
+ * (routes/dashboard.ts) rather than trimming fields — every figure
+ * `TrendPeriod` carries, including Sales by Period's own revenue series,
+ * comes out of the same variance-bearing reconciliation pass (architecture.md
+ * deviation #18: trends re-run `buildFullAudit`, there is no separate,
+ * revenue-only source to fall back to). So `varianceBlocked` disables the
+ * query before it ever fires (hide-variance-from-staff Phase 4.5) — the whole
+ * band drops for a blocked STAFF account, Sales by Period included, the same
+ * "no placeholder, layout reflows" treatment as every other removed piece.
  */
-function TrendsBand() {
-  const trends = useTrends(8);
+function TrendsBand({ varianceBlocked }: { varianceBlocked: boolean }) {
+  const trends = useTrends(8, !varianceBlocked);
+
+  if (varianceBlocked) return null;
 
   if (trends.isPending) {
     return <Skeleton className="h-72" aria-label="Loading audit trends" />;
@@ -283,15 +311,6 @@ function TrendsBand() {
   const prior = periods[periods.length - 2]!;
 
   const revenueDelta = tileDelta(latest.revenue, prior.revenue, true);
-  // For variance, "better" means closer to zero — direction follows the raw
-  // move, goodness follows the magnitude.
-  const varianceDelta = tileDelta(latest.varianceCost, prior.varianceCost, null);
-  if (varianceDelta) varianceDelta.good = Math.abs(latest.varianceCost) < Math.abs(prior.varianceCost);
-
-  const varianceVsSales =
-    latest.revenue > 0 ? (latest.varianceRetail / latest.revenue) * 100 : null;
-  const priorVarianceVsSales =
-    prior.revenue > 0 ? (prior.varianceRetail / prior.revenue) * 100 : null;
 
   const columns = (value: (p: TrendPeriod) => number) =>
     periods.map((p) => ({
@@ -313,53 +332,20 @@ function TrendsBand() {
           </p>
         </div>
 
-        <div className="mt-5 grid gap-6 border-b pb-5 sm:grid-cols-3">
+        <div className="mt-5 grid gap-6 border-b pb-5 sm:max-w-xs">
           <StatTile
             label="Latest period sales"
             value={pesoFull(latest.revenue)}
             delta={revenueDelta ?? undefined}
             spark={periods.map((p) => p.revenue)}
           />
-          <StatTile
-            label="Latest period variance (cost)"
-            value={pesoFull(latest.varianceCost)}
-            valueClassName={latest.varianceCost < 0 ? "text-destructive" : undefined}
-            delta={varianceDelta ?? undefined}
-            spark={periods.map((p) => p.varianceCost)}
-          />
-          <StatTile
-            label="Variance vs sales (retail)"
-            value={varianceVsSales === null ? "—" : `${varianceVsSales.toFixed(1)}%`}
-            valueClassName={varianceVsSales !== null && varianceVsSales < 0 ? "text-destructive" : undefined}
-            delta={
-              // No delta for a move that rounds to 0.0 pts — an unchanged
-              // (often perfectly clean) ratio must never wear red.
-              varianceVsSales !== null &&
-              priorVarianceVsSales !== null &&
-              Math.abs(varianceVsSales - priorVarianceVsSales) >= 0.05
-                ? {
-                    text: `${Math.abs(varianceVsSales - priorVarianceVsSales).toFixed(1)} pts`,
-                    direction: varianceVsSales > priorVarianceVsSales ? "up" : "down",
-                    good: Math.abs(varianceVsSales) < Math.abs(priorVarianceVsSales),
-                    vs: "vs prior period",
-                  }
-                : undefined
-            }
-            detail={varianceVsSales === null ? "No sales in the latest period" : undefined}
-          />
         </div>
 
-        <div className="mt-5 grid gap-8 lg:grid-cols-2">
+        <div className="mt-5 grid gap-8">
           <section aria-label="Sales by audit period">
             <h3 className="text-sm font-semibold">Sales by Period</h3>
             <div className="mt-3">
               <PeriodColumns data={columns((p) => p.revenue)} name="Sales" height={200} />
-            </div>
-          </section>
-          <section aria-label="Variance by audit period">
-            <h3 className="text-sm font-semibold">Variance by Period (Cost)</h3>
-            <div className="mt-3">
-              <PeriodColumns data={columns((p) => p.varianceCost)} name="Variance" diverging height={200} />
             </div>
           </section>
         </div>

@@ -2,16 +2,17 @@ import { useState } from "react";
 import { Package, Plus } from "lucide-react";
 import { useItems } from "@/api/master";
 import { variantLabel } from "@/api/types";
+import { useSort } from "@/hooks/use-sort";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 import { TableEmpty, TableFailure, TableLoading, queryFailed } from "@/components/table-surface";
 import { ItemFormSheet, ItemEditSheet } from "./item-form";
 
@@ -34,6 +35,15 @@ export function ItemsTab({
   // a save (never a stale snapshot captured at click time).
   const editing = items.data?.find((i) => i.id === editingId) ?? null;
   const filtered = Boolean(search) || productType !== ALL;
+
+  const { sortedRows, sortKey, sortDirection, toggleSort } = useSort(items.data ?? [], {
+    accessors: {
+      category: (i) => i.category.name,
+      type: (i) => i.category.productType,
+      sizes: (i) => i.variants.length,
+      weighing: (i) => (i.variants.some((v) => v.contentTracked) ? 1 : 0),
+    },
+  });
 
   return (
     <>
@@ -62,16 +72,32 @@ export function ItemsTab({
         <Table>
           <TableHeader>
             <TableRow className="bg-muted hover:bg-muted">
-              <TableHead>Item</TableHead>
-              <TableHead>Category</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Sizes</TableHead>
-              <TableHead className="text-right">Weighing</TableHead>
-              <TableHead className="w-20" />
+              <SortableTableHead sortKey="name" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                Item
+              </SortableTableHead>
+              <SortableTableHead sortKey="category" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                Category
+              </SortableTableHead>
+              <SortableTableHead sortKey="type" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                Type
+              </SortableTableHead>
+              <SortableTableHead sortKey="sizes" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                Sizes
+              </SortableTableHead>
+              <SortableTableHead
+                sortKey="weighing"
+                activeKey={sortKey}
+                direction={sortDirection}
+                onSort={toggleSort}
+                className="text-right"
+              >
+                Weighing
+              </SortableTableHead>
+              <SortableTableHead sortable={false} className="w-20" />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {items.data!.map((item) => {
+            {sortedRows.map((item) => {
               const weighable = item.variants.some((v) => v.contentTracked);
               return (
                 <TableRow key={item.id}>

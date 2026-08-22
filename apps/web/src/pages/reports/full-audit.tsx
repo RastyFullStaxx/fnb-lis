@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { BarChart3, ChevronDown, ChevronRight, FileDown, Info } from "lucide-react";
-import { can, hasVariance, MATERIAL_VARIANCE_PCT, round2, varianceRuleText, varianceSeverity, type Role } from "@fnb/core";
+import { can, hasReportActivity, hasVariance, MATERIAL_VARIANCE_PCT, round2, varianceRuleText, varianceSeverity, type Role } from "@fnb/core";
 import { toast } from "sonner";
 import { useMe } from "@/api/auth";
 import { useCountDates, useFullAudit } from "@/api/ops";
@@ -11,6 +11,7 @@ import { useCompanyInfo, useVarianceThreshold } from "@/api/settings";
 import { exportUrl, useFullAuditDrill, type DrillRecord } from "@/api/reports";
 import { ApiError, downloadFile } from "@/api/http";
 import { formatMoney, formatNumber, formatDate } from "@/lib/utils";
+import { useGroupSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { TableEmpty, TableFailure, TableLoading, ToolbarField, ToolbarSearch, queryFailed } from "@/components/table-surface";
@@ -55,6 +56,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
@@ -95,6 +97,31 @@ function HeadHint({ label }: { label: string }) {
     a dark table. */
 const SHORT_ROW_STICKY_BG = "bg-[oklch(0.977_0.011_25)]";
 const OVER_ROW_STICKY_BG = "bg-[oklch(0.972_0.024_75)]";
+
+/** Sort accessors for the banded table's leaf columns (see useGroupSort and
+    legacy-audit.tsx's identical pattern — one shared header re-sorts every
+    category's rows independently). `begin`/`end`/`sold`/`transfers` match
+    what the cell actually displays (e.g. "16 + 0.11" is beginFull +
+    beginOpenEquiv, "Transfers (In − Out)" is transferIn − transferOut), not
+    just the first of the two underlying fields.
+    Uses `Group` (declared below — type positions aren't order-dependent). */
+const SORT_ACCESSORS: Record<string, (r: Group["rows"][number]) => unknown> = {
+  itemName: (r) => r.itemName,
+  begin: (r) => r.beginFull + r.beginOpenEquiv,
+  purchased: (r) => r.purchased,
+  forfeited: (r) => r.forfeited,
+  transfers: (r) => r.transferIn - r.transferOut,
+  end: (r) => r.endFull + r.endOpenEquiv,
+  usage: (r) => r.usage,
+  sold: (r) => r.soldDirect + r.soldPortion,
+  nonRevenue: (r) => r.nonRevenue,
+  production: (r) => r.production,
+  revenue: (r) => r.revenue,
+  variance: (r) => r.variance,
+  variancePct: (r) => r.variancePct ?? -Infinity,
+  varianceCost: (r) => r.varianceCost,
+  varianceRetail: (r) => r.varianceRetail,
+};
 
 export function FullAuditPage() {
   const me = useMe();
@@ -166,6 +193,14 @@ export function FullAuditPage() {
 
   const filteredOut =
     report.data ? report.data.rows.length - visibleGroups.reduce((n, g) => n + g.rows.length, 0) : 0;
+
+  // One sort control for the whole banded table (one shared sticky header,
+  // not one per category) — see legacy-audit.tsx's identical pattern and
+  // useGroupSort's own doc comment. Built on visibleGroups so search /
+  // Variance Only filtering and sorting compose correctly.
+  const { sortedGroups, sortKey, sortDirection, toggleSort } = useGroupSort(visibleGroups, {
+    accessors: SORT_ACCESSORS,
+  });
 
   // Paused before pending: a paused query is still `pending`, so the skeleton
   // below would otherwise run forever with no message and no way out.
@@ -389,10 +424,10 @@ export function FullAuditPage() {
               <TableHeader>
                 {/* Column groups halve the scan: movement → usage → sold → verdict. */}
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="sticky left-0 top-0 z-30 bg-muted" aria-label="Item column group" />
+                  <TableHead className="sticky left-0 top-0 z-30 border-r bg-muted" aria-label="Item column group" />
                   <TableHead
                     colSpan={compact ? 2 : 5}
-                    className="sticky top-0 z-20 border-l bg-muted text-center text-xs font-medium text-muted-foreground"
+                    className="sticky top-0 z-20 bg-muted text-center text-xs font-medium text-muted-foreground"
                   >
                     Stock Movement
                   </TableHead>
@@ -411,31 +446,159 @@ export function FullAuditPage() {
                   </TableHead>
                 </TableRow>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="sticky left-0 top-10 z-30 w-[15rem] min-w-[9rem] bg-muted">Item</TableHead>
-                  <TableHead className="sticky top-10 z-20 border-l bg-muted text-right">
+                  <SortableTableHead
+                    sortKey="itemName"
+                    activeKey={sortKey}
+                    direction={sortDirection}
+                    onSort={toggleSort}
+                    className="sticky left-0 top-10 z-30 w-[15rem] min-w-[9rem] border-r bg-muted"
+                  >
+                    Item
+                  </SortableTableHead>
+                  <SortableTableHead
+                    sortKey="begin"
+                    activeKey={sortKey}
+                    direction={sortDirection}
+                    onSort={toggleSort}
+                    className="sticky top-10 z-20 bg-muted text-right"
+                  >
                     {compact ? <HeadHint label="Begin" /> : "Begin (Full + Open)"}
-                  </TableHead>
-                  {!compact && <TableHead className="sticky top-10 z-20 bg-muted text-right">Purchased</TableHead>}
-                  {!compact && <TableHead className="sticky top-10 z-20 bg-muted text-right">Returns</TableHead>}
-                  {!compact && <TableHead className="sticky top-10 z-20 bg-muted text-right">Transfers (In − Out)</TableHead>}
-                  <TableHead className="sticky top-10 z-20 bg-muted text-right">
+                  </SortableTableHead>
+                  {!compact && (
+                    <SortableTableHead
+                      sortKey="purchased"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="sticky top-10 z-20 bg-muted text-right"
+                    >
+                      Purchased
+                    </SortableTableHead>
+                  )}
+                  {!compact && (
+                    <SortableTableHead
+                      sortKey="forfeited"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="sticky top-10 z-20 bg-muted text-right"
+                    >
+                      Returns
+                    </SortableTableHead>
+                  )}
+                  {!compact && (
+                    <SortableTableHead
+                      sortKey="transfers"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="sticky top-10 z-20 bg-muted text-right"
+                    >
+                      Transfers (In − Out)
+                    </SortableTableHead>
+                  )}
+                  <SortableTableHead
+                    sortKey="end"
+                    activeKey={sortKey}
+                    direction={sortDirection}
+                    onSort={toggleSort}
+                    className="sticky top-10 z-20 bg-muted text-right"
+                  >
                     {compact ? <HeadHint label="End" /> : "End (Full + Open)"}
-                  </TableHead>
-                  <TableHead className="sticky top-10 z-20 border-l bg-muted text-right font-semibold">Usage</TableHead>
-                  <TableHead className="sticky top-10 z-20 border-l bg-muted text-right">
+                  </SortableTableHead>
+                  <SortableTableHead
+                    sortKey="usage"
+                    activeKey={sortKey}
+                    direction={sortDirection}
+                    onSort={toggleSort}
+                    className="sticky top-10 z-20 border-l bg-muted text-right font-semibold"
+                  >
+                    Usage
+                  </SortableTableHead>
+                  <SortableTableHead
+                    sortKey="sold"
+                    activeKey={sortKey}
+                    direction={sortDirection}
+                    onSort={toggleSort}
+                    className="sticky top-10 z-20 border-l bg-muted text-right"
+                  >
                     {compact ? "Sold" : "Sold (Direct + Recipe)"}
-                  </TableHead>
-                  {!compact && <TableHead className="sticky top-10 z-20 bg-muted text-right">Non-Revenue</TableHead>}
-                  {!compact && <TableHead className="sticky top-10 z-20 bg-muted text-right">Production</TableHead>}
-                  {!compact && <TableHead className="sticky top-10 z-20 bg-muted text-right">Revenue</TableHead>}
-                  <TableHead className="sticky top-10 z-20 border-l bg-muted text-right font-semibold">Variance vs Sold</TableHead>
-                  {!compact && <TableHead className="sticky top-10 z-20 bg-muted text-right">%</TableHead>}
-                  <TableHead className="sticky top-10 z-20 bg-muted text-right">At Cost</TableHead>
-                  <TableHead className="sticky top-10 z-20 bg-muted text-right">At Retail</TableHead>
+                  </SortableTableHead>
+                  {!compact && (
+                    <SortableTableHead
+                      sortKey="nonRevenue"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="sticky top-10 z-20 bg-muted text-right"
+                    >
+                      Non-Revenue
+                    </SortableTableHead>
+                  )}
+                  {!compact && (
+                    <SortableTableHead
+                      sortKey="production"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="sticky top-10 z-20 bg-muted text-right"
+                    >
+                      Production
+                    </SortableTableHead>
+                  )}
+                  {!compact && (
+                    <SortableTableHead
+                      sortKey="revenue"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="sticky top-10 z-20 bg-muted text-right"
+                    >
+                      Revenue
+                    </SortableTableHead>
+                  )}
+                  <SortableTableHead
+                    sortKey="variance"
+                    activeKey={sortKey}
+                    direction={sortDirection}
+                    onSort={toggleSort}
+                    className="sticky top-10 z-20 border-l bg-muted text-right font-semibold"
+                  >
+                    Variance vs Sold
+                  </SortableTableHead>
+                  {!compact && (
+                    <SortableTableHead
+                      sortKey="variancePct"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="sticky top-10 z-20 bg-muted text-right"
+                    >
+                      %
+                    </SortableTableHead>
+                  )}
+                  <SortableTableHead
+                    sortKey="varianceCost"
+                    activeKey={sortKey}
+                    direction={sortDirection}
+                    onSort={toggleSort}
+                    className="sticky top-10 z-20 bg-muted text-right"
+                  >
+                    At Cost
+                  </SortableTableHead>
+                  <SortableTableHead
+                    sortKey="varianceRetail"
+                    activeKey={sortKey}
+                    direction={sortDirection}
+                    onSort={toggleSort}
+                    className="sticky top-10 z-20 bg-muted text-right"
+                  >
+                    At Retail
+                  </SortableTableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {visibleGroups.map((group) => (
+                {sortedGroups.map((group) => (
                   <CategoryRows key={group.categoryName} group={group} onDrill={setDrill} compact={compact} thresholdPct={thresholdPct} />
                 ))}
                 <TableRow className="bg-muted/60 font-semibold hover:bg-muted/60 [&_td]:border-t-2">
@@ -446,7 +609,7 @@ export function FullAuditPage() {
                       visible subset's total. Siblings hide their footer when
                       filtered; the sacred report keeps its variance on screen
                       and disambiguates instead. */}
-                  <TableCell className="sticky left-0 z-10 bg-muted">
+                  <TableCell className="sticky left-0 z-10 w-[15rem] min-w-[9rem] border-r whitespace-normal break-words bg-muted">
                     {filteredOut > 0 ? "Grand Total · all rows" : "Grand Total"}
                   </TableCell>
                   {compact ? (
@@ -642,7 +805,7 @@ function CategoryRows({
   return (
     <>
       <TableRow className="bg-secondary/60 hover:bg-secondary/60">
-        <TableCell className="sticky left-0 z-10 bg-secondary py-1.5 text-xs font-semibold uppercase tracking-wide text-secondary-foreground">
+        <TableCell className="sticky left-0 z-10 w-[15rem] min-w-[9rem] border-r whitespace-normal break-words bg-secondary py-1.5 text-xs font-semibold uppercase tracking-wide text-secondary-foreground">
           {group.categoryName}
         </TableCell>
         <TableCell colSpan={compact ? 7 : 14} className="py-1.5" />
@@ -679,13 +842,23 @@ function CategoryRows({
           }}
           aria-label={`Open source records for ${row.itemName}`}
         >
-          {/* Wraps instead of forcing the table wider. An auditor has to read
-              the whole name to trust the row, so this caps and breaks rather
-              than truncating — "Jack Daniel's Old No. 7 700 ml" over two lines
-              beats an ellipsis or a sideways scrollbar. */}
+          {/* Fixed width, matching the header exactly (w-[15rem] min-w-[9rem]).
+              A max-width alone let the browser compute a narrower "natural"
+              column width from the body's shorter item names while the
+              sticky cell still painted at 15rem — the extra width overlapped
+              the next column and hid its divider under the sticky cell on
+              every row. Matching the header's fixed width removes the
+              mismatch; whitespace-normal + break-words still wraps long
+              names instead of forcing the table wider.
+              The divider itself lives here (border-r) rather than on the
+              Begin cell (border-l): that cell scrolls away with the rest of
+              the body, taking its border with it, while this cell is
+              pinned — so a border-l next door only ever lined up with the
+              sticky column at scroll position 0. border-r on the sticky
+              cell travels with it instead. */}
           <TableCell
             className={cn(
-              "sticky left-0 z-10 max-w-[15rem] whitespace-normal break-words",
+              "sticky left-0 z-10 w-[15rem] min-w-[9rem] border-r whitespace-normal break-words",
               stickyBg,
             )}
           >
@@ -695,8 +868,16 @@ function CategoryRows({
                 no price
               </Badge>
             )}
+            {/* Hidden item (docs/clutter-in-reports-decision.md) that still has
+                real activity in this period, so the display filter server-side
+                could not drop it — the badge says why it is still here. */}
+            {!row.isActive && hasReportActivity(row) && (
+              <Badge variant="warning" className="ml-2 print:hidden">
+                hidden · active
+              </Badge>
+            )}
           </TableCell>
-          <TableCell className="tnum border-l text-right">
+          <TableCell className="tnum text-right">
             {formatNumber(row.beginFull)}
             {row.beginOpenEquiv > 0 && <span className="text-muted-foreground"> + {formatNumber(row.beginOpenEquiv)}</span>}
           </TableCell>

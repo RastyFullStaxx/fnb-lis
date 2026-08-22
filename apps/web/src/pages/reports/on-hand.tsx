@@ -2,8 +2,11 @@ import { useMemo, useState } from "react";
 import { Boxes } from "lucide-react";
 import { round2 } from "@fnb/core";
 import { useLocationId } from "@/api/location";
+import { useMe } from "@/api/auth";
 import { exportUrl, useOnHandReport } from "@/api/reports";
+import { useIncludeHiddenInReports } from "@/api/settings";
 import { formatMoney, formatNumber, formatDate, formatUnitPrice } from "@/lib/utils";
+import { useSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
 import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarSearch, queryFailed } from "@/components/table-surface";
 import { ExportButtons } from "@/components/report-toolbar";
@@ -16,10 +19,10 @@ import {
   TableBody,
   TableCell,
   TableFooter,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 import { cn } from "@/lib/utils";
 
 
@@ -27,8 +30,18 @@ const CATEGORY_BAR_CAP = 6;
 
 export function OnHandReportPage() {
   const locationId = useLocationId();
+  const me = useMe();
   const report = useOnHandReport();
   const [query, setQuery] = useState("");
+
+  // Whether a hidden-but-active row's badge is meaningful here: with the
+  // setting on, a row can be !isActive because it's simply shown by policy,
+  // not because it moved — OnHandRow carries no activity fields to tell the
+  // two apart (docs/clutter-in-reports-decision.md), so the badge only shows
+  // when the setting is off, the one case where it can only mean "moved".
+  const location = me.data?.clients.flatMap((c) => c.locations).find((l) => l.id === locationId);
+  const includeHidden = useIncludeHiddenInReports(location?.clientId ?? "");
+  const includeHiddenInReports = includeHidden.data?.includeHiddenInReports ?? false;
 
   const rows = useMemo(() => {
     const all = report.data?.rows ?? [];
@@ -54,6 +67,18 @@ export function OnHandReportPage() {
     }
     return head;
   }, [report.data]);
+
+  const { sortedRows, sortKey, sortDirection, toggleSort } = useSort(rows, {
+    accessors: {
+      item: (r) => r.name,
+      category: (r) => r.category,
+      onHand: (r) => r.onHand,
+      cost: (r) => r.cost,
+      retail: (r) => r.retail,
+      costValue: (r) => r.costValue,
+      retailValue: (r) => r.retailValue,
+    },
+  });
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -111,17 +136,61 @@ export function OnHandReportPage() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted hover:bg-muted">
-                    <TableHead>Item</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead className="text-right">On Hand</TableHead>
-                    <TableHead className="text-right">Cost</TableHead>
-                    <TableHead className="text-right">Retail</TableHead>
-                    <TableHead className="text-right">Cost Value</TableHead>
-                    <TableHead className="text-right">Retail Value</TableHead>
+                    <SortableTableHead sortKey="item" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                      Item
+                    </SortableTableHead>
+                    <SortableTableHead sortKey="category" activeKey={sortKey} direction={sortDirection} onSort={toggleSort}>
+                      Category
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="onHand"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      On Hand
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="cost"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      Cost
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="retail"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      Retail
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="costValue"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      Cost Value
+                    </SortableTableHead>
+                    <SortableTableHead
+                      sortKey="retailValue"
+                      activeKey={sortKey}
+                      direction={sortDirection}
+                      onSort={toggleSort}
+                      className="text-right"
+                    >
+                      Retail Value
+                    </SortableTableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {rows.map((row) => (
+                  {sortedRows.map((row) => (
                     <TableRow key={row.locationItemId} className={cn(row.belowPar && "bg-warning/5")}>
                       {/* Item names run long and carry an inline badge — cap and wrap
                           them here so the six numeric columns never scroll sideways. */}
@@ -130,6 +199,11 @@ export function OnHandReportPage() {
                         {row.belowPar && (
                           <Badge variant="warning" className="ml-2">
                             Low stock
+                          </Badge>
+                        )}
+                        {!row.isActive && !includeHiddenInReports && (
+                          <Badge variant="warning" className="ml-2">
+                            hidden · active
                           </Badge>
                         )}
                       </TableCell>

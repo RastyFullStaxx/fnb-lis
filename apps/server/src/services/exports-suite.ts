@@ -19,6 +19,7 @@ import {
   fullAuditColumns,
   moneyCell,
   ASSET_BREAKAGE_HEADERS,
+  EXPIRING_BATCHES_HEADERS,
   NON_MOVING_HEADERS,
   NONREV_HEADERS,
   ONHAND_HEADERS,
@@ -35,7 +36,7 @@ import {
   varianceFlagLabel,
   type ReportMeta,
 } from "./exports";
-import type { AssetBreakageReport, NonMovingReport, NonRevenueReport, OnHandReport, ParLevelReport, PurchaseReport, SalesReport, TransferReport } from "./report-lists";
+import type { AssetBreakageReport, ExpiringBatchesReport, NonMovingReport, NonRevenueReport, OnHandReport, ParLevelReport, PurchaseReport, SalesReport, TransferReport } from "./report-lists";
 import type {
   CostSnapshotReport,
   ForfeitsReport,
@@ -56,8 +57,8 @@ import { tablePdf, type PdfRow } from "./pdf";
  * CSV on all of them).
  */
 
-const BLUE = "FF3A56E4";
-const LIGHT = "FFEEF1FD";
+const BLUE = "FF0070D6";
+const LIGHT = "FFE8F3FC";
 
 /** ExcelJS ARGB (e.g. "FFFDECEA") → pdfmake hex ("#FDECEA") for row fills. */
 function pdfFill(argb: string): string {
@@ -680,6 +681,29 @@ export function nonMovingPdfDoc(report: NonMovingReport, meta: ReportMeta): Prom
         cells: [r.name, r.category, round2(r.onHand), round2(r.cost), round2(r.costValue), round2(r.retailValue)] as (string | number)[],
       })),
       { cells: ["Total", "", "", "", round2(report.totals.costValue), round2(report.totals.retailValue)], kind: "total" as const },
+    ],
+    exportedBy: stampLine(meta),
+    reportFooter: meta.footer,
+  });
+}
+
+const FILL_OVER = "FFFEF3C7";
+
+export function expiringBatchesPdfDoc(report: ExpiringBatchesReport, meta: ReportMeta): Promise<Buffer> {
+  return tablePdf({
+    title: "Expiring Batches Report",
+    subtitle: `${meta.clientName} · ${meta.locationName} · as of ${report.asOfDate}`,
+    columns: EXPIRING_BATCHES_HEADERS.map((h, i) => ({ header: String(h), align: i < 2 ? "left" : "right", width: i === 0 ? "*" : "auto" })),
+    rows: [
+      ...report.rows.map((r) => ({
+        cells: [r.name, r.category, round2(r.qty), r.purchaseDate, r.expiryDate, r.isExpired ? "Expired" : "Upcoming"] as (string | number)[],
+        // Same warning tint as the on-screen bg-warning/10 row and the XLSX
+        // fill — a different color from the destructive/red variance tint
+        // (expiry-date-plan.md), reused here rather than invented since
+        // this report carries no variance rows to confuse it with.
+        ...(r.isExpired ? { fill: pdfFill(FILL_OVER) } : {}),
+      })),
+      { cells: ["Total", "", "", "", "", `${report.totals.expiredCount} expired, ${report.totals.upcomingCount} upcoming`], kind: "total" as const },
     ],
     exportedBy: stampLine(meta),
     reportFooter: meta.footer,

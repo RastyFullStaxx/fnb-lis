@@ -38,6 +38,44 @@ const EXCEPTIONS = [
       "globbed. Drop this entry when exceljs republishes with archiver >=6.",
   },
   {
+    package: "deepmerge-ts",
+    advisory: "GHSA-ggr8-5vv4-36mx",
+    expires: "2026-11-01",
+    reason:
+      "Stack exhaustion merging a deeply recursive object graph. Reached " +
+      "only via prisma -> @prisma/config's loadConfigTsOrJs, which uses it " +
+      "to merge our own prisma.config.ts (apps/server/prisma.config.ts) — a " +
+      "small, static, developer-authored object, not attacker input — and " +
+      "only during `prisma migrate`/`generate`/`studio`, never in the " +
+      "running server. Every stable and prerelease @prisma/config as of " +
+      "2026-08-21 still pins deepmerge-ts 7.1.5; 8.0.1 (fixed) exists on " +
+      "npm but Prisma hasn't picked it up yet. Drop this entry once " +
+      "@prisma/config bumps its deepmerge-ts dependency.",
+  },
+  {
+    package: "@prisma/config",
+    advisory: "",
+    expires: "2026-11-01",
+    reason:
+      "Not a distinct vulnerability — this is npm audit's report of the " +
+      "SAME deepmerge-ts finding above, one level up the dependency graph " +
+      "(@prisma/config -> deepmerge-ts). See the deepmerge-ts entry for the " +
+      "actual advisory and reachability analysis. Empty advisory: this " +
+      "finding's own `via` is a plain package-name string, not an advisory " +
+      "object, so there is no GHSA id to match here.",
+  },
+  {
+    package: "prisma",
+    advisory: "",
+    expires: "2026-11-01",
+    reason:
+      "Same as @prisma/config above, one more level up (prisma -> " +
+      "@prisma/config -> deepmerge-ts). See the deepmerge-ts entry for the " +
+      "actual advisory and reachability analysis. Empty advisory for the " +
+      "same reason: this finding's `via` lists dependent package names, " +
+      "not an advisory object.",
+  },
+  {
     package: "fast-uri",
     advisory: "GHSA-v2hh-gcrm-f6hx",
     expires: "2026-11-01",

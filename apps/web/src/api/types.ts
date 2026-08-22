@@ -1,6 +1,6 @@
 // Response shapes for the REST API (server includes noted relations).
 
-import type { PaymentTerms } from "@fnb/core";
+import { convert, type PaymentTerms, type UnitDef } from "@fnb/core";
 
 export interface Unit {
   id: string;
@@ -18,6 +18,10 @@ export interface Category {
   sortOrder: number;
   // Asset-only, nullable (client req 2026-07-24). One industry per category.
   industry: string | null;
+  // Whether items in this category spoil by default (expiry-date-plan.md).
+  // Read through resolveIsPerishable(), never compared directly —
+  // LocationItem.isPerishable below can override it per establishment.
+  defaultPerishable: boolean;
   _count?: { items: number };
 }
 
@@ -71,6 +75,11 @@ export interface LocationItem {
   tareWeightUnit: "g" | "oz" | null;
   densityFactor: number | null;
   isActive: boolean;
+  /** Expected movement window (1-12, calendar month), clutter-item-removal
+      plan. Null on both = no schedule, plain 12-month lookback applies. Set
+      and cleared together (server enforces this) — see schedule-edit.tsx. */
+  scheduleStartMonth: number | null;
+  scheduleEndMonth: number | null;
   // Asset-only (architecture.md deviation #21), filled in post-attach via
   // the Local Database edit surface (Phase 5).
   initialCost: number | null;
@@ -79,6 +88,16 @@ export interface LocationItem {
   status: string | null;
   remarks: string | null;
   assetCode: string | null;
+  /** Per-location override of Category.defaultPerishable. Null = inherit the
+      category default (expiry-date-plan.md). Read through resolveIsPerishable(). */
+  isPerishable: boolean | null;
+  /** Oldest open (ACTIVE, on a COMMITTED purchase) expiry date across every
+      dated batch for this row, or null if none. Only present on the catalog
+      list response (GET /location-items) — the attach/update mutations don't
+      compute it, since a just-attached or just-priced row has no purchase
+      history to aggregate. Compare with isExpiryDatePast(), which treats
+      missing the same as null (expiry-date-plan.md, phases doc Phase 5.1). */
+  earliestOpenExpiry?: string | null;
   itemVariant: ItemVariant & { item: Item };
 }
 
@@ -98,6 +117,29 @@ export interface Supplier {
 /** Display label for a variant, e.g. "700 ml" or "1 pack". */
 export function variantLabel(v: { size: number; unit: { name: string } }): string {
   return `${v.size} ${v.unit.name}`;
+}
+
+/**
+ * variantLabel(), but in the viewer's own resolved display unit rather than
+ * always the item's native stored unit (client req 2026-07-31,
+ * docs/per-user-per-item-uom-plan.md). Shared by every screen that lists
+ * variant sizes and has a resolver on hand (Stock's catalog list, Counts'
+ * Not Counted list, and any screen added later) rather than each keeping its
+ * own copy. COUNT-kind items have no display unit to resolve to
+ * (usePreferredUnit returns null for them), so this silently falls back to
+ * the item's own unit for those rows, same behavior as every other screen
+ * using this resolver.
+ */
+export function displayVariantLabel(
+  v: { size: number; unit: UnitDef },
+  displayUnit: UnitDef | null,
+): string {
+  if (!displayUnit || displayUnit.name === v.unit.name) return variantLabel(v);
+  const converted = convert(v.size, v.unit, displayUnit);
+  // Same 2-decimal-max formatting QuantityInput/report cells use elsewhere,
+  // avoids a raw float like 0.7000000000000001 from a unit factor conversion.
+  const rounded = Math.round(converted * 100) / 100;
+  return `${rounded} ${displayUnit.name}`;
 }
 
 // ── Operational records ──
@@ -171,6 +213,9 @@ export interface PurchaseLine extends AuditFields {
   qty: number;
   unitCost: number;
   lineTotal: number;
+  /** The date on the box, entered at receiving (expiry-date-plan.md). Null for
+      non-perishable lines and for lines written before this column existed. */
+  expiryDate: string | null;
   locationItem: LocationItem;
 }
 
@@ -240,4 +285,32 @@ export interface Forfeit extends AuditFields {
   qty: number;
   note: string | null;
   locationItem: LocationItem;
+}
+
+/** One open perishable delivery batch — the count screen's FIFO worklist
+    (expiry-date-plan.md, phases doc Phase 4). */
+export interface FifoBatch {
+  id: string;
+  qty: number;
+  expiryDate: string;
+  purchaseDate: string;
+}
+
+/** One idle item the system suggests for hiding — clutter-item-removal plan,
+    Phase 3 (commit 103f048). Matches ClutterCandidateRow in
+    apps/server/src/services/report-lists.ts exactly. */
+export interface ClutterCandidateRow {
+  locationItemId: string;
+  name: string;
+  category: string;
+  onHand: number;
+  costValue: number;
+  monthsChecked: number;
+}
+
+export interface ClutterCandidateReport {
+  /** The location's last committed count date, or null if it has never
+      counted — the same "no history yet" case Non-Moving falls back on. */
+  asOfDate: string | null;
+  rows: ClutterCandidateRow[];
 }
