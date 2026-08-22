@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
 import { Boxes } from "lucide-react";
-import { round2 } from "@fnb/core";
+import { convert, formatQty, round2 } from "@fnb/core";
 import { useLocationId } from "@/api/location";
 import { useMe } from "@/api/auth";
 import { exportUrl, useOnHandReport } from "@/api/reports";
 import { useIncludeHiddenInReports } from "@/api/settings";
-import { formatMoney, formatNumber, formatDate, formatUnitPrice } from "@/lib/utils";
+import { useItemDisplayUnit } from "@/lib/preferences";
+import { formatMoney, formatDate, formatUnitPrice } from "@/lib/utils";
 import { useSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
 import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarSearch, queryFailed } from "@/components/table-surface";
@@ -50,6 +51,17 @@ export function OnHandReportPage() {
       ? all.filter((r) => r.name.toLowerCase().includes(q) || r.category.toLowerCase().includes(q))
       : all;
   }, [report.data, query]);
+
+  // Per-item display unit resolver (report-uom-plan.md, "On screen": staff
+  // override → establishment default → viewer's own general preference →
+  // item base unit — same chain Stock and Counts already use). `onHand`
+  // itself is served in the item's own base unit; converting happens only
+  // at render time below, same pattern as counts/session.tsx's LineRow.
+  const allItemIds = useMemo(
+    () => Array.from(new Set((report.data?.rows ?? []).map((r) => r.itemId))),
+    [report.data],
+  );
+  const { resolve: resolveDisplay } = useItemDisplayUnit(allItemIds);
 
   // Where the money sits: cost valuation by category, long tail folded.
   const categoryBars = useMemo(() => {
@@ -209,7 +221,12 @@ export function OnHandReportPage() {
                       </TableCell>
                       <TableCell className="text-muted-foreground">{row.category}</TableCell>
                       <TableCell className={cn("tnum text-right", row.onHand < 0 && "text-destructive")}>
-                        {formatNumber(row.onHand)}
+                        {(() => {
+                          const itemUnit = { id: row.unitName, name: row.unitName, kind: row.unitKind, factorToBase: row.unitFactorToBase };
+                          const displayUnit = resolveDisplay(row.itemId, itemUnit) ?? itemUnit;
+                          const shown = displayUnit.kind === itemUnit.kind ? convert(row.onHand, itemUnit, displayUnit) : row.onHand;
+                          return formatQty(shown, displayUnit.name);
+                        })()}
                       </TableCell>
                       <TableCell className="tnum text-right">{formatUnitPrice(row.cost)}</TableCell>
                       <TableCell className="tnum text-right">{formatUnitPrice(row.retail)}</TableCell>

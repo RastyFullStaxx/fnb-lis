@@ -5081,3 +5081,108 @@ touched `SHELF_LIFE_DAYS`, `addDays`, or any of the new assertions. Still,
 a machine with dependencies installed, before this is trusted the way the
 rest of this file is.
 
+## Phase 45 — Report units, Phase 5 rollout (2026-08-23)
+
+`docs/report-uom-plan.md` / `docs/report-uom-phases.md`. Phase 4 proved the
+pattern once on On Hand; every server export route for the rest of List A
+(Par Level, Non-Moving, Expiring Batches, Transfers, Cost Snapshot, Usage
+Cost, Sales By Item, Top Sellers) was already wired to `resolveExportUnit()`
+via `convertRowsForExport()`/`withExportUnits()` in `routes/reports.ts`, and
+every server report type already carried the `itemId`/`unitName`/`unitKind`/
+`unitFactorToBase` fields a screen resolver needs. This phase closes the two
+screen pages that hadn't been wired to `useItemDisplayUnit()` yet:
+
+- **Sales By Item.** Shot, Bottle, and Total Qty convert together per row —
+  same one resolved unit for all three, since they're three views of the
+  same underlying base-unit amount (`report-uom-plan.md` Scope table). Added
+  a Unit column; `uom` (the fixed catalog size) is untouched. Totals stay in
+  base units, unconverted — same convention Transfers' footer already uses,
+  since a cross-item sum in a per-row-resolved unit wouldn't mean anything.
+- **Top Sellers.** Top Brands and Top Ingredients convert `qty` per row and
+  each gained a Unit column; Top Menus is left alone, since a `TopSellerRow`
+  for a menu/cocktail carries no `itemId` (no base unit to resolve) — the
+  same carve-out `top-sellers.ts`'s own `TopSellerRow` comment and the
+  export route already state. The existing `n6()` display formatter is kept,
+  just fed the converted quantity instead of the raw one.
+
+Both follow the identical per-row pattern already established on
+On-Hand/Usage-Cost/Transfers/Cost-Snapshot/Expiring-Batches/Par-Level/
+Non-Moving: `useItemDisplayUnit(allItemIds)` once per page,
+`resolveDisplay(itemId, itemUnit) ?? itemUnit` per row, `convert()` only
+when the resolved unit's kind matches the item's own (never a cross-kind
+convert), raw underlying numbers left alone in report state for sorting and
+totals. No formula file touched, no export route touched — this phase is
+screen-only, closing the gap Phase 4 through this point had left between
+"every export already converts" and "every screen does too."
+
+List A is now fully wired, screen and export both, across all nine reports.
+
+## Phase 46 — Report units, Phase 6 close-out (2026-08-23)
+
+Verification pass over `docs/report-uom-plan.md` / `docs/report-uom-phases.md`
+Phases 1 through 6, checked against the actual code rather than the plan
+docs' own claims.
+
+- **Phase 1 re-check.** The plan's prose says "22 reports"; its own Scope
+  table and lists actually name 23. Diffed that full named list against
+  every file in `apps/web/src/pages/reports/` — exact match both ways, so
+  this was a typo in the summary sentence, not a missed report. Every
+  List A/List B/needs-a-decision classification was spot-checked against
+  the real row interfaces in `report-lists.ts`/`report-suite.ts` and holds:
+  `SalesReportRow`/`PurchaseReportRow`/`NonRevenueRow`/`CostAnalysisRow`
+  genuinely carry no `unitName`/`unitKind`/`unitFactorToBase`; Variance
+  Summary's `status` genuinely bakes a unit-amount into a pre-built string
+  (`report-variance-summary.ts`'s own comment confirms it's a unit, not a
+  peso, sum); Forfeits' `contentEquiv` genuinely is a bottle-fraction via
+  `openEquivalent()`; every seeded Asset row genuinely uses `uom: "Unit"`
+  → `kind: "COUNT"`.
+- **Phase 2 re-check.** `resolveExportUnit()` in `packages/core/src/units.ts`
+  has exactly the three levels the plan specifies, no personal level in its
+  signature. `ClientItemUnitDefault` predates this plan (created in the
+  `20260801000000_per_item_display_unit` migration) — Phase 2 added no
+  schema. `packages/core/src/units.ts`'s diff across every phase is pure
+  addition; `convert()`/`toBase()`/`resolveDisplayUnit()` never changed.
+- **Phase 3 re-check.** `hasSeenExportUnitNotice` lives inside the existing
+  per-user `Setting` JSON blob, no new table. `useExportUnitNotice()` is
+  wired once into the shared `ExportButtons` component and wraps every
+  format (xlsx/csv/pdf); confirmed all 20 report pages with a real
+  server-side export use `ExportButtons`, and the 3 that don't (Blank
+  Forms, Bottle Keep, Count Sheet) correctly have no server export route
+  to guard in the first place.
+- **Phase 4 re-check.** `OnHandRow` never stores a pre-converted `onHand`;
+  `costValue`/`retailValue`/`totals` never pass through `convert()`
+  anywhere in `routes/reports.ts`.
+- **Phase 5 re-check.** All 9 List A reports carry `useItemDisplayUnit` on
+  screen and a `convertRowsForExport()`/`withExportUnits()` call on export
+  — confirmed by direct grep count per report, not assumption. Symmetric
+  check on List B and the 4 needs-a-decision reports: zero conversion
+  hits on either the client or server side, in both directions (no report
+  under-converted, no report over-converted).
+- **Phase 6 itself:**
+  1. `verify:seed` re-run is still not executable in this environment (no
+     installed dependencies / generated Prisma client — same standing
+     limitation as the Phase 44 entry). Substitute check performed instead:
+     confirmed `packages/core/src/units.ts`'s diff is pure addition and
+     that `reconciliation.ts`, `weighing.ts`, `pricing.ts`, `rounding.ts`,
+     `seed.ts`, `seed-demo.ts`, `verify-seed.ts` never appear anywhere in
+     this plan's full diff. Still needs an actual run before being trusted
+     the way the rest of this file is.
+  2. No List B report gained a unit label — verified for both the column
+     header text and the underlying data shape, client and server.
+  3. Modal keying verified: `hasSeenExportUnitNotice` resolves off
+     `prefs:${user.id}` server-side with no device id or browser storage
+     anywhere in the read/write chain, so it is per-person by construction.
+     `useLogout()` calls `qc.clear()` on success, so a login as a different
+     user on the same browser can never inherit the previous session's
+     in-memory preferences value.
+  4. `report-uom-plan.md`'s Scope section updated: List A struck through
+     and marked resolved, same convention `project-overview.md` uses for
+     its own resolved items; the needs-a-decision section explicitly
+     stays open with a note that List A's completion doesn't resolve any
+     of those four. The "22 vs 23" count corrected in the same pass.
+
+List A is closed end to end. The four needs-a-decision reports (Full
+Audit, Legacy Audit, Variance Summary, Forfeits, plus the three Asset
+reports as one bucket) remain open, unbuilt, and out of scope until
+someone decides on them.
+

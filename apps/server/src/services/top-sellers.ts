@@ -23,6 +23,18 @@ export interface TopSellerRow {
   qty: number;
   /** Revenue in the location's currency. Always 0 for ingredient rows — consumption has no direct price. */
   revenue: number;
+  /**
+   * report-uom-plan.md Phase 5: `qty` is a real base-unit quantity for
+   * "item" and "ingredient" rows, both keyed by locationItemId — sourced
+   * from the same itemVariant/unit join this report's own query already
+   * makes. "menu" rows key off menuItemId, which has no unit at all
+   * (a cocktail isn't measured in a base unit); those rows carry undefined
+   * here and are left unconverted on both screen and export.
+   */
+  itemId?: string;
+  unitName?: string;
+  unitKind?: "VOLUME" | "MASS" | "COUNT";
+  unitFactorToBase?: number;
 }
 
 export interface TopSellersReport {
@@ -89,7 +101,10 @@ export async function topSellersReport(
   // ── Top Brands ──────────────────────────────────────────────────────────────
   // Direct item sales only (locationItemId set).
 
-  const brandMap = new Map<string, { name: string; category: string | null; qty: number; revenue: number }>();
+  const brandMap = new Map<
+    string,
+    { name: string; category: string | null; qty: number; revenue: number; itemId: string; unitName: string; unitKind: "VOLUME" | "MASS" | "COUNT"; unitFactorToBase: number }
+  >();
   for (const s of sales) {
     if (!s.locationItemId || !s.locationItem) continue;
     const li = s.locationItem;
@@ -100,6 +115,10 @@ export async function topSellersReport(
       category: li.itemVariant.item.category.name,
       qty: 0,
       revenue: 0,
+      itemId: li.itemVariant.itemId,
+      unitName: li.itemVariant.unit.name,
+      unitKind: li.itemVariant.unit.kind as "VOLUME" | "MASS" | "COUNT",
+      unitFactorToBase: li.itemVariant.unit.factorToBase,
     };
     agg.qty += s.qty;
     agg.revenue += net;
@@ -139,7 +158,10 @@ export async function topSellersReport(
   // Sale rows with recipeVersionId = null (menu sold before its first published recipe,
   // or after the version was voided) are silently skipped — nothing to expand.
 
-  const ingredientMap = new Map<string, { name: string; category: string | null; qty: number }>();
+  const ingredientMap = new Map<
+    string,
+    { name: string; category: string | null; qty: number; itemId: string; unitName: string; unitKind: "VOLUME" | "MASS" | "COUNT"; unitFactorToBase: number }
+  >();
   for (const s of sales) {
     if (!s.menuItemId || s.locationItemId) continue;
     if (!s.recipeVersion) continue; // no snapshot → skip, per spec
@@ -161,6 +183,10 @@ export async function topSellersReport(
         name: label,
         category: li.itemVariant.item.category.name,
         qty: 0,
+        itemId: li.itemVariant.itemId,
+        unitName: li.itemVariant.unit.name,
+        unitKind: li.itemVariant.unit.kind as "VOLUME" | "MASS" | "COUNT",
+        unitFactorToBase: li.itemVariant.unit.factorToBase,
       };
       agg.qty += consumed;
       ingredientMap.set(line.locationItemId, agg);

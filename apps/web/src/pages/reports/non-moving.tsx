@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
 import { PackageX } from "lucide-react";
-import { round2 } from "@fnb/core";
+import { convert, formatQty, round2 } from "@fnb/core";
 import { useLocationId } from "@/api/location";
 import { useMe } from "@/api/auth";
 import { exportUrl, useNonMovingReport } from "@/api/reports";
 import { useIncludeHiddenInReports } from "@/api/settings";
-import { formatMoney, formatNumber, formatUnitPrice } from "@/lib/utils";
+import { useItemDisplayUnit } from "@/lib/preferences";
+import { formatMoney, formatUnitPrice } from "@/lib/utils";
 import { useSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
 import { TableEmpty, TableFailure, TableLoading, TableSurface, ToolbarSearch, queryFailed } from "@/components/table-surface";
@@ -19,6 +20,7 @@ import {
   TableBody,
   TableCell,
   TableFooter,
+  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
@@ -55,6 +57,14 @@ export function NonMovingReportPage() {
       ? all.filter((r) => r.name.toLowerCase().includes(q) || r.category.toLowerCase().includes(q))
       : all;
   }, [report.data, query]);
+
+  // Per-item display unit resolver (report-uom-plan.md, "On screen") — only
+  // `onHand` converts here, same scope as the export route.
+  const allItemIds = useMemo(
+    () => Array.from(new Set((report.data?.rows ?? []).map((r) => r.itemId))),
+    [report.data],
+  );
+  const { resolve: resolveDisplay } = useItemDisplayUnit(allItemIds);
 
   // Where the idle cash sits: the biggest dead-stock lines by cost value.
   const deadBars = useMemo(() => {
@@ -145,6 +155,7 @@ export function NonMovingReportPage() {
                     >
                       On Hand
                     </SortableTableHead>
+                    <TableHead className="text-right">Unit</TableHead>
                     <SortableTableHead
                       sortKey="cost"
                       activeKey={sortKey}
@@ -186,7 +197,20 @@ export function NonMovingReportPage() {
                         )}
                       </TableCell>
                       <TableCell className="text-muted-foreground">{row.category}</TableCell>
-                      <TableCell className="tnum text-right">{formatNumber(row.onHand)}</TableCell>
+                      <TableCell className="tnum text-right">
+                        {(() => {
+                          const itemUnit = { id: row.unitName, name: row.unitName, kind: row.unitKind, factorToBase: row.unitFactorToBase };
+                          const displayUnit = resolveDisplay(row.itemId, itemUnit) ?? itemUnit;
+                          const shown = displayUnit.kind === itemUnit.kind ? convert(row.onHand, itemUnit, displayUnit) : row.onHand;
+                          return formatQty(shown);
+                        })()}
+                      </TableCell>
+                      <TableCell className="text-right text-muted-foreground">
+                        {(() => {
+                          const itemUnit = { id: row.unitName, name: row.unitName, kind: row.unitKind, factorToBase: row.unitFactorToBase };
+                          return (resolveDisplay(row.itemId, itemUnit) ?? itemUnit).name;
+                        })()}
+                      </TableCell>
                       <TableCell className="tnum text-right">{formatUnitPrice(row.cost)}</TableCell>
                       <TableCell className="tnum text-right">{formatMoney(row.costValue)}</TableCell>
                       <TableCell className="tnum text-right">{formatMoney(row.retailValue)}</TableCell>
@@ -196,7 +220,7 @@ export function NonMovingReportPage() {
                 {query.trim() === "" && (
                   <TableFooter>
                     <TableRow>
-                      <TableCell colSpan={4} className="font-medium">
+                      <TableCell colSpan={5} className="font-medium">
                         {report.data.totals.count} item{report.data.totals.count === 1 ? "" : "s"} not moving
                       </TableCell>
                       <TableCell className="tnum text-right font-semibold">{formatMoney(report.data.totals.costValue)}</TableCell>

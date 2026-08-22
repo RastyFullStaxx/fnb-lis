@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
 import { TrendingUp } from "lucide-react";
-import { round2 } from "@fnb/core";
+import { convert, round2 } from "@fnb/core";
 import { useLocationId } from "@/api/location";
 import { useCountDates } from "@/api/ops";
 import { exportUrl, useTopSellersReport } from "@/api/reports";
+import { useItemDisplayUnit } from "@/lib/preferences";
 import { formatMoney } from "@/lib/utils";
 import { useSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
@@ -54,6 +55,23 @@ export function TopSellersPage() {
     (report.data.topBrands.length > 0 ||
       report.data.topMenus.length > 0 ||
       report.data.topIngredients.length > 0);
+
+  // Per-item display unit resolver (report-uom-plan.md, "On screen"). Only
+  // topBrands and topIngredients carry a base-unit qty — topMenus rows have
+  // no itemId (a cocktail has no base unit) and are left unconverted, same
+  // scope as the export route's convertRowsForExport() calls.
+  const allItemIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          [...(report.data?.topBrands ?? []), ...(report.data?.topIngredients ?? [])]
+            .map((r) => r.itemId)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      ),
+    [report.data],
+  );
+  const { resolve: resolveDisplay } = useItemDisplayUnit(allItemIds);
 
   // Each table's "#" always shows the row's rank in the server's own
   // qty-descending order, never its position after a client-side re-sort —
@@ -171,6 +189,7 @@ export function TopSellersPage() {
                   >
                     Qty
                   </SortableTableHead>
+                  <TableHead className="text-right">Unit</TableHead>
                   <SortableTableHead
                     sortKey="revenue"
                     activeKey={brandsSortKey}
@@ -183,18 +202,26 @@ export function TopSellersPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {sortedBrands.map((row) => (
-                  <TableRow key={row.id}>
-                    <TableCell className="tnum text-right text-muted-foreground">{brandRank.get(row.id)}</TableCell>
-                    <TableCell className="max-w-[22rem] font-medium break-words">{row.name}</TableCell>
-                    <TableCell className="text-muted-foreground">{row.category ?? "—"}</TableCell>
-                    <TableCell className="tnum text-right">{n6(row.qty)}</TableCell>
-                    <TableCell className="tnum text-right">{formatMoney(row.revenue)}</TableCell>
-                  </TableRow>
-                ))}
+                {sortedBrands.map((row) => {
+                  const itemUnit = row.itemId && row.unitName && row.unitKind && row.unitFactorToBase !== undefined
+                    ? { id: row.unitName, name: row.unitName, kind: row.unitKind, factorToBase: row.unitFactorToBase }
+                    : null;
+                  const displayUnit = itemUnit ? resolveDisplay(row.itemId, itemUnit) ?? itemUnit : null;
+                  const shownQty = displayUnit && itemUnit && displayUnit.kind === itemUnit.kind ? convert(row.qty, itemUnit, displayUnit) : row.qty;
+                  return (
+                    <TableRow key={row.id}>
+                      <TableCell className="tnum text-right text-muted-foreground">{brandRank.get(row.id)}</TableCell>
+                      <TableCell className="max-w-[22rem] font-medium break-words">{row.name}</TableCell>
+                      <TableCell className="text-muted-foreground">{row.category ?? "—"}</TableCell>
+                      <TableCell className="tnum text-right">{n6(shownQty)}</TableCell>
+                      <TableCell className="text-right text-muted-foreground">{displayUnit?.name ?? "—"}</TableCell>
+                      <TableCell className="tnum text-right">{formatMoney(row.revenue)}</TableCell>
+                    </TableRow>
+                  );
+                })}
                 {report.data!.topBrands.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center text-muted-foreground">
+                    <TableCell colSpan={6} className="text-center text-muted-foreground">
                       No direct item sales in this range.
                     </TableCell>
                   </TableRow>
@@ -271,20 +298,29 @@ export function TopSellersPage() {
                   >
                     Qty Consumed
                   </SortableTableHead>
+                  <TableHead className="text-right">Unit</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {sortedIngredients.map((row) => (
-                  <TableRow key={row.id}>
-                    <TableCell className="tnum text-right text-muted-foreground">{ingredientRank.get(row.id)}</TableCell>
-                    <TableCell className="max-w-[22rem] font-medium break-words">{row.name}</TableCell>
-                    <TableCell className="text-muted-foreground">{row.category ?? "—"}</TableCell>
-                    <TableCell className="tnum text-right">{n6(row.qty)}</TableCell>
-                  </TableRow>
-                ))}
+                {sortedIngredients.map((row) => {
+                  const itemUnit = row.itemId && row.unitName && row.unitKind && row.unitFactorToBase !== undefined
+                    ? { id: row.unitName, name: row.unitName, kind: row.unitKind, factorToBase: row.unitFactorToBase }
+                    : null;
+                  const displayUnit = itemUnit ? resolveDisplay(row.itemId, itemUnit) ?? itemUnit : null;
+                  const shownQty = displayUnit && itemUnit && displayUnit.kind === itemUnit.kind ? convert(row.qty, itemUnit, displayUnit) : row.qty;
+                  return (
+                    <TableRow key={row.id}>
+                      <TableCell className="tnum text-right text-muted-foreground">{ingredientRank.get(row.id)}</TableCell>
+                      <TableCell className="max-w-[22rem] font-medium break-words">{row.name}</TableCell>
+                      <TableCell className="text-muted-foreground">{row.category ?? "—"}</TableCell>
+                      <TableCell className="tnum text-right">{n6(shownQty)}</TableCell>
+                      <TableCell className="text-right text-muted-foreground">{displayUnit?.name ?? "—"}</TableCell>
+                    </TableRow>
+                  );
+                })}
                 {report.data!.topIngredients.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center text-muted-foreground">
+                    <TableCell colSpan={5} className="text-center text-muted-foreground">
                       No menu sales with recipe snapshots in this range.
                     </TableCell>
                   </TableRow>

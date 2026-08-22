@@ -9,12 +9,15 @@ import {
   NON_REVENUE_GROUP_LABELS,
   NON_REVENUE_GROUPS,
   shouldDropHiddenRow,
+  convert,
+  PREFERENCE_UNITS,
   type CostBasis,
   type NonRevenueGroup, canViewReport, canViewReportForSubscription, canViewVariance, isAuditViewer, type Role, type SessionUser, type ReconReport } from "@fnb/core";
 import { prisma } from "../db";
 import { AppError } from "../lib/errors";
 import { requirePermission, type AppEnv } from "../middleware/auth";
 import { buildFullAudit, committedCountDates } from "../services/report-assembly";
+import { loadExportUnitDefaults, exportUnitFor } from "../services/report-units";
 import {
   assetBreakageReport,
   costAnalysisReport,
@@ -27,6 +30,7 @@ import {
   purchaseReport,
   salesReport,
   transferReport,
+  type OnHandReport,
   type ParLevelReport,
   type ParLevelRow,
   type SalesReportView,
@@ -191,6 +195,89 @@ function filterHiddenRows(report: ReconReport, includeHiddenInReports: boolean):
     suffix on every legacy file would be noise. */
 function basisSuffix(basis: CostBasis): string {
   return basis === "PRICE" ? "" : `_${COST_BASIS_SLUGS[basis]}`;
+}
+
+/**
+ * factorToBase for whatever unit name resolveExportUnit() resolved to. It
+ * can only be one of: the item's own unit (factor already known), or a
+ * SYSTEM_DEFAULT_UNITS name (fl oz / g), or an admin's ClientItemUnitDefault
+ * string — the latter two are always one of the eight PREFERENCE_UNITS
+ * entries (report-uom-plan.md: the Settings page writes admin defaults from
+ * the same unit list a staffer's own preference uses).
+ */
+function exportUnitFactor(unitName: string, kind: "VOLUME" | "MASS" | "COUNT", itemFactor: number, itemUnitName: string) {
+  if (unitName === itemUnitName) return { id: unitName, name: unitName, kind, factorToBase: itemFactor };
+  const known = PREFERENCE_UNITS[unitName];
+  const factorToBase = known?.factorToBase ?? itemFactor;
+  return { id: unitName, name: unitName, kind, factorToBase };
+}
+
+/**
+ * report-uom-plan.md, Phase 4: converts an OnHandReport's `onHand` into
+ * each row's EXPORT unit (establishment default → system default → item
+ * base unit — resolveExportUnit(), never a viewer's personal levels). Only
+ * `onHand` and `unitName` change; `costValue`/`retailValue`/`totals` are
+ * money, not a base-unit quantity, so they're untouched — same reasoning
+ * as report-uom-phases.md Phase 2's "display only" note.
+ */
+async function withExportUnits(clientId: string, report: OnHandReport): Promise<OnHandReport> {
+  const defaults = await loadExportUnitDefaults(clientId, report.rows.map((r) => r.itemId));
+  return {
+    ...report,
+    rows: report.rows.map((r) => {
+      const exportUnitName = exportUnitFor(r.itemId, defaults, { name: r.unitName, kind: r.unitKind });
+      const onHand =
+        exportUnitName === r.unitName
+          ? r.onHand
+          : convert(
+              r.onHand,
+              { id: r.unitName, name: r.unitName, kind: r.unitKind, factorToBase: r.unitFactorToBase },
+              // Export units are always same-kind as the item (resolveExportUnit
+              // never crosses VOLUME/MASS/COUNT), so factorToBase for the
+              // resolved name is looked up the same way preferredUnitDef() does
+              // on the client — but export never carries a personal preference,
+              // so PREFERENCE_UNITS/SYSTEM_DEFAULT_UNITS cover every value
+              // resolveExportUnit() can return other than the item's own unit.
+              exportUnitFactor(exportUnitName, r.unitKind, r.unitFactorToBase, r.unitName),
+            );
+      return { ...r, onHand, unitName: exportUnitName };
+    }),
+  };
+}
+
+/**
+ * Generic twin of withExportUnits() above, for every List A report besides
+ * On Hand (report-uom-phases.md Phase 5). Same rule, same resolver
+ * (resolveExportUnit() via exportUnitFor()/loadExportUnitDefaults()) —
+ * pulled out generic here because each remaining report converts a
+ * DIFFERENT quantity field (or more than one), listed in report-uom-plan.md's
+ * Scope table, rather than repeating withExportUnits()'s body per report.
+ *
+ * `fields` names every base-unit quantity column on a row that shares that
+ * row's own unit (e.g. Sales By Item's shot/bottle/qty are three views of
+ * the same underlying base-unit amount) — every named field is converted
+ * with the SAME resolved export unit, and `unitName` is overwritten once.
+ * Rows missing itemId (Top Sellers' menu rows, which have no unit at all)
+ * are returned unchanged.
+ */
+async function convertRowsForExport<
+  R extends { itemId?: string; unitName?: string; unitKind?: "VOLUME" | "MASS" | "COUNT"; unitFactorToBase?: number },
+>(clientId: string, rows: R[], fields: ReadonlyArray<keyof R>): Promise<R[]> {
+  const withUnit = rows.filter((r) => r.itemId && r.unitName && r.unitKind && r.unitFactorToBase !== undefined);
+  const defaults = await loadExportUnitDefaults(clientId, withUnit.map((r) => r.itemId!));
+  return rows.map((r) => {
+    if (!r.itemId || !r.unitName || !r.unitKind || r.unitFactorToBase === undefined) return r;
+    const exportUnitName = exportUnitFor(r.itemId, defaults, { name: r.unitName, kind: r.unitKind });
+    if (exportUnitName === r.unitName) return r;
+    const from = { id: r.unitName, name: r.unitName, kind: r.unitKind, factorToBase: r.unitFactorToBase };
+    const to = exportUnitFactor(exportUnitName, r.unitKind, r.unitFactorToBase, r.unitName);
+    const patched: R = { ...r, unitName: exportUnitName };
+    for (const field of fields) {
+      const value = r[field];
+      if (typeof value === "number") (patched[field] as unknown as number) = convert(value, from, to);
+    }
+    return patched;
+  });
 }
 
 /**
@@ -534,7 +621,11 @@ export const reportRoutes = new Hono<AppEnv>()
     if (!DATE_RE.test(anchor)) throw new AppError(400, "anchor must be YYYY-MM-DD");
     const side = c.req.query("side") === "ending" ? "Ending" : "Beginning";
     const allowed = allowedProductTypes(c.get("locationModules"));
-    const report = await costSnapshotReport(location.id, anchor, allowed, basisOf(c));
+    const rawReport = await costSnapshotReport(location.id, anchor, allowed, basisOf(c));
+    // report-uom-plan.md, "On export": establishment default → system
+    // default → item base unit. Only `qty` converts (Scope table); `uom`
+    // (the fixed catalog size) is untouched.
+    const report = { ...rawReport, rows: await convertRowsForExport(client.id, rawReport.rows, ["qty"]) };
     const user = c.get("user")!;
     const name = `${side.toLowerCase()}-cost_${location.name}_${anchor}${basisSuffix(basisOf(c))}`.replace(/[^\w.-]+/g, "-");
     const format = c.req.query("format");
@@ -643,7 +734,11 @@ export const reportRoutes = new Hono<AppEnv>()
     const end = c.req.query("end") ?? "";
     if (!DATE_RE.test(begin) || !DATE_RE.test(end) || end <= begin) throw new AppError(400, "Valid begin < end required");
     const allowed = allowedProductTypes(c.get("locationModules"));
-    const report = await usageCostReport(location.id, begin, end, allowed);
+    const rawReport = await usageCostReport(location.id, begin, end, allowed);
+    // report-uom-plan.md, "On export": establishment default → system
+    // default → item base unit. Only `qty` converts (Scope table); `uom`
+    // (the fixed catalog size) is untouched.
+    const report = { ...rawReport, rows: await convertRowsForExport(client.id, rawReport.rows, ["qty"]) };
     const user = c.get("user")!;
     const name = `usage-cost_${location.name}_${begin}_${end}`.replace(/[^\w.-]+/g, "-");
     const format = c.req.query("format");
@@ -668,7 +763,12 @@ export const reportRoutes = new Hono<AppEnv>()
     const end = c.req.query("end") ?? "";
     if (!DATE_RE.test(begin) || !DATE_RE.test(end) || end <= begin) throw new AppError(400, "Valid begin < end required");
     const allowed = allowedProductTypes(c.get("locationModules"));
-    const report = await salesByItemReport(location.id, begin, end, allowed);
+    const rawReport = await salesByItemReport(location.id, begin, end, allowed);
+    // report-uom-plan.md, "On export": establishment default → system
+    // default → item base unit. `shot`, `bottle`, and `qty` all convert
+    // together (Scope table) — they share the row's own unit; `uom` (the
+    // fixed catalog size) is untouched.
+    const report = { ...rawReport, rows: await convertRowsForExport(client.id, rawReport.rows, ["shot", "bottle", "qty"]) };
     const user = c.get("user")!;
     const name = `sales-by-item_${location.name}_${begin}_${end}`.replace(/[^\w.-]+/g, "-");
     const format = c.req.query("format");
@@ -784,7 +884,11 @@ export const reportRoutes = new Hono<AppEnv>()
     const direction = c.req.query("direction") === "in" ? "in" : "out";
     const allowed = allowedProductTypes(c.get("locationModules"));
     const counterparty = counterpartyOf(c);
-    const report = await transferReport(location.id, from, to, direction, allowed, counterparty);
+    const rawReport = await transferReport(location.id, from, to, direction, allowed, counterparty);
+    // report-uom-plan.md, "On export": establishment default → system
+    // default → item base unit. `qtySent` and `qtyReceived` convert
+    // together (Scope table), since both share the row's own unit.
+    const report = { ...rawReport, rows: await convertRowsForExport(client.id, rawReport.rows, ["qtySent", "qtyReceived"]) };
     const user = c.get("user")!;
     // Name the branch in the filename, or two differently-filtered exports
     // collide on disk.
@@ -806,7 +910,10 @@ export const reportRoutes = new Hono<AppEnv>()
     const location = c.get("location");
     const client = c.get("client");
     const allowed = allowedProductTypes(c.get("locationModules"));
-    const report = await onHandReport(location.id, allowed, basisOf(c), includeHiddenOf(c));
+    const rawReport = await onHandReport(location.id, allowed, basisOf(c), includeHiddenOf(c));
+    // report-uom-plan.md, "On export": establishment default → system
+    // default → item base unit, same for every viewer. No personal level.
+    const report = await withExportUnits(client.id, rawReport);
     const user = c.get("user")!;
     const name = `on-hand_${location.name}_${report.lastCountDate ?? "current"}${basisSuffix(basisOf(c))}`.replace(/[^\w.-]+/g, "-");
     const format = c.req.query("format");
@@ -826,7 +933,10 @@ export const reportRoutes = new Hono<AppEnv>()
     const location = c.get("location");
     const client = c.get("client");
     const allowed = allowedProductTypes(c.get("locationModules"));
-    const report = await parLevelReport(location.id, allowed, basisOf(c), includeHiddenOf(c));
+    const rawReport = await parLevelReport(location.id, allowed, basisOf(c), includeHiddenOf(c));
+    // report-uom-plan.md, "On export": establishment default → system
+    // default → item base unit. Only `onHand` converts (Scope table).
+    const report = { ...rawReport, rows: await convertRowsForExport(client.id, rawReport.rows, ["onHand"]) };
     const user = c.get("user")!;
     const name = `par-level_${location.name}_${report.lastCountDate ?? "current"}`.replace(/[^\w.-]+/g, "-");
     const format = c.req.query("format");
@@ -845,7 +955,10 @@ export const reportRoutes = new Hono<AppEnv>()
     const location = c.get("location");
     const client = c.get("client");
     const allowed = allowedProductTypes(c.get("locationModules"));
-    const report = await nonMovingReport(location.id, allowed, basisOf(c), includeHiddenOf(c));
+    const rawReport = await nonMovingReport(location.id, allowed, basisOf(c), includeHiddenOf(c));
+    // report-uom-plan.md, "On export": establishment default → system
+    // default → item base unit. Only `onHand` converts (Scope table).
+    const report = { ...rawReport, rows: await convertRowsForExport(client.id, rawReport.rows, ["onHand"]) };
     const user = c.get("user")!;
     const name = `non-moving_${location.name}_${report.lastCountDate ?? "current"}`.replace(/[^\w.-]+/g, "-");
     const format = c.req.query("format");
@@ -867,7 +980,10 @@ export const reportRoutes = new Hono<AppEnv>()
     const location = c.get("location");
     const client = c.get("client");
     const allowed = allowedProductTypes(c.get("locationModules"));
-    const report = await expiringBatchesReport(location.id, allowed);
+    const rawReport = await expiringBatchesReport(location.id, allowed);
+    // report-uom-plan.md, "On export": establishment default → system
+    // default → item base unit. Only `qty` converts (Scope table).
+    const report = { ...rawReport, rows: await convertRowsForExport(client.id, rawReport.rows, ["qty"]) };
     const user = c.get("user")!;
     const name = `expiring-batches_${location.name}_${report.asOfDate}`.replace(/[^\w.-]+/g, "-");
     const format = c.req.query("format");
@@ -890,7 +1006,17 @@ export const reportRoutes = new Hono<AppEnv>()
     const allowed = allowedProductTypes(c.get("locationModules"));
     // Same limit the screen used — the export ignored it, so a Top 50 view
     // downloaded as a Top 10 file.
-    const report = await topSellersReport(location.id, from, to, allowed, topSellersLimit(c));
+    const rawReport = await topSellersReport(location.id, from, to, allowed, topSellersLimit(c));
+    // report-uom-plan.md, "On export": establishment default → system
+    // default → item base unit. Only `qty` converts (Scope table). Menu
+    // rows carry no itemId (a cocktail has no base unit) and pass through
+    // convertRowsForExport() unchanged.
+    const report = {
+      ...rawReport,
+      topBrands: await convertRowsForExport(client.id, rawReport.topBrands, ["qty"]),
+      topMenus: await convertRowsForExport(client.id, rawReport.topMenus, ["qty"]),
+      topIngredients: await convertRowsForExport(client.id, rawReport.topIngredients, ["qty"]),
+    };
     const user = c.get("user")!;
     const name = `top-sellers_${location.name}_${from}_${to}`.replace(/[^\w.-]+/g, "-");
     if (c.req.query("format") === "csv") return csvResponse(topSellersCsv(report), name, fullName(user));

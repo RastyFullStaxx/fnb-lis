@@ -1,6 +1,7 @@
 import { openEquivalent, round2, shouldDropHiddenRow, type CostBasis } from "@fnb/core";
 import { buildFullAudit } from "./report-assembly";
 import { weightedAverageCosts } from "./valuation";
+import { loadLocationItemUnits } from "./report-units";
 import { prisma } from "../db";
 
 /**
@@ -18,9 +19,10 @@ type LocationItemWithVariant = {
   cost: number;
   retail: number;
   itemVariant: {
+    itemId: string;
     size: number;
     contentTracked: boolean;
-    unit: { name: string };
+    unit: { name: string; kind: "VOLUME" | "MASS" | "COUNT"; factorToBase: number };
     item: { name: string; category: { name: string; sortOrder: number } };
   };
 };
@@ -227,6 +229,17 @@ export interface CostSnapshotRow {
   cost: number; // per-unit cost on the basis below
   value: number; // qty × cost
   basis: "average" | "price"; // which basis this row actually resolved to
+  /**
+   * report-uom-plan.md Phase 5: `qty` is a real base-unit quantity — unlike
+   * `uom` above, which stays the item's FIXED catalog size label (e.g. "750
+   * ml") and never changes. These fields feed a separate "Unit" column/
+   * screen resolution, same distinction On Hand's own `unitName` draws
+   * against its own report's `productType`-adjacent columns.
+   */
+  itemId: string;
+  unitName: string;
+  unitKind: "VOLUME" | "MASS" | "COUNT";
+  unitFactorToBase: number;
 }
 
 export interface CostSnapshotReport {
@@ -282,6 +295,10 @@ export async function costSnapshotReport(
         cost, // unit price keeps its centavo fractions (client req 2026-07-28)
         value: round2(qty * cost),
         basis: (average !== undefined ? "average" : "price") as CostSnapshotRow["basis"],
+        itemId: li.itemVariant.itemId,
+        unitName: li.itemVariant.unit.name,
+        unitKind: li.itemVariant.unit.kind,
+        unitFactorToBase: li.itemVariant.unit.factorToBase,
         _sort: `${li.itemVariant.item.category.sortOrder}`.padStart(4, "0") + li.itemVariant.item.name,
       };
     })
@@ -375,6 +392,18 @@ export interface UsageCostRow {
   uom: string;
   qty: number;
   cost: number;
+  /**
+   * report-uom-plan.md Phase 5: `qty` is a real base-unit quantity — `uom`
+   * above stays the fixed catalog size label, untouched. ReconRow (the
+   * source here) carries no itemId/unitKind/unitFactorToBase of its own
+   * (reconciliation.ts is formula-only, out of scope for this plan), so
+   * these are looked up separately by locationItemId via
+   * loadLocationItemUnits() — see report-units.ts.
+   */
+  itemId: string;
+  unitName: string;
+  unitKind: "VOLUME" | "MASS" | "COUNT";
+  unitFactorToBase: number;
 }
 
 export interface UsageCostReport {
@@ -391,14 +420,21 @@ export async function usageCostReport(
   allowedProductTypes?: readonly string[] | null,
 ): Promise<UsageCostReport> {
   const report = await buildFullAudit(locationId, begin, end, undefined, allowedProductTypes);
-  const rows: UsageCostRow[] = report.rows
-    .filter((r) => r.usage !== 0)
-    .map((r) => ({
+  const usageRows = report.rows.filter((r) => r.usage !== 0);
+  const unitInfo = await loadLocationItemUnits(usageRows.map((r) => r.locationItemId));
+  const rows: UsageCostRow[] = usageRows.map((r) => {
+    const info = unitInfo.get(r.locationItemId);
+    return {
       name: r.itemName,
       uom: `${r.size} ${r.unitName}`,
       qty: round2(r.usage),
       cost: round2(r.usageCost),
-    }));
+      itemId: info?.itemId ?? "",
+      unitName: info?.unitName ?? r.unitName,
+      unitKind: info?.unitKind ?? "COUNT",
+      unitFactorToBase: info?.unitFactorToBase ?? 1,
+    };
+  });
   const totals = rows.reduce((acc, r) => ({ qty: acc.qty + r.qty, cost: acc.cost + r.cost }), { qty: 0, cost: 0 });
   return { begin, end, rows, totals: { qty: round2(totals.qty), cost: round2(totals.cost) } };
 }
@@ -413,6 +449,13 @@ export interface SalesByItemRow {
   qty: number;
   cost: number; // cost of sold (legacy formula)
   retail: number; // revenue
+  /** report-uom-plan.md Phase 5 — see UsageCostRow's own comment. `shot`,
+      `bottle`, and `qty` all share this one unit (shot/bottle are just
+      soldPortion/soldDirect split out of the same base-unit quantity). */
+  itemId: string;
+  unitName: string;
+  unitKind: "VOLUME" | "MASS" | "COUNT";
+  unitFactorToBase: number;
 }
 
 export interface SalesByItemReport {
@@ -429,9 +472,11 @@ export async function salesByItemReport(
   allowedProductTypes?: readonly string[] | null,
 ): Promise<SalesByItemReport> {
   const report = await buildFullAudit(locationId, begin, end, undefined, allowedProductTypes);
-  const rows: SalesByItemRow[] = report.rows
-    .filter((r) => r.soldDirect + r.soldPortion > 0)
-    .map((r) => ({
+  const soldRows = report.rows.filter((r) => r.soldDirect + r.soldPortion > 0);
+  const unitInfo = await loadLocationItemUnits(soldRows.map((r) => r.locationItemId));
+  const rows: SalesByItemRow[] = soldRows.map((r) => {
+    const info = unitInfo.get(r.locationItemId);
+    return {
       name: r.itemName,
       uom: `${r.size} ${r.unitName}`,
       shot: round2(r.soldPortion),
@@ -439,7 +484,12 @@ export async function salesByItemReport(
       qty: round2(r.soldDirect + r.soldPortion),
       cost: round2((r.soldDirect + r.soldPortion) * r.costBasis),
       retail: round2(r.revenue),
-    }));
+      itemId: info?.itemId ?? "",
+      unitName: info?.unitName ?? r.unitName,
+      unitKind: info?.unitKind ?? "COUNT",
+      unitFactorToBase: info?.unitFactorToBase ?? 1,
+    };
+  });
   const totals = rows.reduce(
     (acc, r) => ({
       shot: acc.shot + r.shot,

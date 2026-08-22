@@ -283,7 +283,10 @@ export function legacyAuditPdf(
 
 // ───────────────── Cost snapshots (#3 Beginning / #4 Ending) ─────────────────
 
-const SNAPSHOT_HEADERS = ["Item", "UOM", "Qty", "Cost Price (PHP)", "Value (PHP)", "Cost Basis"];
+// UOM stays the fixed catalog size label; Unit is the new resolvable-quantity
+// column for `qty` (report-uom-plan.md — the same distinction On Hand's own
+// separate "Unit" column already draws).
+const SNAPSHOT_HEADERS = ["Item", "UOM", "Qty", "Unit", "Cost Price (PHP)", "Value (PHP)", "Cost Basis"];
 
 /** In-file disclosure of the valuation policy — two files with the same title
     and different totals must be self-describing, not just differently named. */
@@ -298,6 +301,7 @@ function snapshotRowCells(report: CostSnapshotReport): CsvValue[][] {
     r.name,
     r.uom,
     r.qty,
+    r.unitName,
     r.cost,
     r.value,
     r.basis === "average" ? "Avg purchase" : "Cost price",
@@ -322,17 +326,18 @@ export async function costSnapshotWorkbook(
   for (const r of report.rows) {
     const row = ws.addRow([r.name, r.uom]);
     qtyCell(row.getCell(3), r.qty);
-    moneyCell(row.getCell(4), r.cost, false);
-    moneyCell(row.getCell(5), r.value, false);
-    row.getCell(6).value = r.basis === "average" ? "Avg purchase" : "Cost price";
+    row.getCell(4).value = r.unitName;
+    moneyCell(row.getCell(5), r.cost, false);
+    moneyCell(row.getCell(6), r.value, false);
+    row.getCell(7).value = r.basis === "average" ? "Avg purchase" : "Cost price";
   }
-  const t = ws.addRow(["Grand Total", ""]);
+  const t = ws.addRow(["Grand Total", "", "", ""]);
   qtyCell(t.getCell(3), report.totals.qty);
-  moneyCell(t.getCell(5), report.totals.value, false);
+  moneyCell(t.getCell(6), report.totals.value, false);
   t.font = { bold: true };
   ws.getColumn(1).width = 34;
   ws.getColumn(2).width = 12;
-  for (let c = 3; c <= 6; c++) ws.getColumn(c).width = 16;
+  for (let c = 3; c <= 7; c++) ws.getColumn(c).width = 16;
   stampLogo(ws, SNAPSHOT_HEADERS.length);
   return toBuffer(wb);
 }
@@ -343,7 +348,7 @@ export function costSnapshotCsv(report: CostSnapshotReport, side: "Beginning" | 
     [basisNote(report.costBasis)],
     SNAPSHOT_HEADERS,
     ...snapshotRowCells(report),
-    ["Grand Total", "", report.totals.qty, "", report.totals.value, ""],
+    ["Grand Total", "", report.totals.qty, "", "", report.totals.value, ""],
   ]);
 }
 
@@ -355,10 +360,10 @@ export function costSnapshotPdf(
   return tablePdf({
     title: `${side} Cost Report`,
     subtitle: `${meta.clientName} · ${meta.locationName} · as of count ${report.anchorDate} · ${basisNote(report.costBasis)}`,
-    columns: SNAPSHOT_HEADERS.map((h, i) => ({ header: h, align: i < 2 ? "left" : "right", width: i === 0 ? "*" : "auto" })),
+    columns: SNAPSHOT_HEADERS.map((h, i) => ({ header: h, align: i < 2 || i === 3 ? "left" : "right", width: i === 0 ? "*" : "auto" })),
     rows: [
       ...snapshotRowCells(report).map((cells) => ({ cells: cells as (string | number)[] })),
-      { cells: ["Grand Total", "", report.totals.qty, "", report.totals.value, ""], kind: "total" as const },
+      { cells: ["Grand Total", "", report.totals.qty, "", "", report.totals.value, ""], kind: "total" as const },
     ],
     exportedBy: stampLine(meta),
     reportFooter: meta.footer,
@@ -431,7 +436,14 @@ export function forfeitsPdf(report: ForfeitsReport, meta: ReportMeta): Promise<B
 
 // ───────────────── Usage Cost (#6) ─────────────────
 
-const USAGE_HEADERS = ["Item", "UOM", "Qty Used", "Cost (PHP)"];
+// UOM stays the fixed catalog size label; Unit is the new resolvable-quantity
+// column for `qty` (report-uom-plan.md — same distinction as Cost Snapshot's
+// own separate "Unit" column above).
+const USAGE_HEADERS = ["Item", "UOM", "Qty Used", "Unit", "Cost (PHP)"];
+
+function usageRowCells(report: UsageCostReport): CsvValue[][] {
+  return report.rows.map((r) => [r.name, r.uom, r.qty, r.unitName, r.cost]);
+}
 
 export async function usageCostWorkbook(report: UsageCostReport, meta: ReportMeta): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
@@ -447,14 +459,15 @@ export async function usageCostWorkbook(report: UsageCostReport, meta: ReportMet
   for (const r of report.rows) {
     const row = ws.addRow([r.name, r.uom]);
     qtyCell(row.getCell(3), r.qty, true);
-    moneyCell(row.getCell(4), r.cost);
+    row.getCell(4).value = r.unitName;
+    moneyCell(row.getCell(5), r.cost);
   }
-  const t = ws.addRow(["Grand Total", ""]);
+  const t = ws.addRow(["Grand Total", "", "", ""]);
   qtyCell(t.getCell(3), report.totals.qty, true);
-  moneyCell(t.getCell(4), report.totals.cost);
+  moneyCell(t.getCell(5), report.totals.cost);
   t.font = { bold: true };
   ws.getColumn(1).width = 34;
-  for (const c of [2, 3, 4]) ws.getColumn(c).width = 15;
+  for (const c of [2, 3, 4, 5]) ws.getColumn(c).width = 15;
   stampLogo(ws, USAGE_HEADERS.length);
   return toBuffer(wb);
 }
@@ -463,8 +476,8 @@ export function usageCostCsv(report: UsageCostReport): string {
   return toCsv([
     [`Usage Cost Report · ${report.begin} → ${report.end}`],
     USAGE_HEADERS,
-    ...report.rows.map((r): CsvValue[] => [r.name, r.uom, r.qty, r.cost]),
-    ["Grand Total", "", report.totals.qty, report.totals.cost],
+    ...usageRowCells(report),
+    ["Grand Total", "", report.totals.qty, "", report.totals.cost],
   ]);
 }
 
@@ -472,10 +485,10 @@ export function usageCostPdf(report: UsageCostReport, meta: ReportMeta): Promise
   return tablePdf({
     title: "Usage Cost Report",
     subtitle: `${meta.clientName} · ${meta.locationName} · ${report.begin} → ${report.end}`,
-    columns: USAGE_HEADERS.map((h, i) => ({ header: h, align: i < 2 ? "left" : "right", width: i === 0 ? "*" : "auto" })),
+    columns: USAGE_HEADERS.map((h, i) => ({ header: h, align: i < 2 || i === 3 ? "left" : "right", width: i === 0 ? "*" : "auto" })),
     rows: [
-      ...report.rows.map((r) => ({ cells: [r.name, r.uom, r.qty, r.cost] as (string | number)[] })),
-      { cells: ["Grand Total", "", report.totals.qty, report.totals.cost], kind: "total" as const },
+      ...usageRowCells(report).map((cells) => ({ cells: cells as (string | number)[] })),
+      { cells: ["Grand Total", "", report.totals.qty, "", report.totals.cost], kind: "total" as const },
     ],
     exportedBy: stampLine(meta),
     reportFooter: meta.footer,
@@ -484,7 +497,14 @@ export function usageCostPdf(report: UsageCostReport, meta: ReportMeta): Promise
 
 // ───────────────── Sales by Item — shot & bottle (#7) ─────────────────
 
-const SALES_ITEM_HEADERS = ["Item", "UOM", "Shot", "Bottle", "Total Qty", "Cost of Sold (PHP)", "Revenue (PHP)"];
+// UOM stays the fixed catalog size label; Unit is the new resolvable-quantity
+// column — Shot/Bottle/Total Qty all share this one unit (report-uom-plan.md
+// Scope table: they're three views of the same underlying base-unit amount).
+const SALES_ITEM_HEADERS = ["Item", "UOM", "Shot", "Bottle", "Total Qty", "Unit", "Cost of Sold (PHP)", "Revenue (PHP)"];
+
+function salesByItemRowCells(report: SalesByItemReport): CsvValue[][] {
+  return report.rows.map((r) => [r.name, r.uom, r.shot, r.bottle, r.qty, r.unitName, r.cost, r.retail]);
+}
 
 export async function salesByItemWorkbook(report: SalesByItemReport, meta: ReportMeta): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
@@ -502,18 +522,19 @@ export async function salesByItemWorkbook(report: SalesByItemReport, meta: Repor
     qtyCell(row.getCell(3), r.shot);
     qtyCell(row.getCell(4), r.bottle);
     qtyCell(row.getCell(5), r.qty);
-    moneyCell(row.getCell(6), r.cost, false);
-    moneyCell(row.getCell(7), r.retail, false);
+    row.getCell(6).value = r.unitName;
+    moneyCell(row.getCell(7), r.cost, false);
+    moneyCell(row.getCell(8), r.retail, false);
   }
-  const t = ws.addRow(["Grand Total", ""]);
+  const t = ws.addRow(["Grand Total", "", "", "", "", ""]);
   qtyCell(t.getCell(3), report.totals.shot);
   qtyCell(t.getCell(4), report.totals.bottle);
   qtyCell(t.getCell(5), report.totals.qty);
-  moneyCell(t.getCell(6), report.totals.cost, false);
-  moneyCell(t.getCell(7), report.totals.retail, false);
+  moneyCell(t.getCell(7), report.totals.cost, false);
+  moneyCell(t.getCell(8), report.totals.retail, false);
   t.font = { bold: true };
   ws.getColumn(1).width = 34;
-  for (let c = 2; c <= 7; c++) ws.getColumn(c).width = 14;
+  for (let c = 2; c <= 8; c++) ws.getColumn(c).width = 14;
   stampLogo(ws, SALES_ITEM_HEADERS.length);
   return toBuffer(wb);
 }
@@ -522,8 +543,8 @@ export function salesByItemCsv(report: SalesByItemReport): string {
   return toCsv([
     [`Sales Report (Shot & Bottle) · ${report.begin} → ${report.end}`],
     SALES_ITEM_HEADERS,
-    ...report.rows.map((r): CsvValue[] => [r.name, r.uom, r.shot, r.bottle, r.qty, r.cost, r.retail]),
-    ["Grand Total", "", report.totals.shot, report.totals.bottle, report.totals.qty, report.totals.cost, report.totals.retail],
+    ...salesByItemRowCells(report),
+    ["Grand Total", "", report.totals.shot, report.totals.bottle, report.totals.qty, "", report.totals.cost, report.totals.retail],
   ]);
 }
 
@@ -531,13 +552,11 @@ export function salesByItemPdf(report: SalesByItemReport, meta: ReportMeta): Pro
   return tablePdf({
     title: "Sales Report (Shot & Bottle)",
     subtitle: `${meta.clientName} · ${meta.locationName} · ${report.begin} → ${report.end}`,
-    columns: SALES_ITEM_HEADERS.map((h, i) => ({ header: h, align: i < 2 ? "left" : "right", width: i === 0 ? "*" : "auto" })),
+    columns: SALES_ITEM_HEADERS.map((h, i) => ({ header: h, align: i < 2 || i === 5 ? "left" : "right", width: i === 0 ? "*" : "auto" })),
     rows: [
-      ...report.rows.map((r) => ({
-        cells: [r.name, r.uom, r.shot, r.bottle, r.qty, r.cost, r.retail] as (string | number)[],
-      })),
+      ...salesByItemRowCells(report).map((cells) => ({ cells: cells as (string | number)[] })),
       {
-        cells: ["Grand Total", "", report.totals.shot, report.totals.bottle, report.totals.qty, report.totals.cost, report.totals.retail],
+        cells: ["Grand Total", "", report.totals.shot, report.totals.bottle, report.totals.qty, "", report.totals.cost, report.totals.retail],
         kind: "total" as const,
       },
     ],
@@ -636,13 +655,15 @@ export function onHandPdfDoc(report: OnHandReport, meta: ReportMeta): Promise<Bu
   return tablePdf({
     title: "Inventory on Hand",
     subtitle: `${meta.clientName} · ${meta.locationName} · as of last count ${report.lastCountDate ?? "—"}`,
-    columns: ONHAND_HEADERS.map((h, i) => ({ header: String(h), align: i < 3 ? "left" : "right", width: i === 0 ? "*" : "auto" })),
+    // Unit (col 5, index 4) is a short text label like the leading columns,
+    // not a number — left-aligned same as Item/Category/Type.
+    columns: ONHAND_HEADERS.map((h, i) => ({ header: String(h), align: i < 3 || i === 4 ? "left" : "right", width: i === 0 ? "*" : "auto" })),
     rows: [
       ...report.rows.map((r) => ({
-        cells: [r.name, r.category, r.productType, round2(r.onHand), round2(r.cost), round2(r.retail), round2(r.costValue), round2(r.retailValue)] as (string | number)[],
+        cells: [r.name, r.category, r.productType, round2(r.onHand), r.unitName, round2(r.cost), round2(r.retail), round2(r.costValue), round2(r.retailValue)] as (string | number)[],
       })),
       {
-        cells: ["Total Valuation", "", "", "", "", "", round2(report.totals.costValue), round2(report.totals.retailValue)],
+        cells: ["Total Valuation", "", "", "", "", "", "", round2(report.totals.costValue), round2(report.totals.retailValue)],
         kind: "total" as const,
       },
     ],

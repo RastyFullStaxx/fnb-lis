@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
 import { ClipboardList } from "lucide-react";
-import { round2 } from "@fnb/core";
+import { convert, formatQty, round2 } from "@fnb/core";
 import { useLocationId } from "@/api/location";
 import { useMe } from "@/api/auth";
 import { exportUrl, useParLevelReport } from "@/api/reports";
 import { useIncludeHiddenInReports } from "@/api/settings";
+import { useItemDisplayUnit } from "@/lib/preferences";
 import { formatMoney, formatNumber, formatDate } from "@/lib/utils";
 import { useSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
@@ -19,6 +20,7 @@ import {
   TableBody,
   TableCell,
   TableFooter,
+  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
@@ -64,6 +66,16 @@ export function ParLevelReportPage() {
   // filtered/searched `rows`, so a search that happens to match zero rows
   // can never flip the column on or off.
   const showUsage = (report.data?.rows ?? []).some((r) => r.usage !== undefined);
+
+  // Per-item display unit resolver (report-uom-plan.md, "On screen") — only
+  // `onHand` converts here, same scope as the export route's own
+  // convertRowsForExport(rows, ["onHand"]); `usage`/par/suggested order stay
+  // as plain numbers, unconverted, per the plan's Scope table.
+  const allItemIds = useMemo(
+    () => Array.from(new Set((report.data?.rows ?? []).map((r) => r.itemId))),
+    [report.data],
+  );
+  const { resolve: resolveDisplay } = useItemDisplayUnit(allItemIds);
 
   // What to buy: the biggest suggested orders by value.
   const reorderBars = useMemo(() => {
@@ -161,6 +173,7 @@ export function ParLevelReportPage() {
                     >
                       On Hand
                     </SortableTableHead>
+                    <TableHead className="text-right">Unit</TableHead>
                     <SortableTableHead
                       sortKey="par"
                       activeKey={sortKey}
@@ -218,7 +231,21 @@ export function ParLevelReportPage() {
                         )}
                       </TableCell>
                       <TableCell className="text-muted-foreground">{row.category}</TableCell>
-                      <TableCell className={cn("tnum text-right", row.belowPar && "text-warning-text")}>{formatNumber(row.onHand)}</TableCell>
+                      <TableCell className={cn("tnum text-right", row.belowPar && "text-warning-text")}>
+                        {(() => {
+                          const itemUnit = { id: row.unitName, name: row.unitName, kind: row.unitKind, factorToBase: row.unitFactorToBase };
+                          const displayUnit = resolveDisplay(row.itemId, itemUnit) ?? itemUnit;
+                          const shown = displayUnit.kind === itemUnit.kind ? convert(row.onHand, itemUnit, displayUnit) : row.onHand;
+                          return formatQty(shown);
+                        })()}
+                      </TableCell>
+                      <TableCell className="text-right text-muted-foreground">
+                        {(() => {
+                          const itemUnit = { id: row.unitName, name: row.unitName, kind: row.unitKind, factorToBase: row.unitFactorToBase };
+                          const displayUnit = resolveDisplay(row.itemId, itemUnit) ?? itemUnit;
+                          return displayUnit.name;
+                        })()}
+                      </TableCell>
                       <TableCell className="tnum text-right text-muted-foreground">{formatNumber(row.parLevel)}</TableCell>
                       {showUsage && (
                         <TableCell className="tnum text-right text-muted-foreground">
@@ -233,7 +260,7 @@ export function ParLevelReportPage() {
                 {query.trim() === "" && (
                   <TableFooter>
                     <TableRow>
-                      <TableCell colSpan={showUsage ? 5 : 4} className="font-medium">
+                      <TableCell colSpan={showUsage ? 6 : 5} className="font-medium">
                         {report.data.totals.belowParCount} below par
                       </TableCell>
                       <TableCell className="text-right font-medium">Total to buy</TableCell>

@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { Coins } from "lucide-react";
-import { round2 } from "@fnb/core";
+import { convert, formatQty, round2 } from "@fnb/core";
 import { useCountDates } from "@/api/ops";
 import { useLocationId } from "@/api/location";
 import { exportUrl, useCostSnapshotReport } from "@/api/reports";
+import { useItemDisplayUnit } from "@/lib/preferences";
 import { formatMoney, formatNumber, formatDate, formatUnitPrice } from "@/lib/utils";
 import { useSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
@@ -27,6 +28,7 @@ import {
   TableBody,
   TableCell,
   TableFooter,
+  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
@@ -59,6 +61,14 @@ export function CostSnapshotPage() {
     const q = query.trim().toLowerCase();
     return q ? all.filter((r) => r.name.toLowerCase().includes(q)) : all;
   }, [report.data, query]);
+
+  // Per-item display unit resolver (report-uom-plan.md, "On screen"). `uom`
+  // stays the fixed catalog size label; `qty` is the resolvable quantity.
+  const allItemIds = useMemo(
+    () => Array.from(new Set((report.data?.rows ?? []).map((r) => r.itemId))),
+    [report.data],
+  );
+  const { resolve: resolveDisplay } = useItemDisplayUnit(allItemIds);
 
   // Where the stock value actually sits — a long count usually hides the fact
   // that a handful of items carry most of it. Ranked off the full payload, so
@@ -200,6 +210,7 @@ export function CostSnapshotPage() {
                     >
                       Qty
                     </SortableTableHead>
+                    <TableHead className="text-right">Unit</TableHead>
                     <SortableTableHead
                       sortKey="cost"
                       activeKey={sortKey}
@@ -234,7 +245,20 @@ export function CostSnapshotPage() {
                     <TableRow key={i}>
                       <TableCell className="max-w-[22rem] font-medium break-words">{row.name}</TableCell>
                       <TableCell className="text-muted-foreground">{row.uom}</TableCell>
-                      <TableCell className="tnum text-right">{formatNumber(row.qty)}</TableCell>
+                      <TableCell className="tnum text-right">
+                        {(() => {
+                          const itemUnit = { id: row.unitName, name: row.unitName, kind: row.unitKind, factorToBase: row.unitFactorToBase };
+                          const displayUnit = resolveDisplay(row.itemId, itemUnit) ?? itemUnit;
+                          const shown = displayUnit.kind === itemUnit.kind ? convert(row.qty, itemUnit, displayUnit) : row.qty;
+                          return formatQty(shown);
+                        })()}
+                      </TableCell>
+                      <TableCell className="text-right text-muted-foreground">
+                        {(() => {
+                          const itemUnit = { id: row.unitName, name: row.unitName, kind: row.unitKind, factorToBase: row.unitFactorToBase };
+                          return (resolveDisplay(row.itemId, itemUnit) ?? itemUnit).name;
+                        })()}
+                      </TableCell>
                       <TableCell className="tnum text-right">{formatUnitPrice(row.cost)}</TableCell>
                       <TableCell className="tnum text-right">{formatMoney(row.value)}</TableCell>
                       <TableCell className="w-px whitespace-nowrap">
@@ -253,6 +277,7 @@ export function CostSnapshotPage() {
                         Grand Total
                       </TableCell>
                       <TableCell className="tnum text-right font-medium">{formatNumber(report.data.totals.qty)}</TableCell>
+                      <TableCell />
                       <TableCell />
                       <TableCell className="tnum text-right font-semibold">{formatMoney(report.data.totals.value)}</TableCell>
                       <TableCell />
