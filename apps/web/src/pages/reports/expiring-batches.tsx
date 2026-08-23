@@ -96,7 +96,7 @@ export function ExpiringBatchesReportPage() {
           <TableEmpty
             icon={AlertTriangle}
             title="Nothing dated on the shelf"
-            description="No open, committed delivery on record carries an expiry date yet — perishable batches show up here as soon as they're received."
+            description="No committed delivery carries an expiry date yet. Perishable batches show up here once received."
           />
         ) : rows.length === 0 ? (
           <TableEmpty icon={AlertTriangle} title="No rows match the search" description="Try a different item or category name." />

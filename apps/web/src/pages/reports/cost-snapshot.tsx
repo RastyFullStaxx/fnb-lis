@@ -125,8 +125,8 @@ export function CostSnapshotPage() {
           toolbar, where its sentence pushed the actual controls onto a second row. */}
       <p className="-mt-2 mb-3 text-xs text-muted-foreground print:hidden">
         {report.data?.costBasis === "AVERAGE"
-          ? "Cost basis: weighted average — (opening stock + purchases) ÷ total units."
-          : "Cost basis: purchase price — the cost recorded on the count line."}{" "}
+          ? "Cost basis: weighted average, (opening stock + purchases) ÷ total units."
+          : "Cost basis: purchase price, the cost recorded on the count line."}{" "}
         <Link to={`/l/${locationId}/settings`} className="underline underline-offset-2">
           Change in Settings
         </Link>

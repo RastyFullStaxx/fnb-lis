@@ -74,7 +74,7 @@ export function PriceEdit({ row, canEdit }: { row: LocationItem; canEdit: boolea
       ["cost", cost],
       ["retail price", retail],
     ] as const).find(([, raw]) => raw.trim() === "" || !(Number(raw) >= 0));
-    if (invalid) return toast.error(`Enter a ${invalid[0]} — use 0 only if it really is free.`);
+    if (invalid) return toast.error(`Enter a ${invalid[0]} Use 0 only if it's actually free.`);
     try {
       await update.mutateAsync({
         id: row.id,

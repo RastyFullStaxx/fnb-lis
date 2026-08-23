@@ -115,9 +115,9 @@ export function VariantQuickEditDialog({
           </DialogTitle>
           <DialogDescription>
             {context === "counts"
-              ? "Weigh the empty bottle once and save it here — this count will pick it up immediately."
+              ? "Weigh the empty bottle once and save it; this count picks it up immediately."
               : context === "purchases"
-                ? "Weigh the empty bottle once and save it here — this return will pick it up immediately."
+                ? "Weigh the empty bottle once and save it; this return picks it up immediately."
                 : "Sets the empty-container weight and conversion used whenever this variant is weighed."}
           </DialogDescription>
         </DialogHeader>
@@ -164,7 +164,7 @@ export function VariantQuickEditDialog({
         </div>
         {!hasDensitySomewhere && (
           <p className="text-xs text-muted-foreground">
-            This category has no default Liquid Weight either — enter one here so this variant can be
+            This category has no default Liquid Weight. Enter one here so this variant can be
             weighed.
           </p>
         )}

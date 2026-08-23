@@ -104,10 +104,10 @@ export function ScheduleEdit({ row }: { row: LocationItem }) {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Movement schedule — {row.itemVariant.item.name}</DialogTitle>
+            <DialogTitle>Movement schedule {row.itemVariant.item.name}</DialogTitle>
             <DialogDescription>
-              Keeps a seasonal item off Clutter Candidates while it's in season. Outside the window
-              it counts as normal — every check applies against the last 12 months.
+              Keeps a seasonal item off Clutter Candidates while in season. Outside the window,
+              it's checked normally against the last 12 months.
             </DialogDescription>
           </DialogHeader>
 

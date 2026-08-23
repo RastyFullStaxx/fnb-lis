@@ -72,7 +72,7 @@ const KIND_COPY: Record<SaleKind, { title: string; hint: string; button: string;
   },
   NON_REVENUE: {
     title: "Record Non-Revenue Use",
-    hint: "Stock that left with no money against it — comped, spilled, staff drinks, spoilage.",
+    hint: "Stock that left with no money against it: comped, spilled, staff drinks, spoilage.",
     button: "Save Non-Revenue",
     saved: "Non-revenue use recorded",
   },
@@ -286,7 +286,7 @@ export function SalesPage() {
         onConfirm={async (reason) => {
           try {
             await mutations.voidSale.mutateAsync({ id: voiding!.id, reason });
-            toast.success("Entry voided — reports updated");
+            toast.success("Entry voided; reports updated");
             setVoiding(null);
           } catch (err) {
             toast.error(err instanceof ApiError ? err.message : "Could not void");
@@ -368,7 +368,7 @@ function EditSaleDialog({
           voidReason: changeReason.trim(),
         },
       });
-      toast.success("Entry updated — the original is kept, marked corrected");
+      toast.success("Entry updated; original kept, marked corrected");
       onOpenChange(false);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not save the change");
@@ -518,7 +518,7 @@ function QuickEntry({ kind }: { kind: SaleKind }) {
     if (!q || q <= 0) return toast.error("Enter a quantity");
     // An empty price would silently record ₱0.00 revenue — block it; an explicitly typed 0 is allowed.
     if (kind === "SALE" && price.trim() === "")
-      return toast.error("Enter the unit price — use the Non-revenue tab for comps");
+      return toast.error("Enter the unit price; use Non-revenue for comps");
     try {
       await mutations.create.mutateAsync({
         saleDate: date,

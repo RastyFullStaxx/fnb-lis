@@ -139,7 +139,7 @@ export function LoginPage() {
                 credential. */}
             {sessionExpired && !showForgotPassword && (
               <p role="status" className="mb-6 rounded-md bg-white/95 px-3 py-2.5 text-sm font-medium text-foreground">
-                Your session ended — sign in again to continue.
+                Session ended. Sign in again to continue.
               </p>
             )}
             {showForgotPassword ? (

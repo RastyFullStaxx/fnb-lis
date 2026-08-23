@@ -58,7 +58,7 @@ export function ItemsTab({
           description={
             filtered
               ? "Clear the search or type filter to see everything."
-              : "Add your first item — it becomes available to every client location."
+              : "Add your first item; it becomes available to every client location."
           }
           action={
             !filtered && (

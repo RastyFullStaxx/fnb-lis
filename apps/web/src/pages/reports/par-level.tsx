@@ -143,7 +143,7 @@ export function ParLevelReportPage() {
           <TableEmpty
             icon={ClipboardList}
             title="No par levels set"
-            description="Set a par (reorder point) on your items — this report then shows what to buy, and how much, against recent movement."
+            description="Set a par (reorder point) on your items to see what to buy, and how much, based on recent movement."
           />
         ) : (
           <>

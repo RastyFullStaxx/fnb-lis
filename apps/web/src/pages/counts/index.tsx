@@ -124,7 +124,7 @@ export function CountsPage() {
             }
             description={
               (sessions.data ?? []).length === 0
-                ? "Start your first count — it becomes the beginning inventory of your first audit period."
+                ? "Start your first count; it becomes the beginning inventory of your first audit period."
                 : "Clear the search or status filter to see everything."
             }
             action={
@@ -292,8 +292,8 @@ function NewCountDialog({
           <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-sm">
             <p>
               <span className="font-medium">This date already has a committed count.</span> A second one
-              would be added to it, not compared against it, so the count won’t be allowed to commit.
-              Pick another date — or open that count and correct it.
+              would add to it, not compare against it, so it can't commit.
+              Pick another date, or correct the existing one.
             </p>
             <Button
               variant="outline"

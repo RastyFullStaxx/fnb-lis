@@ -112,7 +112,7 @@ export function TransferEditorPage() {
       <div className="flex flex-1 items-center justify-center p-6">
         <div className="flex max-w-md flex-col items-center gap-3 text-center">
           <p className="text-sm text-foreground">
-            This transfer couldn't be found — it may have been removed, or the link is out of date.
+            This transfer wasn't found; it may have been removed, or the link is outdated.
           </p>
           <Button asChild variant="outline" size="sm">
             <Link to={`/l/${locationId}/transfers`}>Back to Transfers</Link>
@@ -166,7 +166,7 @@ export function TransferEditorPage() {
   const commit = async () => {
     try {
       await mutations.commit.mutateAsync();
-      toast.success("Transfer committed — awaiting the destination's receipt");
+      toast.success("Transfer committed; awaiting the destination's receipt");
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not commit");
     }
@@ -292,7 +292,7 @@ export function TransferEditorPage() {
             {t.lines.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
-                  No lines yet — add the items to send above.
+                  No lines yet; add items to send above.
                 </TableCell>
               </TableRow>
             ) : (
@@ -391,7 +391,7 @@ export function TransferEditorPage() {
         onConfirm={async (reason) => {
           try {
             await mutations.voidLine.mutateAsync({ lineId: voidingLine!.id, reason });
-            toast.success("Line voided — reports updated");
+            toast.success("Line voided; reports updated");
             setVoidingLine(null);
           } catch (err) {
             toast.error(err instanceof ApiError ? err.message : "Could not void");
@@ -426,7 +426,7 @@ export function TransferEditorPage() {
         onConfirm={async (reason) => {
           try {
             await mutations.voidReceipt.mutateAsync({ id: t.id, receiptId: voidingReceipt!.receiptId, reason });
-            toast.success("Receipt voided — the line can be received again");
+            toast.success("Receipt voided; line can be received again");
             setVoidingReceipt(null);
           } catch (err) {
             toast.error(err instanceof ApiError ? err.message : "Could not void the receipt");
@@ -489,7 +489,7 @@ function CorrectLineDialog({
         unitCost: cost,
         reason: reason.trim(),
       });
-      toast.success("Line updated — the original is kept, marked corrected");
+      toast.success("Line updated; original kept, marked corrected");
       onOpenChange(false);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not save the change");

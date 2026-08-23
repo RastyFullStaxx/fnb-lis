@@ -125,7 +125,7 @@ export function NonMovingReportPage() {
           <TableEmpty
             icon={PackageX}
             title="Nothing sitting idle"
-            description="Every item on hand moved during the last closed period — no dead stock to flag. (Needs at least one closed audit period to judge movement.)"
+            description="Every item on hand moved last period; no dead stock to flag. (Needs one closed audit period to judge movement.)"
           />
         ) : (
           <>

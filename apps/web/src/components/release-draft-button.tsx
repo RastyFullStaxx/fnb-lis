@@ -44,7 +44,7 @@ export function ReleaseDraftButton({
     if (reason.trim().length < 3) return toast.error("Say why you're releasing it");
     try {
       await release.mutateAsync({ entity, id, reason: reason.trim() });
-      toast.success("Released — you can work on it here now");
+      toast.success("Released; work on it here now");
       setOpen(false);
       setReason("");
     } catch (err) {

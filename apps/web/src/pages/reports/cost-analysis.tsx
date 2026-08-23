@@ -141,9 +141,8 @@ function CostAnalysisSectionTable({ rows }: { rows: CostAnalysisRow[] }) {
                   </span>
                 </TooltipTrigger>
                 <TooltipContent className="max-w-xs">
-                  Cost of goods as a share of sales. Identical whether measured
-                  VAT-inclusive or net of VAT — the ratio is unaffected, so there
-                  is one figure, not two.
+                  Cost of goods as a share of sales. Same figure whether measured
+                  VAT-inclusive or net of VAT.
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -310,7 +309,7 @@ export function CostAnalysisPage() {
           <TableLoading rows={5} />
         ) : !report.data ? (
           <p className="px-4 py-12 text-center text-sm text-muted-foreground">
-            Could not build the report for this period — pick a different pair of count dates.
+            Couldn't build the report for this period; pick different count dates.
           </p>
         ) : (
           <Table>

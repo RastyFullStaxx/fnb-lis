@@ -116,8 +116,8 @@ export function AccountSecurityPage() {
             <ShieldAlert className="size-4" />
             <AlertTitle>Two-factor authentication is required for your role</AlertTitle>
             <AlertDescription>
-              Your account can create users and change settings for a whole establishment, so it needs a
-              second factor. Set it up below to continue — the rest of the app is unavailable until you do.
+              This account manages users and settings for the whole establishment, so it needs a
+              second factor. Set it up below; the app stays locked until you do.
             </AlertDescription>
           </Alert>
         )}
@@ -375,9 +375,8 @@ export function AccountSecurityPage() {
                   <ShieldCheck className="size-4" />
                   <AlertTitle>Two-factor authentication is on</AlertTitle>
                   <AlertDescription>
-                    Save these recovery codes somewhere safe. Each works once, and this is the only time
-                    they're shown — if you lose your phone without them, an administrator has to reset your
-                    setup.
+                    Save these recovery codes now; they won't be shown again. Each works once.
+                    Lose your phone without them, and an administrator must reset your setup.
                   </AlertDescription>
                 </Alert>
                 <ul className="grid grid-cols-2 gap-2 rounded-lg border bg-muted/50 p-4 font-mono text-sm">
@@ -409,7 +408,7 @@ export function AccountSecurityPage() {
                       if (firstLocation) window.location.assign(`/l/${firstLocation.id}/dashboard`);
                     }}
                   >
-                    I've saved them — continue
+                    I've saved them, continue
                   </Button>
                 </div>
               </div>

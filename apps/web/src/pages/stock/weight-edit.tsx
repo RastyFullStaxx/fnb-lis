@@ -110,7 +110,7 @@ export function WeightEdit({ row }: { row: LocationItem }) {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Bottle weights — {v.item.name}</DialogTitle>
+            <DialogTitle>Bottle weights {v.item.name}</DialogTitle>
             <DialogDescription>
               Weigh the empty container and record it here. This applies to your
               catalog only; leave a box blank to use the standard value.
@@ -155,7 +155,7 @@ export function WeightEdit({ row }: { row: LocationItem }) {
                   onChange={(e) => setDensity(e.target.value)}
                 />
                 <p className="text-xs text-muted-foreground">
-                  ml of liquid per gram/oz — turns a scale reading into remaining volume.
+                  ml of liquid per gram/oz. Turns a scale reading into remaining volume.
                 </p>
               </div>
             )}

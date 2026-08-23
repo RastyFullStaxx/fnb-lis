@@ -107,7 +107,7 @@ export function CountSheetPage() {
       {/* Print-only header: the sheet has to identify itself once it's on paper
           and away from the screen that said which location it came from. */}
       <div className="hidden print:block">
-        <h1 className="text-base font-semibold">Physical Count Sheet — {location?.name ?? ""}</h1>
+        <h1 className="text-base font-semibold">Physical Count Sheet {location?.name ?? ""}</h1>
         <p className="mt-1 text-xs">
           Printed {formatDate(new Date().toISOString().slice(0, 10))} · {total} items ·{" "}
           {grouping === "category" ? "by category" : "alphabetical"}
@@ -118,7 +118,7 @@ export function CountSheetPage() {
       </div>
 
       <p className="mt-2 max-w-prose text-sm text-muted-foreground print:hidden">
-        A blind sheet — it deliberately shows no expected quantities or values, so what gets written
+        A blind sheet: no expected quantities or values shown, so what's written
         down is what's actually on the shelf.
       </p>
 
@@ -131,7 +131,7 @@ export function CountSheetPage() {
           </div>
         ) : total === 0 ? (
           <p className="py-12 text-center text-sm text-muted-foreground">
-            This location's catalog is empty — add items before printing a count sheet.
+            This catalog is empty; add items before printing a count sheet.
           </p>
         ) : (
           groups.map((group) => (

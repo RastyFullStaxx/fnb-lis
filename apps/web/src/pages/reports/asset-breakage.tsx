@@ -81,7 +81,7 @@ export function AssetBreakageReportPage() {
           <TableEmpty
             icon={Wrench}
             title="No asset breakage in this range"
-            description="Equipment that broke, went missing, or was retired appears here — recorded as non-revenue on an asset item. (Only shows on locations that have the Asset module.)"
+            description="Broken, missing, or retired equipment appears here, recorded as non-revenue. (Asset-module locations only.)"
           />
         ) : (
           <>

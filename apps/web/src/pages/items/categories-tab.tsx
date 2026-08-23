@@ -259,13 +259,13 @@ function CategoryDialog({
           <DialogTitle>{category ? "Edit Category" : "New Category"}</DialogTitle>
           <DialogDescription>
             {isAsset
-              ? "Asset categories group equipment for the register — no weighing is involved."
+              ? "Asset categories group equipment for the register; no weighing involved."
               // Deliberately no fixed example: the number is millilitres per ONE
               // unit of whatever the bottle's empty weight is recorded in, so a
               // hard-coded "Vodka is 30.12 ml per oz" was flatly wrong the moment
               // the demo catalog moved to grams and the field started showing
               // 1.0625. Stating the relationship survives either unit.
-              : "Liquid Weight (density factor) turns a scale reading into remaining content: millilitres per unit of whatever the bottle's empty weight is recorded in — per gram if the empty weight is in grams."}
+              : "Liquid Weight (density factor) turns a scale reading into remaining content: ml per gram (or per whatever unit the empty weight used)."}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={onSubmit} className="space-y-4">
@@ -308,8 +308,8 @@ function CategoryDialog({
             <div>
               <p className="text-sm font-medium">Items in this category expire</p>
               <p className="text-xs text-muted-foreground">
-                On: items need an expiry date at receiving and get flagged once past it. Off: no date
-                is asked for or tracked — spirits, supplies, and other shelf-stable goods.
+                On: items need an expiry date at receiving, flagged once past it. Off: no date
+                tracked, for spirits, supplies, and other shelf-stable goods.
               </p>
             </div>
             <Switch
@@ -364,7 +364,7 @@ function CategoryDialog({
                 </div>
               )}
               <p className="text-xs text-muted-foreground">
-                What vertical this category of asset serves — e.g. Dental, Warehouse, Bar &amp; Restaurant. Shared by every asset in this category.
+                What vertical this asset category serves, e.g. Dental, Warehouse, Bar & Restaurant. Shared by every asset in it.
               </p>
             </div>
           )}
@@ -373,7 +373,7 @@ function CategoryDialog({
               pure noise on the Audio System / Furniture dialogs. */}
           {!isAsset && (
           <div className="space-y-2">
-            <Label htmlFor="cat-density">Liquid Weight — default density factor (optional)</Label>
+            <Label htmlFor="cat-density">Liquid Weight: default density factor (optional)</Label>
             <QuantityInput
               id="cat-density"
               className="tnum"

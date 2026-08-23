@@ -711,7 +711,7 @@ function StaffDefaultUnitSection() {
   return (
     <SettingsSection
       title="Your default unit"
-      description="Falls back to this for any item without a more specific unit set below. Only changes how you see it — storage and calculations keep the item's own unit."
+      description="Falls back to this unless a more specific unit is set below. Only changes your view; storage and calculations keep the item's own unit."
     >
       <div className="grid gap-4 sm:grid-cols-2 max-w-md">
         <div className="space-y-2">

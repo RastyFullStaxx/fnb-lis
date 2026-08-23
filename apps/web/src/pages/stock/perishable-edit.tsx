@@ -92,7 +92,7 @@ export function PerishableEdit({ row }: { row: LocationItem }) {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Expiry tracking — {row.itemVariant.item.name}</DialogTitle>
+            <DialogTitle>Expiry tracking {row.itemVariant.item.name}</DialogTitle>
             <DialogDescription>
               Whether this item needs a real expiry date at receiving. This applies to your
               location's catalog only; Inherit falls back to the "{category.name}" category's own
@@ -118,8 +118,8 @@ export function PerishableEdit({ row }: { row: LocationItem }) {
                 {resolved ? "Perishable" : "Not perishable"}
               </span>
               {row.isPerishable == null
-                ? ` — from the "${category.name}" category default.`
-                : " — your own override for this location."}
+                ? ` From the "${category.name}" category default.`
+                : " Your own override for this location."}
             </p>
           </div>
 

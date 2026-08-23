@@ -52,7 +52,7 @@ export function DateRangeControl({
       </ToolbarField>
       {inverted && (
         <p className="pb-2 text-xs text-destructive" role="alert">
-          From is after To — swap the dates to see results.
+          From is after To; swap the dates to see results.
         </p>
       )}
     </div>
@@ -85,7 +85,7 @@ export function ExportButtons({
   const blockedReason =
     can(role, "reports.export") && downloads !== "ALLOWED"
       ? downloads === "PAST_DUE"
-        ? "Downloads are paused while this establishment's subscription is past due — reports stay viewable on screen."
+        ? "Downloads are paused while the subscription is past due. Reports stay viewable on screen."
         : "Report downloads are turned off for this establishment by your LIS administrator."
       : null;
   // Slow workbooks invite double-clicks — disable every button while one runs.

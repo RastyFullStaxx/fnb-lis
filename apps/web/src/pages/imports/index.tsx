@@ -131,7 +131,7 @@ export function ImportsPage() {
             title={(batches.data ?? []).length === 0 ? "No imports yet" : "Nothing matches the current filter"}
             description={
               (batches.data ?? []).length === 0
-                ? "Use the Import button to upload a POS export or supplier file — you review before anything touches inventory."
+                ? "Use Import to upload a POS export or supplier file. You review before anything touches inventory."
                 : "Clear the search or type filter to see everything."
             }
             action={
@@ -237,7 +237,7 @@ function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (op
     try {
       const result = await upload.mutateAsync({ kind, file });
       if (result.warnings.length > 0) result.warnings.forEach((w) => toast.warning(w));
-      toast.success("File processed — review the extracted rows");
+      toast.success("File processed; review extracted rows");
       onOpenChange(false);
       navigate(`/l/${locationId}/imports/${result.id}`);
     } catch (err) {
@@ -326,7 +326,7 @@ function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (op
         <p className="mt-3 flex items-start gap-1.5 text-xs text-muted-foreground">
           <Info className="mt-0.5 size-3.5 shrink-0" />
           <span>
-            PDF and image import needs the AI extractor — ask your administrator to enable it. CSV and Excel
+            PDF and image import needs the AI extractor; ask your administrator to enable it. CSV and Excel
             work now.
             {me.data?.user.role === "ADMIN" && (
               <>

@@ -127,7 +127,7 @@ export function BottleKeepPage() {
         toast.success(`Marked ${who}'s bottle as claimed`);
       } else {
         await forfeit.mutateAsync(id);
-        toast.success(`Forfeited — returned to stock at zero cost`);
+        toast.success(`Forfeited; returned to stock at zero cost`);
       }
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not update this bottle");

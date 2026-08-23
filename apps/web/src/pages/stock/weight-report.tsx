@@ -63,7 +63,7 @@ export function WeightReport({
     if (note.trim().length < 3) return toast.error("Say what looks wrong");
     try {
       await report.mutateAsync({ variantId: variant.id, note: note.trim() });
-      toast.success("Reported — your LIS administrator will re-weigh this bottle");
+      toast.success("Reported; your LIS administrator will re-weigh this bottle");
       setOpen(false);
       setNote("");
     } catch (err) {
@@ -122,8 +122,8 @@ export function WeightReport({
           <DialogHeader>
             <DialogTitle>Report a weight problem</DialogTitle>
             <DialogDescription>
-              {row.itemVariant.item.name} — tell your LIS administrator what looks wrong.
-              They will re-weigh the bottle and correct it.
+              {row.itemVariant.item.name}: tell your LIS administrator what looks wrong.
+              They'll re-weigh and correct it.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">

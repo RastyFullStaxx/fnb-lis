@@ -226,8 +226,8 @@ export function WeighPreviewStrip({
             next — and only a manager/owner can record a weighing, so staff get
             the way around it instead of an instruction they can't follow. */}
         {canEditWeights
-          ? `This bottle has no ${preview.missing} yet — weigh the empty container and record it on the item in Local Database, then come back.`
-          : `This bottle has no ${preview.missing} yet, so it can't be weighed. Ask your manager to weigh the empty container in Local Database — meanwhile you can count it under Full Units, or enter what's left under Open Amount.`}
+          ? `This bottle has no ${preview.missing} yet. Weigh the empty container, record it on the item in Local Database, then come back.`
+          : `This bottle has no ${preview.missing} yet, so it can't be weighed. Ask your manager to weigh the empty container. Meanwhile, count it under Full Units or enter what's left under Open Amount.`}
       </p>
     );
   }
@@ -246,10 +246,10 @@ export function WeighPreviewStrip({
             weighed count checkable. Only the borrowed constants are hidden, with
             the way to own them stated. */}
         {!showsMainValues
-          ? "Using the standard weights for this bottle — set your own in the Local Database to see the figures. Type the scale weight."
+          ? "Using standard weights for this bottle. Set your own in Local Database to see real figures. Type the scale weight."
           : preview.mode === "NET"
-            ? `Empty weight ${preview.tare} ${preview.nativeUnit} · weighed by net weight — type the scale weight.`
-            : `Empty weight ${preview.tare} ${preview.nativeUnit} · Liquid Weight ×${preview.density} — type the scale weight.`}
+            ? `Empty weight ${preview.tare} ${preview.nativeUnit} · by net weight. Type the scale weight.`
+            : `Empty weight ${preview.tare} ${preview.nativeUnit} · Liquid Weight ×${preview.density} Type the scale weight.`}
       </p>
     );
   }

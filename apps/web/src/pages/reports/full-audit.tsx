@@ -643,7 +643,7 @@ export function FullAuditPage() {
                 so the two filters genuinely behave differently — say which. */}
             {filteredOut} of {report.data.rows.length} rows hidden.{" "}
             {varianceOnly
-              ? "Variance Only applies to the export too — the file carries the same rows."
+              ? "Variance Only applies to the export too; the file carries the same rows."
               : "The search box narrows this screen only; exports carry every row."}
           </p>
         ) : null}
@@ -761,7 +761,7 @@ function VerdictStrip({ report, begin, end }: { report: Report; begin: string; e
               same two dates give a different revenue figure there. Both are
               deliberate; nothing on screen said so. */}
           <p className="text-xs leading-5 text-muted-foreground">
-            Measured between the two counts — activity on {formatDate(begin)} itself belongs to the
+            Between the two counts, activity on {formatDate(begin)} itself belongs to the
             previous period. Date-range reports like Sales include both end dates, so their totals
             will differ.
           </p>
@@ -769,7 +769,7 @@ function VerdictStrip({ report, begin, end }: { report: Report; begin: string; e
               the two halves are. It is the report the client trusts above all
               else, and a number nobody can read is a number nobody can check. */}
           <p className="text-xs leading-5 text-muted-foreground">
-            Begin and End are written <span className="tnum font-medium">sealed + open</span> — so{" "}
+            Begin and End are written <span className="tnum font-medium">sealed + open</span>, so{" "}
             <span className="tnum font-medium">1 + 0.97</span> means one unopened container plus a
             partly-used one that is 97% full. Usage and Variance are totals of both.
           </p>

@@ -47,8 +47,8 @@ export function LandingPage() {
     <div className="min-h-dvh bg-sidebar text-sidebar-foreground">
       {signedInNoLocations && (
         <div role="status" className="bg-background px-6 py-2.5 text-center text-sm text-foreground">
-          You're signed in as {me.data!.user.username}, but no client locations are assigned to your account yet —
-          ask an administrator to assign you.
+          You're signed in as {me.data!.user.username}, but no locations are assigned to your account yet.
+          Ask an administrator to assign you.
         </div>
       )}
 

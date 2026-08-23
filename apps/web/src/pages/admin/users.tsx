@@ -393,7 +393,7 @@ async function copyPassword(password: string) {
     await navigator.clipboard.writeText(password);
     toast.success("Password copied");
   } catch {
-    toast.error("Couldn't copy — select it manually");
+    toast.error("Couldn't copy; select manually");
   }
 }
 
@@ -412,7 +412,7 @@ function PasswordRevealDialog({
         <DialogHeader>
           <DialogTitle>Temporary password for @{issued.username}</DialogTitle>
           <DialogDescription>
-            Share it securely — it won't be shown again after you close this.
+            Share it securely; it won't be shown again after you close this.
           </DialogDescription>
         </DialogHeader>
         <div className="flex gap-2">
@@ -513,8 +513,8 @@ function ModuleCheckboxes({
       </div>
       <p className="text-xs text-muted-foreground">
         {selected.size === 0
-          ? "No restriction — this user works in every module their locations have."
-          : `Restricted to ${[...selected].map((m) => MODULE_TYPE_LABELS[m]).join(" + ")} — locations outside that disappear from their switcher.`}
+          ? "No restriction; this user works in every module their locations have."
+          : `Restricted to ${[...selected].map((m) => MODULE_TYPE_LABELS[m]).join(" + ")} Locations outside that disappear from their switcher.`}
       </p>
     </div>
   );
@@ -633,7 +633,7 @@ function CreateUserDialog({
         <DialogHeader>
           <DialogTitle>New User</DialogTitle>
           <DialogDescription>
-            A temporary password is generated — the user can keep or change it later.
+            A temporary password is generated; keep it or change it later.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">

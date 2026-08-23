@@ -176,7 +176,7 @@ export function TransferReportPage() {
                 hint={
                   movement.shortfall > 0
                     ? `${formatMoney(movement.shortfall)} at cost didn't arrive`
-                    : "At cost — everything dispatched arrived"
+                    : "At cost: everything dispatched arrived"
                 }
               >
                 <MagnitudeBars data={movement.bars} name="At cost" />

@@ -99,7 +99,7 @@ export function RecipesPage() {
             title={(menus.data ?? []).length === 0 ? "No menus yet" : "No menus match your search"}
             description={
               (menus.data ?? []).length === 0
-                ? "Build your first cocktail or dish — its recipe links menu sales to ingredient stock."
+                ? "Build your first cocktail or dish; its recipe links menu sales to ingredient stock."
                 : "Try a different name."
             }
             action={
@@ -240,7 +240,7 @@ function CopyMenusDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
       if (result.skippedNoRecipe > 0) notes.push(`${result.skippedNoRecipe} had no published recipe`);
       if (result.skippedMissingIngredients > 0) {
         notes.push(
-          `${result.skippedMissingIngredients} skipped — missing ingredient(s) in this location's catalog ` +
+          `${result.skippedMissingIngredients} skipped: missing ingredient(s) in this location's catalog ` +
             `(copy the catalog on Local Database first, then retry)`,
         );
       }
@@ -259,9 +259,9 @@ function CopyMenusDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
         <DialogHeader>
           <DialogTitle>Copy Recipes from Another Location</DialogTitle>
           <DialogDescription>
-            Brings that location's published recipes into this one, remapped onto this location's own catalog
-            prices. Menus already here, or that use an ingredient this location doesn't stock yet, are left out —
-            copy the catalog first (on Local Database) to bring across as many recipes as possible.
+            Copies that location's recipes into this one, at this location's prices. Menus already here, or
+            needing an ingredient it doesn't stock, are skipped. Copy the catalog first (Local Database) to bring
+            across more.
           </DialogDescription>
         </DialogHeader>
         <Select value={sourceId} onValueChange={setSourceId}>
