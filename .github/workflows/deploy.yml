@@ -26,7 +26,16 @@ jobs:
     name: Deploy to VPS
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
-    environment: production
+    # No `environment:` here on purpose.
+    #
+    # Environments (and environment-scoped secrets and required reviewers) are
+    # only free for PUBLIC repositories. This repo is private on a personal
+    # account, so pinning the job to one would leave the secrets unresolved and
+    # the deploy failing for a reason the logs barely explain.
+    #
+    # Plain repository secrets work on every plan. If the account is ever on Pro
+    # or the repo moves to an organization, add `environment: production` back
+    # and move the four secrets into it to get a required-reviewer gate.
     steps:
       - name: Resolve the commit CI actually verified
         id: sha
