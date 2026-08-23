@@ -1277,3 +1277,18 @@ model Setting {
 
   @@unique([clientId, key])
 }
+
+/// Maps a legacy MySQL row to the record it became, so `import:legacy` is
+/// idempotent: found -> update, absent -> create and record. Without it a second
+/// run duplicates 8,525 count lines.
+///
+/// Migration-only. No application route reads this table, and nothing in the
+/// reconciliation path joins to it.
+model LegacyMap {
+  id          String @id @default(cuid())
+  legacyTable String
+  legacyId    String
+  newId       String
+
+  @@unique([legacyTable, legacyId])
+}

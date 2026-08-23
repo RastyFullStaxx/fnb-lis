@@ -9,6 +9,7 @@
     "typecheck": "tsc -p tsconfig.json",
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
+    "db:bootstrap": "tsx prisma/bootstrap.ts",
     "db:seed": "tsx prisma/seed.ts",
     "verify:seed": "node prisma/verify-seed.mjs",
     "verify:sync": "node prisma/verify-sync.mjs",
@@ -19,7 +20,8 @@
     "seal-history": "tsx scripts/seal-activity-history.ts",
     "backfill:subscription-reports": "tsx scripts/backfill-subscription-reports.ts",
     "verify:races": "node prisma/verify-races.mjs",
-    "db:deploy": "prisma migrate deploy"
+    "db:deploy": "prisma migrate deploy",
+    "import:legacy": "tsx scripts/import-legacy.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

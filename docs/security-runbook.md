@@ -32,6 +32,20 @@ A small KVM VPS — 1 vCPU / 4 GB — is the target, and is comfortably more tha
       `FNB_MFA_KEY` here (§1) and set `FNB_TRUST_PROXY=1`, since Caddy is about to sit in front
 - [ ] `FNB_BACKUP_DIR` pointed at a path that is **not** the app disk, then the hourly schedule from
       §2 as a systemd timer or cron entry
+- [ ] **Initialise the database**, in this order and no other:
+
+      npm run db:deploy -w @fnb/server        # schema
+      npm run db:generate -w @fnb/server      # migrate does NOT regenerate the client
+      FNB_ADMIN_USER=<name> npm run db:bootstrap -w @fnb/server
+
+      `db:bootstrap` creates the units, categories, settings and the first ADMIN. **Without it the
+      database has no reference data and nobody can log in** — the schema alone is not a usable
+      system. It prints a randomly generated password **once**; store it, then change it in the app.
+      Re-running is safe (upserts, and an existing admin is left untouched).
+
+- [ ] **`npm run db:seed` is still forbidden here** (§1). `db:bootstrap` exists precisely so that a
+      production database can get its reference data without the five demo accounts sharing one
+      published password, and without demo clients and pricing.
 
 ### Service
 

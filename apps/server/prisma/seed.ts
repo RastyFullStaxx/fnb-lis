@@ -1,4 +1,8 @@
 import { prisma } from "../src/db";
+// Reference data + the weight-scale helpers. Moved out of this file so a
+// production database can create them WITHOUT the demo fixtures below
+// (security-runbook.md §1 forbids db:seed in production). Same code, one home.
+import { seedUnits, seedCategories, seedSettings, gramsFromOz, densityPerGram } from "./bootstrap";
 import { hashPassword } from "../src/auth/password";
 import { allowedProductTypes, derivePackageType, REPORT_TIER_PRESETS } from "@fnb/core";
 import { seedDemoHistory } from "./seed-demo";
@@ -222,157 +226,6 @@ async function upsertLocationWithModules(clientId: string, name: string, modules
     });
   }
   return location;
-}
-
-async function seedUnits() {
-  // Base units: VOLUME → ml, MASS → g, COUNT → 1
-  const units: Array<{ name: string; kind: string; factorToBase: number }> = [
-    { name: "ml", kind: "VOLUME", factorToBase: 1 },
-    { name: "L", kind: "VOLUME", factorToBase: 1000 },
-    { name: "fl oz", kind: "VOLUME", factorToBase: 29.5735 },
-    { name: "gal", kind: "VOLUME", factorToBase: 3785.41 },
-    { name: "g", kind: "MASS", factorToBase: 1 },
-    { name: "kg", kind: "MASS", factorToBase: 1000 },
-    { name: "oz", kind: "MASS", factorToBase: 28.3495 },
-    { name: "lb", kind: "MASS", factorToBase: 453.592 },
-    { name: "pc", kind: "COUNT", factorToBase: 1 },
-    { name: "bottle", kind: "COUNT", factorToBase: 1 },
-    { name: "pack", kind: "COUNT", factorToBase: 1 },
-    { name: "case", kind: "COUNT", factorToBase: 1 },
-    { name: "box", kind: "COUNT", factorToBase: 1 },
-    { name: "tray", kind: "COUNT", factorToBase: 1 },
-    { name: "can", kind: "COUNT", factorToBase: 1 },
-    { name: "dozen", kind: "COUNT", factorToBase: 12 },
-    // Asset register UOM vocabulary (asset-seed-data.ts) — distinct from the
-    // Beverage/Food/Supplies count units above; the client's sheet uses these
-    // exact words rather than "pc"/"box".
-    { name: "Unit", kind: "COUNT", factorToBase: 1 },
-    { name: "Piece", kind: "COUNT", factorToBase: 1 },
-    { name: "Kit", kind: "COUNT", factorToBase: 1 },
-    { name: "Set", kind: "COUNT", factorToBase: 1 },
-  ];
-  for (const u of units) {
-    await prisma.unit.upsert({
-      where: { name: u.name },
-      update: { kind: u.kind, factorToBase: u.factorToBase },
-      create: { ...u, isSystem: true },
-    });
-  }
-}
-
-async function seedCategories() {
-  const categories: Array<{
-    name: string;
-    productType: string;
-    defaultDensityFactor?: number;
-    sortOrder: number;
-    // Perishability policy layer (expiry-date-plan.md / expiry-date-phases.md
-    // Phase 1.5). Omitted = schema default (true, perishable) — most of the
-    // catalog spoils. Explicit `false` marks the seeded exception: true
-    // spirits (self-preserving, high proof — no bar tracks a "best by" date
-    // on Jack Daniel's) and every Supplies / Asset category (neither spoils).
-    defaultPerishable?: boolean;
-  }> = [
-    { name: "Vodka", productType: "Beverage", defaultDensityFactor: 30.12, sortOrder: 1, defaultPerishable: false },
-    { name: "Rum", productType: "Beverage", defaultDensityFactor: 30.49, sortOrder: 2, defaultPerishable: false },
-    { name: "Whisky", productType: "Beverage", defaultDensityFactor: 30.86, sortOrder: 3, defaultPerishable: false },
-    { name: "Gin", productType: "Beverage", defaultDensityFactor: 30.49, sortOrder: 4, defaultPerishable: false },
-    { name: "Brandy", productType: "Beverage", defaultDensityFactor: 30.3, sortOrder: 5, defaultPerishable: false },
-    { name: "Tequila", productType: "Beverage", defaultDensityFactor: 30.67, sortOrder: 6, defaultPerishable: false },
-    { name: "Single Malt Whisky", productType: "Beverage", defaultDensityFactor: 30.12, sortOrder: 7, defaultPerishable: false },
-    { name: "Cognac", productType: "Beverage", defaultDensityFactor: 30.67, sortOrder: 8, defaultPerishable: false },
-    { name: "Bourbon", productType: "Beverage", defaultDensityFactor: 30.86, sortOrder: 9, defaultPerishable: false },
-    // Aperitif and Liqueur are dairy- or wine-based (Baileys, vermouth), not
-    // distilled — they spoil and stay on the schema default (true) despite
-    // sharing productType "Beverage" with the true spirits above.
-    { name: "Aperitif", productType: "Beverage", defaultDensityFactor: 28.9, sortOrder: 10 },
-    { name: "Liqueur", productType: "Beverage", sortOrder: 11 },
-    { name: "Wine", productType: "Beverage", sortOrder: 12 },
-    { name: "Beer", productType: "Beverage", sortOrder: 13 },
-    { name: "Soda & Mixers", productType: "Beverage", sortOrder: 14 },
-    { name: "Juices", productType: "Beverage", sortOrder: 15 },
-    { name: "Syrup", productType: "Beverage", sortOrder: 16 },
-    { name: "Meat", productType: "Food", sortOrder: 20 },
-    { name: "Poultry", productType: "Food", sortOrder: 21 },
-    { name: "Seafood", productType: "Food", sortOrder: 22 },
-    { name: "Dairy", productType: "Food", sortOrder: 23 },
-    { name: "Produce", productType: "Food", sortOrder: 24 },
-    // Dry Goods (e.g. Cooking Oil) spoils on a long timeline, unlike Meat or
-    // Dairy in the same productType "Food" — but it still spoils, so it stays
-    // on the schema default (true). A location that wants a shorter effective
-    // window overrides at LocationItem, not here.
-    { name: "Dry Goods", productType: "Food", sortOrder: 25 },
-    { name: "Frozen", productType: "Food", sortOrder: 26 },
-    { name: "Sauces & Dressings", productType: "Food", sortOrder: 27 },
-    { name: "Consumables", productType: "Supplies", sortOrder: 30, defaultPerishable: false },
-    // Asset now has its own real product type (Fix Plan Phase E) — equipment,
-    // tools, and other non-consumable items, distinct from the consumable
-    // Supplies above (Table Napkins, Disposable Gloves). Neither Supplies nor
-    // Asset spoils, so every category below is seeded defaultPerishable: false.
-    { name: "Equipment", productType: "Asset", sortOrder: 40, defaultPerishable: false },
-    // Full AST-001->070 register categories (Phase 7.3) — one category per
-    // item, per the client's own sheet and the proposal's explicit
-    // recommendation not to invent a consolidated scheme. Kept distinct from
-    // the flat "Equipment" category above, which predates this and already
-    // holds its own two demo items (Bar Blender, Commercial Ice Machine).
-    { name: "POS Equipment", productType: "Asset", sortOrder: 41, defaultPerishable: false },
-    { name: "IT Equipment", productType: "Asset", sortOrder: 42, defaultPerishable: false },
-    { name: "Security CCTV", productType: "Asset", sortOrder: 43, defaultPerishable: false },
-    { name: "Security DVR/NVR", productType: "Asset", sortOrder: 44, defaultPerishable: false },
-    { name: "Audio System", productType: "Asset", sortOrder: 45, defaultPerishable: false },
-    { name: "Entertainment", productType: "Asset", sortOrder: 46, defaultPerishable: false },
-    { name: "Coffee Equipment", productType: "Asset", sortOrder: 47, defaultPerishable: false },
-    { name: "Beverage Equipment", productType: "Asset", sortOrder: 48, defaultPerishable: false },
-    { name: "Refrigeration Upright", productType: "Asset", sortOrder: 49, defaultPerishable: false },
-    { name: "Refrigeration Chest", productType: "Asset", sortOrder: 50, defaultPerishable: false },
-    { name: "Refrigeration Wine", productType: "Asset", sortOrder: 51, defaultPerishable: false },
-    { name: "Refrigeration", productType: "Asset", sortOrder: 52, defaultPerishable: false },
-    { name: "Kitchen Equipment", productType: "Asset", sortOrder: 53, defaultPerishable: false },
-    { name: "Furniture", productType: "Asset", sortOrder: 54, defaultPerishable: false },
-    { name: "Bar Tools", productType: "Asset", sortOrder: 55, defaultPerishable: false },
-    { name: "Glassware", productType: "Asset", sortOrder: 56, defaultPerishable: false },
-    { name: "Dinning Ware", productType: "Asset", sortOrder: 57, defaultPerishable: false },
-    { name: "Safety Fire", productType: "Asset", sortOrder: 58, defaultPerishable: false },
-    { name: "Safety — First Aid", productType: "Asset", sortOrder: 59, defaultPerishable: false },
-    { name: "Cleaning Equipment", productType: "Asset", sortOrder: 60, defaultPerishable: false },
-    { name: "Office Equipment", productType: "Asset", sortOrder: 61, defaultPerishable: false },
-  ];
-  for (const cat of categories) {
-    await prisma.category.upsert({
-      where: { name: cat.name },
-      update: {
-        productType: cat.productType,
-        defaultDensityFactor: cat.defaultDensityFactor != null ? densityPerGram(cat.defaultDensityFactor) : null,
-        sortOrder: cat.sortOrder,
-        defaultPerishable: cat.defaultPerishable ?? true,
-      },
-      create: {
-        ...cat,
-        defaultDensityFactor: cat.defaultDensityFactor != null ? densityPerGram(cat.defaultDensityFactor) : null,
-        defaultPerishable: cat.defaultPerishable ?? true,
-      },
-    });
-  }
-}
-
-async function seedSettings() {
-  const settings: Array<{ key: string; value: unknown }> = [
-    // Garnish added 2026-08-04 (client: "parehas" — bar and kitchen both).
-    { key: "productTypes", value: ["Beverage", "Food", "Garnish", "Supplies", "Asset"] },
-    // Asset condition/status presets (asset-module-proposal.md, client-confirmed
-    // 2026-07-23). Same data-driven-list shape as productTypes above; the UI adds
-    // an "Other" branch on top rather than storing it as a literal option.
-    { key: "conditionOptions", value: ["Active", "Needs Repair", "Under Repair", "Retired", "Damaged"] },
-    { key: "statusOptions", value: ["In Use", "In Storage", "For Disposal", "Sold"] },
-    { key: "company", value: { name: "Liquor Inventory Solution", shortName: "LIS" } },
-  ];
-  for (const s of settings) {
-    await prisma.setting.upsert({
-      where: { clientId_key: { clientId: "", key: s.key } },
-      update: { value: JSON.stringify(s.value) },
-      create: { clientId: "", key: s.key, value: JSON.stringify(s.value) },
-    });
-  }
 }
 
 interface SeedVariant {
@@ -1482,9 +1335,8 @@ async function seedActivity() {
  * scale/tare/density (a snapshot of how that bottle was actually weighed), so
  * they stay internally consistent in ounces and the anchor numbers cannot move.
  */
-const G_PER_OZ = 28.349523125;
-const gramsFromOz = (oz: number) => Math.round(oz * G_PER_OZ * 10) / 10;
-const densityPerGram = (perOz: number) => Math.round((perOz / G_PER_OZ) * 10000) / 10000;
+// G_PER_OZ / gramsFromOz / densityPerGram moved to ./bootstrap so the seeder and
+// scripts/import-legacy.ts share one definition of the ounce. Imported above.
 
 async function main() {
   await seedUsers();
