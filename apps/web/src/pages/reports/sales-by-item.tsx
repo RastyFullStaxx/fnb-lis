@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
 import { GlassWater } from "lucide-react";
-import { round2 } from "@fnb/core";
+import { convert, formatQty, round2 } from "@fnb/core";
 import { useCountDates } from "@/api/ops";
 import { useLocationId } from "@/api/location";
 import { exportUrl, useSalesByItemReport } from "@/api/reports";
+import { useItemDisplayUnit } from "@/lib/preferences";
 import { formatMoney, formatNumber, formatDate } from "@/lib/utils";
 import { useSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
@@ -24,6 +25,7 @@ import {
   TableBody,
   TableCell,
   TableFooter,
+  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
@@ -51,6 +53,15 @@ export function SalesByItemReportPage() {
     const q = query.trim().toLowerCase();
     return q ? all.filter((r) => r.name.toLowerCase().includes(q)) : all;
   }, [report.data, query]);
+
+  // Per-item display unit resolver (report-uom-plan.md, "On screen") —
+  // Shot, Bottle, and Total Qty share one resolved unit per row, same scope
+  // as the export route's convertRowsForExport(rows, ["shot", "bottle", "qty"]).
+  const allItemIds = useMemo(
+    () => Array.from(new Set((report.data?.rows ?? []).map((r) => r.itemId))),
+    [report.data],
+  );
+  const { resolve: resolveDisplay } = useItemDisplayUnit(allItemIds);
 
   // Where the period's revenue actually came from — a ranking the totals row
   // can't show. Built off the full payload, so searching the table below
@@ -205,6 +216,7 @@ export function SalesByItemReportPage() {
                     >
                       Total Qty
                     </SortableTableHead>
+                    <TableHead className="text-right">Unit</TableHead>
                     <SortableTableHead
                       sortKey="cost"
                       activeKey={sortKey}
@@ -226,19 +238,25 @@ export function SalesByItemReportPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {sortedRows.map((row, i) => (
-                    <TableRow key={i}>
-                      {/* Wrapped, never truncated — an auditor has to read the
-                          whole item name to match it against a shelf. */}
-                      <TableCell className="max-w-[22rem] font-medium break-words">{row.name}</TableCell>
-                      <TableCell className="text-muted-foreground">{row.uom}</TableCell>
-                      <TableCell className="tnum text-right">{row.shot > 0 ? formatNumber(row.shot) : "—"}</TableCell>
-                      <TableCell className="tnum text-right">{row.bottle > 0 ? formatNumber(row.bottle) : "—"}</TableCell>
-                      <TableCell className="tnum text-right">{formatNumber(row.qty)}</TableCell>
-                      <TableCell className="tnum text-right">{formatMoney(row.cost)}</TableCell>
-                      <TableCell className="tnum text-right">{formatMoney(row.retail)}</TableCell>
-                    </TableRow>
-                  ))}
+                  {sortedRows.map((row, i) => {
+                    const itemUnit = { id: row.unitName, name: row.unitName, kind: row.unitKind, factorToBase: row.unitFactorToBase };
+                    const displayUnit = resolveDisplay(row.itemId, itemUnit) ?? itemUnit;
+                    const convertQty = (q: number) => (displayUnit.kind === itemUnit.kind ? convert(q, itemUnit, displayUnit) : q);
+                    return (
+                      <TableRow key={i}>
+                        {/* Wrapped, never truncated — an auditor has to read the
+                            whole item name to match it against a shelf. */}
+                        <TableCell className="max-w-[22rem] font-medium break-words">{row.name}</TableCell>
+                        <TableCell className="text-muted-foreground">{row.uom}</TableCell>
+                        <TableCell className="tnum text-right">{row.shot > 0 ? formatQty(convertQty(row.shot)) : "—"}</TableCell>
+                        <TableCell className="tnum text-right">{row.bottle > 0 ? formatQty(convertQty(row.bottle)) : "—"}</TableCell>
+                        <TableCell className="tnum text-right">{formatQty(convertQty(row.qty))}</TableCell>
+                        <TableCell className="text-right text-muted-foreground">{displayUnit.name}</TableCell>
+                        <TableCell className="tnum text-right">{formatMoney(row.cost)}</TableCell>
+                        <TableCell className="tnum text-right">{formatMoney(row.retail)}</TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
                 {/* Totals always reflect the whole period, not the search subset. */}
                 {query.trim() === "" && (
@@ -250,6 +268,7 @@ export function SalesByItemReportPage() {
                       <TableCell className="tnum text-right font-medium">{formatNumber(report.data.totals.shot)}</TableCell>
                       <TableCell className="tnum text-right font-medium">{formatNumber(report.data.totals.bottle)}</TableCell>
                       <TableCell className="tnum text-right font-medium">{formatNumber(report.data.totals.qty)}</TableCell>
+                      <TableCell />
                       <TableCell className="tnum text-right font-semibold">{formatMoney(report.data.totals.cost)}</TableCell>
                       <TableCell className="tnum text-right font-semibold">{formatMoney(report.data.totals.retail)}</TableCell>
                     </TableRow>

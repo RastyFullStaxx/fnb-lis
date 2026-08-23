@@ -444,6 +444,19 @@ export interface OnHandRow {
   /** LocationItem.isActive — carried through so the client can badge a
       hidden-but-active row (clutter-in-reports-plan.md Phase 6.1). */
   isActive: boolean;
+  /**
+   * report-uom-plan.md, Phase 4: `onHand` is a real base-unit quantity
+   * (unlike `uom`/`sizeUom` elsewhere, which is the item's fixed catalog
+   * size). itemId feeds the export-side ClientItemUnitDefault lookup
+   * (services/report-units.ts); the unit fields feed both screen
+   * (resolveDisplayUnit, via useItemDisplayUnit on the client) and export
+   * (resolveExportUnit) — `onHand` itself stays in base units here and is
+   * only ever converted at render/export time, never stored converted.
+   */
+  itemId: string;
+  unitName: string;
+  unitKind: "VOLUME" | "MASS" | "COUNT";
+  unitFactorToBase: number;
 }
 export interface OnHandReport {
   lastCountDate: string | null;
@@ -475,7 +488,13 @@ export async function onHandReport(
 
   const priceRows = await prisma.locationItem.findMany({
     where: { id: { in: report.rows.map((r) => r.locationItemId) } },
-    select: { id: true, cost: true, retail: true, parLevel: true },
+    select: {
+      id: true,
+      cost: true,
+      retail: true,
+      parLevel: true,
+      itemVariant: { select: { itemId: true, unit: { select: { name: true, kind: true, factorToBase: true } } } },
+    },
   });
   const priceMap = new Map(priceRows.map((p) => [p.id, p]));
 
@@ -501,6 +520,10 @@ export async function onHandReport(
       retailValue: onHand * retail,
       belowPar: price?.parLevel != null && onHand < price.parLevel,
       isActive: row.isActive,
+      itemId: price?.itemVariant.itemId ?? "",
+      unitName: price?.itemVariant.unit.name ?? row.unitName,
+      unitKind: (price?.itemVariant.unit.kind as "VOLUME" | "MASS" | "COUNT" | undefined) ?? "COUNT",
+      unitFactorToBase: price?.itemVariant.unit.factorToBase ?? 1,
     };
   });
 
@@ -546,6 +569,17 @@ interface StockSnapshotItem {
       column displays; this one must match the period the row's own totals
       were drawn from, per the decision doc. */
   hasOnHandPeriodActivity: boolean;
+  /**
+   * report-uom-plan.md Phase 5: same fields as OnHandRow, same reasoning —
+   * `onHand`/`usage` are real base-unit quantities. Sourced from the same
+   * priceRows query onHandReport() already makes, just widened here to also
+   * pull itemVariant.itemId/unit. Par Level and Non-Moving both read this
+   * snapshot, so adding it once here covers both reports.
+   */
+  itemId: string;
+  unitName: string;
+  unitKind: "VOLUME" | "MASS" | "COUNT";
+  unitFactorToBase: number;
 }
 
 export async function stockSnapshot(
@@ -571,7 +605,13 @@ export async function stockSnapshot(
 
   const priceRows = await prisma.locationItem.findMany({
     where: { id: { in: onHandAudit.rows.map((r) => r.locationItemId) } },
-    select: { id: true, cost: true, retail: true, parLevel: true },
+    select: {
+      id: true,
+      cost: true,
+      retail: true,
+      parLevel: true,
+      itemVariant: { select: { itemId: true, unit: { select: { name: true, kind: true, factorToBase: true } } } },
+    },
   });
   const priceMap = new Map(priceRows.map((p) => [p.id, p]));
 
@@ -594,6 +634,10 @@ export async function stockSnapshot(
       usage: usageByItem.get(row.locationItemId) ?? 0,
       isActive: row.isActive,
       hasOnHandPeriodActivity: hasReportActivity(row),
+      itemId: price?.itemVariant.itemId ?? "",
+      unitName: price?.itemVariant.unit.name ?? row.unitName,
+      unitKind: (price?.itemVariant.unit.kind as "VOLUME" | "MASS" | "COUNT" | undefined) ?? "COUNT",
+      unitFactorToBase: price?.itemVariant.unit.factorToBase ?? 1,
     };
   });
   return { lastCountDate: lastDate, periodBegin, periodEnd: lastDate, items };
@@ -612,6 +656,12 @@ export interface ParLevelRow {
   /** LocationItem.isActive — carried through so the client can badge a
       hidden-but-active row (clutter-in-reports-plan.md Phase 6.1). */
   isActive: boolean;
+  /** report-uom-plan.md Phase 5 — see OnHandRow's own comment. `onHand` and
+      `usage` are both real base-unit quantities here. */
+  itemId: string;
+  unitName: string;
+  unitKind: "VOLUME" | "MASS" | "COUNT";
+  unitFactorToBase: number;
 }
 export interface ParLevelReport {
   lastCountDate: string | null;
@@ -656,6 +706,10 @@ export async function parLevelReport(
         orderValue: round2(suggestedOrder * it.cost),
         belowPar: it.onHand < par,
         isActive: it.isActive,
+        itemId: it.itemId,
+        unitName: it.unitName,
+        unitKind: it.unitKind,
+        unitFactorToBase: it.unitFactorToBase,
       };
     })
     // Below-par first, then by the biggest gap to fill, then by name.
@@ -691,6 +745,11 @@ export interface NonMovingRow {
   /** LocationItem.isActive — carried through so the client can badge a
       hidden-but-active row (clutter-in-reports-plan.md Phase 6.1). */
   isActive: boolean;
+  /** report-uom-plan.md Phase 5 — see OnHandRow's own comment. */
+  itemId: string;
+  unitName: string;
+  unitKind: "VOLUME" | "MASS" | "COUNT";
+  unitFactorToBase: number;
 }
 export interface NonMovingReport {
   lastCountDate: string | null;
@@ -731,6 +790,10 @@ export async function nonMovingReport(
     costValue: round2(it.onHand * it.cost),
     retailValue: round2(it.onHand * it.retail),
     isActive: it.isActive,
+    itemId: it.itemId,
+    unitName: it.unitName,
+    unitKind: it.unitKind,
+    unitFactorToBase: it.unitFactorToBase,
   }));
 
   // Totals FIRST, from the complete row set — the display filter below must
@@ -777,6 +840,13 @@ export interface ExpiringBatchRow {
   /** Computed live against today, never stored — same precedent as
       BottleKeep.dueForForfeit (expiry-date-plan.md, "computed, not stored"). */
   isExpired: boolean;
+  /** report-uom-plan.md Phase 5 — see OnHandRow's own comment. `qty` is a
+      real base-unit quantity (the batch's remaining PurchaseLine.qty), sourced
+      from LI_INCLUDE, which already joins itemVariant.unit. */
+  itemId: string;
+  unitName: string;
+  unitKind: "VOLUME" | "MASS" | "COUNT";
+  unitFactorToBase: number;
 }
 export interface ExpiringBatchesReport {
   asOfDate: string;
@@ -827,6 +897,10 @@ export async function expiringBatchesReport(
     expiryDate: l.expiryDate!, // filtered not-null above
     purchaseDate: l.purchase.purchaseDate,
     isExpired: l.expiryDate! <= today,
+    itemId: l.locationItem.itemVariant.itemId,
+    unitName: l.locationItem.itemVariant.unit.name,
+    unitKind: l.locationItem.itemVariant.unit.kind as "VOLUME" | "MASS" | "COUNT",
+    unitFactorToBase: l.locationItem.itemVariant.unit.factorToBase,
   }));
 
   // Expired first (still oldest-expiry-first within that group, since the
@@ -1044,6 +1118,14 @@ export interface TransferReportRow {
   unitCost: number;
   costValue: number;
   retailValue: number;
+  /** report-uom-plan.md Phase 5 — see OnHandRow's own comment. `qtySent` /
+      `qtyReceived` are real base-unit quantities, sourced from LI_INCLUDE
+      (out branch: locationItem; in branch: toLocationItem), which already
+      joins itemVariant.unit. */
+  itemId: string;
+  unitName: string;
+  unitKind: "VOLUME" | "MASS" | "COUNT";
+  unitFactorToBase: number;
 }
 export interface TransferReport {
   from: string;
@@ -1101,6 +1183,10 @@ export async function transferReport(
       unitCost: l.unitCost,
       costValue: l.qty * l.unitCost,
       retailValue: l.qty * l.locationItem.retail,
+      itemId: l.locationItem.itemVariant.itemId,
+      unitName: l.locationItem.itemVariant.unit.name,
+      unitKind: l.locationItem.itemVariant.unit.kind as "VOLUME" | "MASS" | "COUNT",
+      unitFactorToBase: l.locationItem.itemVariant.unit.factorToBase,
     }));
   } else {
     // Destination view: confirmed receipts, valued at the sender's cost
@@ -1138,6 +1224,10 @@ export async function transferReport(
       unitCost: r.transferLine.unitCost,
       costValue: r.qtyReceived * r.transferLine.unitCost,
       retailValue: r.qtyReceived * r.toLocationItem.retail,
+      itemId: r.toLocationItem.itemVariant.itemId,
+      unitName: r.toLocationItem.itemVariant.unit.name,
+      unitKind: r.toLocationItem.itemVariant.unit.kind as "VOLUME" | "MASS" | "COUNT",
+      unitFactorToBase: r.toLocationItem.itemVariant.unit.factorToBase,
     }));
   }
 

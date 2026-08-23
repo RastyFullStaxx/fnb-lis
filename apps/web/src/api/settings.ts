@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { CostBasis } from "@fnb/core";
+import { SYSTEM_DEFAULT_UNITS, type CostBasis } from "@fnb/core";
 import { api, del, put } from "./http";
 
 export interface CompanyInfo {
@@ -134,6 +134,13 @@ export interface UserPreferences {
    * replaces the whole row, there is no partial-update path.
    */
   activityViewedAt?: string;
+  /**
+   * Whether this user dismissed the one-time export-unit notice
+   * (report-uom-plan.md, "First export"). Mirrors the server's
+   * userPreferences. Missing/false means the modal still needs to show
+   * before the next export.
+   */
+  hasSeenExportUnitNotice?: boolean;
 }
 
 // "large" (18px) is the starting size per client req #1 — mirrors the server default.
@@ -142,9 +149,11 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
   unitSystem: "metric",
   // fl oz, not the base unit ml (client req 2026-08-20) — bottles are
   // volume-kind items and that's how staff actually read them. Mirrors
-  // the server default in apps/server/src/routes/settings.ts.
-  preferredVolumeUnit: "fl oz",
-  preferredMassUnit: "g",
+  // the server default in apps/server/src/routes/settings.ts. Both now
+  // read the same @fnb/core constant so there is one source, not two
+  // copies that could drift.
+  preferredVolumeUnit: SYSTEM_DEFAULT_UNITS.VOLUME as UserPreferences["preferredVolumeUnit"],
+  preferredMassUnit: SYSTEM_DEFAULT_UNITS.MASS as UserPreferences["preferredMassUnit"],
 };
 
 export function usePreferences(enabled = true) {

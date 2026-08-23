@@ -140,7 +140,7 @@ export function StockySheet({ open, onOpenChange }: { open: boolean; onOpenChang
             </Badge>
           </SheetTitle>
           <SheetDescription>
-            Ask about stock, variances, and the numbers behind the reports. Read-only — Stocky never changes data.
+            Ask about stock, variances, and the numbers behind the reports. Read-only; it never changes data.
           </SheetDescription>
         </SheetHeader>
 
@@ -151,7 +151,7 @@ export function StockySheet({ open, onOpenChange }: { open: boolean; onOpenChang
                 <div className="space-y-3 pt-6 text-center">
                   <Sparkles className="mx-auto size-8 text-muted-foreground/40" />
                   <p className="text-sm text-muted-foreground">
-                    Grounded in this location's live records — every figure comes from the reports.
+                    Grounded in this location's live records; every figure comes from the reports.
                   </p>
                   <div className="flex flex-col items-stretch gap-2 pt-2">
                     {SUGGESTED_PROMPTS.map((p) => (
@@ -165,8 +165,8 @@ export function StockySheet({ open, onOpenChange }: { open: boolean; onOpenChang
                       {/* Was telling a bar counter to set a server env var. Same
                           split the Imports page already uses: what it means for
                           you, and the technical fix only for whoever can do it. */}
-                      Running in basic mode — answers come from a built-in engine, so stick to the
-                      suggested questions. Ask your administrator to enable free-form conversation.
+                      Basic mode: answers come from a built-in engine, so stick to the
+                      suggested questions. Ask your administrator to enable free-form chat.
                       {me.data?.user.role === "ADMIN" && (
                         <>
                           {" "}

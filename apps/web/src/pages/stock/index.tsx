@@ -374,7 +374,7 @@ export function StockPage() {
                         </span>
                       </TooltipTrigger>
                       <TooltipContent>
-                        Stock level to keep on hand — restock when it drops below this.
+                        Stock level to keep on hand; restock below this.
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
@@ -525,9 +525,9 @@ export function StockPage() {
                               </span>
                             </TooltipTrigger>
                             <TooltipContent>
-                              This bottle can't be weighed until someone weighs the
-                              empty container — use Weigh on this row. Meanwhile it can
-                              be counted whole, or entered as an open amount.
+                              Can't weigh this bottle until the empty container is
+                              weighed. Use Weigh on this row, or meanwhile count it
+                              whole or as an open amount.
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
@@ -695,8 +695,8 @@ function CopyFromDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
         <DialogHeader>
           <DialogTitle>Copy Catalog from Another Location</DialogTitle>
           <DialogDescription>
-            Brings that location's items and prices into this one. Items already here — or outside this
-            location's assigned modules — are left out.
+            Brings that location's items and prices into this one. Items already here, or outside this
+            location's modules, are skipped.
           </DialogDescription>
         </DialogHeader>
         <Select value={sourceId} onValueChange={setSourceId}>

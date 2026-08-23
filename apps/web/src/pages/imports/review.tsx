@@ -127,7 +127,7 @@ export function ImportReviewPage() {
       <div className="flex flex-1 items-center justify-center p-6">
         <div className="flex max-w-md flex-col items-center gap-3 text-center">
           <p className="text-sm text-foreground">
-            This import batch couldn't be found — it may have been removed, or the link is out of date.
+            This import batch wasn't found; it may have been removed, or the link is outdated.
           </p>
           <Button asChild variant="outline" size="sm">
             <Link to={`/l/${locationId}/imports`}>Back to Imports</Link>
@@ -198,7 +198,7 @@ export function ImportReviewPage() {
   const commit = async () => {
     try {
       const res = await mutations.commit.mutateAsync();
-      toast.success(`Committed ${res.committed} rows — they're now in your reports`);
+      toast.success(`Committed ${res.committed} rows; now in your reports`);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Commit failed");
     }
@@ -206,7 +206,7 @@ export function ImportReviewPage() {
   const reverse = async () => {
     try {
       const res = await mutations.reverse.mutateAsync();
-      toast.success(`Reversed — ${res.reversed} records voided, reports restored`);
+      toast.success(`Reversed. ${res.reversed} records voided, reports restored`);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Reverse failed");
     }
@@ -424,7 +424,7 @@ export function ImportReviewPage() {
 
 function MatchLabel({ row, labelMap }: { row: ImportRow; labelMap: Map<string, string> }) {
   const id = row.matchedLocationItemId ?? row.matchedMenuItemId;
-  if (!id) return <span className="text-sm text-muted-foreground">— unmatched —</span>;
+  if (!id) return <span className="text-sm text-muted-foreground">Unmatched</span>;
   return (
     <span className="flex min-w-0 items-center gap-1.5 text-sm">
       {row.matchedMenuItemId && <Martini className="size-3.5 shrink-0 text-primary" />}

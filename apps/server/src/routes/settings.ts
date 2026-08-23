@@ -6,6 +6,7 @@ import {
   COST_BASIS_LABELS,
   isCostBasis,
   MATERIAL_VARIANCE_PCT,
+  SYSTEM_DEFAULT_UNITS,
   VARIANCE_THRESHOLD_MAX,
   VARIANCE_THRESHOLD_MIN,
 } from "@fnb/core";
@@ -114,6 +115,15 @@ const userPreferences = z.object({
    * for the read-full-object-then-write-full-object flow this relies on.
    */
   activityViewedAt: z.string().optional(),
+  /**
+   * Whether this user has dismissed the one-time "exports use the
+   * establishment default unit" notice (report-uom-plan.md, "First
+   * export"). Same shape as activityViewedAt above: optional, undefined
+   * until the person checks "Don't show this again" once, full-object PUT
+   * like every other preference here. Missing/false means show the modal
+   * on the next export.
+   */
+  hasSeenExportUnitNotice: z.boolean().optional(),
 });
 export type UserPreferences = z.infer<typeof userPreferences>;
 
@@ -121,8 +131,11 @@ const DEFAULT_PREFERENCES: UserPreferences = {
   fontSize: "large",
   unitSystem: "metric",
   // fl oz, not the base unit ml — see the preferredVolumeUnit schema comment above.
-  preferredVolumeUnit: "fl oz",
-  preferredMassUnit: "g",
+  // Cast is safe: SYSTEM_DEFAULT_UNITS.VOLUME/.MASS are literally "fl oz" and
+  // "g", both valid members of the enums below, just typed as plain string
+  // in @fnb/core since resolveExportUnit() needs it for any UnitKind.
+  preferredVolumeUnit: SYSTEM_DEFAULT_UNITS.VOLUME as UserPreferences["preferredVolumeUnit"],
+  preferredMassUnit: SYSTEM_DEFAULT_UNITS.MASS as UserPreferences["preferredMassUnit"],
 };
 
 export const preferencesRoutes = new Hono<AppEnv>()

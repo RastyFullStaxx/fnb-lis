@@ -539,7 +539,10 @@ export function nonRevenueCsv(report: NonRevenueReport, title = "Non-Revenue Rep
 
 // ───────────────────────── Inventory on hand ─────────────────────────
 
-export const ONHAND_HEADERS = ["Item", "Category", "Type", "On hand", "Cost", "Retail", "Cost value", "Retail value"];
+// Unit is its own column, not folded into "On hand" — report-uom-plan.md:
+// this is a resolvable quantity's unit (varies per export-unit resolution),
+// distinct from a fixed uom/sizeUom column elsewhere in the report suite.
+export const ONHAND_HEADERS = ["Item", "Category", "Type", "On hand", "Unit", "Cost", "Retail", "Cost value", "Retail value"];
 
 export async function onHandWorkbook(report: OnHandReport, meta: ReportMeta): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
@@ -549,18 +552,19 @@ export async function onHandWorkbook(report: OnHandReport, meta: ReportMeta): Pr
   for (const row of report.rows) {
     const r = ws.addRow([row.name, row.category, row.productType]);
     qtyCell(r.getCell(4), row.onHand, true);
-    moneyCell(r.getCell(5), row.cost, false);
-    moneyCell(r.getCell(6), row.retail, false);
-    moneyCell(r.getCell(7), row.costValue, false);
-    moneyCell(r.getCell(8), row.retailValue, false);
+    r.getCell(5).value = row.unitName;
+    moneyCell(r.getCell(6), row.cost, false);
+    moneyCell(r.getCell(7), row.retail, false);
+    moneyCell(r.getCell(8), row.costValue, false);
+    moneyCell(r.getCell(9), row.retailValue, false);
   }
-  const t = ws.addRow(["Total", "", ""]);
+  const t = ws.addRow(["Total", "", "", "", ""]);
   t.font = { bold: true };
-  moneyCell(t.getCell(7), report.totals.costValue, false);
-  moneyCell(t.getCell(8), report.totals.retailValue, false);
+  moneyCell(t.getCell(8), report.totals.costValue, false);
+  moneyCell(t.getCell(9), report.totals.retailValue, false);
   ws.getColumn(1).width = 30;
   ws.getColumn(2).width = 18;
-  for (const i of [3, 4, 5, 6, 7, 8]) ws.getColumn(i).width = 13;
+  for (const i of [3, 4, 5, 6, 7, 8, 9]) ws.getColumn(i).width = 13;
   stampLogo(ws, ONHAND_HEADERS.length);
   return toBuffer(wb);
 }
@@ -568,15 +572,18 @@ export async function onHandWorkbook(report: OnHandReport, meta: ReportMeta): Pr
 export function onHandCsv(report: OnHandReport): string {
   const rows: CsvValue[][] = [ONHAND_HEADERS];
   for (const row of report.rows) {
-    rows.push([row.name, row.category, row.productType, round2(row.onHand), round2(row.cost), round2(row.retail), round2(row.costValue), round2(row.retailValue)]);
+    rows.push([row.name, row.category, row.productType, round2(row.onHand), row.unitName, round2(row.cost), round2(row.retail), round2(row.costValue), round2(row.retailValue)]);
   }
-  rows.push(["Total", "", "", "", "", "", round2(report.totals.costValue), round2(report.totals.retailValue)]);
+  rows.push(["Total", "", "", "", "", "", "", round2(report.totals.costValue), round2(report.totals.retailValue)]);
   return toCsv(rows);
 }
 
 // ───────────────────────── Par Level (#3) ─────────────────────────
 
-export const PAR_LEVEL_HEADERS = ["Item", "Category", "On Hand", "Par Level", "Used (last period)", "Suggested Order", "Order Value", "Status"];
+// Unit is its own column, inserted right after On Hand — same reasoning as
+// ONHAND_HEADERS: report-uom-plan.md's resolvable-quantity unit, distinct
+// from a fixed uom/sizeUom column elsewhere.
+export const PAR_LEVEL_HEADERS = ["Item", "Category", "On Hand", "Unit", "Par Level", "Used (last period)", "Suggested Order", "Order Value", "Status"];
 
 export async function parLevelWorkbook(report: ParLevelReport, meta: ReportMeta): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
@@ -592,20 +599,21 @@ export async function parLevelWorkbook(report: ParLevelReport, meta: ReportMeta)
   for (const row of report.rows) {
     const r = ws.addRow([row.name, row.category]);
     qtyCell(r.getCell(3), row.onHand);
-    qtyCell(r.getCell(4), row.parLevel);
-    qtyCell(r.getCell(5), row.usage);
-    qtyCell(r.getCell(6), row.suggestedOrder);
-    moneyCell(r.getCell(7), row.orderValue, false);
-    r.getCell(8).value = row.belowPar ? "Below Par" : "OK";
-    if (row.belowPar) r.getCell(8).font = { color: { argb: AMBER }, bold: true };
+    r.getCell(4).value = row.unitName;
+    qtyCell(r.getCell(5), row.parLevel);
+    qtyCell(r.getCell(6), row.usage);
+    qtyCell(r.getCell(7), row.suggestedOrder);
+    moneyCell(r.getCell(8), row.orderValue, false);
+    r.getCell(9).value = row.belowPar ? "Below Par" : "OK";
+    if (row.belowPar) r.getCell(9).font = { color: { argb: AMBER }, bold: true };
   }
-  const t = ws.addRow(["Total", ""]);
+  const t = ws.addRow(["Total", "", "", ""]);
   t.font = { bold: true };
-  moneyCell(t.getCell(7), report.totals.orderValue, false);
-  t.getCell(8).value = `${report.totals.belowParCount} below par`;
+  moneyCell(t.getCell(8), report.totals.orderValue, false);
+  t.getCell(9).value = `${report.totals.belowParCount} below par`;
   ws.getColumn(1).width = 30;
   ws.getColumn(2).width = 18;
-  for (const i of [3, 4, 5, 6, 7, 8]) ws.getColumn(i).width = 15;
+  for (const i of [3, 4, 5, 6, 7, 8, 9]) ws.getColumn(i).width = 15;
   stampLogo(ws, PAR_LEVEL_HEADERS.length);
   return toBuffer(wb);
 }
@@ -613,15 +621,15 @@ export async function parLevelWorkbook(report: ParLevelReport, meta: ReportMeta)
 export function parLevelCsv(report: ParLevelReport): string {
   const rows: CsvValue[][] = [PAR_LEVEL_HEADERS];
   for (const row of report.rows) {
-    rows.push([row.name, row.category, round2(row.onHand), round2(row.parLevel), round2(row.usage), round2(row.suggestedOrder), round2(row.orderValue), row.belowPar ? "Below Par" : "OK"]);
+    rows.push([row.name, row.category, round2(row.onHand), row.unitName, round2(row.parLevel), round2(row.usage), round2(row.suggestedOrder), round2(row.orderValue), row.belowPar ? "Below Par" : "OK"]);
   }
-  rows.push(["Total", "", "", "", "", "", round2(report.totals.orderValue), `${report.totals.belowParCount} below par`]);
+  rows.push(["Total", "", "", "", "", "", "", round2(report.totals.orderValue), `${report.totals.belowParCount} below par`]);
   return toCsv(rows);
 }
 
 // ───────────────────────── Non-Moving (#4) ─────────────────────────
 
-export const NON_MOVING_HEADERS = ["Item", "Category", "On Hand", "Cost", "Cost Value", "Retail Value"];
+export const NON_MOVING_HEADERS = ["Item", "Category", "On Hand", "Unit", "Cost", "Cost Value", "Retail Value"];
 
 export async function nonMovingWorkbook(report: NonMovingReport, meta: ReportMeta): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
@@ -637,17 +645,18 @@ export async function nonMovingWorkbook(report: NonMovingReport, meta: ReportMet
   for (const row of report.rows) {
     const r = ws.addRow([row.name, row.category]);
     qtyCell(r.getCell(3), row.onHand);
-    moneyCell(r.getCell(4), row.cost, false);
-    moneyCell(r.getCell(5), row.costValue, false);
-    moneyCell(r.getCell(6), row.retailValue, false);
+    r.getCell(4).value = row.unitName;
+    moneyCell(r.getCell(5), row.cost, false);
+    moneyCell(r.getCell(6), row.costValue, false);
+    moneyCell(r.getCell(7), row.retailValue, false);
   }
-  const t = ws.addRow(["Total", ""]);
+  const t = ws.addRow(["Total", "", "", ""]);
   t.font = { bold: true };
-  moneyCell(t.getCell(5), report.totals.costValue, false);
-  moneyCell(t.getCell(6), report.totals.retailValue, false);
+  moneyCell(t.getCell(6), report.totals.costValue, false);
+  moneyCell(t.getCell(7), report.totals.retailValue, false);
   ws.getColumn(1).width = 30;
   ws.getColumn(2).width = 18;
-  for (const i of [3, 4, 5, 6]) ws.getColumn(i).width = 15;
+  for (const i of [3, 4, 5, 6, 7]) ws.getColumn(i).width = 15;
   stampLogo(ws, NON_MOVING_HEADERS.length);
   return toBuffer(wb);
 }
@@ -655,9 +664,9 @@ export async function nonMovingWorkbook(report: NonMovingReport, meta: ReportMet
 export function nonMovingCsv(report: NonMovingReport): string {
   const rows: CsvValue[][] = [NON_MOVING_HEADERS];
   for (const row of report.rows) {
-    rows.push([row.name, row.category, round2(row.onHand), round2(row.cost), round2(row.costValue), round2(row.retailValue)]);
+    rows.push([row.name, row.category, round2(row.onHand), row.unitName, round2(row.cost), round2(row.costValue), round2(row.retailValue)]);
   }
-  rows.push(["Total", "", "", "", round2(report.totals.costValue), round2(report.totals.retailValue)]);
+  rows.push(["Total", "", "", "", "", round2(report.totals.costValue), round2(report.totals.retailValue)]);
   return toCsv(rows);
 }
 
@@ -670,7 +679,7 @@ export function nonMovingCsv(report: NonMovingReport): string {
 // has no variance rows to confuse it with, so the existing warning tint is
 // reused rather than inventing a third palette entry.
 
-export const EXPIRING_BATCHES_HEADERS = ["Item", "Category", "Qty", "Purchase Date", "Expiry Date", "Status"];
+export const EXPIRING_BATCHES_HEADERS = ["Item", "Category", "Qty", "Unit", "Purchase Date", "Expiry Date", "Status"];
 
 export async function expiringBatchesWorkbook(report: ExpiringBatchesReport, meta: ReportMeta): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
@@ -680,22 +689,24 @@ export async function expiringBatchesWorkbook(report: ExpiringBatchesReport, met
   for (const row of report.rows) {
     const r = ws.addRow([row.name, row.category]);
     qtyCell(r.getCell(3), row.qty);
-    r.getCell(4).value = row.purchaseDate;
-    r.getCell(5).value = row.expiryDate;
-    r.getCell(6).value = row.isExpired ? "Expired" : "Upcoming";
+    r.getCell(4).value = row.unitName;
+    r.getCell(5).value = row.purchaseDate;
+    r.getCell(6).value = row.expiryDate;
+    r.getCell(7).value = row.isExpired ? "Expired" : "Upcoming";
     if (row.isExpired) {
       r.eachCell((cell) => { cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: FILL_OVER } }; });
     }
   }
-  const t = ws.addRow(["Total", ""]);
+  const t = ws.addRow(["Total", "", "", ""]);
   t.font = { bold: true };
-  t.getCell(6).value = `${report.totals.expiredCount} expired, ${report.totals.upcomingCount} upcoming`;
+  t.getCell(7).value = `${report.totals.expiredCount} expired, ${report.totals.upcomingCount} upcoming`;
   ws.getColumn(1).width = 30;
   ws.getColumn(2).width = 18;
   ws.getColumn(3).width = 12;
-  ws.getColumn(4).width = 14;
+  ws.getColumn(4).width = 12;
   ws.getColumn(5).width = 14;
   ws.getColumn(6).width = 14;
+  ws.getColumn(7).width = 14;
   stampLogo(ws, EXPIRING_BATCHES_HEADERS.length);
   return toBuffer(wb);
 }
@@ -703,9 +714,9 @@ export async function expiringBatchesWorkbook(report: ExpiringBatchesReport, met
 export function expiringBatchesCsv(report: ExpiringBatchesReport): string {
   const rows: CsvValue[][] = [EXPIRING_BATCHES_HEADERS];
   for (const row of report.rows) {
-    rows.push([row.name, row.category, round2(row.qty), row.purchaseDate, row.expiryDate, row.isExpired ? "Expired" : "Upcoming"]);
+    rows.push([row.name, row.category, round2(row.qty), row.unitName, row.purchaseDate, row.expiryDate, row.isExpired ? "Expired" : "Upcoming"]);
   }
-  rows.push(["Total", "", "", "", "", `${report.totals.expiredCount} expired, ${report.totals.upcomingCount} upcoming`]);
+  rows.push(["Total", "", "", "", "", "", `${report.totals.expiredCount} expired, ${report.totals.upcomingCount} upcoming`]);
   return toCsv(rows);
 }
 
@@ -868,7 +879,10 @@ export function costAnalysisCsv(report: CostAnalysisReport): string {
 
 // ───────────────────────── Transfers ─────────────────────────
 
-export const TRANSFER_HEADERS = ["Date", "Location", "Item", "Category", "Sent", "Received", "Unit cost", "At cost", "At retail"];
+// Sent and Received share one unit per row (both are the same underlying
+// base-unit quantity — report-uom-plan.md Scope table lists them together),
+// so one "Unit" column after both covers them, same as On Hand's own column.
+export const TRANSFER_HEADERS = ["Date", "Location", "Item", "Category", "Sent", "Received", "Unit", "Unit cost", "At cost", "At retail"];
 
 export async function transferWorkbook(report: TransferReport, meta: ReportMeta): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
@@ -887,29 +901,30 @@ export async function transferWorkbook(report: TransferReport, meta: ReportMeta)
     } else {
       qtyCell(r.getCell(6), row.qtyReceived, row.qtyReceived < row.qtySent);
     }
-    moneyCell(r.getCell(7), row.unitCost, false);
-    moneyCell(r.getCell(8), row.costValue, false);
-    moneyCell(r.getCell(9), row.retailValue, false);
+    r.getCell(7).value = row.unitName;
+    moneyCell(r.getCell(8), row.unitCost, false);
+    moneyCell(r.getCell(9), row.costValue, false);
+    moneyCell(r.getCell(10), row.retailValue, false);
   }
   const t = ws.addRow(["Total", "", "", ""]);
   t.font = { bold: true };
   qtyCell(t.getCell(report.direction === "out" ? 5 : 6), report.totals.qty);
-  moneyCell(t.getCell(8), report.totals.cost, false);
-  moneyCell(t.getCell(9), report.totals.retail, false);
+  moneyCell(t.getCell(9), report.totals.cost, false);
+  moneyCell(t.getCell(10), report.totals.retail, false);
 
   ws.addRow([]);
-  const ch = ws.addRow([report.direction === "out" ? "By destination" : "By source", "", "", "", "Qty", "", "", "At cost"]);
+  const ch = ws.addRow([report.direction === "out" ? "By destination" : "By source", "", "", "", "Qty", "", "", "", "At cost"]);
   styleHeaderRow(ch);
   for (const g of report.byCounterparty) {
     const r = ws.addRow([g.counterparty, "", "", ""]);
     qtyCell(r.getCell(5), g.qty);
-    moneyCell(r.getCell(8), g.cost, false);
+    moneyCell(r.getCell(9), g.cost, false);
   }
   ws.getColumn(1).width = 12;
   ws.getColumn(2).width = 20;
   ws.getColumn(3).width = 30;
   ws.getColumn(4).width = 18;
-  for (const i of [5, 6, 7, 8, 9]) ws.getColumn(i).width = 12;
+  for (const i of [5, 6, 7, 8, 9, 10]) ws.getColumn(i).width = 12;
   stampLogo(ws, TRANSFER_HEADERS.length);
   return toBuffer(wb);
 }
@@ -919,11 +934,11 @@ export function transferCsv(report: TransferReport): string {
   for (const row of report.rows) {
     rows.push([
       row.date, row.counterparty, row.name, row.category,
-      round2(row.qtySent), row.qtyReceived === null ? "" : round2(row.qtyReceived),
+      round2(row.qtySent), row.qtyReceived === null ? "" : round2(row.qtyReceived), row.unitName,
       round2(row.unitCost), round2(row.costValue), round2(row.retailValue),
     ]);
   }
-  rows.push(["Total", "", "", "", report.direction === "out" ? round2(report.totals.qty) : "", report.direction === "in" ? round2(report.totals.qty) : "", "", round2(report.totals.cost), round2(report.totals.retail)]);
+  rows.push(["Total", "", "", "", report.direction === "out" ? round2(report.totals.qty) : "", report.direction === "in" ? round2(report.totals.qty) : "", "", "", round2(report.totals.cost), round2(report.totals.retail)]);
   return toCsv(rows);
 }
 
@@ -931,9 +946,12 @@ export function transferCsv(report: TransferReport): string {
 // Three sections in one sheet: Brands, Menus, Ingredients.
 // Ingredients omit the Revenue column (consumption has no direct price).
 
-const TOP_BRANDS_HEADERS = ["Rank", "Item", "Category", "Qty", "Revenue"];
+// Brands and Ingredients carry a real base-unit qty, so each gets a Unit
+// column (report-uom-plan.md Scope table); Menus don't — a cocktail has no
+// base unit — so TOP_MENUS_HEADERS is unchanged.
+const TOP_BRANDS_HEADERS = ["Rank", "Item", "Category", "Qty", "Unit", "Revenue"];
 const TOP_MENUS_HEADERS = ["Rank", "Menu", "Qty", "Revenue"];
-const TOP_INGREDIENTS_HEADERS = ["Rank", "Ingredient", "Category", "Qty consumed"];
+const TOP_INGREDIENTS_HEADERS = ["Rank", "Ingredient", "Category", "Qty consumed", "Unit"];
 
 export async function topSellersWorkbook(report: TopSellersReport, meta: ReportMeta): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
@@ -953,7 +971,8 @@ export async function topSellersWorkbook(report: TopSellersReport, meta: ReportM
   report.topBrands.forEach((row, i) => {
     const r = ws.addRow([i + 1, row.name, row.category ?? ""]);
     qtyCell(r.getCell(4), row.qty);
-    moneyCell(r.getCell(5), row.revenue, false);
+    r.getCell(5).value = row.unitName ?? "";
+    moneyCell(r.getCell(6), row.revenue, false);
   });
   if (report.topBrands.length === 0) ws.addRow(["—"]);
 
@@ -979,6 +998,7 @@ export async function topSellersWorkbook(report: TopSellersReport, meta: ReportM
   report.topIngredients.forEach((row, i) => {
     const r = ws.addRow([i + 1, row.name, row.category ?? ""]);
     qtyCell(r.getCell(4), row.qty);
+    r.getCell(5).value = row.unitName ?? "";
   });
   if (report.topIngredients.length === 0) ws.addRow(["—"]);
 
@@ -987,6 +1007,7 @@ export async function topSellersWorkbook(report: TopSellersReport, meta: ReportM
   ws.getColumn(3).width = 18;
   ws.getColumn(4).width = 13;
   ws.getColumn(5).width = 13;
+  ws.getColumn(6).width = 13;
 
   stampLogo(ws, TOP_BRANDS_HEADERS.length);
   return toBuffer(wb);
@@ -998,7 +1019,7 @@ export function topSellersCsv(report: TopSellersReport): string {
   rows.push(["TOP BRANDS"]);
   rows.push(TOP_BRANDS_HEADERS);
   report.topBrands.forEach((row, i) =>
-    rows.push([i + 1, row.name, row.category ?? "", round2(row.qty), round2(row.revenue)]),
+    rows.push([i + 1, row.name, row.category ?? "", round2(row.qty), row.unitName ?? "", round2(row.revenue)]),
   );
 
   rows.push([]);
@@ -1012,7 +1033,7 @@ export function topSellersCsv(report: TopSellersReport): string {
   rows.push(["TOP INGREDIENTS"]);
   rows.push(TOP_INGREDIENTS_HEADERS);
   report.topIngredients.forEach((row, i) =>
-    rows.push([i + 1, row.name, row.category ?? "", round2(row.qty)]),
+    rows.push([i + 1, row.name, row.category ?? "", round2(row.qty), row.unitName ?? ""]),
   );
 
   return toCsv(rows);

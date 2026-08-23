@@ -206,7 +206,7 @@ export function AdminActivityPage() {
               {sortedRows.length === PAGE_LIMIT && (
                 <TableRow className="hover:bg-transparent">
                   <TableCell colSpan={4} className="py-3 text-center text-xs text-muted-foreground">
-                    Showing the latest {PAGE_LIMIT} entries — narrow the date range to see older activity.
+                    Showing the latest {PAGE_LIMIT} entries. Narrow the date range for older activity.
                   </TableCell>
                 </TableRow>
               )}

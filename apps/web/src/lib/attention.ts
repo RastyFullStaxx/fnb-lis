@@ -169,8 +169,8 @@ export function attentionItems(data: DashboardData, role: Role): AttentionItem[]
           count: duplicateCountDates,
           label:
             duplicateCountDates === 1
-              ? "A date has two committed counts — the report adds both"
-              : `${duplicateCountDates} dates have two committed counts — the report adds both`,
+              ? "A date has two committed counts; the report adds both"
+              : `${duplicateCountDates} dates have two committed counts; the report adds both`,
           path: "counts",
           icon: CopyCheck,
           group: "Needs review",

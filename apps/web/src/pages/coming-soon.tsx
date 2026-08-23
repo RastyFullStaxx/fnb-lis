@@ -9,7 +9,7 @@ export function ComingSoonPage({ title }: { title: string; phase?: number }) {
         <Hammer className="mx-auto mb-3 size-8 text-muted-foreground/50" />
         <h2 className="text-base font-semibold">{title}</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          {title} isn't available yet — it's on the roadmap.
+          {title} isn't available yet; it's on the roadmap.
         </p>
       </div>
     </div>

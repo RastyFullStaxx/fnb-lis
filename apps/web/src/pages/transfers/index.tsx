@@ -155,7 +155,7 @@ function OutgoingTab({ createOpen, setCreateOpen }: { createOpen: boolean; setCr
         <TableEmpty
           icon={ArrowLeftRight}
           title="No outgoing transfers"
-          description="Send stock to another of this client's locations — the destination confirms what arrives."
+          description="Send stock to another location; the destination confirms what arrives."
           action={
             <Button onClick={() => setCreateOpen(true)}>
               <Plus className="size-4" /> New Transfer
@@ -442,7 +442,7 @@ function ReceiveDialog({ transferId, onClose }: { transferId: string; onClose: (
     }
     try {
       await mutations.receive.mutateAsync({ id: transferId, receiptDate, lines });
-      toast.success("Receipt recorded — this location's stock pool updated");
+      toast.success("Receipt recorded; stock pool updated");
       onClose();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not record the receipt");
@@ -455,8 +455,8 @@ function ReceiveDialog({ transferId, onClose }: { transferId: string; onClose: (
         <DialogHeader>
           <DialogTitle>Receive transfer · {transfer.data?.fromLocation?.name ?? "…"}</DialogTitle>
           <DialogDescription>
-            Confirm what actually arrived. A received amount that differs from the sent amount is kept as audit
-            signal — explain it in the note.
+            Confirm what actually arrived. A mismatch with the sent amount is kept as an audit
+            signal, so explain it in the note.
           </DialogDescription>
         </DialogHeader>
 
@@ -498,7 +498,7 @@ function ReceiveDialog({ transferId, onClose }: { transferId: string; onClose: (
                         <TableCell className="tnum text-right">{line.qty}</TableCell>
                         <TableCell>
                           <QuantityInput
-                            aria-label={`Quantity received — ${what}`}
+                            aria-label={`Quantity received ${what}`}
                             className={cn("tnum h-8", differs && "border-warning")}
                             value={value}
                             onChange={(e) => setQuantities((q) => ({ ...q, [line.id]: e.target.value }))}
@@ -506,7 +506,7 @@ function ReceiveDialog({ transferId, onClose }: { transferId: string; onClose: (
                         </TableCell>
                         <TableCell>
                           <Input
-                            aria-label={`Note — ${what}`}
+                            aria-label={`Note ${what}`}
                             className="h-8"
                             placeholder={differs ? "e.g. broken in transit" : ""}
                             value={notes[line.id] ?? ""}

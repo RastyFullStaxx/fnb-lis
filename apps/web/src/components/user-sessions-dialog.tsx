@@ -124,7 +124,7 @@ export function UserSessionsDialog({
       <Dialog open={!!userId} onOpenChange={(o) => !o && onClose()}>
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Login History — {userLabel}</DialogTitle>
+            <DialogTitle>Login History {userLabel}</DialogTitle>
             <DialogDescription>
               Every device this account has logged in from, most recent first.
             </DialogDescription>

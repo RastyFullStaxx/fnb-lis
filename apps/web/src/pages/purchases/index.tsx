@@ -190,7 +190,7 @@ function PurchasesTab({
           }
           description={
             (purchases.data ?? []).length === 0
-              ? "Record deliveries here — committed purchases add into the period's stock pool."
+              ? "Record deliveries here; committed purchases add into the period's stock pool."
               : "Clear the search or status filter to see everything."
           }
           action={
@@ -299,7 +299,7 @@ function NewPurchaseDialog({ open, onOpenChange }: { open: boolean; onOpenChange
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>Receive a Delivery</DialogTitle>
-          <DialogDescription>Starts a draft — add lines, then commit when the delivery checks out.</DialogDescription>
+          <DialogDescription>Starts a draft; add lines, then commit when the delivery checks out.</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">
@@ -374,7 +374,7 @@ function ForfeitsTab() {
         if (!n || n <= 0) return toast.error("Enter the returned quantity");
         await create.mutateAsync({ forfeitDate: date, locationItemId: item.id, qty: n });
       }
-      toast.success("Returned stock recorded — it adds back into the period's pool");
+      toast.success("Returned stock recorded; adds back into the period's pool");
       setItem(null);
       setScale("");
       setQty("");
@@ -454,8 +454,8 @@ function ForfeitsTab() {
             </div>
           ) : (forfeits.data ?? []).length === 0 ? (
             <p className="p-4 text-sm text-muted-foreground">
-              No returned bottles yet — when a customer leaves an unfinished bottle, weigh it here and its
-              content returns to the period's stock pool.
+              No returned bottles yet. When a guest leaves one unfinished, weigh it here to return the
+              content to stock.
             </p>
           ) : (
             forfeits.data!.map((f) => {

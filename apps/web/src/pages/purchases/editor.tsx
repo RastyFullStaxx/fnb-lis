@@ -101,7 +101,7 @@ export function PurchaseEditorPage() {
   if (purchase.isError)
     return (
       <div className="flex flex-col items-center gap-3 py-24 text-center">
-        <p className="text-sm">Couldn't load this delivery — it may have been removed.</p>
+        <p className="text-sm">Couldn't load this delivery; it may have been removed.</p>
         <Button asChild variant="outline" size="sm">
           <Link to={backHref}>Back to Purchases</Link>
         </Button>
@@ -175,7 +175,7 @@ export function PurchaseEditorPage() {
   const commit = async () => {
     try {
       await mutations.commit.mutateAsync();
-      toast.success("Delivery committed — stock pool updated");
+      toast.success("Delivery committed; stock pool updated");
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not commit");
     }
@@ -281,7 +281,7 @@ export function PurchaseEditorPage() {
                         DESIGN.md's "helper text present; errors below in
                         destructive"). */}
                     {expiryError && (
-                      <p className="text-xs text-destructive">This item expires — enter the date on the box</p>
+                      <p className="text-xs text-destructive">This item expires; enter the date on the box</p>
                     )}
                   </div>
                 )}
@@ -336,7 +336,7 @@ export function PurchaseEditorPage() {
             {sortedLines.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
-                  No lines yet — add the delivered items above.
+                  No lines yet; add delivered items above.
                 </TableCell>
               </TableRow>
             ) : (
@@ -435,7 +435,7 @@ export function PurchaseEditorPage() {
         onConfirm={async (reason) => {
           try {
             await mutations.voidLine.mutateAsync({ lineId: voidingLine!.id, reason });
-            toast.success("Line voided — reports updated");
+            toast.success("Line voided; reports updated");
             setVoidingLine(null);
           } catch (err) {
             toast.error(err instanceof ApiError ? err.message : "Could not void");
@@ -513,7 +513,7 @@ function EditLineDialog({
         expiryDate: lineIsPerishable ? expiryDate : undefined,
         reason: changeReason.trim(),
       });
-      toast.success("Line updated — the original is kept, marked corrected");
+      toast.success("Line updated; original kept, marked corrected");
       onOpenChange(false);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not save the change");
@@ -557,7 +557,7 @@ function EditLineDialog({
                 }}
               />
               {expiryError && (
-                <p className="text-xs text-destructive">This item expires — enter the date on the box</p>
+                <p className="text-xs text-destructive">This item expires; enter the date on the box</p>
               )}
             </div>
           )}

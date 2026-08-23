@@ -89,7 +89,7 @@ export function AttachItemDialog({
             />
             <CommandList>
               <CommandEmpty>
-                {available.isPending ? "Searching…" : "No available items — everything may already be in this catalog."}
+                {available.isPending ? "Searching…" : "No available items; everything may already be in this catalog."}
               </CommandEmpty>
               <CommandGroup>
                 {(available.data ?? []).map((v) => (
@@ -146,7 +146,7 @@ export function AttachItemDialog({
               </div>
             </div>
             <p className="text-xs text-muted-foreground">
-              Prices left at 0 flag the item as unpriced — reports need both cost and retail.
+              Prices left at 0 flag the item unpriced; reports need both cost and retail.
             </p>
           </div>
         )}

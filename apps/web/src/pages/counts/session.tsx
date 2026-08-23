@@ -158,9 +158,9 @@ function SessionHeader({ session }: { session: SessionWithLines }) {
         <h2 className="text-xl font-semibold tracking-tight">Count · {formatDate(session.countDate)}</h2>
         <p className="text-sm text-muted-foreground">
           {session.status === "OPEN"
-            ? "Counting in progress — every saved line lands below."
+            ? "Counting in progress; saved lines land below."
             : session.status === "COMMITTED"
-              ? "Committed. Lines are locked — Edit replaces an entry, Cancel drops it. Both stay in the trail."
+              ? "Committed. Lines are locked. Edit replaces an entry, Cancel drops it; both stay in the trail."
               : `Cancelled: ${session.voidReason}`}
         </p>
       </div>
@@ -369,7 +369,7 @@ function OpenSession({ session }: { session: SessionWithLines }) {
       );
       if (existing) {
         toast.error(
-          `${item.itemVariant.item.name} already has a count in this session — edit that line instead of adding a new one.`,
+          `${item.itemVariant.item.name} already has a count in this session; edit that line instead of adding a new one.`,
         );
         startEdit(existing);
         return;
@@ -475,7 +475,7 @@ function OpenSession({ session }: { session: SessionWithLines }) {
           {editingLineId && (
             <div className="flex items-center justify-between rounded-md bg-accent px-3 py-2 text-sm text-accent-foreground">
               <span className="flex items-center gap-1.5">
-                <Pencil className="size-3.5" /> Editing this line — save to replace it.
+                <Pencil className="size-3.5" /> Editing this line; save to replace it.
               </span>
               <Button variant="ghost" size="sm" onClick={resetForm}>
                 Stop editing
@@ -554,7 +554,7 @@ function OpenSession({ session }: { session: SessionWithLines }) {
                   has already learned the difference. */}
               <p className="text-xs text-muted-foreground">
                 {activeMode === "FULL"
-                  ? "Sealed bottles — count them and type how many."
+                  ? "Sealed bottles: count and type how many."
                   : activeMode === "WEIGH"
                     ? "An opened bottle: put it on the scale, type what the scale shows."
                     : "An opened bottle with no scale: type how much you judge is left."}
@@ -634,7 +634,7 @@ function OpenSession({ session }: { session: SessionWithLines }) {
                     onKeyDown={(e) => e.key === "Enter" && save()}
                   />
                   <p className="text-xs text-muted-foreground">
-                    Type the amount left in the open container — no scale or empty weight needed.
+                    Type the amount left in the open container. No scale or empty weight needed.
                   </p>
                   {/* Same bg-warning/10 style as WeighPreviewStrip (phases doc
                       4.2/4.3) — the two entry modes should look identical to
@@ -730,7 +730,7 @@ function OpenSession({ session }: { session: SessionWithLines }) {
                   <div className="space-y-3">
                     <p>
                       {activeLines.length} line{activeLines.length === 1 ? "" : "s"} for {formatDate(session.countDate)}.
-                      Once committed, lines lock — fixes go through Edit, which replaces the entry and keeps both halves in the trail. The date then becomes available as a report boundary.
+                      Once committed, lines lock. Edit replaces an entry and keeps both halves in the trail. The date then becomes a report boundary.
                     </p>
                     {remaining.length > 0 && (
                       // The one thing worth interrupting for: uncounted items
@@ -745,8 +745,8 @@ function OpenSession({ session }: { session: SessionWithLines }) {
                           {remaining.length > 4 ? `, and ${remaining.length - 4} more` : ""}.
                         </p>
                         <p className="mt-1.5">
-                          Uncounted items are left out of the reconciliation entirely — they
-                          won't appear as a shortage. Commit only if that is intended.
+                          Uncounted items are left out of reconciliation entirely; they
+                          won't appear as a shortage. Commit only if that's intended.
                         </p>
                       </div>
                     )}
@@ -870,7 +870,7 @@ function FifoWorklist({ item, batches }: { item: LocationItem; batches: FifoBatc
   return (
     <div className="mb-3 shrink-0 space-y-2 rounded-md border p-3">
       <p className="text-sm font-medium">
-        On the shelf — {item.itemVariant.item.name}
+        On the shelf {item.itemVariant.item.name}
         <span className="ml-1.5 font-normal text-muted-foreground">oldest first</span>
       </p>
       <div className="space-y-1.5">
@@ -980,7 +980,7 @@ function ReadOnlySession({ session }: { session: SessionWithLines }) {
         onConfirm={async (reason) => {
           try {
             await mutations.voidLine.mutateAsync({ lineId: voiding!.id, reason });
-            toast.success("Line voided — reports updated");
+            toast.success("Line voided; reports updated");
             setVoiding(null);
           } catch (err) {
             toast.error(err instanceof ApiError ? err.message : "Could not void");
@@ -1123,7 +1123,7 @@ function EditLineDialog({
     }
     try {
       await mutations.correctLine.mutateAsync({ lineId: line.id, ...body, reason: changeReason.trim() });
-      toast.success("Line updated — the original is kept, marked corrected");
+      toast.success("Line updated; original kept, marked corrected");
       onOpenChange(false);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not save the change");

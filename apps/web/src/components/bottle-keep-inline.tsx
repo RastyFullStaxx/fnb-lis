@@ -73,7 +73,7 @@ export function BottleKeepInline({
         <div className="mb-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2">
           <p className="text-sm">
             <span className="font-medium">
-              {bottles} {bottles === 1 ? "bottle is" : "bottles are"} on keep for a guest — do not
+              {bottles} {bottles === 1 ? "bottle is" : "bottles are"} on keep for a guest; do not
               count {bottles === 1 ? "it" : "them"}.
             </span>{" "}
             <span className="text-muted-foreground">
@@ -162,7 +162,7 @@ function KeepDialog({
           <DialogTitle>Keep a bottle for a guest</DialogTitle>
           <DialogDescription>
             {item.itemVariant.item.name} {item.itemVariant.size ?? ""}{" "}
-            {item.itemVariant.unit?.name ?? ""} — paid for, left to finish next visit. It stays out
+            {item.itemVariant.unit?.name ?? ""}: paid for, left to finish next visit. Stays out
             of sellable stock until it expires.
           </DialogDescription>
         </DialogHeader>

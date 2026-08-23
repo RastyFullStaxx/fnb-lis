@@ -9,6 +9,7 @@ import { downloadFile, ApiError } from "@/api/http";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ToolbarField } from "@/components/table-surface";
+import { useExportUnitNotice } from "@/components/export-unit-notice";
 
 export function DateRangeControl({
   from,
@@ -51,7 +52,7 @@ export function DateRangeControl({
       </ToolbarField>
       {inverted && (
         <p className="pb-2 text-xs text-destructive" role="alert">
-          From is after To — swap the dates to see results.
+          From is after To; swap the dates to see results.
         </p>
       )}
     </div>
@@ -84,26 +85,32 @@ export function ExportButtons({
   const blockedReason =
     can(role, "reports.export") && downloads !== "ALLOWED"
       ? downloads === "PAST_DUE"
-        ? "Downloads are paused while this establishment's subscription is past due — reports stay viewable on screen."
+        ? "Downloads are paused while the subscription is past due. Reports stay viewable on screen."
         : "Report downloads are turned off for this establishment by your LIS administrator."
       : null;
   // Slow workbooks invite double-clicks — disable every button while one runs.
   const [running, setRunning] = useState<"xlsx" | "csv" | "pdf" | null>(null);
+  const { runWithNotice, modal } = useExportUnitNotice();
 
-  const run = async (kind: "xlsx" | "csv" | "pdf", url: string) => {
-    setRunning(kind);
-    try {
-      await downloadFile(url);
-      toast.success("Export ready");
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Export failed");
-    } finally {
-      setRunning(null);
-    }
+  const run = (kind: "xlsx" | "csv" | "pdf", url: string) => {
+    runWithNotice(() => {
+      void (async () => {
+        setRunning(kind);
+        try {
+          await downloadFile(url);
+          toast.success("Export ready");
+        } catch (err) {
+          toast.error(err instanceof ApiError ? err.message : "Export failed");
+        } finally {
+          setRunning(null);
+        }
+      })();
+    });
   };
 
   return (
     <div className="flex items-center gap-2 print:hidden">
+      {modal}
       {onPrint && (
         <Button variant="outline" size="sm" onClick={onPrint}>
           <Printer className="size-4" /> Print
@@ -123,14 +130,14 @@ export function ExportButtons({
       )}
       {canExport && (
         <>
-          <Button variant="outline" size="sm" disabled={disabled || running !== null} onClick={() => void run("xlsx", xlsxUrl)}>
+          <Button variant="outline" size="sm" disabled={disabled || running !== null} onClick={() => run("xlsx", xlsxUrl)}>
             {running === "xlsx" ? <Loader2 className="size-4 animate-spin" /> : <FileSpreadsheet className="size-4" />} Excel
           </Button>
-          <Button variant="outline" size="sm" disabled={disabled || running !== null} onClick={() => void run("csv", csvUrl)}>
+          <Button variant="outline" size="sm" disabled={disabled || running !== null} onClick={() => run("csv", csvUrl)}>
             {running === "csv" ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />} CSV
           </Button>
           {pdfUrl && (
-            <Button variant="outline" size="sm" disabled={disabled || running !== null} onClick={() => void run("pdf", pdfUrl)}>
+            <Button variant="outline" size="sm" disabled={disabled || running !== null} onClick={() => run("pdf", pdfUrl)}>
               {running === "pdf" ? <Loader2 className="size-4 animate-spin" /> : <FileText className="size-4" />} PDF
             </Button>
           )}

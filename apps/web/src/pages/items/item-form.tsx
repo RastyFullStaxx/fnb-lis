@@ -98,7 +98,7 @@ export function ItemFormSheet({
   const submit = async (values: ItemCreate, confirmSimilar = false) => {
     try {
       const created = await createItem.mutateAsync({ ...values, ...(confirmSimilar ? { confirmSimilar: true } : {}) });
-      toast.success(`Item "${created.name}" added — every client location can now price it`);
+      toast.success(`Item "${created.name}" added; every location can now price it`);
       setSimilarWarning(null);
       onOpenChange(false);
     } catch (err) {
@@ -188,7 +188,7 @@ export function ItemFormSheet({
               <div>
                 <Label>Sizes / Variants</Label>
                 <p className="text-xs text-muted-foreground">
-                  Each purchasable size — e.g. a 700 ml bottle and a 1 L bottle are two variants.
+                  Each purchasable size is its own variant, e.g. a 700 ml bottle and a 1 L bottle.
                 </p>
               </div>
               <Button
@@ -406,7 +406,7 @@ export function ItemFormSheet({
                               />
                             </div>
                             <p className="self-center text-xs text-muted-foreground">
-                              Liquid Weight: ml of liquid per gram/oz of weight — converts a scale weight into remaining volume.
+                              Liquid Weight: ml of liquid per gram/oz. Converts a scale weight into remaining volume.
                             </p>
                           </div>
                         </div>
@@ -435,7 +435,7 @@ export function ItemFormSheet({
                   disabled={createItem.isPending}
                   onClick={() => void submit(form.getValues(), true)}
                 >
-                  Yes, it's a different item — create it
+                  Yes, it's different; create it
                 </Button>
                 <Button type="button" size="sm" variant="ghost" onClick={() => setSimilarWarning(null)}>
                   Let me fix the name
@@ -543,7 +543,7 @@ export function ItemEditSheet({
         <SheetHeader>
           <SheetTitle>Edit Item</SheetTitle>
           <SheetDescription>
-            Changes apply everywhere this item appears — every location's catalog and future counts.
+            Changes apply everywhere this item appears: every catalog and future count.
           </SheetDescription>
         </SheetHeader>
 

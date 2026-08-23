@@ -318,7 +318,7 @@ function CreateClientDialog({ open, onOpenChange }: { open: boolean; onOpenChang
           note: null,
         },
       });
-      toast.success(`Client "${client.name}" created — remember to mark the subscription as paid once payment is received.`);
+      toast.success(`Client "${client.name}" created. Mark the subscription as paid once payment is received.`);
       close();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not create the client");
@@ -600,9 +600,9 @@ function ClientDetailBody({ client }: { client: AdminClient }) {
           disabled={!sub || cancelled}
           title={
             !sub
-              ? "Create a subscription first — reports have nothing to attach to yet."
+              ? "Create a subscription first; reports have nothing to attach to yet."
               : cancelled
-                ? "Subscription is cancelled — reports are locked along with the rest of the plan."
+                ? "Subscription cancelled; reports are locked with the rest of the plan."
                 : undefined
           }
         >
@@ -636,7 +636,7 @@ function ClientDetailBody({ client }: { client: AdminClient }) {
                   className="gap-1 text-muted-foreground"
                   onClick={handleUnmarkPaid}
                   disabled={unmarkPaid.isPending}
-                  title="Undo — reverse the mark-paid if it was clicked by mistake"
+                  title="Undo: reverses mark-paid if clicked by mistake"
                 >
                   <RotateCcw className="size-3.5" />
                   Undo
@@ -752,7 +752,7 @@ function SubscriptionPanel({
       {!cancelled && accessState === "VIEW_ONLY" && (
         <div className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
           <AlertCircle className="size-3.5 shrink-0" />
-          Overdue by more than 7 days — mark as paid to restore access.
+          Overdue over 7 days; mark as paid to restore access.
         </div>
       )}
       {!cancelled && accessState === "GRACE" && sub.billingCycle === "MONTHLY" && days !== null && (
@@ -762,7 +762,7 @@ function SubscriptionPanel({
             ? `Payment due in ${days} day${days === 1 ? "" : "s"}.`
             : days === 0
               ? "Payment is due today."
-              : `${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"} past due — within grace window.`}
+              : `${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"} past due, within grace window.`}
         </div>
       )}
 
@@ -818,7 +818,7 @@ function CreateSubscriptionPanel({ clientId, onDone }: { clientId: string; onDon
         endDate: null,
         note: null,
       });
-      toast.success("Subscription created — remember to mark it as paid once payment is received.");
+      toast.success("Subscription created. Mark it as paid once payment is received.");
       onDone?.();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not create subscription");

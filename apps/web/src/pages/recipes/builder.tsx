@@ -160,7 +160,7 @@ export function RecipeBuilderSheet({
     if (incomplete.length > 0) {
       return toast.error(
         incomplete.length === 1
-          ? `${incomplete[0]!.item.itemVariant.item.name} has no serving amount — enter one, or remove the ingredient.`
+          ? `${incomplete[0]!.item.itemVariant.item.name} has no serving amount; enter one, or remove the ingredient.`
           : `${incomplete.length} ingredients have no serving amount: ${incomplete
               .slice(0, 3)
               .map((l) => l.item.itemVariant.item.name)
@@ -184,7 +184,7 @@ export function RecipeBuilderSheet({
         menuId = created.id;
       }
       const version = await mutations.publish.mutateAsync({ menuId: menuId!, srp: srpNum, lines: cleanLines });
-      toast.success(`Published v${version.versionNo} — future sales use it; past sales keep their version`);
+      toast.success(`Published v${version.versionNo} Future sales use it; past sales keep their version`);
       onOpenChange(false);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not publish the recipe");
@@ -195,7 +195,7 @@ export function RecipeBuilderSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
         <SheetHeader>
-          <SheetTitle>{menu ? `${menu.name} — new version` : "New Menu"}</SheetTitle>
+          <SheetTitle>{menu ? `${menu.name} New version` : "New Menu"}</SheetTitle>
           <SheetDescription>
             {menu
               ? `Publishing creates v${(menu.current?.versionNo ?? 0) + 1}. Sales already recorded keep v${menu.current?.versionNo ?? 1}.`

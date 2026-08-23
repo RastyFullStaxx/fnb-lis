@@ -81,7 +81,7 @@ const FORMS: Record<Kind, FormSpec> = {
     itemColumn: 1,
     description:
       "For encoding a day's sales by hand, then importing the file. One line per item sold.",
-    unitNote: "Quantity is in BOTTLES or pieces — the unit the item is counted in, never cases.",
+    unitNote: "Quantity is in BOTTLES or pieces, the counted unit. Never cases.",
   },
   purchases: {
     /**
@@ -100,9 +100,9 @@ const FORMS: Record<Kind, FormSpec> = {
     columns: ["Date", "Item", "Pack Size", "Quantity (bottles)", "Unit Cost", "Amount", "Supplier"],
     itemColumn: 1,
     description:
-      "For a delivery received on paper. Copy the invoice, but convert cases to bottles — the system counts bottles.",
+      "For a paper delivery. Copy the invoice, converting cases to bottles, since the system counts bottles.",
     unitNote:
-      "If the invoice says \"750mL X12\", write 12 under Pack Size and the TOTAL BOTTLES under Quantity — not the number of cases.",
+      "If the invoice says \"750mL X12\", write 12 under Pack Size and the total bottle count under Quantity, not cases.",
   },
   "non-revenue": {
     /**
@@ -126,7 +126,7 @@ const FORMS: Record<Kind, FormSpec> = {
     columns: ["Date", "Product", "Quantity", "Reason", "Remarks"],
     itemColumn: 1,
     description:
-      "Bleed, spoilage, tasting, R&D — stock that left without a sale. The reason goes in its own column so the report can total it.",
+      "Bleed, spoilage, tasting, R&D: stock that left without a sale. The reason gets its own column so the report can total it.",
     approvedBy: true,
     reasonLegend: true,
   },
@@ -254,7 +254,7 @@ export function BlankFormsPage() {
           <p className="mt-0.5 text-sm text-muted-foreground">{spec.description}</p>
           <p className="mt-1 text-xs text-muted-foreground">
             Printed {formatDate(new Date().toISOString().slice(0, 10))}. Keep the column headings as
-            they are — the importer reads them to know which column is which.
+            they are; the importer reads them to match columns.
           </p>
         </header>
 
@@ -301,7 +301,7 @@ export function BlankFormsPage() {
           // Printed ON the sheet, not shown only in the app: whoever fills this
           // in is holding paper next to a beer line, not looking at a screen.
           <p className="mt-4 max-w-prose text-xs leading-5 text-muted-foreground">
-            <span className="font-medium text-foreground">Reason — use one of:</span>{" "}
+            <span className="font-medium text-foreground">Reason: use one of:</span>{" "}
             {NON_REVENUE_REASON_WORDS.join(" · ")}. Anything else still records, but it groups under
             &ldquo;Other&rdquo; in the report.
           </p>

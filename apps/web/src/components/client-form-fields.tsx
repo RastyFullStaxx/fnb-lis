@@ -150,9 +150,9 @@ export function PackageAndModulesFields({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="BASIC">Basic — up to 2 users</SelectItem>
-                <SelectItem value="MEDIUM">Medium — up to 5 users</SelectItem>
-                <SelectItem value="FULL">Full — up to 10 users</SelectItem>
+                <SelectItem value="BASIC">Basic: up to 2 users</SelectItem>
+                <SelectItem value="MEDIUM">Medium: up to 5 users</SelectItem>
+                <SelectItem value="FULL">Full: up to 10 users</SelectItem>
               </SelectContent>
             </Select>
           )}
@@ -554,7 +554,7 @@ export function SubscriptionReportsDialog({
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Manage Reports — {clientName}</DialogTitle>
+          <DialogTitle>Manage Reports {clientName}</DialogTitle>
         </DialogHeader>
 
         <SubscriptionReportsChecklist enabledSlugs={checked} onChange={setChecked} />

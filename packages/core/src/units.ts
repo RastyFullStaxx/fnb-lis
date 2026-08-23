@@ -47,6 +47,18 @@ export const PREFERENCE_UNITS: Record<string, { kind: UnitKind; factorToBase: nu
 };
 
 /**
+ * The unit a brand-new account starts with before anyone sets a personal
+ * preference: fl oz for volume, g for mass. `routes/settings.ts`'s
+ * DEFAULT_PREFERENCES reads this rather than holding its own copy, since a
+ * report export (below) needs the same value and packages/core cannot
+ * import from apps/server.
+ */
+export const SYSTEM_DEFAULT_UNITS: Record<Exclude<UnitKind, "COUNT">, string> = {
+  VOLUME: "fl oz",
+  MASS: "g",
+};
+
+/**
  * Builds a UnitDef for a preference string so it can be passed to
  * `convert()` alongside the item's own UnitDef. `id` is not meaningful
  * here (no Unit row backs a preference) — only kind and factorToBase
@@ -92,6 +104,35 @@ export function resolveDisplayUnit(
   if (levels.adminDefault) return { unit: levels.adminDefault, source: "adminDefault" };
   if (levels.staffPreference) return { unit: levels.staffPreference, source: "staffPreference" };
   return { unit: itemBaseUnit, source: "itemBaseUnit" };
+}
+
+/**
+ * Which unit a report EXPORT renders a quantity in. Deliberately narrower
+ * than resolveDisplayUnit(): an export can leave the building (an owner,
+ * an accountant, an archive), so it must read the same no matter who
+ * clicked export. Both personal levels (staffOverride, staffPreference)
+ * are left out on purpose — see report-uom-plan.md, "On export".
+ *
+ *   1. adminDefault — ClientItemUnitDefault for this (client, item)
+ *   2. systemDefault — SYSTEM_DEFAULT_UNITS for the item's own unit kind
+ *   3. itemBaseUnit — the item's own configured unit (ml / g / …)
+ *
+ * Level 2 needs the item's UnitKind to pick fl oz vs g, so this takes the
+ * item's UnitDef rather than a bare base-unit string like
+ * resolveDisplayUnit() does. COUNT-kind items have no system default
+ * (SYSTEM_DEFAULT_UNITS excludes COUNT), so they fall straight to level 3,
+ * same place they always land today.
+ */
+export type ExportUnitSource = "adminDefault" | "systemDefault" | "itemBaseUnit";
+
+export function resolveExportUnit(
+  levels: { adminDefault?: string | null },
+  itemUnit: Pick<UnitDef, "name" | "kind">,
+): { unit: string; source: ExportUnitSource } {
+  if (levels.adminDefault) return { unit: levels.adminDefault, source: "adminDefault" };
+  const systemDefault = itemUnit.kind === "COUNT" ? undefined : SYSTEM_DEFAULT_UNITS[itemUnit.kind];
+  if (systemDefault) return { unit: systemDefault, source: "systemDefault" };
+  return { unit: itemUnit.name, source: "itemBaseUnit" };
 }
 
 /**

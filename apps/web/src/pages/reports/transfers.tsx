@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
 import { ArrowLeftRight } from "lucide-react";
-import { round2 } from "@fnb/core";
+import { convert, formatQty, round2 } from "@fnb/core";
 import { useLocationId } from "@/api/location";
 import { useMe } from "@/api/auth";
 import { useCountDates } from "@/api/ops";
 import { exportUrl, useTransferReport } from "@/api/reports";
+import { useItemDisplayUnit } from "@/lib/preferences";
 import { formatMoney, formatNumber, formatDate, formatUnitPrice } from "@/lib/utils";
 import { useSort } from "@/hooks/use-sort";
 import { PageHeader } from "@/components/page-header";
@@ -25,6 +26,7 @@ import {
   TableBody,
   TableCell,
   TableFooter,
+  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
@@ -74,6 +76,15 @@ export function TransferReportPage() {
       shortfall: round2(dispatched - received),
     };
   }, [report.data]);
+
+  // Per-item display unit resolver (report-uom-plan.md, "On screen") — Sent
+  // and Received share one resolved unit per row, same scope as the export
+  // route's convertRowsForExport(rows, ["qtySent", "qtyReceived"]).
+  const allItemIds = useMemo(
+    () => Array.from(new Set((report.data?.rows ?? []).map((r) => r.itemId))),
+    [report.data],
+  );
+  const { resolve: resolveDisplay } = useItemDisplayUnit(allItemIds);
 
   const transferRows = report.data?.rows ?? [];
   const { sortedRows, sortKey, sortDirection, toggleSort } = useSort(transferRows, {
@@ -165,7 +176,7 @@ export function TransferReportPage() {
                 hint={
                   movement.shortfall > 0
                     ? `${formatMoney(movement.shortfall)} at cost didn't arrive`
-                    : "At cost — everything dispatched arrived"
+                    : "At cost: everything dispatched arrived"
                 }
               >
                 <MagnitudeBars data={movement.bars} name="At cost" />
@@ -201,6 +212,7 @@ export function TransferReportPage() {
                   >
                     Received
                   </SortableTableHead>
+                  <TableHead className="text-right">Unit</TableHead>
                   <SortableTableHead
                     sortKey="unitCost"
                     activeKey={sortKey}
@@ -233,19 +245,23 @@ export function TransferReportPage() {
               <TableBody>
                 {sortedRows.map((row, i) => {
                   const short = row.qtyReceived !== null && row.qtyReceived < row.qtySent;
+                  const itemUnit = { id: row.unitName, name: row.unitName, kind: row.unitKind, factorToBase: row.unitFactorToBase };
+                  const displayUnit = resolveDisplay(row.itemId, itemUnit) ?? itemUnit;
+                  const convertQty = (q: number) => (displayUnit.kind === itemUnit.kind ? convert(q, itemUnit, displayUnit) : q);
                   return (
                     <TableRow key={i}>
                       <TableCell className="tnum">{formatDate(row.date)}</TableCell>
                       <TableCell className="text-muted-foreground">{row.counterparty}</TableCell>
                       <TableCell className="max-w-[22rem] font-medium break-words">{row.name}</TableCell>
-                      <TableCell className="tnum text-right">{formatNumber(row.qtySent)}</TableCell>
+                      <TableCell className="tnum text-right">{formatQty(convertQty(row.qtySent))}</TableCell>
                       <TableCell className={cn("tnum text-right", short && "font-medium text-destructive")}>
                         {row.qtyReceived === null ? (
                           <span className="text-muted-foreground">pending</span>
                         ) : (
-                          formatNumber(row.qtyReceived)
+                          formatQty(convertQty(row.qtyReceived))
                         )}
                       </TableCell>
+                      <TableCell className="text-right text-muted-foreground">{displayUnit.name}</TableCell>
                       <TableCell className="tnum text-right">{formatUnitPrice(row.unitCost)}</TableCell>
                       <TableCell className="tnum text-right">{formatMoney(row.costValue)}</TableCell>
                       <TableCell className="tnum text-right">{formatMoney(row.retailValue)}</TableCell>
@@ -264,6 +280,7 @@ export function TransferReportPage() {
                   <TableCell className="tnum text-right font-medium">
                     {direction === "in" ? formatNumber(report.data.totals.qty) : ""}
                   </TableCell>
+                  <TableCell />
                   <TableCell />
                   <TableCell className="tnum text-right font-semibold">{formatMoney(report.data.totals.cost)}</TableCell>
                   <TableCell className="tnum text-right font-semibold">{formatMoney(report.data.totals.retail)}</TableCell>

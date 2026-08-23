@@ -99,6 +99,18 @@ export interface OnHandReport {
     /** LocationItem.isActive — carried through so the client can badge a
         hidden-but-active row. */
     isActive: boolean;
+    /**
+     * report-uom-plan.md, Phase 4: `onHand` is stored/served in the item's
+     * own base unit — these fields let the screen resolve and convert it to
+     * the viewer's own display unit via useItemDisplayUnit(), same pattern
+     * as counts/session.tsx's LineRow. Never converted server-side for the
+     * screen response (only the export route converts, to the establishment
+     * default — see report-uom-plan.md "On export").
+     */
+    itemId: string;
+    unitName: string;
+    unitKind: "VOLUME" | "MASS" | "COUNT";
+    unitFactorToBase: number;
   }>;
   totals: { costValue: number; retailValue: number };
 }
@@ -128,6 +140,12 @@ export interface ParLevelReport {
     /** LocationItem.isActive — carried through so the client can badge a
         hidden-but-active row. */
     isActive: boolean;
+    /** report-uom-plan.md Phase 5 — see OnHandReport's own comment. `onHand`
+        is a real base-unit quantity; resolved/converted the same way. */
+    itemId: string;
+    unitName: string;
+    unitKind: "VOLUME" | "MASS" | "COUNT";
+    unitFactorToBase: number;
   }>;
   totals: { belowParCount: number; orderValue: number };
 }
@@ -147,6 +165,11 @@ export interface NonMovingReport {
     /** LocationItem.isActive — carried through so the client can badge a
         hidden-but-active row. */
     isActive: boolean;
+    /** report-uom-plan.md Phase 5 — see OnHandReport's own comment. */
+    itemId: string;
+    unitName: string;
+    unitKind: "VOLUME" | "MASS" | "COUNT";
+    unitFactorToBase: number;
   }>;
   totals: { count: number; costValue: number; retailValue: number };
 }
@@ -163,6 +186,12 @@ export interface ExpiringBatchesReport {
     expiryDate: string;
     purchaseDate: string;
     isExpired: boolean;
+    /** report-uom-plan.md Phase 5 — see OnHandReport's own comment. `qty` is
+        the batch's remaining PurchaseLine quantity, a real base-unit amount. */
+    itemId: string;
+    unitName: string;
+    unitKind: "VOLUME" | "MASS" | "COUNT";
+    unitFactorToBase: number;
   }>;
   totals: { expiredCount: number; upcomingCount: number };
 }
@@ -223,6 +252,12 @@ export interface TransferReport {
     unitCost: number;
     costValue: number;
     retailValue: number;
+    /** report-uom-plan.md Phase 5 — see OnHandReport's own comment.
+        `qtySent`/`qtyReceived` share this one unit. */
+    itemId: string;
+    unitName: string;
+    unitKind: "VOLUME" | "MASS" | "COUNT";
+    unitFactorToBase: number;
   }>;
   byCounterparty: Array<{ counterparty: string; qty: number; cost: number }>;
   totals: { qty: number; cost: number; retail: number };
@@ -537,6 +572,12 @@ export interface TopSellersReport {
     category: string | null;
     qty: number;
     revenue: number;
+    /** report-uom-plan.md Phase 5: real base-unit quantity, keyed by
+        itemId — see top-sellers.ts's own TopSellerRow comment. */
+    itemId?: string;
+    unitName?: string;
+    unitKind?: "VOLUME" | "MASS" | "COUNT";
+    unitFactorToBase?: number;
   }>;
   topMenus: Array<{
     id: string;
@@ -553,6 +594,11 @@ export interface TopSellersReport {
     category: string | null;
     qty: number;
     revenue: number;
+    /** report-uom-plan.md Phase 5 — see topBrands' own comment. */
+    itemId?: string;
+    unitName?: string;
+    unitKind?: "VOLUME" | "MASS" | "COUNT";
+    unitFactorToBase?: number;
   }>;
 }
 
@@ -612,6 +658,12 @@ export interface CostSnapshotReport {
     cost: number;
     value: number;
     basis: "average" | "price";
+    /** report-uom-plan.md Phase 5 — see OnHandReport's own comment. `uom`
+        above stays the fixed catalog size label, untouched. */
+    itemId: string;
+    unitName: string;
+    unitKind: "VOLUME" | "MASS" | "COUNT";
+    unitFactorToBase: number;
   }>;
   totals: { qty: number; value: number };
 }
@@ -652,7 +704,17 @@ export function useForfeitsReport(from: string, to: string) {
 export interface UsageCostReport {
   begin: string;
   end: string;
-  rows: Array<{ name: string; uom: string; qty: number; cost: number }>;
+  rows: Array<{
+    name: string;
+    uom: string;
+    qty: number;
+    cost: number;
+    /** report-uom-plan.md Phase 5 — see CostSnapshotReport's own comment. */
+    itemId: string;
+    unitName: string;
+    unitKind: "VOLUME" | "MASS" | "COUNT";
+    unitFactorToBase: number;
+  }>;
   totals: { qty: number; cost: number };
 }
 
@@ -668,7 +730,21 @@ export function useUsageCostReport(begin?: string, end?: string) {
 export interface SalesByItemReport {
   begin: string;
   end: string;
-  rows: Array<{ name: string; uom: string; shot: number; bottle: number; qty: number; cost: number; retail: number }>;
+  rows: Array<{
+    name: string;
+    uom: string;
+    shot: number;
+    bottle: number;
+    qty: number;
+    cost: number;
+    retail: number;
+    /** report-uom-plan.md Phase 5 — see CostSnapshotReport's own comment.
+        `shot`/`bottle`/`qty` share this one unit. */
+    itemId: string;
+    unitName: string;
+    unitKind: "VOLUME" | "MASS" | "COUNT";
+    unitFactorToBase: number;
+  }>;
   totals: { shot: number; bottle: number; qty: number; cost: number; retail: number };
 }
 
