@@ -46,6 +46,7 @@
  *    reporting a misleading pile of skips.
  */
 import { prisma } from "../src/db";
+import { logActivity } from "../src/services/activity";
 import { Report } from "./legacy/report";
 import { assertReachable } from "./legacy/source";
 import type { Prisma } from "../src/generated/prisma/client";
@@ -54,10 +55,18 @@ import { tenancyStage } from "./legacy/stages/tenancy";
 import { catalogStage } from "./legacy/stages/catalog";
 import { pricingStage } from "./legacy/stages/pricing";
 import { menusStage } from "./legacy/stages/menus";
+import { countsStage } from "./legacy/stages/counts";
+import { transactionsStage } from "./legacy/stages/transactions";
+import { trailStage } from "./legacy/stages/trail";
 
 export type Stage = {
   name: string;
   run: (tx: Prisma.TransactionClient, report: Report, adminId: string) => Promise<void>;
+  /**
+   * Locations this stage wrote to, so the ledger entry lands where an auditor
+   * actually looks. Stages that touch no specific location (reference) omit it.
+   */
+  touched?: (tx: Prisma.TransactionClient) => Promise<Array<{ clientId: string; locationId: string }>>;
 };
 
 export const STAGE_ORDER = [
@@ -80,6 +89,9 @@ const STAGES: Partial<Record<StageName, Stage>> = {
   catalog: catalogStage,
   pricing: pricingStage,
   menus: menusStage,
+  counts: countsStage,
+  transactions: transactionsStage,
+  trail: trailStage,
 };
 
 class DryRunRollback extends Error {
@@ -88,22 +100,60 @@ class DryRunRollback extends Error {
   }
 }
 
-async function runStage(stage: Stage, adminId: string, confirm: boolean): Promise<void> {
+async function runStage(stage: Stage, adminId: string, adminUsername: string, confirm: boolean): Promise<void> {
   const report = new Report();
   try {
     await prisma.$transaction(
       async (tx) => {
         await stage.run(tx, report, adminId);
-        await tx.activityLog.create({
-          data: {
-            userId: adminId,
-            userName: "Legacy migration",
+
+        // logActivity(), NOT a raw create. It links the entry into the
+        // tamper-evident chain (services/activity-chain.ts). A raw create leaves
+        // seq/prevHash/hash null, which the verifier reports as "unchained" —
+        // the status reserved for history written BEFORE chaining shipped.
+        // An import running today must not look like pre-chain history.
+        // Must carry firstName/lastName: logActivity builds userName from
+        // `${firstName} ${lastName}` (services/activity.ts:71), so a partial
+        // actor renders as "undefined undefined" in the Activity screen.
+        const actor = {
+          id: adminId,
+          username: adminUsername,
+          firstName: "Legacy",
+          lastName: "migration",
+          role: "ADMIN",
+        } as never;
+        const totals = report.totals();
+
+        // One entry per LOCATION the stage touched, so it appears in that
+        // location's Activity screen. Location-less entries are invisible
+        // everywhere an auditor would think to look — which is how an import
+        // of 1,285 catalog rows can leave no trace on the venue it changed.
+        const touched = stage.touched ? await stage.touched(tx) : [];
+        for (const t of touched) {
+          await logActivity(
+            {
+              user: actor,
+              clientId: t.clientId,
+              locationId: t.locationId,
+              action: `import.legacy.${stage.name}`,
+              entity: "import",
+              summary: `Legacy import stage "${stage.name}"`,
+              details: totals,
+            },
+            tx,
+          );
+        }
+        // Plus one global entry, so a stage that touched nothing still leaves a mark.
+        await logActivity(
+          {
+            user: actor,
             action: `import.legacy.${stage.name}`,
             entity: "import",
-            summary: `Legacy import stage "${stage.name}"`,
-            detailsJson: JSON.stringify(report.totals()),
+            summary: `Legacy import stage "${stage.name}" (all locations)`,
+            details: totals,
           },
-        });
+          tx,
+        );
         if (!confirm) throw new DryRunRollback();
       },
       // The trail stage writes 21,991 rows; Prisma's 5s default is nowhere near.
@@ -148,7 +198,7 @@ async function main() {
       pending.push(name);
       continue;
     }
-    await runStage(stage, admin.id, confirm);
+    await runStage(stage, admin.id, adminUser, confirm);
   }
   if (pending.length) {
     console.log(`Not yet implemented, skipped: ${pending.join(", ")}`);

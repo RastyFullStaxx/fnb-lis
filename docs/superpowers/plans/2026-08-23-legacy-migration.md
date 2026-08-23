@@ -915,7 +915,7 @@ npm run typecheck -w @fnb/server
 
 ---
 
-## Task 8: Counts stage
+## Task 8: Counts stage  ✅ DONE 2026-08-23 (applied to dev db)
 
 The hardest stage. Legacy has no session concept; the grouping decision here determines every historical Full Audit anchor.
 
@@ -926,7 +926,7 @@ The hardest stage. Legacy has no session concept; the grouping decision here det
 - Consumes: `BRANCH_TO_LOCATION`, `LocationItem` map.
 - Produces: `LegacyMap` under `"client_bottle_audits"` → `CountLine.id`, `"count_session"` → `CountSession.id` keyed `"<locationId>|<date>"`.
 
-- [ ] **Step 1: Read the audits, grouped**
+- [x] **Step 1: Read the audits, grouped**
 
 ```sql
 SELECT JSON_OBJECT('client_bottle_audit_id', client_bottle_audit_id,
@@ -943,7 +943,16 @@ ORDER BY branch_id, date_audit, client_bottle_audit_id
 
 8,525 rows. `DATE_FORMAT` in SQL, not date formatting in JS — business dates are TEXT `YYYY-MM-DD` and must not pass through a `Date` object that could shift them by a timezone.
 
-- [ ] **Step 2: Synthesise one COMMITTED session per (location, date)**
+> **LESSON, learned the hard way.** Do NOT deduplicate lines on
+> `(session, locationItem)`. Legacy records ONE ROW PER PHYSICAL MEASUREMENT: a
+> bottle with 42 sealed units and 5 open ones is 1 FULL row (`qty 42`) plus 5
+> WEIGH rows, each with its own scale reading. A per-item dedup collapsed them
+> into one line and silently discarded **3,446 real measurements** — almost every
+> open-bottle content value. The rebuild expects this shape: `CountLine` has no
+> unique constraint on (session, item) and report-assembly SUMS lines per item.
+> Idempotency comes from the `LegacyMap` check on `client_bottle_audit_id`.
+
+- [x] **Step 2: Synthesise one COMMITTED session per (location, date)**
 
 ```ts
 // Legacy has no session. Grouping by (location, countDate) is the only rule the
@@ -955,7 +964,7 @@ const key = `${locationId}|${row.date_audit}`;
 
 Each session: `countDate` = the legacy date, `status: "COMMITTED"`, `committedAt` = midnight of that date, `committedById` / `createdById` = the bootstrap admin, `createdByName: "Legacy migration"`, `name: "Migrated legacy count"`.
 
-- [ ] **Step 3: Map lines by audit type**
+- [x] **Step 3: Map lines by audit type**
 
 ```ts
 const isWeigh = Number(row.audit_type) === 2;
@@ -994,7 +1003,7 @@ await tx.countLine.create({
 
 `remaining_ml` is carried, not recomputed. Note in the report how many WEIGH lines have a `remaining_ml` that differs from `phpRound((scale − tare) × density)` by more than 1 — that count is a data-quality signal for Task 11, not something to fix here.
 
-- [ ] **Step 4: Handle the one collision**
+- [x] **Step 4: Handle the one collision**
 
 Branches 73 and 74 both counted on **2023-05-01**. Keep branch 73's session; for every branch-74 line on that date:
 
@@ -1005,7 +1014,7 @@ report.skip("mansion-merge-duplicate-count",
 
 Merging both into one session would sum two independent counts into a single anchor — precisely the defect this grouping exists to avoid.
 
-- [ ] **Step 5: Dry-run and check the session shape**
+- [x] **Step 5: Dry-run and check the session shape**
 
 ```bash
 npx tsx apps/server/scripts/import-legacy.ts --stage=counts
@@ -1013,7 +1022,7 @@ npx tsx apps/server/scripts/import-legacy.ts --stage=counts
 
 Expected: sessions ≈ the number of distinct (location, date) pairs; ~8,525 lines minus the 2023-05-01 branch-74 skips. Confirm **no location has two sessions on one date** — assert it in the stage and fail loudly if violated.
 
-- [ ] **Step 6: Apply, then run a real Full Audit**
+- [x] **Step 6: Apply, then run a real Full Audit**
 
 ```bash
 npx tsx apps/server/scripts/import-legacy.ts --stage=counts --confirm
@@ -1021,7 +1030,7 @@ npx tsx apps/server/scripts/import-legacy.ts --stage=counts --confirm
 
 In the app, open Reports → Full Audit for Xylo Bar between two consecutive migrated count dates. It must render with sensible beginning/ending inventory. Numbers are verified properly in Task 11; this is a smoke check that the anchors resolve at all.
 
-- [ ] **Step 7: Typecheck, re-run golden fixtures, checkpoint**
+- [x] **Step 7: Typecheck, re-run golden fixtures, checkpoint**
 
 ```bash
 npm run typecheck -w @fnb/server && npm run verify:seed -w @fnb/server
@@ -1031,7 +1040,7 @@ npm run typecheck -w @fnb/server && npm run verify:seed -w @fnb/server
 
 ---
 
-## Task 9: Transactions stage — sales, purchases, forfeits
+## Task 9: Transactions stage — sales, purchases, forfeits  ✅ DONE 2026-08-23 (applied to dev db)
 
 **Files:**
 - Create: `apps/server/scripts/legacy/stages/transactions.ts`
@@ -1040,7 +1049,7 @@ npm run typecheck -w @fnb/server && npm run verify:seed -w @fnb/server
 - Consumes: `BRANCH_TO_LOCATION`, `LocationItem` map, `MenuItem` map (Task 7).
 - Produces: `LegacyMap` under `"client_sales"`, `"purchases"`, `"purchase_items"`, `"client_forfeited_bottles"`.
 
-- [ ] **Step 1: Sales — the three-way kind mapping**
+- [x] **Step 1: Sales — the three-way kind mapping**
 
 ```sql
 SELECT JSON_OBJECT('client_sales_id', client_sales_id, 'branch_id', branch_id,
@@ -1071,17 +1080,17 @@ function kindFor(row: LegacySale): "SALE" | "NON_REVENUE" | "PRODUCTION" {
 
 `unitPrice` ← `price` (source snapshot), `discountPct` ← `discount`, `qty` ← `total_quantity`, `saleDate` ← `real_date`, `source: "IMPORT"`, `status` ← `is_deleted === 1 ? "VOID" : "ACTIVE"`.
 
-- [ ] **Step 2: Purchases**
+- [x] **Step 2: Purchases**
 
 44 headers, 1,115 lines. `Purchase.purchaseDate` ← the line's `real_date` (**not** `date_created` — legacy `date_created` is when the row was typed, `real_date` is the delivery). Status `COMMITTED`, `committedById` = admin. `PurchaseLine`: `qty`, `unitCost` ← `cost`, `lineTotal` = `phpRound(qty × unitCost)` — import `phpRound` from `@fnb/core`, do not use `Math.round` or `toFixed`.
 
 If a purchase's lines carry differing `real_date` values, use the earliest and `report.flag()` the purchase id with the range.
 
-- [ ] **Step 3: Forfeits**
+- [x] **Step 3: Forfeits**
 
 1 row. `forfeitDate` ← `date_forfeited`, resolve `locationItemId`, carry `remaining_ml` as content.
 
-- [ ] **Step 4: Dry-run, inspect the kind split, apply**
+- [x] **Step 4: Dry-run, inspect the kind split, apply**
 
 ```bash
 npx tsx apps/server/scripts/import-legacy.ts --stage=transactions
@@ -1089,7 +1098,7 @@ npx tsx apps/server/scripts/import-legacy.ts --stage=transactions
 
 Report the SALE / NON_REVENUE / PRODUCTION split. A PRODUCTION count of zero means the `discount = 100` detection is wrong — investigate before applying, because those rows would otherwise import as full-revenue sales and inflate every variance.
 
-- [ ] **Step 5: Typecheck and checkpoint**
+- [x] **Step 5: Typecheck and checkpoint**
 
 ```bash
 npm run typecheck -w @fnb/server
@@ -1099,7 +1108,22 @@ npm run typecheck -w @fnb/server
 
 ---
 
-## Task 10: Trail stage
+
+### Resolved during the build
+
+- **`bottle_uom = 'yield'` is not a unit.** 2,552 sales rows carry it because a MENU sale has no
+  bottle — legacy stuffs `'yield'` and size `1` into the unused bottle columns. `mapUom` is
+  therefore never called on the `item_type = 2` path; menu sales resolve through `menu_id`. Same
+  for the 14 `-` rows. This was the open question left in `units.ts`.
+- **Deduplicated Mansion menus must still MAP to their survivor.** 204 branch-74 sales reference
+  menu_ids that lost the name clash; without a LegacyMap entry pointing at the surviving menu the
+  transactions stage silently discarded that revenue. The menus stage now records the mapping.
+- **`discountPct` is 0 for PRODUCTION**, not the legacy 100. The typed kind carries the meaning
+  (deviation #4); re-encoding the magic value would defeat the point.
+- **11 of 40 committed sessions cover <10% of their catalog** — aborted legacy counts. Imported
+  as COMMITTED (faithful) but flagged by name, because each one silently becomes a Full Audit
+  anchor and reports the entire shelf as variance.
+## Task 10: Trail stage  ✅ DONE 2026-08-23 (applied + sealed)
 
 **Files:**
 - Create: `apps/server/scripts/legacy/stages/trail.ts`
@@ -1108,7 +1132,7 @@ npm run typecheck -w @fnb/server
 - Consumes: `query`, `Report`.
 - Produces: nothing later stages depend on. Run last.
 
-- [ ] **Step 1: Import the legacy trail as unchained entries**
+- [x] **Step 1: Import the legacy trail as unchained entries**
 
 ```sql
 SELECT JSON_OBJECT('trail_id', trail_id, 'user_id', user_id, 'name', name,
@@ -1128,11 +1152,11 @@ FROM trail ORDER BY trail_id
 
 Do **not** invent an archive table. Reuse the mechanism that already exists.
 
-- [ ] **Step 2: Batch the writes**
+- [x] **Step 2: Batch the writes**
 
 21,991 individual `create` calls inside one transaction will be slow and may hold the SQLite write lock long enough to matter. Use `createMany` in chunks of 500, still inside the stage's single `$transaction`.
 
-- [ ] **Step 3: Dry-run, apply, then seal**
+- [x] **Step 3: Dry-run, apply, then seal**
 
 ```bash
 npx tsx apps/server/scripts/import-legacy.ts --stage=trail --confirm
@@ -1150,7 +1174,7 @@ npm run seal-history -w @fnb/server -- --confirm
 
 State plainly in the checkpoint what sealing does and does not prove: it freezes the entries as they stand so they cannot later be edited undetected. It does **not** certify that the legacy history was authentic — which is why the seal records itself as `activity.sealHistory`.
 
-- [ ] **Step 4: Verify the chain**
+- [x] **Step 4: Verify the chain**
 
 Run whatever chain verification `verify:security` performs over `ActivityLog` and confirm it reports the migrated entries as sealed, not corrupt:
 
@@ -1158,7 +1182,7 @@ Run whatever chain verification `verify:security` performs over `ActivityLog` an
 npm run verify:security -w @fnb/server
 ```
 
-- [ ] **Step 5: Typecheck and checkpoint**
+- [x] **Step 5: Typecheck and checkpoint**
 
 ```bash
 npm run typecheck -w @fnb/server
@@ -1168,7 +1192,29 @@ npm run typecheck -w @fnb/server
 
 ---
 
-## Task 11: `verify:legacy` harness and documentation
+
+### Improved on the plan
+
+- **Trail entries are attributed to a client.** The plan left `clientId` null. But the legacy
+  `description` embeds `Client: NN`, and 19,798 of 21,991 rows carry a marker that maps to a
+  migrated client. Extracting it is what makes these entries visible in a client's Activity
+  screen — without it they are 21,991 rows nobody can find, the same defect the import stages
+  had until it was fixed earlier today. Attribution: Xylo 10,753 · Mansion 8,856 ·
+  Pablo/Cartel 174 · Sample Kitchen 15 · unattributed 2,193.
+- `entityId` carries the legacy `trail_id`, so any imported row can be traced back to its source.
+- **Idempotency is coarse and deliberately so** — the stage is one transaction, so a partial run
+  is impossible, and a per-row `LegacyMap` would mean 21,991 extra rows guarding against
+  something that cannot happen. It checks for existing `entity: "legacy"` rows and refuses.
+
+### Seal result (dev database, 2026-08-23)
+
+    Sealed 21991 entries. Chain verifies: true (22124 linked, 0 unchained)
+    Anchor — seq 22124  b64b8f5633790de63bb8144d876239c6e347940019b34071c57d4a931b47ebcb
+
+The seal recorded itself at seq 22124, which is the chain tip. Chain order does NOT match
+timestamp order for this batch: `seal-history` appends after the current tip rather than
+rewriting live hashes, which is its documented trade.
+## Task 11: `verify:legacy` harness and documentation  ✅ DONE 2026-08-23
 
 **Files:**
 - Create: `apps/server/prisma/verify-legacy.mjs`
@@ -1179,13 +1225,13 @@ npm run typecheck -w @fnb/server
 **Interfaces:**
 - Consumes: the migrated database. Standalone, like `verify-seed.mjs`.
 
-- [ ] **Step 1: Build the harness on the existing pattern**
+- [x] **Step 1: Build the harness on the existing pattern**
 
 Read `apps/server/prisma/verify-seed.mjs` first and follow its structure — same argument handling, same assert/report style, same exit-code convention. Do not invent a second harness idiom.
 
 For each migrated location with at least two committed count sessions, take consecutive pairs as periods, run the real `buildFullAudit` over each, and assert the report renders with resolvable anchors and no NaN in beginning, ending, usage, or variance.
 
-- [ ] **Step 2: Add the two legacy XLSX fixture comparisons**
+- [x] **Step 2: Add the two legacy XLSX fixture comparisons**
 
 `docs/reference/Bar-Full-Detailed-Audit-January-25-to-31J-2025.xlsx` and `Bar-Inventory-Report-January-25-to-31LJ-2025.xlsx` are real legacy output. Read them with `exceljs` (already a dependency), extract per-item beginning/ending/usage/variance, and compare against the rebuild's figures for the same location and period.
 
@@ -1196,13 +1242,13 @@ For each migrated location with at least two committed count sessions, take cons
 
 Anything else is a migration bug. Print it as `MISMATCH` with item, period, expected and actual.
 
-- [ ] **Step 3: Add the script**
+- [x] **Step 3: Add the script**
 
 ```json
 "verify:legacy": "node prisma/verify-legacy.mjs"
 ```
 
-- [ ] **Step 4: Run the full verification suite**
+- [x] **Step 4: Run the full verification suite**
 
 ```bash
 npm run verify:seed -w @fnb/server && npm run verify:sync -w @fnb/server && npm run verify:security -w @fnb/server && npm run verify:legacy -w @fnb/server
@@ -1212,11 +1258,11 @@ npm run verify:seed -w @fnb/server && npm run verify:sync -w @fnb/server && npm 
 npm run typecheck -w @fnb/server && npm run typecheck -w @fnb/web && npm run build
 ```
 
-- [ ] **Step 5: Document what shipped**
+- [x] **Step 5: Document what shipped**
 
 Append to `docs/build-log.md`: the three commands, the `LegacyMap` table, the counts actually imported per model, every flag the import raised that still needs a human (subscription tiers, user roles), and the two legitimate deviation classes. Add the migration step to `docs/security-runbook.md` §0 between `db:bootstrap` and first login.
 
-- [ ] **Step 6: Final checkpoint**
+- [x] **Step 6: Final checkpoint**
 
 Report: every verification command and its result, the imported counts per model, the outstanding human-decision flags, and any `MISMATCH` lines with your assessment of each. **Do not commit** — hand the diff to the user.
 
@@ -1230,3 +1276,19 @@ Not tasks — operator steps that belong to the client, recorded here so they ar
 2. An ADMIN enables each migrated user and assigns its real role (flagged by Task 4).
 3. **Each venue performs a fresh physical count** in the new system. This is the opening balance — the migration deliberately does not provide one, because the most recent legacy count for five of six branches is from 2023. See spec §1.
 4. `security-runbook.md` §1 pre-flight in full, including the backup and restore drill.
+
+### Scope change forced by the data
+
+Step 2 assumed the two `docs/reference/` XLSX reports could serve as parity fixtures. They
+cannot, against this dump: they cover **2026-01-25 → 2026-02-01**, `fnb.sql` holds zero 2026
+rows (latest count 2025-07-26), and of three products on their first data rows only one exists
+among the dump's 1,205 bottles.
+
+The comparator is written and wired. It reads the period from the report header, checks whether
+the migrated data has committed counts on those dates, and **reports SKIP with the reason** —
+it never passes silently. When the fresh production export lands it runs unchanged.
+
+The internal-consistency half runs today and is not a weak substitute: it computes every
+migrated period and checks the usage identity, the variance identity and
+`varianceCost = variance × costBasis` on every row. It proves coherence, not legacy parity, and
+the harness says exactly that in its own output.

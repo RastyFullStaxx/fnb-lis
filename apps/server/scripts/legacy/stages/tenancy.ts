@@ -57,8 +57,20 @@ type LegacyUser = { user_id: number; username: string; user_level: number; statu
 type LegacyClient = { client_id: number; client_name: string; status: number };
 type LegacyBranch = { branch_id: number; branch_name: string; client_id: number };
 
+/**
+ * Every location this migration owns, for scoping ledger entries. Reads
+ * LegacyMap rather than names so it reflects what was actually created.
+ */
+export async function migratedLocations(tx: Parameters<Stage["run"]>[0]) {
+  const branches = await tx.legacyMap.findMany({ where: { legacyTable: "branches" }, select: { newId: true } });
+  const ids = [...new Set(branches.map((b) => b.newId))];
+  const locs = await tx.location.findMany({ where: { id: { in: ids } }, select: { id: true, clientId: true } });
+  return locs.map((l) => ({ clientId: l.clientId, locationId: l.id }));
+}
+
 export const tenancyStage: Stage = {
   name: "tenancy",
+  touched: migratedLocations,
   async run(tx, report, adminId) {
     const today = new Date().toISOString().slice(0, 10);
 

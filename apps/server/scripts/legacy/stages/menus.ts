@@ -7,6 +7,7 @@
 import type { Stage } from "../../import-legacy";
 import { query } from "../source";
 import { loadMap, record } from "../map";
+import { migratedLocations } from "./tenancy";
 import { mapUom, unmappableReason } from "../units";
 
 type LegacyMenu = {
@@ -32,6 +33,7 @@ const variantKey = (bottleId: number, size: number, uom: string) => `${bottleId}
 
 export const menusStage: Stage = {
   name: "menus",
+  touched: migratedLocations,
   async run(tx, report, adminId) {
     const branchMap = await loadMap(tx, "branches");
     const variantMap = await loadMap(tx, "bottle_sizes");
@@ -58,8 +60,8 @@ export const menusStage: Stage = {
     const versionByMenu = new Map<string, string>();
     /** legacy menu_id -> locationId. */
     const locationByMenu = new Map<string, string>();
-    /** "locationId|lowercased name" already taken. */
-    const namesTaken = new Set<string>();
+    /** "locationId|lowercased name" -> the ids that won it. */
+    const namesTaken = new Map<string, { menuItemId: string; versionId: string }>();
 
     for (const m of menus) {
       const locationId = branchMap.get(String(m.branch_id));
@@ -74,11 +76,22 @@ export const menusStage: Stage = {
       // Keeping both would give the merged venue every cocktail twice. Branch 73
       // wins; the 24 names unique to 74 still come across, because deduplicating
       // by NAME rather than dropping branch 74 wholesale is what preserves them.
-      if (namesTaken.has(nameKey)) {
-        report.skip("mansion-merge-duplicate-menu", `menu_id ${m.menu_id} "${name}" (branch ${m.branch_id})`);
+      const survivor = namesTaken.get(nameKey);
+      if (survivor) {
+        // Deduplicated, but STILL MAPPED to the menu that survived.
+        //
+        // Dropping the mapping is not free: 204 branch-74 sales reference these
+        // menu_ids, and without a mapping the transactions stage cannot resolve
+        // them and silently discards real revenue. The merged venue sells one
+        // "Mojito"; a branch-74 sale of it is a sale of that same Mojito.
+        await record(tx, "client_menus", m.menu_id, survivor.menuItemId);
+        await record(tx, "client_menus_v1", m.menu_id, survivor.versionId);
+        report.skip(
+          "mansion-merge-duplicate-menu",
+          `menu_id ${m.menu_id} "${name}" (branch ${m.branch_id}) — mapped onto the surviving menu so its sales still resolve`,
+        );
         continue;
       }
-      namesTaken.add(nameKey);
 
       const existing = await loadOrNull(tx, "client_menus", m.menu_id);
       let menuItemId: string;
@@ -117,6 +130,7 @@ export const menusStage: Stage = {
       if (!existingVersion) report.count("RecipeVersion (created)");
       await record(tx, "client_menus_v1", m.menu_id, versionId);
 
+      namesTaken.set(nameKey, { menuItemId, versionId });
       versionByMenu.set(String(m.menu_id), versionId);
       locationByMenu.set(String(m.menu_id), locationId);
     }

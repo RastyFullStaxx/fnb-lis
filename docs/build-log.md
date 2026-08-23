@@ -5081,3 +5081,73 @@ touched `SHELF_LIFE_DAYS`, `addDays`, or any of the new assertions. Still,
 a machine with dependencies installed, before this is trusted the way the
 rest of this file is.
 
+
+---
+
+## 2026-08-23 — Legacy data migration (Tasks 1–11)
+
+Ground-up migration of the legacy FnB/LIS MySQL system into the rebuild. Spec and plan are in
+`docs/superpowers/{specs,plans}/2026-08-23-legacy-migration*`.
+
+### Three commands
+
+| | |
+|---|---|
+| `db:bootstrap` | Reference data (units, categories, settings) + the first ADMIN. **Fixes a pre-existing blocker:** `seed.ts` was the only thing creating them, and the runbook forbids `db:seed` in production — so a production database built by the runbook had no reference data and nobody could log in. |
+| `import:legacy` | Eight ordered stages, dry-run by default, idempotent via a new `LegacyMap` table. |
+| `verify:legacy` / `verify:legacy-data` | Full Audit coherence + parity; row-parity and invariants against the source. |
+
+### What landed in the dev database
+
+4 Clients · 6 Locations · 1,205 Items · 1,276 ItemVariants · 1,285 LocationItems · 449 MenuItems ·
+1,223 RecipeLines · 40 CountSessions · 8,072 CountLines · 5,853 SaleRecords · 36 Purchases ·
+1,109 PurchaseLines · 1 Forfeit · 21,991 legacy ActivityLog entries (sealed).
+
+Chain anchor after sealing — **publish outside the database**:
+
+    seq 22124  b64b8f5633790de63bb8144d876239c6e347940019b34071c57d4a931b47ebcb
+
+### Decisions that affect the numbers
+
+- **`contentTracked = tare > 0 || size > 1`.** Legacy has no such concept: `reports.php:819`
+  divides recipe servings by bottle size unconditionally. Dividing by 1 is a no-op, so the rule
+  only bites above size 1. The narrower `tare > 0` rule made a 750 ml wine poured at 150 ml
+  consume `150 × qty` instead of `0.2 bottles` — wrong by a factor of 750 across 81 ingredients.
+- **Weights split two ways.** Legacy is ounce-scale; this database stores grams. The *catalog*
+  converts (`gramsFromOz`, `densityPerGram`); *count lines do not* — each carries its own
+  scale/tare/density snapshot and is self-describing, and converting would add rounding drift to
+  figures the client holds on paper (`seed.ts:1472-1484` does the same for the golden fixtures).
+- **`remaining_ml` is carried, never recomputed.** 1,397 weigh rows have no density and 1,392 of
+  those still hold content; recomputing would zero every one.
+- **Cost snapshots come from the source row**, not today's `LocationItem`, or three years of
+  valuation restates at current prices.
+- **Count sessions are synthesised by (location, date)**, which also fixes by construction the
+  double-anchor defect found 2026-08-22.
+- **No per-item dedup on count lines.** Legacy stores one row per physical measurement — 1 FULL
+  row plus one WEIGH row per open bottle. A `(session, item)` dedup silently discarded 3,446 real
+  measurements before it was caught.
+- **`discount = 100` → kind PRODUCTION** with `discountPct` 0 (deviation #4); re-encoding the
+  magic value would defeat the point.
+
+### Verification
+
+`verify:legacy` computes **34 audit periods across 6 locations**: no non-finite numbers, and the
+usage identity, the variance identity and `varianceCost = variance × costBasis` hold on **every
+row**. Well-populated periods show plausible variance — Xylo Bar 2023-04-05→04-12 is 3,861 on
+usage 611,277 (0.6%).
+
+**Parity against the legacy XLSX reports could NOT be run.** Those reports cover
+**2026-01-25 → 2026-02-01**; `fnb.sql` holds zero rows dated 2026 (latest count 2025-07-26), and
+of three products on their first data rows only one exists among the dump's 1,205 bottles. The
+comparator is written and reports that it could not run rather than passing silently. **`fnb.sql`
+is not the live production database** — a fresh export is required before the numbers can be
+claimed to match legacy.
+
+### Outstanding, needing a human
+
+- Fresh `mysqldump` from the live server (blocks parity, and Lourd's requested July/August window).
+- **11 of 40 committed sessions cover <10% of their catalog** — aborted legacy counts. Each is a
+  valid Full Audit anchor and reports the whole shelf as variance. Void them in the app.
+- 10 duplicate catalog rows carry conflicting costs; row order currently decides.
+- 8 count lines carry negative content; 27 have `scale < tare`.
+- Subscription tiers and migrated users' roles are placeholders, flagged per client.

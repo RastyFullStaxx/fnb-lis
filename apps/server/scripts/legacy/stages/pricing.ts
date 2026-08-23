@@ -10,6 +10,7 @@ import type { Stage } from "../../import-legacy";
 import { gramsFromOz } from "../../../prisma/bootstrap";
 import { query } from "../source";
 import { loadMap, record } from "../map";
+import { migratedLocations } from "./tenancy";
 import { densityFor, mapUom, unmappableReason } from "../units";
 
 type LegacyClientBottle = {
@@ -29,6 +30,7 @@ const variantKey = (bottleId: number, size: number, uom: string) => `${bottleId}
 
 export const pricingStage: Stage = {
   name: "pricing",
+  touched: migratedLocations,
   async run(tx, report) {
     const branchMap = await loadMap(tx, "branches");
     const bottleMap = await loadMap(tx, "bottles");
@@ -50,8 +52,20 @@ export const pricingStage: Stage = {
         'default_cost', default_cost, 'default_retail', default_retail,
         'is_deleted', is_deleted
       ) FROM client_bottles
-      -- branch 73 before 74 so the Mansion merge keeps 73's pricing on collision.
-      ORDER BY branch_id, client_bottle_id
+      -- Ordering decides which row wins a collision, so it encodes two rules:
+      --
+      --   branch_id      — 73 before 74, so the Mansion merge keeps 73's pricing.
+      --   is_deleted ASC — an ACTIVE row beats a soft-deleted one. Legacy already
+      --                    made this call: of the 11 same-branch duplicate groups
+      --                    that contain an active row, the active row is the newer
+      --                    one in 11 of 11 cases, and the older one is flagged
+      --                    deleted. Ordering by id alone kept the DELETED row and
+      --                    with it a superseded price (Knorr Seasoning at 223.00
+      --                    instead of 322.14, Lea & Perrins at 1698.00 instead of
+      --                    450.00). The data answers this; do not guess it.
+      --   id DESC        — among equally-active (or equally-deleted) rows, the
+      --                    most recent entry is the current one.
+      ORDER BY branch_id, is_deleted ASC, client_bottle_id DESC
     `);
 
     // (locationId|variantId) already written in this run. TWO different things
@@ -158,6 +172,16 @@ export const pricingStage: Stage = {
           );
           if (differs) costConflicts += 1;
         }
+        // Record the losing row against the winning LocationItem, the same way a
+        // deduplicated menu maps onto its survivor. Both legacy rows genuinely
+        // describe that one catalog entry — one superseded the other — so the
+        // mapping is provenance, and recording it keeps a from-scratch run and a
+        // re-run in the same state.
+        const winner = await tx.locationItem.findUnique({
+          where: { locationId_itemVariantId: { locationId, itemVariantId: variantId } },
+          select: { id: true },
+        });
+        if (winner) await record(tx, "client_bottles", r.client_bottle_id, winner.id);
         continue;
       }
       placed.set(placedKey, { branch: r.branch_id, clientBottleId: r.client_bottle_id, cost: thisCost });

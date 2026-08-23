@@ -14,6 +14,7 @@
     "verify:seed": "node prisma/verify-seed.mjs",
     "verify:sync": "node prisma/verify-sync.mjs",
     "verify:security": "node prisma/verify-security.mjs",
+    "verify:legacy": "tsx prisma/verify-legacy.ts",
     "backup": "node scripts/backup.mjs",
     "restore-drill": "node scripts/restore-drill.mjs",
     "mfa:reset": "tsx scripts/mfa-reset.ts",
@@ -21,7 +22,8 @@
     "backfill:subscription-reports": "tsx scripts/backfill-subscription-reports.ts",
     "verify:races": "node prisma/verify-races.mjs",
     "db:deploy": "prisma migrate deploy",
-    "import:legacy": "tsx scripts/import-legacy.ts"
+    "import:legacy": "tsx scripts/import-legacy.ts",
+    "verify:legacy-data": "tsx scripts/legacy/crosscheck.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

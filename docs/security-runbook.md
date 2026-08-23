@@ -43,6 +43,33 @@ A small KVM VPS — 1 vCPU / 4 GB — is the target, and is comfortably more tha
       system. It prints a randomly generated password **once**; store it, then change it in the app.
       Re-running is safe (upserts, and an existing admin is left untouched).
 
+- [ ] **Enrol the new ADMIN in two-factor immediately, before anything else.**
+      `FNB_MFA_KEY` being set turns MFA enforcement ON, and `requireMfaEnrolment`
+      then refuses **every** API route except `/api/auth/*`, `/api/health` and
+      `/api/settings/preferences` until the account has a second factor. A freshly
+      bootstrapped admin can sign in and will see empty screens everywhere until it
+      enrols — the app routes to `/account/security` to fix it. Enrol there, or via
+      `POST /api/auth/mfa/enroll` then `/mfa/confirm`.
+
+      Not a lockout: the enrolment routes stay open by design. But an admin who
+      does not know this will reasonably conclude the deployment is broken.
+
+- [ ] **If this establishment is migrating from the legacy system**, run the import AFTER
+      `db:bootstrap` and BEFORE anyone touches the app:
+
+      npm run import:legacy -w @fnb/server -- --stage=<name>            # dry run, read the report
+      npm run import:legacy -w @fnb/server -- --stage=<name> --confirm  # apply
+
+      Stage order is `reference tenancy catalog pricing menus counts transactions trail`, one at a
+      time — each stage commits in its own transaction, so a full `--dry-run` cannot validate
+      anything past the first. Take a backup before every `--confirm`. Then
+      `npm run seal-history -w @fnb/server -- --confirm` to seal the imported legacy trail, and
+      **publish the printed anchor hash somewhere outside this database** — an anchor that only
+      lives in the database it protects proves nothing.
+
+      Finally `npm run verify:legacy` and `npm run verify:legacy-data`. Read the flags: subscription
+      tiers, migrated user roles, sparse count sessions and conflicting costs all need a human.
+
 - [ ] **`npm run db:seed` is still forbidden here** (§1). `db:bootstrap` exists precisely so that a
       production database can get its reference data without the five demo accounts sharing one
       published password, and without demo clients and pricing.
